@@ -515,7 +515,7 @@ const artifact = {
     // therefore check BOTH: absent from `topology.nodes` AND absent
     // from `symbols.filesWithParseErrors`. Otherwise the honest answer
     // is `FILE_STATUS_UNKNOWN`. See canonical/pre-write-gate.md §5 +
-    // docs/history/phases/p1/p1-2.md §4.1 for the three-way result contract.
+    // maintainer history notes §4.1 for the three-way result contract.
     complete: true,
   },
   summary: {
@@ -560,7 +560,7 @@ const artifact = {
   },
   // P1-2 / P2-0 contract: `nodes` lists every successfully-parsed file
   // so pre-write file lookup can distinguish FILE_EXISTS / NEW_FILE
-  // against `meta.complete` (per docs/history/phases/p1/p1-2.md §4.1). Keys are root-relative
+  // against `meta.complete` (per maintainer history notes §4.1). Keys are root-relative
   // forward-slash paths; values carry `{ loc }` so checklist-facts and
   // P1 lookup can use LOC when needed. `edges` carries the same array
   // downstream consumers traverse for inbound fan-in.
@@ -582,7 +582,7 @@ const artifact = {
     .map(s => ({ size: s.length, members: s.map(f => relPath(root, f)) })),
   // P3-3-pre (2026-04-21): full untruncated cross-submodule edge list.
   // `crossSubmoduleEdges` is the classification source for P3-3 topology canon
-  // draft per `docs/history/phases/p3/p3-3.md` v3 PF-6 — top-30 truncation in `crossSubmoduleTop`
+  // draft per `maintainer history notes` v3 PF-6 — top-30 truncation in `crossSubmoduleTop`
   // made `isolated-submodule` / `shared-submodule` labels unreliable against
   // long-tail edges. Full list is structured (`{from, to, count}`) so consumers
   // can aggregate per-submodule in/out-degree without parsing `"a → b"` strings.
