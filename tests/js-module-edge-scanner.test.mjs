@@ -173,6 +173,30 @@ describe("JS module edge scanner fast-path contract", () => {
     expect(scan.edges?.[0]?.line).toBe(1);
   });
 
+  it("preserves dynamic import line numbers after multiline template literals", () => {
+    const source = [
+      "const help = `",
+      "line one",
+      "line two",
+      "`;",
+      "async function load() {",
+      "  return import('node:child_process');",
+      "}",
+    ].join("\n");
+    const scan = scanJsModuleEdgesFast(source, { filename: "fixture.mjs" });
+
+    expect(scan.ok).toBe(true);
+    expect(scan.edges).toEqual([
+      {
+        source: "node:child_process",
+        typeOnly: false,
+        reExport: false,
+        dynamic: true,
+        line: 6,
+      },
+    ]);
+  });
+
   it("falls back for unsupported dynamic and CommonJS module forms with stable reason codes", () => {
     expectFallback(
       "export function load(name) { return import(name); }",

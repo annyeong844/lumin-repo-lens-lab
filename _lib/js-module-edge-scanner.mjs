@@ -115,6 +115,10 @@ function addNewlines(out, chunk) {
   return out + String(chunk ?? '').replace(/[^\r\n]/g, ' ');
 }
 
+function newlinePadding(chunk) {
+  return String(chunk ?? '').replace(/[^\r\n]/g, '');
+}
+
 function tokenizeForModuleScanner(source, sourceLineAt) {
   const strings = [];
   const templates = [];
@@ -165,7 +169,7 @@ function tokenizeForModuleScanner(source, sourceLineAt) {
       }
       const id = templates.length;
       templates.push({ interpolated: read.interpolated, line: sourceLineAt(i) });
-      out += `__TPL${id}__`;
+      out += `__TPL${id}__${newlinePadding(source.slice(i, read.end))}`;
       i = read.end;
       continue;
     }
