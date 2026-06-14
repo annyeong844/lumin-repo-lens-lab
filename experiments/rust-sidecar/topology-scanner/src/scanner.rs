@@ -12,7 +12,13 @@ fn quoted_after(text: &str, needle: &str) -> Option<String> {
     Some(after[..end].to_string())
 }
 
-fn push_edge(edges: &mut Vec<ModuleEdge>, source: String, line: usize, type_only: bool, re_export: bool) {
+fn push_edge(
+    edges: &mut Vec<ModuleEdge>,
+    source: String,
+    line: usize,
+    type_only: bool,
+    re_export: bool,
+) {
     edges.push(ModuleEdge {
         source,
         line,
@@ -83,7 +89,12 @@ fn has_top_level_comma(value: &str) -> bool {
     false
 }
 
-fn scan_dynamic_imports(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut Vec<String>) {
+fn scan_dynamic_imports(
+    line: &str,
+    line_no: usize,
+    edges: &mut Vec<ModuleEdge>,
+    risk: &mut Vec<String>,
+) {
     let mut offset = 0;
     while let Some(found) = line[offset..].find("import") {
         let start = offset + found;
@@ -178,6 +189,173 @@ fn regex_literal_tail(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> O
     None
 }
 
+fn regex_literal_end_chars(chars: &[char], start: usize) -> Option<usize> {
+    let mut index = start + 1;
+    let mut escaped = false;
+    let mut in_class = false;
+
+    while index < chars.len() {
+        let ch = chars[index];
+        if ch == '\n' || ch == '\r' {
+            return None;
+        }
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == '[' {
+            in_class = true;
+            index += 1;
+            continue;
+        }
+        if ch == ']' {
+            in_class = false;
+            index += 1;
+            continue;
+        }
+        if ch == '/' && !in_class {
+            index += 1;
+            while matches!(chars.get(index), Some(flag) if flag.is_ascii_alphabetic()) {
+                index += 1;
+            }
+            return Some(index);
+        }
+        index += 1;
+    }
+
+    None
+}
+
+fn read_quoted_chars(chars: &[char], start: usize, quote: char) -> Option<usize> {
+    let mut escaped = false;
+    let mut index = start + 1;
+    while index < chars.len() {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == quote {
+            return Some(index + 1);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn read_template_chars(chars: &[char], start: usize) -> Option<usize> {
+    let mut escaped = false;
+    let mut index = start + 1;
+    while index < chars.len() {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == '`' {
+            return Some(index + 1);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn previous_non_space_text(out: &str) -> Option<char> {
+    out.chars().rev().find(|ch| !ch.is_whitespace())
+}
+
+fn scanner_state_ambiguous_like_js(source: &str) -> bool {
+    let chars: Vec<char> = source.chars().collect();
+    let mut out = String::new();
+    let mut index = 0usize;
+    while index < chars.len() {
+        let ch = chars[index];
+        let next = chars.get(index + 1).copied();
+
+        if ch == '/' && next == Some('/') {
+            while index < chars.len() && chars[index] != '\n' {
+                out.push(' ');
+                index += 1;
+            }
+            continue;
+        }
+
+        if ch == '/' && next == Some('*') {
+            let mut probe = index + 2;
+            while probe + 1 < chars.len() && !(chars[probe] == '*' && chars[probe + 1] == '/') {
+                probe += 1;
+            }
+            if probe + 1 >= chars.len() {
+                return true;
+            }
+            for masked in &chars[index..probe + 2] {
+                out.push(if *masked == '\n' || *masked == '\r' {
+                    *masked
+                } else {
+                    ' '
+                });
+            }
+            index = probe + 2;
+            continue;
+        }
+
+        if ch == '\'' || ch == '"' {
+            let Some(end) = read_quoted_chars(&chars, index, ch) else {
+                return true;
+            };
+            out.push_str("__STR__");
+            index = end;
+            continue;
+        }
+
+        if ch == '`' {
+            let Some(end) = read_template_chars(&chars, index) else {
+                return true;
+            };
+            out.push_str("__TPL__");
+            for masked in &chars[index..end] {
+                if *masked == '\n' || *masked == '\r' {
+                    out.push(*masked);
+                }
+            }
+            index = end;
+            continue;
+        }
+
+        if ch == '/' && looks_like_regex_start(previous_non_space_text(&out)) {
+            if let Some(end) = regex_literal_end_chars(&chars, index) {
+                out.extend(std::iter::repeat(' ').take(end - index));
+                out.push_str("__REGEX__");
+                index = end;
+                continue;
+            }
+        }
+
+        out.push(ch);
+        index += 1;
+    }
+
+    false
+}
+
 fn risk_visible_lines(source: &str) -> Vec<String> {
     let mut lines = vec![String::new()];
     let mut chars = source.chars().peekable();
@@ -196,7 +374,9 @@ fn risk_visible_lines(source: &str) -> Vec<String> {
         }
 
         let regex_start = ch == '/' && looks_like_regex_start(previous_visible_non_space(&lines));
-        let current = lines.last_mut().expect("risk_visible_lines always has one line");
+        let current = lines
+            .last_mut()
+            .expect("risk_visible_lines always has one line");
 
         if in_block_comment {
             if ch == '*' && matches!(chars.peek(), Some('/')) {
@@ -287,7 +467,11 @@ fn export_specifiers_type_only(statement: &str) -> bool {
     };
     let body = &statement[open + 1..open + 1 + close_offset];
     let mut saw_specifier = false;
-    for item in body.split(',').map(str::trim).filter(|item| !item.is_empty()) {
+    for item in body
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+    {
         saw_specifier = true;
         if !item.starts_with("type ") {
             return false;
@@ -317,7 +501,13 @@ fn starts_multiline_import_export_block(trimmed: &str) -> bool {
         || trimmed.starts_with("export type {")
 }
 
-fn scan_line(line: &str, risk_line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut Vec<String>) {
+fn scan_line(
+    line: &str,
+    risk_line: &str,
+    line_no: usize,
+    edges: &mut Vec<ModuleEdge>,
+    risk: &mut Vec<String>,
+) {
     let trimmed = line.trim_start();
     let risk_trimmed = risk_line.trim_start();
     let starting_risk_len = risk.len();
@@ -376,16 +566,28 @@ pub fn scan_file_text(file: &str, source: &str) -> FileScanResult {
     let mut pending_statement: Option<(usize, String, String, char)> = None;
     let risk_lines = risk_visible_lines(source);
 
+    if scanner_state_ambiguous_like_js(source) {
+        risk.push("scanner-state-ambiguous".to_string());
+    }
+
     for (index, line) in source.lines().enumerate() {
         let risk_line = risk_lines.get(index).map(String::as_str).unwrap_or("");
         let line_no = index + 1;
-        if let Some((start_line, mut statement, mut risk_statement, terminator)) = pending_statement.take() {
+        if let Some((start_line, mut statement, mut risk_statement, terminator)) =
+            pending_statement.take()
+        {
             statement.push('\n');
             statement.push_str(line);
             risk_statement.push('\n');
             risk_statement.push_str(risk_line);
             if line.contains(terminator) || (terminator == ';' && risk_line.contains(" from ")) {
-                scan_line(&statement, &risk_statement, start_line, &mut edges, &mut risk);
+                scan_line(
+                    &statement,
+                    &risk_statement,
+                    start_line,
+                    &mut edges,
+                    &mut risk,
+                );
             } else {
                 pending_statement = Some((start_line, statement, risk_statement, terminator));
             }
@@ -409,7 +611,13 @@ pub fn scan_file_text(file: &str, source: &str) -> FileScanResult {
     }
 
     if let Some((start_line, statement, risk_statement, _)) = pending_statement {
-        scan_line(&statement, &risk_statement, start_line, &mut edges, &mut risk);
+        scan_line(
+            &statement,
+            &risk_statement,
+            start_line,
+            &mut edges,
+            &mut risk,
+        );
     }
     risk.sort();
     risk.dedup();

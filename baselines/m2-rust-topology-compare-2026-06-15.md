@@ -8,7 +8,7 @@ Date: 2026-06-15
 - Lab source branch: `m2-rust-topology-sidecar`
 - Rust sidecar binary: `experiments\rust-sidecar\topology-scanner\target\release\lumin-topology-scanner.exe`
 - Rust sidecar source: same lab branch, `experiments/rust-sidecar/topology-scanner`
-- Lab implementation commit: `f2380cc`
+- Original reviewed implementation packet commit: `f2380cc`
 - Cache status: `no-incremental`
 - Stable plugin touched: no
 - Private CI triggered: no; `.github/workflows/ci.yml` is manual-only (`workflow_dispatch` present, `push` absent, `pull_request` absent)
@@ -25,16 +25,16 @@ Date: 2026-06-15
 
 M2 remains compare-only. JS topology output is still the oracle, and `prefer` stays disabled.
 
-This baseline proves zero-mismatch compare parity for `geulbat-phase1`, the lab self-scan, and a clean stable-source scan. `nuxt-main` is intentionally recorded as not fully matched: three remaining samples are tied to JS scanner `scanner-state-ambiguous` behavior around complex template syntax. A broad Rust heuristic for that class was rejected because it produced false mismatches on the stable-source corpus.
+This refreshed baseline proves zero-mismatch compare parity for all four M2 corpora: `geulbat-phase1`, the lab self-scan, a clean stable-source scan, and `nuxt-main`. The previous Nuxt 3-sample gap is closed by precise JS-tokenizer state parity fixtures, not by a broad `scanner-state-ambiguous` heuristic. A broad heuristic was tested and rejected because it produced false mismatches on the lab/stable corpora.
 
 ## Results
 
 | Corpus | Files | LOC | Runtime internal edges | Rust status | Compared | Mismatches | Wrapper ms | Sidecar ms |
 | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: |
-| `geulbat-phase1` | 11 | 1,386 | 1 | `matched` | 11 | 0 | 53 | 3 |
-| `lumin-repo-lens-lab` self-scan | 701 | 220,633 | 1,241 | `matched` | 701 | 0 | 388 | 340 |
-| `stable-source-clean` | 2,072 | 443,646 | 3,834 | `matched` | 2,071 | 0 | 1,111 | 1,053 |
-| `nuxt-main` | 625 | 69,681 | 1,077 | `risk-mismatch` | 625 | 3 | 375 | 291 |
+| `geulbat-phase1` | 11 | 1,386 | 1 | `matched` | 11 | 0 | 92 | 7 |
+| `lumin-repo-lens-lab` self-scan | 701 | 220,633 | 1,241 | `matched` | 701 | 0 | 606 | 559 |
+| `stable-source-clean` | 2,072 | 443,646 | 3,834 | `matched` | 2,071 | 0 | 1,409 | 1,344 |
+| `nuxt-main` | 625 | 69,681 | 1,077 | `matched` | 625 | 0 | 255 | 199 |
 
 `Files` is the topology summary file count. `Compared` is the Rust/JS scanner comparison set. For `stable-source-clean`, one collected topology file was outside the Rust JS/TS scanner comparison set, so `Files=2,072` and `Compared=2,071` is expected.
 
@@ -68,16 +68,13 @@ This baseline proves zero-mismatch compare parity for `geulbat-phase1`, the lab 
 - root: `C:\Users\endof\Downloads\nuxt-main`
 - output: `C:\Users\endof\Downloads\lumin-perf-lab\baselines\m2-rust-topology\nuxt-main`
 - command: `node measure-topology.mjs --root C:\Users\endof\Downloads\nuxt-main --output C:\Users\endof\Downloads\lumin-perf-lab\baselines\m2-rust-topology\nuxt-main --exclude node_modules --exclude dist --exclude .nuxt --exclude .output --no-incremental --clear-incremental-cache --rust-topology-scanner compare --rust-topology-scanner-bin <release-binary> --rust-topology-timeout-ms 60000`
-- rust status: `risk-mismatch`
-- mismatches: 3
-- remaining samples:
-  - `packages/nitro-server/src/index.ts`: JS-only `scanner-state-ambiguous`
-  - `packages/nuxt/src/compiler/plugins/keyed-functions.ts`: JS-only `scanner-state-ambiguous`
-  - `packages/vite/src/plugins/decorators.ts`: JS fallback leaves no edges; Rust still sees static imports plus `typeof import('@babel/core')`
+- rust status: `matched`
+- mismatches: 0
+- note: the previous three Nuxt mismatch samples are now covered by parity tests for JS-like scanner-state ambiguity around nested template literals and by a regression test that keeps single conditional escaped-backtick templates from becoming broad false positives.
 
 ## Follow-up
 
 - Keep `prefer` disabled.
-- Do not add broad Rust heuristics for `scanner-state-ambiguous`; they already proved too noisy against stable-source-clean.
-- If Nuxt parity is pursued further, start with a precise JS tokenizer parity fixture for the remaining three samples.
+- Do not add broad Rust heuristics for `scanner-state-ambiguous`; the accepted fix mirrors JS tokenizer state more directly and is guarded by lab/stable corpus parity.
+- Treat this as compare evidence only. `prefer` remains closed until the project deliberately defines a separate replacement gate.
 - Continue using real mismatch samples as TDD inputs.

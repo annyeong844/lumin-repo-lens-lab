@@ -236,7 +236,10 @@ fn reports_ts_import_equals_and_export_assignment_risks() {
 
 #[test]
 fn reports_decorator_or_reflect_metadata_risk() {
-    let result = scan_file_text("fixture.ts", "Reflect.metadata('role', 'service')(Service);\n");
+    let result = scan_file_text(
+        "fixture.ts",
+        "Reflect.metadata('role', 'service')(Service);\n",
+    );
     assert!(!result.ok);
     assert_eq!(result.risk, vec!["decorator-or-reflect".to_string()]);
     assert!(result.edges.is_empty());
@@ -343,6 +346,38 @@ fn ignores_angle_brackets_inside_regex_literals() {
 }
 
 #[test]
+fn handles_non_ascii_text_before_regex_literals() {
+    let source = [
+        "import { parseOxcOrThrow } from './parse-oxc.mjs';",
+        "const message = '확인 불가';",
+        "const scriptRe = /<script\\b[^>]*>/gi;",
+        "export const parse = (source) => parseOxcOrThrow(source, scriptRe, message);",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.mjs", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "./parse-oxc.mjs");
+}
+
+#[test]
+fn handles_box_drawing_section_comments_before_regex_literals() {
+    let source = [
+        "import { parseOxcOrThrow } from './parse-oxc.mjs';",
+        "// ── Comment-based walker ───────────────────────────────────",
+        "const tsIgnoreRe = /^\\s*@ts-ignore\\b/;",
+        "export const parse = (source) => parseOxcOrThrow(source, tsIgnoreRe);",
+    ]
+    .join("\n");
+    let result = scan_file_text("_lib/extract-ts-escapes.mjs", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "./parse-oxc.mjs");
+}
+
+#[test]
 fn scans_literal_dynamic_import() {
     let result = scan_file_text(
         "fixture.ts",
@@ -356,12 +391,12 @@ fn scans_literal_dynamic_import() {
 
 #[test]
 fn reports_nonliteral_dynamic_import() {
-    let result = scan_file_text("fixture.ts", "export function load(name) { return import(name); }\n");
-    assert!(!result.ok);
-    assert_eq!(
-        result.risk,
-        vec!["non-literal-dynamic-import".to_string()]
+    let result = scan_file_text(
+        "fixture.ts",
+        "export function load(name) { return import(name); }\n",
     );
+    assert!(!result.ok);
+    assert_eq!(result.risk, vec!["non-literal-dynamic-import".to_string()]);
 }
 
 #[test]
@@ -371,10 +406,7 @@ fn reports_template_dynamic_import() {
         "export function load(name) { return import(`./${name}.ts`); }\n",
     );
     assert!(!result.ok);
-    assert_eq!(
-        result.risk,
-        vec!["template-dynamic-import".to_string()]
-    );
+    assert_eq!(result.risk, vec!["template-dynamic-import".to_string()]);
 }
 
 #[test]
@@ -390,10 +422,7 @@ fn reports_multiline_template_dynamic_import() {
     .join("\n");
     let result = scan_file_text("fixture.mjs", &source);
     assert!(!result.ok);
-    assert_eq!(
-        result.risk,
-        vec!["template-dynamic-import".to_string()]
-    );
+    assert_eq!(result.risk, vec!["template-dynamic-import".to_string()]);
     assert!(result.edges.is_empty());
 }
 
@@ -407,4 +436,81 @@ fn accepts_unrelated_interpolated_template_literals() {
     assert_eq!(result.risk.len(), 0);
     assert_eq!(result.edges.len(), 1);
     assert_eq!(result.edges[0].source, "./real");
+}
+
+#[test]
+fn accepts_nested_template_interpolation_without_escaped_backticks_like_js_oracle() {
+    let source = [
+        "import { joinURL } from 'ufo';",
+        "const path = `${routes.map(route => `${route}/payload.json`).join(',')}`;",
+    ]
+    .join("\n");
+    let result = scan_file_text("packages/nuxt/src/app/composables/router.ts", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "ufo");
+}
+
+#[test]
+fn does_not_add_scanner_state_for_single_conditional_escaped_backtick_template() {
+    let source = [
+        "export const useRoute: typeof _useRoute = () => {",
+        "  if (import.meta.dev && !getCurrentInstance() && isProcessingMiddleware()) {",
+        "    const middleware = useNuxtApp()._processingMiddleware",
+        "    const trace = getUserTrace().map(({ source, line, column }) => `at ${source}:${line}:${column}`).join('\\n')",
+        "    console.warn(`[nuxt] \\`useRoute\\` was called within middleware${typeof middleware === 'string' ? ` (\\`${middleware}\\`)` : ''}. This may lead to misleading results. Instead, use the (to, from) arguments passed to the middleware to access the new and old routes. Learn more: https://nuxt.com/docs/4.x/directory-structure/app/middleware#accessing-route-in-middleware` + ('\\n' + trace))",
+        "  }",
+        "}",
+    ]
+    .join("\n");
+    let result = scan_file_text("packages/nuxt/src/app/composables/router.ts", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert!(result.edges.is_empty());
+}
+
+#[test]
+fn reports_scanner_state_ambiguous_for_nested_template_warning() {
+    let source = [
+        "import { logger } from '@nuxt/kit';",
+        "logger.warn(`Install ${result.map(d => `\\`${d}\\``).join(' and ')} to enable decorator support.`);",
+    ]
+    .join("\n");
+    let result = scan_file_text("packages/vite/src/plugins/decorators.ts", &source);
+    assert!(!result.ok);
+    assert_eq!(result.risk, vec!["scanner-state-ambiguous".to_string()]);
+    assert!(result.edges.is_empty());
+}
+
+#[test]
+fn reports_scanner_state_ambiguous_for_nested_conditional_template_warning() {
+    let source = [
+        "import { logger } from '../../utils.ts';",
+        "logger.warn(`[nuxt:compiler] Duplicate ${name !== oldName ? ` defined as \\`${name}\\`` : ''} with ${source ? `the same source \\`${source}\\`` : 'no source'} found.`);",
+    ]
+    .join("\n");
+    let result = scan_file_text(
+        "packages/nuxt/src/compiler/plugins/keyed-functions.ts",
+        &source,
+    );
+    assert!(!result.ok);
+    assert_eq!(result.risk, vec!["scanner-state-ambiguous".to_string()]);
+    assert!(result.edges.is_empty());
+}
+
+#[test]
+fn reports_scanner_state_ambiguous_before_decorator_plugin_edges() {
+    let source = [
+        "import type { Plugin } from 'vite';",
+        "import { ensureDependencyInstalled, logger } from '@nuxt/kit';",
+        "import type { Nuxt } from '@nuxt/schema';",
+        "let transformSync: typeof import('@babel/core').transformSync;",
+        "logger.warn(`Install ${result.map(d => `\\`${d}\\``).join(' and ')} to enable decorator support.`);",
+    ]
+    .join("\n");
+    let result = scan_file_text("packages/vite/src/plugins/decorators.ts", &source);
+    assert!(!result.ok);
+    assert_eq!(result.risk, vec!["scanner-state-ambiguous".to_string()]);
+    assert!(result.edges.is_empty());
 }
