@@ -69,3 +69,50 @@ fn reports_decorator_or_reflect_metadata_risk() {
     assert_eq!(result.risk, vec!["decorator-or-reflect".to_string()]);
     assert!(result.edges.is_empty());
 }
+
+#[test]
+fn scans_literal_dynamic_import() {
+    let result = scan_file_text(
+        "fixture.ts",
+        "export async function lazy() { return import('./lazy'); }\n",
+    );
+    assert!(result.ok);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "./lazy");
+    assert!(result.edges[0].dynamic);
+}
+
+#[test]
+fn reports_nonliteral_dynamic_import() {
+    let result = scan_file_text("fixture.ts", "export function load(name) { return import(name); }\n");
+    assert!(!result.ok);
+    assert_eq!(
+        result.risk,
+        vec!["non-literal-dynamic-import".to_string()]
+    );
+}
+
+#[test]
+fn reports_template_dynamic_import() {
+    let result = scan_file_text(
+        "fixture.ts",
+        "export function load(name) { return import(`./${name}.ts`); }\n",
+    );
+    assert!(!result.ok);
+    assert_eq!(
+        result.risk,
+        vec!["template-dynamic-import".to_string()]
+    );
+}
+
+#[test]
+fn accepts_unrelated_interpolated_template_literals() {
+    let result = scan_file_text(
+        "fixture.ts",
+        "const msg = `hello ${name}`;\nimport real from './real';\n",
+    );
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "./real");
+}

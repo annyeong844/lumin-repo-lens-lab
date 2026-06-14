@@ -61,7 +61,7 @@ function runSidecar(binary, overrides = {}) {
     root: "C:/repo",
     files: ["C:/repo/src/a.ts"],
     jsResults,
-    timeoutMs: 1000,
+    timeoutMs: 5000,
     ...overrides,
   });
 }

@@ -22,8 +22,59 @@ fn push_edge(edges: &mut Vec<ModuleEdge>, source: String, line: usize, type_only
     });
 }
 
+fn push_dynamic_edge(edges: &mut Vec<ModuleEdge>, source: String, line: usize) {
+    edges.push(ModuleEdge {
+        source,
+        line,
+        type_only: false,
+        re_export: false,
+        dynamic: true,
+    });
+}
+
+fn is_ident_char(ch: Option<char>) -> bool {
+    matches!(ch, Some(c) if c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+fn import_call_arg(source: &str, start: usize) -> Option<&str> {
+    let before = source[..start].chars().next_back();
+    if is_ident_char(before) {
+        return None;
+    }
+    let mut rest = &source[start + "import".len()..];
+    rest = rest.trim_start();
+    rest.strip_prefix('(')
+}
+
+fn scan_dynamic_imports(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut Vec<String>) {
+    let mut offset = 0;
+    while let Some(found) = line[offset..].find("import") {
+        let start = offset + found;
+        offset = start + "import".len();
+        let Some(after_paren) = import_call_arg(line, start) else {
+            continue;
+        };
+        let arg = after_paren.trim_start();
+        if arg.starts_with('`') {
+            risk.push("template-dynamic-import".to_string());
+            continue;
+        }
+        if arg.starts_with('\'') || arg.starts_with('"') {
+            let quote = arg.as_bytes()[0] as char;
+            if let Some(end) = arg[1..].find(quote) {
+                push_dynamic_edge(edges, arg[1..1 + end].to_string(), line_no);
+            } else {
+                risk.push("scanner-state-ambiguous".to_string());
+            }
+            continue;
+        }
+        risk.push("non-literal-dynamic-import".to_string());
+    }
+}
+
 fn scan_line(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut Vec<String>) {
     let trimmed = line.trim_start();
+    let starting_risk_len = risk.len();
 
     if trimmed.starts_with('@') || trimmed.contains("Reflect.metadata(") {
         risk.push("decorator-or-reflect".to_string());
@@ -45,7 +96,12 @@ fn scan_line(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut
     if trimmed.starts_with("declare module ") {
         risk.push("ts-ambient-module".to_string());
     }
-    if !risk.is_empty() {
+    if risk.len() > starting_risk_len {
+        return;
+    }
+
+    scan_dynamic_imports(line, line_no, edges, risk);
+    if risk.len() > starting_risk_len {
         return;
     }
 
