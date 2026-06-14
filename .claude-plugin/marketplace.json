@@ -1,0 +1,17 @@
+{
+  "name": "annyeong844-lumin-lab-marketplace",
+  "owner": {
+    "name": "annyeong844"
+  },
+  "metadata": {
+    "description": "Public lab marketplace for Lumin Repo Lens experiments.",
+    "version": "0.0.0-lab.0"
+  },
+  "plugins": [
+    {
+      "name": "lumin-repo-lens-lab",
+      "source": "./",
+      "description": "Lumin Repo Lens Lab: isolated performance and Rust sidecar experiments."
+    }
+  ]
+}
