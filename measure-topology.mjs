@@ -4,7 +4,9 @@
 // Usage:
 //   node measure-topology.mjs --root <repo> [--output <dir>] [--include-tests] \
 //        [--include-type-edges] [--cache-root <dir>] [--no-incremental] \
-//        [--clear-incremental-cache] [--verbose]
+//        [--clear-incremental-cache] [--rust-topology-scanner off|compare] \
+//        [--rust-topology-scanner-bin <path>] [--rust-topology-timeout-ms <ms>] \
+//        [--verbose]
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -22,6 +24,7 @@ import {
   MODULE_EDGE_SCANNER_POLICY_VERSION,
   scanJsModuleEdgesFast,
 } from './_lib/js-module-edge-scanner.mjs';
+import { compareRustTopologyScanner } from './_lib/rust-topology-scanner.mjs';
 import {
   loadCache,
   saveCache,
@@ -50,6 +53,9 @@ const cli = parseCliArgs({
   'cache-root': { type: 'string' },
   'clear-incremental-cache': { type: 'boolean', default: false },
   'include-type-edges': { type: 'boolean', default: false },
+  'rust-topology-scanner': { type: 'string', default: 'off' },
+  'rust-topology-scanner-bin': { type: 'string' },
+  'rust-topology-timeout-ms': { type: 'string', default: '60000' },
 });
 const { root, output, verbose } = cli;
 const phaseTimer = createProducerPhaseTimer({
@@ -72,6 +78,13 @@ const topologyCacheDir = path.join(cacheStore.repoCacheDir, 'legacy');
 //     --ts-pre-compilation-deps: includes the compile-time type-layer graph.
 // Report findings with the lens explicitly labeled.
 const includeTypeEdges = !!cli.raw['include-type-edges'];
+const rustScannerMode = cli.raw['rust-topology-scanner'] ?? 'off';
+if (!['off', 'compare'].includes(rustScannerMode)) {
+  throw new Error(`unsupported --rust-topology-scanner mode: ${rustScannerMode}`);
+}
+if (rustScannerMode === 'compare' && isIncremental) {
+  throw new Error('--rust-topology-scanner compare requires --no-incremental in M2');
+}
 
 if (verbose) console.error(`[m2s1] root: ${root}`);
 const repoMode = detectRepoMode(root);
@@ -121,6 +134,7 @@ let tsResults = new Map(); // tree-sitter results (go, future: rust, java...)
 const scannerRiskCounts = new Map();
 const scannerFallbackExamples = new Map();
 const SCANNER_FALLBACK_EXAMPLE_LIMIT = 5;
+const rustComparableJsResults = [];
 
 function recordScannerFallbackRisk(reason, file) {
   const key = String(reason ?? 'unknown');
@@ -210,6 +224,13 @@ function processFileTs(f) {
   const scanned = scanJsModuleEdgesFast(src, { filename: f });
   phaseTimer.incrementCounter('scannerMs', Date.now() - scannerStarted);
   if (scanned.ok) {
+    rustComparableJsResults.push({
+      file: f,
+      ok: true,
+      loc: scanned.loc ?? loc,
+      edges: scanned.edges ?? [],
+      risk: [],
+    });
     phaseTimer.incrementCounter('scannerAcceptedFiles');
     for (const edge of scanned.edges ?? []) {
       const outcome = resolveTopologyEdge(f, edge.source, edge, edgesOut);
@@ -226,6 +247,13 @@ function processFileTs(f) {
     };
   }
   phaseTimer.incrementCounter('scannerFallbackFiles');
+  rustComparableJsResults.push({
+    file: f,
+    ok: false,
+    loc: scanned.loc ?? loc,
+    edges: [],
+    risk: scanned.risk ?? [],
+  });
   for (const reason of scanned.risk ?? []) recordScannerFallbackRisk(reason, f);
 
   // v0.6.8 FP-18 sync-back: dynamic `import('./x')` edges must surface in
@@ -462,11 +490,23 @@ phaseTimer.setCounter('resolverMemoHits', resolverMemoStats.hits);
 phaseTimer.setCounter('resolverMemoMisses', resolverMemoStats.misses);
 phaseTimer.setCounter('resolverMemoSize', resolverMemoStats.size);
 
+const rustScannerComparison = compareRustTopologyScanner({
+  mode: rustScannerMode,
+  binary: cli.raw['rust-topology-scanner-bin'],
+  root,
+  files: rustComparableJsResults.map((entry) => entry.file),
+  jsResults: rustComparableJsResults,
+  timeoutMs: Number(cli.raw['rust-topology-timeout-ms'] ?? 60000),
+});
+
 const artifact = {
   meta: {
     ...producerMetaBase({ tool: 'm2s1-topology.mjs', root }),
     mode: repoMode.mode,
     rootPkgName: repoMode.rootPkgName,
+    ...(rustScannerComparison.metadata
+      ? { rustTopologyScanner: rustScannerComparison.metadata }
+      : {}),
     // P1-2 preparatory: `complete: true` is the producer's explicit
     // promise that `nodes` enumerates every file that `collectFiles()`
     // returned AND successfully parsed. Parse-errored files are NOT in

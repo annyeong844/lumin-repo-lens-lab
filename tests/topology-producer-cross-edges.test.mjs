@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -106,6 +106,44 @@ function createCrossEdgeFixture() {
   );
 
   return fixture;
+}
+
+function writeFakeRustTopologySidecar(dir) {
+  mkdirSync(dir, { recursive: true });
+  const script = path.join(dir, "sidecar.mjs");
+  const command = path.join(
+    dir,
+    process.platform === "win32" ? "sidecar.cmd" : "sidecar.sh",
+  );
+  writeFileSync(
+    script,
+    `let input = "";
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  const req = JSON.parse(input);
+  process.stdout.write(JSON.stringify({
+    schemaVersion: 1,
+    policyVersion: req.policyVersion,
+    files: req.files.map((file) => ({
+      file,
+      ok: true,
+      loc: 1,
+      edges: [],
+      risk: []
+    })),
+    timing: { files: req.files.length, elapsedMs: 1 }
+  }));
+});
+`,
+    "utf8",
+  );
+  if (process.platform === "win32") {
+    writeFileSync(command, `@echo off\r\n"${process.execPath}" "%~dp0\\sidecar.mjs"\r\n`, "utf8");
+  } else {
+    writeFileSync(command, `#!/usr/bin/env sh\n"${process.execPath}" "$(dirname "$0")/sidecar.mjs"\n`, "utf8");
+    chmodSync(command, 0o755);
+  }
+  return command;
 }
 
 describe("topology producer cross-submodule edge artifact", () => {
@@ -260,6 +298,44 @@ describe("topology producer cross-submodule edge artifact", () => {
       expect(warm.summary.performance.changedFiles).toBe(0);
       expect(warm.summary.performance.unchangedFiles).toBeGreaterThan(0);
       expect(warm.summary.performance.scannerFilesAttempted).toBe(0);
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30000);
+
+  it("records Rust topology scanner comparison metadata in compare mode", () => {
+    const fixture = createTempRepoFixture({
+      prefix: "vitest-topology-rust-compare-",
+      packageJson: { name: "rust-compare-fx", type: "module" },
+    });
+    try {
+      fixture.write("src/empty.mjs", "export const value = 1;\n");
+      const sidecar = writeFakeRustTopologySidecar(fixture.mkdir("fake-sidecar"));
+
+      const topology = runTopologyWithStderr(fixture, {
+        args: [
+          "--no-incremental",
+          "--rust-topology-scanner",
+          "compare",
+          "--rust-topology-scanner-bin",
+          sidecar,
+          "--rust-topology-timeout-ms",
+          "1000",
+        ],
+      }).topology;
+
+      expect(topology.meta.rustTopologyScanner).toMatchObject({
+        attempted: true,
+        mode: "compare",
+        status: "matched",
+        timeoutMs: 1000,
+        mismatches: 0,
+      });
+      expect(topology.meta.rustTopologyScanner.filesCompared).toBeGreaterThan(0);
+      expect(topology.meta.rustTopologyScanner.sidecarTiming).toMatchObject({
+        files: topology.meta.rustTopologyScanner.filesCompared,
+        elapsedMs: 1,
+      });
     } finally {
       fixture.cleanup();
     }
