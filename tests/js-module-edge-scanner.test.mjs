@@ -122,6 +122,7 @@ describe("JS module edge scanner fast-path contract", () => {
         "export { type T2 } from './more-types';",
         "export type { T3 } from './even-more-types';",
         "export * from './barrel';",
+        "export * as namespace from './namespace';",
         "export type * from './type-barrel';",
         "export async function lazy() { return import('./lazy'); }",
       ].join("\n"),
@@ -171,6 +172,42 @@ describe("JS module edge scanner fast-path contract", () => {
 
     expect(scan.ok).toBe(true);
     expect(scan.edges?.[0]?.line).toBe(1);
+  });
+
+  it("keeps semicolonless side-effect imports scoped to their own line", () => {
+    const scan = expectAcceptedEquivalent(
+      "fixture.ts",
+      [
+        "import '../../dist/app/types/augments'",
+        "",
+        "export { createNuxtApp, useNuxtApp } from './nuxt'",
+        "export type { NuxtApp, RuntimeNuxtHooks } from './nuxt'",
+      ].join("\n"),
+    );
+
+    expect(scan.edges).toEqual([
+      {
+        source: "../../dist/app/types/augments",
+        typeOnly: false,
+        reExport: false,
+        dynamic: false,
+        line: 1,
+      },
+      {
+        source: "./nuxt",
+        typeOnly: false,
+        reExport: true,
+        dynamic: false,
+        line: 3,
+      },
+      {
+        source: "./nuxt",
+        typeOnly: true,
+        reExport: true,
+        dynamic: false,
+        line: 4,
+      },
+    ]);
   });
 
   it("preserves dynamic import line numbers after multiline template literals", () => {

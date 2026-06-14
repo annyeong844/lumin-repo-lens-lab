@@ -244,7 +244,7 @@ function collectDynamicImportEdges({ code, strings, edges, risk, lineAtIndex }) 
 }
 
 function collectImportEdges({ code, strings, edges, lineAtIndex }) {
-  const importRe = /\bimport\s+(type\s+)?(?:(?:[^;]*?)\s+from\s+)?(__STR\d+__)\s*(?:with\s*\{[\s\S]*?\}|assert\s*\{[\s\S]*?\})?\s*;?/g;
+  const importRe = /\bimport\s+(type\s+)?(?:(?!__STR\d+__)(?:[^;]*?)\s+from\s+)?(__STR\d+__)\s*(?:with\s*\{[\s\S]*?\}|assert\s*\{[\s\S]*?\})?\s*;?/g;
   for (const match of code.matchAll(importRe)) {
     const before = code.slice(Math.max(0, (match.index ?? 0) - 2), match.index ?? 0);
     if (before.endsWith('.') || before.endsWith('(')) continue;
@@ -265,7 +265,7 @@ function allExportSpecifiersTypeOnly(specifierText) {
 }
 
 function collectExportEdges({ code, strings, edges, lineAtIndex }) {
-  const exportRe = /\bexport\s+(type\s+)?((?:\*)|(?:\{[\s\S]*?\}))\s+from\s+(__STR\d+__)\s*(?:with\s*\{[\s\S]*?\}|assert\s*\{[\s\S]*?\})?\s*;?/g;
+  const exportRe = /\bexport\s+(type\s+)?((?:\*\s+as\s+[A-Za-z_$][\w$]*)|(?:\*)|(?:\{[\s\S]*?\}))\s+from\s+(__STR\d+__)\s*(?:with\s*\{[\s\S]*?\}|assert\s*\{[\s\S]*?\})?\s*;?/g;
   for (const match of code.matchAll(exportRe)) {
     const typeOnly = !!match[1] || allExportSpecifiersTypeOnly(match[2]);
     pushEdge(edges, strings, lineAtIndex, match.index ?? 0, match[3], {

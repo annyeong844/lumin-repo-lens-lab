@@ -46,6 +46,43 @@ fn import_call_arg(source: &str, start: usize) -> Option<&str> {
     rest.strip_prefix('(')
 }
 
+fn trim_leading_block_comments(mut value: &str) -> &str {
+    loop {
+        value = value.trim_start();
+        if !value.starts_with("/*") {
+            return value;
+        }
+        let Some(end) = value.find("*/") else {
+            return value;
+        };
+        value = &value[end + 2..];
+    }
+}
+
+fn has_top_level_comma(value: &str) -> bool {
+    let mut paren_depth = 0usize;
+    let mut brace_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    for ch in value.chars() {
+        match ch {
+            '(' => paren_depth += 1,
+            ')' => {
+                if paren_depth == 0 {
+                    return false;
+                }
+                paren_depth -= 1;
+            }
+            '{' => brace_depth += 1,
+            '}' => brace_depth = brace_depth.saturating_sub(1),
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            ',' if paren_depth == 0 && brace_depth == 0 && bracket_depth == 0 => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
 fn scan_dynamic_imports(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut Vec<String>) {
     let mut offset = 0;
     while let Some(found) = line[offset..].find("import") {
@@ -54,7 +91,7 @@ fn scan_dynamic_imports(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>,
         let Some(after_paren) = import_call_arg(line, start) else {
             continue;
         };
-        let arg = after_paren.trim_start();
+        let arg = trim_leading_block_comments(after_paren);
         if arg.starts_with('`') {
             risk.push("template-dynamic-import".to_string());
             continue;
@@ -62,13 +99,22 @@ fn scan_dynamic_imports(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>,
         if arg.starts_with('\'') || arg.starts_with('"') {
             let quote = arg.as_bytes()[0] as char;
             if let Some(end) = arg[1..].find(quote) {
-                push_dynamic_edge(edges, arg[1..1 + end].to_string(), line_no);
+                let rest = trim_leading_block_comments(&arg[1 + end + 1..]);
+                if rest.trim_start().starts_with(',') {
+                    risk.push("dynamic-import-options".to_string());
+                } else {
+                    push_dynamic_edge(edges, arg[1..1 + end].to_string(), line_no);
+                }
             } else {
                 risk.push("scanner-state-ambiguous".to_string());
             }
             continue;
         }
-        risk.push("non-literal-dynamic-import".to_string());
+        if has_top_level_comma(arg) {
+            risk.push("dynamic-import-options".to_string());
+        } else {
+            risk.push("non-literal-dynamic-import".to_string());
+        }
     }
 }
 
@@ -232,6 +278,45 @@ fn has_unsupported_angle_syntax(line: &str) -> bool {
     false
 }
 
+fn export_specifiers_type_only(statement: &str) -> bool {
+    let Some(open) = statement.find('{') else {
+        return false;
+    };
+    let Some(close_offset) = statement[open + 1..].find('}') else {
+        return false;
+    };
+    let body = &statement[open + 1..open + 1 + close_offset];
+    let mut saw_specifier = false;
+    for item in body.split(',').map(str::trim).filter(|item| !item.is_empty()) {
+        saw_specifier = true;
+        if !item.starts_with("type ") {
+            return false;
+        }
+    }
+    saw_specifier
+}
+
+fn contains_export_assignment_risk(line: &str) -> bool {
+    for (index, _) in line.match_indices("export") {
+        let before = line[..index].chars().next_back();
+        let after = line[index + "export".len()..].chars().next();
+        if is_ident_char(before) || is_ident_char(after) {
+            continue;
+        }
+        if line[index + "export".len()..].trim_start().starts_with('=') {
+            return true;
+        }
+    }
+    false
+}
+
+fn starts_multiline_import_export_block(trimmed: &str) -> bool {
+    trimmed.starts_with("import {")
+        || trimmed.starts_with("import type {")
+        || trimmed.starts_with("export {")
+        || trimmed.starts_with("export type {")
+}
+
 fn scan_line(line: &str, risk_line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut Vec<String>) {
     let trimmed = line.trim_start();
     let risk_trimmed = risk_line.trim_start();
@@ -248,7 +333,7 @@ fn scan_line(line: &str, risk_line: &str, line_no: usize, edges: &mut Vec<Module
     if risk_trimmed.starts_with("import ") && risk_trimmed.contains(" = require(") {
         risk.push("ts-import-equals".to_string());
     }
-    if risk_trimmed.starts_with("export =") {
+    if contains_export_assignment_risk(risk_line) {
         risk.push("ts-export-assignment".to_string());
     }
     if risk_trimmed.contains("import.meta.glob(") {
@@ -259,9 +344,6 @@ fn scan_line(line: &str, risk_line: &str, line_no: usize, edges: &mut Vec<Module
     }
     if has_unsupported_angle_syntax(risk_line) {
         risk.push("unsupported-syntax".to_string());
-    }
-    if risk.len() > starting_risk_len {
-        return;
     }
 
     if risk_line.contains("import") {
@@ -280,8 +362,8 @@ fn scan_line(line: &str, risk_line: &str, line_no: usize, edges: &mut Vec<Module
         }
     }
 
-    if risk_trimmed.starts_with("export ") && risk_trimmed.contains(" from ") {
-        let type_only = trimmed.starts_with("export type ") || trimmed.contains("{ type ");
+    if risk_trimmed.starts_with("export ") && trimmed.contains(" from ") {
+        let type_only = trimmed.starts_with("export type ") || export_specifiers_type_only(trimmed);
         if let Some(source) = quoted_after(trimmed, " from ") {
             push_edge(edges, source, line_no, type_only, true);
         }
@@ -302,7 +384,7 @@ pub fn scan_file_text(file: &str, source: &str) -> FileScanResult {
             statement.push_str(line);
             risk_statement.push('\n');
             risk_statement.push_str(risk_line);
-            if line.contains(terminator) {
+            if line.contains(terminator) || (terminator == ';' && risk_line.contains(" from ")) {
                 scan_line(&statement, &risk_statement, start_line, &mut edges, &mut risk);
             } else {
                 pending_statement = Some((start_line, statement, risk_statement, terminator));
@@ -311,7 +393,7 @@ pub fn scan_file_text(file: &str, source: &str) -> FileScanResult {
         }
 
         let trimmed = line.trim_start();
-        if (trimmed.starts_with("import ") || trimmed.starts_with("export "))
+        if starts_multiline_import_export_block(trimmed)
             && !line.contains(';')
             && !line.contains(" from ")
         {

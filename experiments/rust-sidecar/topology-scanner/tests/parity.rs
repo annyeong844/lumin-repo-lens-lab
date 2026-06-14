@@ -60,6 +60,152 @@ fn scans_multiline_named_import_blocks() {
 }
 
 #[test]
+fn marks_multiline_type_only_export_blocks() {
+    let source = [
+        "export {",
+        "  type HistoryItem,",
+        "  type FunctionCall,",
+        "} from './provider/wire/types.js';",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.ts", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    let edge = &result.edges[0];
+    assert_eq!(edge.source, "./provider/wire/types.js");
+    assert!(edge.type_only);
+    assert!(edge.re_export);
+    assert_eq!(edge.line, 1);
+}
+
+#[test]
+fn scans_semicolonless_nuxt_barrel_reexports() {
+    let source = [
+        "import '../../dist/app/types/augments'",
+        "",
+        "export { createNuxtApp, useNuxtApp } from './nuxt'",
+        "export type { NuxtApp, RuntimeNuxtHooks } from './nuxt'",
+        "export { useAsyncData, useFetch } from './composables/index'",
+        "export type { AsyncData, UseFetchOptions } from './composables/index'",
+    ]
+    .join("\n");
+    let result = scan_file_text("packages/nuxt/src/app/index.ts", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 5);
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "../../dist/app/types/augments" && !edge.re_export));
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "./nuxt" && edge.re_export && !edge.type_only));
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "./nuxt" && edge.re_export && edge.type_only));
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "./composables/index" && edge.re_export && !edge.type_only));
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "./composables/index" && edge.re_export && edge.type_only));
+}
+
+#[test]
+fn reports_nuxt_generic_function_nonliteral_dynamic_import() {
+    let source = [
+        "export async function importModule<T = unknown> (id: string): Promise<T> {",
+        "  const resolvedPath = resolveModule(id)",
+        "  return await import(pathToFileURL(resolvedPath).href).then(r => r.default || r) as Promise<T>",
+        "}",
+    ]
+    .join("\n");
+    let result = scan_file_text("packages/kit/src/internal/esm.ts", &source);
+    assert!(!result.ok);
+    assert_eq!(
+        result.risk,
+        vec![
+            "non-literal-dynamic-import".to_string(),
+            "unsupported-syntax".to_string(),
+        ]
+    );
+    assert!(result.edges.is_empty());
+}
+
+#[test]
+fn reports_ts_ambient_module_in_declaration_file() {
+    let source = [
+        "import type {",
+        "  NuxtHooks as _NuxtHooks,",
+        "} from '@nuxt/schema'",
+        "",
+        "declare module 'nuxt/schema' {",
+        "  interface NuxtHooks extends _NuxtHooks {}",
+        "}",
+    ]
+    .join("\n");
+    let result = scan_file_text("packages/nuxt/schema.d.ts", &source);
+    assert!(!result.ok);
+    assert_eq!(result.risk, vec!["ts-ambient-module".to_string()]);
+    assert!(result.edges.is_empty());
+}
+
+#[test]
+fn ignores_magic_comment_literal_dynamic_import_as_nonliteral_risk() {
+    let result = scan_file_text(
+        "packages/nuxt/src/app/composables/manifest.ts",
+        "_manifest = import(/* webpackIgnore: true */ /* @vite-ignore */ '#app-manifest')\n",
+    );
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "#app-manifest");
+    assert!(result.edges[0].dynamic);
+}
+
+#[test]
+fn reports_dynamic_import_options_for_member_import_calls_like_js_oracle() {
+    let result = scan_file_text(
+        "packages/vite/src/css.ts",
+        "const pluginFn = await jiti.import(pluginName, { parentURL, try: true, default: true })\n",
+    );
+    assert!(!result.ok);
+    assert_eq!(result.risk, vec!["dynamic-import-options".to_string()]);
+    assert!(result.edges.is_empty());
+}
+
+#[test]
+fn reports_export_assignment_for_export_property_equality_like_js_oracle() {
+    let result = scan_file_text(
+        "packages/nuxt/src/components/templates.ts",
+        "const exp = c.export === 'default' ? 'c.default || c' : `c['${c.export}']`\n",
+    );
+    assert!(!result.ok);
+    assert_eq!(result.risk, vec!["ts-export-assignment".to_string()]);
+    assert!(result.edges.is_empty());
+}
+
+#[test]
+fn accepts_simple_interpolated_template_mapping_lines() {
+    let source = [
+        "import { normalize } from './paths';",
+        "const lines = details.map((line) => `  ${line}`).join('\\n');",
+        "export const value = normalize(lines);",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.mjs", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "./paths");
+}
+
+#[test]
 fn reports_require_context_before_general_require() {
     let result = scan_file_text(
         "fixture.ts",
