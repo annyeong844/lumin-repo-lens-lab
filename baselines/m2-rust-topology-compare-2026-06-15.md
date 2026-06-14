@@ -8,9 +8,11 @@ Date: 2026-06-15
 - Lab source branch: `m2-rust-topology-sidecar`
 - Rust sidecar binary: `experiments\rust-sidecar\topology-scanner\target\release\lumin-topology-scanner.exe`
 - Rust sidecar source: same lab branch, `experiments/rust-sidecar/topology-scanner`
+- Lab implementation commit: `f2380cc`
 - Cache status: `no-incremental`
 - Stable plugin touched: no
-- Private CI triggered: no
+- Private CI triggered: no; `.github/workflows/ci.yml` is manual-only (`workflow_dispatch` present, `push` absent, `pull_request` absent)
+- Git status before review packet refresh: clean (`git status --short --branch` reported only `## m2-rust-topology-sidecar`)
 
 ## Environment
 
@@ -33,6 +35,8 @@ This baseline proves zero-mismatch compare parity for `geulbat-phase1`, the lab 
 | `lumin-repo-lens-lab` self-scan | 701 | 220,633 | 1,241 | `matched` | 701 | 0 | 388 | 340 |
 | `stable-source-clean` | 2,072 | 443,646 | 3,834 | `matched` | 2,071 | 0 | 1,111 | 1,053 |
 | `nuxt-main` | 625 | 69,681 | 1,077 | `risk-mismatch` | 625 | 3 | 375 | 291 |
+
+`Files` is the topology summary file count. `Compared` is the Rust/JS scanner comparison set. For `stable-source-clean`, one collected topology file was outside the Rust JS/TS scanner comparison set, so `Files=2,072` and `Compared=2,071` is expected.
 
 ## Corpus: geulbat-phase1
 
