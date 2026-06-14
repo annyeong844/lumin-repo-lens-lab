@@ -33,7 +33,9 @@ AI가 신나게 새 파일 만들어요 → `lib/cardNewsService.js` ✨
 **1. Claude Code에 플러그인 설치**
 
 ```
-/plugin install lumin-repo-lens-lab@annyeong844-marketplace
+/plugin marketplace add annyeong844/lumin-repo-lens-lab
+/plugin install lumin-repo-lens-lab@annyeong844-lumin-lab-marketplace
+/reload-plugins
 ```
 
 **2. 첫 점검은 full로 보기**
