@@ -72,6 +72,16 @@ fn scan_dynamic_imports(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>,
     }
 }
 
+fn has_unsupported_angle_syntax(line: &str) -> bool {
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '<' && matches!(chars.peek(), Some(next) if next.is_ascii_alphabetic()) {
+            return true;
+        }
+    }
+    false
+}
+
 fn scan_line(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut Vec<String>) {
     let trimmed = line.trim_start();
     let starting_risk_len = risk.len();
@@ -95,6 +105,9 @@ fn scan_line(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut
     }
     if trimmed.starts_with("declare module ") {
         risk.push("ts-ambient-module".to_string());
+    }
+    if has_unsupported_angle_syntax(line) {
+        risk.push("unsupported-syntax".to_string());
     }
     if risk.len() > starting_risk_len {
         return;
@@ -125,8 +138,35 @@ fn scan_line(line: &str, line_no: usize, edges: &mut Vec<ModuleEdge>, risk: &mut
 pub fn scan_file_text(file: &str, source: &str) -> FileScanResult {
     let mut edges = Vec::new();
     let mut risk = Vec::new();
+    let mut pending_statement: Option<(usize, String)> = None;
+
     for (index, line) in source.lines().enumerate() {
-        scan_line(line, index + 1, &mut edges, &mut risk);
+        let line_no = index + 1;
+        if let Some((start_line, mut statement)) = pending_statement.take() {
+            statement.push('\n');
+            statement.push_str(line);
+            if line.contains(';') {
+                scan_line(&statement, start_line, &mut edges, &mut risk);
+            } else {
+                pending_statement = Some((start_line, statement));
+            }
+            continue;
+        }
+
+        let trimmed = line.trim_start();
+        if (trimmed.starts_with("import ") || trimmed.starts_with("export "))
+            && !line.contains(';')
+            && !line.contains(" from ")
+        {
+            pending_statement = Some((line_no, line.to_string()));
+            continue;
+        }
+
+        scan_line(line, line_no, &mut edges, &mut risk);
+    }
+
+    if let Some((start_line, statement)) = pending_statement {
+        scan_line(&statement, start_line, &mut edges, &mut risk);
     }
     risk.sort();
     risk.dedup();

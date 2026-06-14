@@ -34,6 +34,32 @@ fn scans_static_imports_and_reexports_on_happy_path() {
 }
 
 #[test]
+fn scans_multiline_named_import_blocks() {
+    let source = [
+        "import {",
+        "  type RuntimeHelp,",
+        "  runtimeValue,",
+        "} from './runtime';",
+        "import {",
+        "  mapEvent,",
+        "} from '@geulbat/protocol/ids';",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.ts", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 2);
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "./runtime" && edge.line == 1 && !edge.type_only));
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "@geulbat/protocol/ids" && edge.line == 5));
+}
+
+#[test]
 fn reports_require_context_before_general_require() {
     let result = scan_file_text(
         "fixture.ts",
@@ -67,6 +93,15 @@ fn reports_decorator_or_reflect_metadata_risk() {
     let result = scan_file_text("fixture.ts", "Reflect.metadata('role', 'service')(Service);\n");
     assert!(!result.ok);
     assert_eq!(result.risk, vec!["decorator-or-reflect".to_string()]);
+    assert!(result.edges.is_empty());
+}
+
+#[test]
+fn reports_unsupported_syntax_for_ts_generic_type_annotation() {
+    let source = "import { value } from './value';\ntype Loader = Promise<Result>;\n";
+    let result = scan_file_text("fixture.ts", source);
+    assert!(!result.ok);
+    assert_eq!(result.risk, vec!["unsupported-syntax".to_string()]);
     assert!(result.edges.is_empty());
 }
 
