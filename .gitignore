@@ -1,0 +1,18 @@
+node_modules/
+output/
+review-output*/
+dist/
+plugins/auditing-repo-structure/
+# Lab / generated working surfaces
+p6-corpus/
+canonical-draft/*.md
+.audit/
+.claude/
+audit-artifacts/
+audit-artifacts-smoke/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db

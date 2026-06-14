@@ -1,0 +1,98 @@
+{
+  "_meta": {
+    "skill_name": "lumin-repo-lens-lab",
+    "schema_version": 1,
+    "_skill_name_doc": "The skill name as it appears in the Skill tool's `skill` field. Plugin-namespaced form (lumin-repo-lens-lab:lumin-repo-lens-lab) is also accepted by the verifier.",
+    "_modes_doc": "Valid modes: audit | pre-write | post-write | structural-review | canon-draft | check-canon | none. 'none' means no audit-mode dispatch is required (used in negative tests).",
+    "_citation_pattern_doc": "Regex tested against the final assistant message. Use '\\\\[grounded' or '\\\\[(grounded|확인 불가|unknown)' depending on what's required. Negative tests don't carry this field."
+  },
+
+  "tests": [
+    {
+      "prompt": "positive/audit-ko-dead-export.txt",
+      "should_trigger": true,
+      "expected_mode": "audit",
+      "expected_script_substrings": ["audit-repo.mjs"],
+      "expected_artifacts_referenced": ["dead-classify.json", "fix-plan.json", "symbols.json"],
+      "expected_citation_pattern": "\\[grounded[^\\]]*\\]",
+      "expected_to_mention_count": true,
+      "_why": "Direct count question — full audit pipeline, classify dead exports, cite numerically with a grounded label."
+    },
+    {
+      "prompt": "positive/audit-ko-cycle.txt",
+      "should_trigger": true,
+      "expected_mode": "audit",
+      "expected_script_substrings": ["audit-repo.mjs"],
+      "expected_artifacts_referenced": ["topology.json"],
+      "expected_citation_pattern": "\\[grounded[^\\]]*lens:\\s*(runtime|static)[^\\]]*\\]|\\[grounded[^\\]]*sccCount",
+      "_why": "Cycle question — must label the topology lens (runtime vs static) per cli-options.md §Topology Lenses."
+    },
+    {
+      "prompt": "positive/audit-en-review.txt",
+      "should_trigger": true,
+      "expected_mode": "audit",
+      "expected_script_substrings": ["audit-repo.mjs"],
+      "expected_artifacts_referenced": ["fix-plan.json"],
+      "expected_citation_pattern": "\\[(grounded|degraded|확인\\s*불가|unknown)[^\\]]*\\]",
+      "_why": "English open-ended structural review — should follow report-template.md and produce HCA sections + grounding labels."
+    },
+    {
+      "prompt": "positive/structural-review-ko.txt",
+      "should_trigger": true,
+      "expected_mode": "structural-review",
+      "expected_script_substrings": ["audit-repo.mjs"],
+      "expected_response_substrings": ["REVIEW_CHECKLIST", "A.", "B.", "Section"],
+      "expected_citation_pattern": "\\[(grounded|확인\\s*불가|unknown)[^\\]]*\\]",
+      "_why": "Explicit checklist request — must walk REVIEW_CHECKLIST.md sections A–F per templates/REVIEW_CHECKLIST.md."
+    },
+    {
+      "prompt": "positive/prewrite-ko-helper.txt",
+      "should_trigger": true,
+      "expected_mode": "pre-write",
+      "expected_script_substrings": ["audit-repo.mjs", "--pre-write"],
+      "expected_response_substrings": ["pre-write", "formatDate"],
+      "expected_citation_pattern": "\\[(grounded|확인\\s*불가|unknown)[^\\]]*\\]",
+      "_why": "Write request — pre-write mode should fire per mode-contract §3.1 (추가해줘) and surface existing formatDate as reuse or search evidence before coding."
+    },
+    {
+      "prompt": "positive/prewrite-ko-compound.txt",
+      "should_trigger": true,
+      "expected_mode": "pre-write",
+      "expected_script_substrings": ["audit-repo.mjs", "--pre-write"],
+      "expected_response_substrings": ["formatDate"],
+      "expected_citation_pattern": "\\[(grounded|확인\\s*불가|unknown)[^\\]]*\\]",
+      "_why": "Compound request (찾아서 + 바꿔줘) — verb wins per mode-contract §3.5. Must trigger pre-write."
+    },
+    {
+      "prompt": "positive/prewrite-en-add.txt",
+      "should_trigger": true,
+      "expected_mode": "pre-write",
+      "expected_script_substrings": ["audit-repo.mjs", "--pre-write"],
+      "expected_response_substrings": ["Already exists"],
+      "expected_citation_pattern": "\\[(grounded|확인\\s*불가|unknown)[^\\]]*\\]",
+      "_why": "English 'add' verb — pre-write must trigger per mode-contract §3.2."
+    },
+
+    {
+      "prompt": "negative/guard-conceptual-ts.txt",
+      "should_trigger": false,
+      "_why": "Pure language question, no repo context, no code change. Skill must not fire."
+    },
+    {
+      "prompt": "negative/guard-explain-ko.txt",
+      "should_trigger": false,
+      "_why": "Guard-only verb (설명해줘) per mode-contract §3.4. Must not trigger."
+    },
+    {
+      "prompt": "negative/guard-readme-rewrite.txt",
+      "should_trigger": false,
+      "_why": "Prose rewrite, no code change. Per mode-contract §2.2 non-trigger list."
+    },
+    {
+      "prompt": "negative/guard-comment-typo.txt",
+      "should_trigger": false,
+      "expected_status": "known_gap",
+      "_why": "Comment-only fix per mode-contract §2.2 non-trigger list. But the verb 고쳐줘 IS in §3.1 trigger vocabulary, so the verb-only dispatcher cannot disambiguate. This test is INTENTIONALLY at risk of failing — when it fails, the failure is the spec-vs-implementation gap exposed. Resolution path: tighten dispatcher to inspect target (comment vs code) OR amend §2.2 to acknowledge dispatcher limit."
+    }
+  ]
+}

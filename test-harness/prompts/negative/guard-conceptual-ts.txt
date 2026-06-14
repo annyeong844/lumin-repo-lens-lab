@@ -1,0 +1,1 @@
+TypeScript 에서 union type 이랑 intersection type 차이가 뭐야?

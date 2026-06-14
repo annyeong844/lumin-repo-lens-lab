@@ -1,0 +1,1 @@
+In test-harness/fixtures/tiny-ts-repo, add a new util that returns the year-month-day string from a Date.

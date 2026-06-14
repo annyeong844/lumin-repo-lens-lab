@@ -1,0 +1,1 @@
+test-harness/fixtures/tiny-ts-repo/src/utils/date.ts 안에 있는 주석에서 오타 하나만 고쳐줘 (alive → live 같은 거).

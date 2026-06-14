@@ -1,0 +1,1 @@
+test-harness/fixtures/tiny-ts-repo 에서 기존 date helper 찾아서 timestamp도 같이 출력하도록 바꿔줘.

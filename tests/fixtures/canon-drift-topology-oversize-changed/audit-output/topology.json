@@ -1,0 +1,9 @@
+{
+  "meta": { "tool": "measure-topology.mjs", "generated": "2026-04-22T00:00:00Z", "complete": true },
+  "nodes": { "src/big.ts": { "loc": 1200 } },
+  "sccs": [],
+  "crossSubmoduleEdges": [],
+  "largestFiles": [
+    { "file": "src/big.ts", "loc": 1200 }
+  ]
+}

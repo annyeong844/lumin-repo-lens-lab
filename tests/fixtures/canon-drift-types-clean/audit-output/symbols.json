@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "tool": "build-symbol-graph.mjs",
+    "generated": "2026-04-21T00:00:00.000Z",
+    "root": "/fixture",
+    "scope": "fixture",
+    "supports": { "identityFanIn": true, "anyContamination": false }
+  },
+  "defIndex": {
+    "src/foo.ts": {
+      "Foo": { "kind": "TSInterfaceDeclaration", "line": 10 }
+    }
+  },
+  "fanInByIdentity": {
+    "src/foo.ts::Foo": 3
+  },
+  "reExportsByFile": {}
+}

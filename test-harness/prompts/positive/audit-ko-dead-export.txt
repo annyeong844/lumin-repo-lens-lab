@@ -1,0 +1,1 @@
+test-harness/fixtures/tiny-ts-repo 이 레포에 dead export 몇 건이나 있어?

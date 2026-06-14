@@ -1,0 +1,3 @@
+read manifest.json
+read topology.json
+read symbols.json

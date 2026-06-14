@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "tool": "build-symbol-graph.mjs",
+    "generated": "2026-04-22T00:00:00.000Z",
+    "root": "/fixture",
+    "scope": "fixture-with-helper-owners",
+    "supports": { "identityFanIn": true, "anyContamination": true }
+  },
+  "defIndex": {
+    "src/foo.ts": {
+      "doFoo": { "kind": "FunctionDeclaration", "line": 1 }
+    }
+  },
+  "fanInByIdentity": {
+    "src/foo.ts::doFoo": 3
+  },
+  "helperOwnersByIdentity": {
+    "src/foo.ts::doFoo": {
+      "signature": "(x: number) => number",
+      "anyContamination": null
+    }
+  },
+  "reExportsByFile": {}
+}
