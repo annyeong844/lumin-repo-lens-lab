@@ -106,6 +106,97 @@ fn reports_unsupported_syntax_for_ts_generic_type_annotation() {
 }
 
 #[test]
+fn ignores_angle_brackets_inside_comments_when_scanning_imports() {
+    let source = [
+        "import { readFileSync } from 'node:fs';",
+        "import path from 'node:path';",
+        "",
+        "// Helper inventory is a Map<identity, def> for lookup.",
+        "// Parse failures may include tags like `<script>` in messages.",
+        "export function readArtifact() {",
+        "  return readFileSync(path.join('out', 'symbols.json'), 'utf8');",
+        "}",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.mjs", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 2);
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "node:fs" && edge.line == 1));
+    assert!(result
+        .edges
+        .iter()
+        .any(|edge| edge.source == "node:path" && edge.line == 2));
+}
+
+#[test]
+fn ignores_angle_brackets_inside_strings_when_scanning_imports() {
+    let source = [
+        "import { existsSync } from 'node:fs';",
+        "const message = 'failed to parse <path>: <message>';",
+        "export const ok = existsSync(message);",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.mjs", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "node:fs");
+}
+
+#[test]
+fn ignores_import_export_syntax_inside_strings() {
+    let source = [
+        "import { spawnSync } from 'node:child_process';",
+        "const extractor = `",
+        "from pathlib import Path",
+        "export { TEXT_ZERO_REF_COUNT } from 'text-zero-ident-ref-count';",
+        "import(module_name)",
+        "`;",
+        "export const run = () => spawnSync('python', ['-c', extractor]);",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.mjs", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "node:child_process");
+}
+
+#[test]
+fn ignores_decorator_markers_inside_strings() {
+    let source = [
+        "import { normalize } from './paths';",
+        "if (line.startsWith('@')) continue;",
+        "export const value = normalize(line);",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.mjs", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "./paths");
+}
+
+#[test]
+fn ignores_angle_brackets_inside_regex_literals() {
+    let source = [
+        "import { parseOxcOrThrow } from './parse-oxc.mjs';",
+        "const scriptRe = /<script\\b[^>]*>/gi;",
+        "export const parse = (source) => parseOxcOrThrow(source, scriptRe);",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.mjs", &source);
+    assert!(result.ok);
+    assert_eq!(result.risk.len(), 0);
+    assert_eq!(result.edges.len(), 1);
+    assert_eq!(result.edges[0].source, "./parse-oxc.mjs");
+}
+
+#[test]
 fn scans_literal_dynamic_import() {
     let result = scan_file_text(
         "fixture.ts",
@@ -138,6 +229,26 @@ fn reports_template_dynamic_import() {
         result.risk,
         vec!["template-dynamic-import".to_string()]
     );
+}
+
+#[test]
+fn reports_multiline_template_dynamic_import() {
+    let source = [
+        "async function load(pathToFileURL, dir) {",
+        "  const mod = await import(",
+        "    `${pathToFileURL(dir).href}/_lib/alias-map.mjs?v=case`",
+        "  );",
+        "  return mod;",
+        "}",
+    ]
+    .join("\n");
+    let result = scan_file_text("fixture.mjs", &source);
+    assert!(!result.ok);
+    assert_eq!(
+        result.risk,
+        vec!["template-dynamic-import".to_string()]
+    );
+    assert!(result.edges.is_empty());
 }
 
 #[test]
