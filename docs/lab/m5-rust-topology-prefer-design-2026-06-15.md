@@ -292,6 +292,8 @@ extends the vocabulary:
 - `blocked-edge-mismatch`
 - `blocked-risk-mismatch`
 - `blocked-artifact-contract`
+- `blocked-cache-mode`
+- `blocked-corpus-scope`
 - `blocked-unknown-sidecar-status`
 - `blocked-unknown-prefer-status`
 
