@@ -9,8 +9,8 @@
 
 ## Test Discipline
 
-- Tests must prove real behavior, not scaffolding accidents.
-- Do not use "file/function/module does not exist, then create it" as the RED step. That is setup noise, not a behavior test.
-- For new code, create only the minimal compilable/importable skeleton needed for the test harness, then write tests that fail because behavior is missing or wrong.
-- Prefer one minimal happy path plus realistic edge cases that can actually occur in the product.
-- A good RED failure says "the scanner missed an import" or "the bridge failed to report a mismatch"; a bad RED failure says "the file is missing."
+- Tests must prove product behavior, not scaffolding accidents.
+- Use one minimum guaranteed happy path, realistic edge cases that can actually occur, and hard-stop paths where the product must refuse to proceed.
+- Create importable code before tests import it; a test whose only value is proving a file, function, or module exists is not useful.
+- Good failures are behavioral: the scanner missed an import, the bridge reported the wrong mismatch, the collector appended evidence it should have refused.
+- Bad failures are scaffolding trivia: a file is absent, a helper is not exported, or a placeholder module has not been created yet.
