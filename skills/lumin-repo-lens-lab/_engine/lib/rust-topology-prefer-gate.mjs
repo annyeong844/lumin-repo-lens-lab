@@ -72,10 +72,15 @@ function baseGate({
 }
 
 export function readRustTopologyPreferQuorum(filePath) {
-  return readJsonFile(filePath, {
-    tag: 'rust-topology-prefer-gate',
-    strict: true,
-  });
+  try {
+    return readJsonFile(filePath, {
+      tag: 'rust-topology-prefer-gate',
+      strict: true,
+    });
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
 }
 
 function hasRequiredRunFields(run) {
