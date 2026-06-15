@@ -48,6 +48,9 @@ M3 adds dry-run metadata to `topology.json.meta`. The exact object should be nam
     "reason": "all-required-corpora-matched",
     "requiredCorpora": ["geulbat-phase1", "lab-self", "stable-source-clean", "nuxt-main"],
     "currentCorpus": "lab-self",
+    "currentCorpusSource": "cli",
+    "quorumEvidence": "baselines/rust-topology-prefer-quorum.json",
+    "cacheMode": "no-incremental",
     "mismatches": 0,
     "filesCompared": 701,
     "sidecarStatus": "matched",
@@ -58,6 +61,21 @@ M3 adds dry-run metadata to `topology.json.meta`. The exact object should be nam
 ```
 
 This metadata is advisory. It must not change the `runtimeInternalEdges`, topology summary, Mermaid output, or any downstream action lane.
+
+`currentCorpus` must be explicit. Do not infer it from `root`, output path, repository name, or folder basename. M3 should add a CLI flag:
+
+```bash
+--rust-topology-prefer-gate-corpus lab-self
+```
+
+If the flag is missing while the gate is enabled, emit:
+
+```json
+{
+  "status": "blocked-corpus-quorum",
+  "reason": "current-corpus-not-declared"
+}
+```
 
 ## Gate Status Values
 
@@ -107,6 +125,43 @@ Each run must record:
 
 One clean run is a good sign. Three clean runs is a gate. Anything less is a vibe, not evidence.
 
+Quorum evidence should live in one JSON file:
+
+- `baselines/rust-topology-prefer-quorum.json`
+
+Use this schema. The values below are examples; implementations must fill them from the current run.
+
+```json
+{
+  "schemaVersion": 1,
+  "requiredCorpora": ["geulbat-phase1", "lab-self", "stable-source-clean", "nuxt-main"],
+  "policyVersion": "module-edge-scanner.fast.v1",
+  "rustSidecarSourceCommit": "87116819c23d1e1adfbfca5def44552856e4f464",
+  "runs": {
+    "geulbat-phase1": [
+      {
+        "labSourceCommit": "c9f9dc7d52fdc93272dda9f8f72b3d7011f17253",
+        "rustSidecarSourceCommit": "87116819c23d1e1adfbfca5def44552856e4f464",
+        "rustSidecarBinary": "experiments/rust-sidecar/topology-scanner/target/release/lumin-topology-scanner.exe",
+        "command": "node measure-topology.mjs --root C:/Users/endof/Downloads/geulbat-phase1 --output C:/Users/endof/Downloads/lumin-perf-lab/baselines/m3-rust-topology/geulbat-phase1 --no-incremental --clear-incremental-cache --rust-topology-scanner compare --rust-topology-prefer-gate-corpus geulbat-phase1",
+        "corpusRoot": "C:/Users/endof/Downloads/geulbat-phase1",
+        "cacheMode": "no-incremental",
+        "fileCount": 11,
+        "filesCompared": 11,
+        "mismatches": 0,
+        "wrapperElapsedMs": 92,
+        "sidecarElapsedMs": 7,
+        "sidecarStatus": "matched",
+        "policyVersion": "module-edge-scanner.fast.v1",
+        "machineOs": "Microsoft Windows NT 10.0.26200.0"
+      }
+    ]
+  }
+}
+```
+
+M3 quorum runs should use `--no-incremental --clear-incremental-cache`. Cached quorum runs are allowed only after a separate proof shows that `filesCompared` covers the full JS/TS scanner comparison set for that corpus. First implementation should not take that complexity. Cold full-coverage evidence is boring, and boring wins here.
+
 ## Replacement Gate Rule
 
 M3 only records whether a run would be eligible for a future prefer mode.
@@ -140,6 +195,24 @@ Required failure mappings:
 | edge mismatch | `blocked-edge-mismatch` |
 | risk mismatch | `blocked-risk-mismatch` |
 
+Bridge-to-gate status mapping:
+
+| M2 `rustTopologyScanner.status` | M3 `rustTopologyPreferGate.status` |
+| --- | --- |
+| `matched` | `eligible` or `blocked-corpus-quorum` |
+| `binary-not-found` | `blocked-sidecar-failure` |
+| `unsupported-platform` | `blocked-sidecar-failure` |
+| `timeout` | `blocked-sidecar-failure` |
+| `non-zero-exit` | `blocked-sidecar-failure` |
+| `invalid-json-output` | `blocked-sidecar-failure` |
+| `invalid-json-output` with `reason: policy-version-mismatch` | `blocked-policy-version` |
+| `count-mismatch` | `blocked-count-mismatch` |
+| `edge-mismatch` | `blocked-edge-mismatch` |
+| `risk-mismatch` | `blocked-risk-mismatch` |
+| `unsupported-file-type-or-syntax` | `blocked-sidecar-failure` |
+
+Do not hardcode policy version strings in the gate. Read the JS value from `MODULE_EDGE_SCANNER_POLICY_VERSION` and compare it with the Rust compare metadata. Documentation examples may show `module-edge-scanner.fast.v1`, but code must use the exported constant.
+
 ## Artifact Contract
 
 Allowed M3 artifact change:
@@ -156,6 +229,15 @@ Forbidden M3 artifact changes:
 - changing public plugin command names
 
 M3 is a gate layer, not a topology rewrite.
+
+`blocked-artifact-contract` is primarily a verifier/test status, not something a normal topology run can reliably self-diagnose. The artifact guard must compare gate-off and gate-on outputs:
+
+1. Run topology with Rust compare metadata and the prefer gate disabled.
+2. Run topology with Rust compare metadata and the prefer gate enabled.
+3. Remove only `meta.rustTopologyPreferGate` from the second output.
+4. Normalize naturally variable fields that already vary between runs.
+5. Deep-compare topology JSON.
+6. If anything else differs, the test fails and the verifier records `blocked-artifact-contract`.
 
 ## Test Strategy
 
@@ -183,9 +265,11 @@ Create one small gate module:
 Responsibilities:
 
 - read compare metadata
-- read optional corpus quorum evidence
+- read quorum evidence from `baselines/rust-topology-prefer-quorum.json`
+- require explicit current corpus identity from `--rust-topology-prefer-gate-corpus`
 - return the `rustTopologyPreferGate` object
 - never mutate topology edges
+- use `MODULE_EDGE_SCANNER_POLICY_VERSION` rather than a hardcoded string
 
 Do not bury this logic inside `measure-topology.mjs`. That file already orchestrates too much. Keep the gate testable and boring.
 
