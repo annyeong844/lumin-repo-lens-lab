@@ -104,6 +104,54 @@ describe('Rust topology prefer decision', () => {
     });
   });
 
+  it('falls back visibly when prefer has no approved binary hash', () => {
+    expect(evaluateRustTopologyPrefer(base({
+      expectedRustSidecarBinarySha256: undefined,
+    }))).toMatchObject({
+      status: 'fallback-js',
+      reason: 'blocked-sidecar-binary-sha256',
+    });
+  });
+
+  it('falls back when an eligible gate does not preserve the dry-run contract', () => {
+    expect(evaluateRustTopologyPrefer(base({
+      rustTopologyPreferGate: { ...eligibleGate, preferEnabled: true },
+    }))).toMatchObject({
+      status: 'fallback-js',
+      reason: 'blocked-gate-ineligible',
+    });
+
+    expect(evaluateRustTopologyPrefer(base({
+      rustTopologyPreferGate: { ...eligibleGate, jsRemainsOracle: false },
+    }))).toMatchObject({
+      status: 'fallback-js',
+      reason: 'blocked-gate-ineligible',
+    });
+  });
+
+  it('falls back when matched scanner metadata is malformed', () => {
+    expect(evaluateRustTopologyPrefer(base({
+      rustTopologyScanner: { ...matchedScanner, mismatches: undefined },
+    }))).toMatchObject({
+      status: 'fallback-js',
+      reason: 'blocked-unknown-sidecar-status',
+    });
+
+    expect(evaluateRustTopologyPrefer(base({
+      rustTopologyScanner: { ...matchedScanner, filesCompared: 0 },
+    }))).toMatchObject({
+      status: 'fallback-js',
+      reason: 'blocked-unknown-sidecar-status',
+    });
+
+    expect(evaluateRustTopologyPrefer(base({
+      rustTopologyScanner: { ...matchedScanner, policyVersion: undefined },
+    }))).toMatchObject({
+      status: 'fallback-js',
+      reason: 'blocked-policy-version',
+    });
+  });
+
   it('falls back visibly when artifact guard fails', () => {
     expect(evaluateRustTopologyPrefer(base({
       artifactGuard: { status: 'failed', passed: false },

@@ -96,9 +96,22 @@ function binaryShaMismatch({
   rustSidecarBinarySha256,
   expectedRustSidecarBinarySha256,
 }) {
-  if (!expectedRustSidecarBinarySha256) return false;
+  if (!expectedRustSidecarBinarySha256) return true;
   if (!rustSidecarBinarySha256) return true;
   return rustSidecarBinarySha256 !== expectedRustSidecarBinarySha256;
+}
+
+function hasMalformedMatchedScannerMetadata(rustTopologyScanner) {
+  return rustTopologyScanner.mismatches !== 0 ||
+    !Number.isFinite(rustTopologyScanner.filesCompared) ||
+    rustTopologyScanner.filesCompared <= 0 ||
+    rustTopologyScanner.policyVersion !== MODULE_EDGE_SCANNER_POLICY_VERSION;
+}
+
+function hasValidPreferGateContract(rustTopologyPreferGate) {
+  return rustTopologyPreferGate?.status === 'eligible' &&
+    rustTopologyPreferGate.preferEnabled === false &&
+    rustTopologyPreferGate.jsRemainsOracle === true;
 }
 
 export function evaluateRustTopologyPrefer({
@@ -150,12 +163,6 @@ export function evaluateRustTopologyPrefer({
     return fallback({ reason: 'blocked-corpus-scope', base });
   }
   if (!rustTopologyScanner) return fallback({ reason: 'blocked-unknown-sidecar-status', base });
-  if (
-    rustTopologyScanner.policyVersion &&
-    rustTopologyScanner.policyVersion !== MODULE_EDGE_SCANNER_POLICY_VERSION
-  ) {
-    return fallback({ reason: 'blocked-policy-version', base });
-  }
   if (rustTopologyScanner.reason === 'policy-version-mismatch') {
     return fallback({ reason: 'blocked-policy-version', base });
   }
@@ -166,11 +173,14 @@ export function evaluateRustTopologyPrefer({
       base,
     });
   }
-  if ((rustTopologyScanner.mismatches ?? 0) !== 0) {
+  if (rustTopologyScanner.policyVersion !== MODULE_EDGE_SCANNER_POLICY_VERSION) {
+    return fallback({ reason: 'blocked-policy-version', base });
+  }
+  if (hasMalformedMatchedScannerMetadata(rustTopologyScanner)) {
     return fallback({ reason: 'blocked-unknown-sidecar-status', base });
   }
   if (!rustTopologyPreferGate) return fallback({ reason: 'blocked-gate-missing', base });
-  if (rustTopologyPreferGate.status !== 'eligible') {
+  if (!hasValidPreferGateContract(rustTopologyPreferGate)) {
     const reason = rustTopologyPreferGate.reason === 'quorum-evidence-missing'
       ? 'blocked-quorum-missing'
       : 'blocked-gate-ineligible';
