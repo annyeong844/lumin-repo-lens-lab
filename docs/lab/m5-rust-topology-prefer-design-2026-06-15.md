@@ -47,6 +47,20 @@ Commit provenance for the M4 evidence:
 That distinction matters. The evidence was collected from the implementation
 commit, and the later commit recorded the evidence and summary.
 
+## Review Amendments
+
+External review approved M5 implementation planning with these amendments. They
+are now part of the design, not optional polish:
+
+- use `MODULE_EDGE_SCANNER_POLICY_VERSION` as the only JS scanner policy source
+  of truth;
+- verify Rust sidecar binary identity, including `rustSidecarBinarySha256`;
+- define exact `rustTopologyPrefer.status` and `reason` strings before
+  implementation;
+- require artifact guard on every initial M5 `prefer` run;
+- keep initial `prefer` no-incremental and full-coverage only;
+- keep initial `prefer` scoped to the fixed required corpus set.
+
 ## Goal
 
 Add a lab-only design for explicit Rust topology `prefer` mode that:
@@ -120,13 +134,16 @@ be true:
    M5 can use the gate result as evidence, but M5 must still make the actual
    replacement decision in its own prefer layer.
 4. `meta.rustTopologyPreferGate.jsRemainsOracle === true` in the gate evidence.
-5. The quorum evidence policy version matches the JS scanner policy version.
+5. The quorum evidence policy version matches `MODULE_EDGE_SCANNER_POLICY_VERSION`.
 6. The Rust sidecar source commit in quorum evidence matches the sidecar being
    used, or the mismatch is blocked.
-7. The sidecar binary path and source commit are recorded in metadata.
-8. The current run has no sidecar failure, count mismatch, edge mismatch, or
+7. The sidecar binary path, source commit, build profile, and binary SHA-256 are
+   recorded in metadata.
+8. The sidecar binary identity matches the identity approved by the quorum or
+   validation stamp.
+9. The current run has no sidecar failure, count mismatch, edge mismatch, or
    risk mismatch.
-9. The artifact guard passes.
+10. The artifact guard passes.
 
 If any item fails, JS wins.
 
@@ -163,6 +180,7 @@ JS must be used when any of these occur:
 - invalid JSON output;
 - scanner policy mismatch;
 - sidecar source commit mismatch;
+- sidecar binary SHA-256 mismatch;
 - count mismatch;
 - edge mismatch;
 - risk mismatch;
@@ -188,9 +206,11 @@ M5 should add one prefer decision object under topology metadata, for example:
     "reason": "gate-eligible-artifact-guard-passed",
     "gateStatus": "eligible",
     "quorumEvidence": "baselines/rust-topology-prefer-quorum.json",
-    "policyVersion": "module-edge-scanner.fast.v1",
+    "policyVersion": "<MODULE_EDGE_SCANNER_POLICY_VERSION>",
     "rustSidecarSourceCommit": "d7d5c6a...",
     "rustSidecarBinary": "experiments/rust-sidecar/topology-scanner/target/release/lumin-topology-scanner.exe",
+    "rustSidecarBinarySha256": "sha256:...",
+    "rustSidecarBuildProfile": "release",
     "filesCompared": 708,
     "mismatches": 0,
     "sidecarTiming": {
@@ -234,6 +254,50 @@ must survive:
 - whether artifact guard passed;
 - how to roll back.
 
+Policy version strings must not be hardcoded in examples or implementation.
+M5 compares these values and blocks if any differ:
+
+- current JS `MODULE_EDGE_SCANNER_POLICY_VERSION`;
+- `meta.rustTopologyScanner.policyVersion`;
+- quorum evidence `policyVersion`.
+
+The Rust sidecar binary should eventually expose version JSON containing its
+policy version, source commit, build profile, and binary identity. Until then,
+M5 must compute and record `rustSidecarBinarySha256` itself.
+
+## Prefer Status Vocabulary
+
+`rustTopologyPrefer.status` may use only these values in M5:
+
+- `not-requested`
+- `used-rust`
+- `fallback-js`
+
+`rustTopologyPrefer.reason` may use only these values unless a later design
+extends the vocabulary:
+
+- `not-requested`
+- `gate-eligible-artifact-guard-passed`
+- `blocked-quorum-missing`
+- `blocked-gate-missing`
+- `blocked-gate-ineligible`
+- `blocked-binary-not-found`
+- `blocked-timeout`
+- `blocked-non-zero-exit`
+- `blocked-invalid-json-output`
+- `blocked-policy-version`
+- `blocked-sidecar-source-commit`
+- `blocked-sidecar-binary-sha256`
+- `blocked-count-mismatch`
+- `blocked-edge-mismatch`
+- `blocked-risk-mismatch`
+- `blocked-artifact-contract`
+- `blocked-unknown-sidecar-status`
+- `blocked-unknown-prefer-status`
+
+No fuzzy strings. If a reason needs to be added, add it deliberately and cover
+the user-visible fallback path that produces it.
+
 ## Artifact Guard
 
 The artifact guard is the line between "Rust matched the scanner" and "Rust is
@@ -265,9 +329,20 @@ Forbidden differences:
 - fix-plan, deadness, safe-fix, or export-action output;
 - Markdown claims that imply different facts.
 
-If the guard is too expensive for every run, M5 can make it a required
-implementation validation step before allowing prefer mode to use Rust in that
-build. It cannot be skipped silently.
+Initial M5 must run the artifact guard on every `prefer` run. That costs speed,
+but speed is not the first win here. Correct replacement semantics are.
+
+A later design may replace every-run guard with a validated-build stamp only if
+that stamp records at least:
+
+- policy version;
+- Rust sidecar source commit;
+- Rust sidecar binary SHA-256;
+- lab source commit;
+- quorum evidence hash;
+- artifact guard baseline commit.
+
+No artifact guard skip by default.
 
 ## Quorum Evidence Use
 
@@ -285,6 +360,21 @@ The latest-three clean-run semantics remain M3/M4-owned. M5 only asks whether
 the gate is eligible for the current corpus and current policy/source pair.
 
 Do not infer corpus identity from root paths. Use an explicit corpus name.
+
+Initial M5 `prefer` may run only when the current corpus is one of the fixed
+required corpora above. Arbitrary-repo prefer is out of scope until a later
+corpus expansion gate is approved.
+
+## Cache Scope
+
+Initial M5 `prefer` is no-incremental and full-coverage only:
+
+```bash
+--no-incremental --clear-incremental-cache
+```
+
+Cache-aware prefer is out of scope until a separate proof shows that
+`filesCompared` covers the full JS/TS scanner comparison set for the run.
 
 ## Public And Private CI
 
@@ -327,6 +417,8 @@ Minimum useful checks:
   reason;
 - gate path: ineligible quorum uses JS and records the gate status;
 - artifact path: any non-metadata topology diff blocks prefer;
+- scope path: incremental/cache-aware prefer is rejected;
+- corpus path: non-required corpus prefer is rejected;
 - rollback path: `off` and `compare` still behave exactly as before.
 
 Those are real user and maintainer paths. Anything weaker is ceremony.
@@ -349,6 +441,8 @@ M5 implementation is not complete until it proves:
 - `off` behavior is unchanged;
 - `compare` behavior is unchanged;
 - `prefer` cannot run without eligible gate evidence;
+- `prefer` cannot run outside the fixed required corpus set;
+- `prefer` cannot run with incremental/cache-aware coverage;
 - `prefer` either uses Rust for the full run or falls back to JS for the full
   run;
 - fallback metadata is clear;
@@ -358,12 +452,12 @@ M5 implementation is not complete until it proves:
 
 1. Is run-level prefer strict enough for the first replacement gate? My take:
    yes. Per-file mixing is a trap.
-2. Should M5 require artifact guard on every prefer run, or only as a release
-   validation before prefer is allowed in that build?
+2. Can a later validated-build stamp replace every-run artifact guard after M5
+   proves the guard is boring?
 3. Is the proposed `rustTopologyPrefer` metadata shape clear enough for a user
    to know whether Rust actually ran?
-4. Do we need one more real-world corpus before implementation, or is the
-   current M4 quorum enough for lab-only opt-in prefer?
+4. What additional real-world corpus would justify expanding prefer beyond the
+   fixed required corpus set?
 5. Should single-corpus quorum CLI behavior be cleaned up before M5
    implementation, or can it remain a collector polish item?
 
