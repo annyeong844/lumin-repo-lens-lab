@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { MODULE_EDGE_SCANNER_POLICY_VERSION } from "../_lib/js-module-edge-scanner.mjs";
 import { createTempRepoFixture } from "./_helpers/temp-repo-fixture.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -144,6 +145,56 @@ process.stdin.on("end", () => {
     chmodSync(command, 0o755);
   }
   return command;
+}
+
+function cleanQuorumEvidence() {
+  const requiredCorpora = [
+    "geulbat-phase1",
+    "lab-self",
+    "stable-source-clean",
+    "nuxt-main",
+  ];
+  const policyVersion = MODULE_EDGE_SCANNER_POLICY_VERSION;
+  const rustSidecarSourceCommit = "87116819c23d1e1adfbfca5def44552856e4f464";
+  const runs = Object.fromEntries(
+    requiredCorpora.map((corpus) => [
+      corpus,
+      [0, 1, 2].map((index) => ({
+        labSourceCommit: `lab-${index}`,
+        rustSidecarSourceCommit,
+        rustSidecarBinary: "experiments/rust-sidecar/topology-scanner/target/release/lumin-topology-scanner.exe",
+        command: `node measure-topology.mjs --rust-topology-prefer-gate-corpus ${corpus}`,
+        corpusRoot: `C:/corpora/${corpus}`,
+        cacheMode: "no-incremental",
+        fileCount: 1,
+        filesCompared: 1,
+        mismatches: 0,
+        wrapperElapsedMs: 10 + index,
+        sidecarElapsedMs: 1,
+        sidecarStatus: "matched",
+        policyVersion,
+        machineOs: "Microsoft Windows NT 10.0.26200.0",
+      })),
+    ]),
+  );
+  return {
+    schemaVersion: 1,
+    requiredCorpora,
+    policyVersion,
+    rustSidecarSourceCommit,
+    runs,
+  };
+}
+
+function normalizeTopologyForGateContract(topology) {
+  const normalized = structuredClone(topology);
+  delete normalized.meta.rustTopologyPreferGate;
+  normalized.meta.generated = "<generated>";
+  if (normalized.meta.rustTopologyScanner) {
+    normalized.meta.rustTopologyScanner.elapsedMs = "<elapsed>";
+  }
+  normalized.summary.performance.scannerMs = "<scannerMs>";
+  return normalized;
 }
 
 describe("topology producer cross-submodule edge artifact", () => {
@@ -335,6 +386,107 @@ describe("topology producer cross-submodule edge artifact", () => {
       expect(topology.meta.rustTopologyScanner.sidecarTiming).toMatchObject({
         files: topology.meta.rustTopologyScanner.filesCompared,
         elapsedMs: 1,
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30000);
+
+  it("records dry-run Rust prefer gate metadata without changing topology artifacts", () => {
+    const fixture = createTempRepoFixture({
+      prefix: "vitest-topology-rust-prefer-gate-",
+      packageJson: { name: "rust-prefer-gate-fx", type: "module" },
+    });
+    try {
+      fixture.write("src/empty.mjs", "export const value = 1;\n");
+      const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
+      const quorumPath = path.join(fixture.root, "rust-topology-prefer-quorum.json");
+      writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(), null, 2));
+
+      const commonArgs = [
+        "--no-incremental",
+        "--rust-topology-scanner",
+        "compare",
+        "--rust-topology-scanner-bin",
+        sidecar,
+        "--rust-topology-timeout-ms",
+        "1000",
+      ];
+      const gateOffOutput = fixture.mkdir("gate-off");
+      const gateOnOutput = fixture.mkdir("gate-on");
+
+      const gateOff = runTopologyWithStderr(fixture, {
+        output: gateOffOutput,
+        args: commonArgs,
+      }).topology;
+      const gateOn = runTopologyWithStderr(fixture, {
+        output: gateOnOutput,
+        args: [
+          ...commonArgs,
+          "--rust-topology-prefer-gate",
+          "--rust-topology-prefer-gate-corpus",
+          "lab-self",
+          "--rust-topology-prefer-quorum",
+          quorumPath,
+        ],
+      }).topology;
+
+      expect(gateOn.meta.rustTopologyPreferGate).toMatchObject({
+        status: "eligible",
+        mode: "compare",
+        scope: "run",
+        preferEnabled: false,
+        jsRemainsOracle: true,
+        reason: "all-required-corpora-matched",
+        currentCorpus: "lab-self",
+        currentCorpusSource: "cli",
+        cacheMode: "no-incremental",
+        mismatches: 0,
+        filesCompared: 1,
+        sidecarStatus: "matched",
+      });
+      expect(normalizeTopologyForGateContract(gateOn)).toEqual(
+        normalizeTopologyForGateContract(gateOff),
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30000);
+
+  it("records blocked Rust prefer gate metadata when quorum evidence is missing", () => {
+    const fixture = createTempRepoFixture({
+      prefix: "vitest-topology-rust-prefer-gate-missing-quorum-",
+      packageJson: { name: "rust-prefer-gate-missing-quorum-fx", type: "module" },
+    });
+    try {
+      fixture.write("src/empty.mjs", "export const value = 1;\n");
+      const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
+      const missingQuorumPath = path.join(fixture.root, "missing-quorum.json");
+
+      const topology = runTopologyWithStderr(fixture, {
+        args: [
+          "--no-incremental",
+          "--rust-topology-scanner",
+          "compare",
+          "--rust-topology-scanner-bin",
+          sidecar,
+          "--rust-topology-timeout-ms",
+          "1000",
+          "--rust-topology-prefer-gate",
+          "--rust-topology-prefer-gate-corpus",
+          "lab-self",
+          "--rust-topology-prefer-quorum",
+          missingQuorumPath,
+        ],
+      }).topology;
+
+      expect(topology.meta.rustTopologyScanner.status).toBe("matched");
+      expect(topology.meta.rustTopologyPreferGate).toMatchObject({
+        status: "blocked-corpus-quorum",
+        reason: "quorum-evidence-missing",
+        currentCorpus: "lab-self",
+        preferEnabled: false,
+        jsRemainsOracle: true,
       });
     } finally {
       fixture.cleanup();

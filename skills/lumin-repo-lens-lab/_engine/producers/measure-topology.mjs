@@ -6,6 +6,8 @@
 //        [--include-type-edges] [--cache-root <dir>] [--no-incremental] \
 //        [--clear-incremental-cache] [--rust-topology-scanner off|compare] \
 //        [--rust-topology-scanner-bin <path>] [--rust-topology-timeout-ms <ms>] \
+//        [--rust-topology-prefer-gate] [--rust-topology-prefer-gate-corpus <name>] \
+//        [--rust-topology-prefer-quorum <file>] \
 //        [--verbose]
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -25,6 +27,11 @@ import {
   scanJsModuleEdgesFast,
 } from '../lib/js-module-edge-scanner.mjs';
 import { compareRustTopologyScanner } from '../lib/rust-topology-scanner.mjs';
+import {
+  evaluateRustTopologyPreferGate,
+  readRustTopologyPreferQuorum,
+  RUST_TOPOLOGY_PREFER_QUORUM_PATH,
+} from '../lib/rust-topology-prefer-gate.mjs';
 import {
   loadCache,
   saveCache,
@@ -56,6 +63,9 @@ const cli = parseCliArgs({
   'rust-topology-scanner': { type: 'string', default: 'off' },
   'rust-topology-scanner-bin': { type: 'string' },
   'rust-topology-timeout-ms': { type: 'string', default: '60000' },
+  'rust-topology-prefer-gate': { type: 'boolean', default: false },
+  'rust-topology-prefer-gate-corpus': { type: 'string' },
+  'rust-topology-prefer-quorum': { type: 'string' },
 });
 const { root, output, verbose } = cli;
 const phaseTimer = createProducerPhaseTimer({
@@ -498,6 +508,20 @@ const rustScannerComparison = compareRustTopologyScanner({
   jsResults: rustComparableJsResults,
   timeoutMs: Number(cli.raw['rust-topology-timeout-ms'] ?? 60000),
 });
+const rustPreferGateEnabled = cli.raw['rust-topology-prefer-gate'] === true;
+const rustPreferQuorumPath = path.resolve(
+  cli.raw['rust-topology-prefer-quorum'] ?? RUST_TOPOLOGY_PREFER_QUORUM_PATH,
+);
+const rustTopologyPreferGate = rustPreferGateEnabled
+  ? evaluateRustTopologyPreferGate({
+      mode: rustScannerMode,
+      currentCorpus: cli.raw['rust-topology-prefer-gate-corpus'],
+      rustTopologyScanner: rustScannerComparison.metadata,
+      quorumEvidence: readRustTopologyPreferQuorum(rustPreferQuorumPath),
+      quorumEvidencePath: rustPreferQuorumPath,
+      policyVersion: MODULE_EDGE_SCANNER_POLICY_VERSION,
+    })
+  : null;
 
 const artifact = {
   meta: {
@@ -506,6 +530,9 @@ const artifact = {
     rootPkgName: repoMode.rootPkgName,
     ...(rustScannerComparison.metadata
       ? { rustTopologyScanner: rustScannerComparison.metadata }
+      : {}),
+    ...(rustTopologyPreferGate
+      ? { rustTopologyPreferGate }
       : {}),
     // P1-2 preparatory: `complete: true` is the producer's explicit
     // promise that `nodes` enumerates every file that `collectFiles()`
