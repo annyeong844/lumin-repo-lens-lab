@@ -19,7 +19,8 @@ const REQUIRED_QUORUM_RUN_FIELDS = [
   'fileCount',
   'filesCompared',
   'mismatches',
-  'wrapperElapsedMs',
+  'commandWallElapsedMs',
+  'scannerBridgeElapsedMs',
   'sidecarElapsedMs',
   'sidecarStatus',
   'policyVersion',
@@ -84,9 +85,21 @@ function hasRequiredRunFields(run) {
   });
 }
 
+function hasCleanSourceDiagnostics(run) {
+  const collector = run?.collector;
+  if (!collector || typeof collector !== 'object') return false;
+  return (
+    collector.sourceDirty === false &&
+    collector.workingTreeClean === true &&
+    collector.labWorkingTreeClean === true &&
+    collector.rustSidecarWorkingTreeClean === true
+  );
+}
+
 function cleanRunMatches(run, rustSidecarSourceCommit, policyVersion) {
   return (
     hasRequiredRunFields(run) &&
+    hasCleanSourceDiagnostics(run) &&
     run?.rustSidecarSourceCommit === rustSidecarSourceCommit &&
     run?.cacheMode === 'no-incremental' &&
     run?.mismatches === 0 &&

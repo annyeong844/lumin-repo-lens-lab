@@ -20,11 +20,18 @@ function cleanRun(corpus, index = 0) {
     fileCount: 10 + index,
     filesCompared: 10 + index,
     mismatches: 0,
-    wrapperElapsedMs: 100 + index,
+    commandWallElapsedMs: 1000 + index,
+    scannerBridgeElapsedMs: 100 + index,
     sidecarElapsedMs: 10 + index,
     sidecarStatus: 'matched',
     policyVersion: MODULE_EDGE_SCANNER_POLICY_VERSION,
     machineOs: 'Microsoft Windows NT 10.0.26200.0',
+    collector: {
+      workingTreeClean: true,
+      sourceDirty: false,
+      labWorkingTreeClean: true,
+      rustSidecarWorkingTreeClean: true,
+    },
   };
 }
 
@@ -258,6 +265,29 @@ describe('Rust topology prefer gate', () => {
       },
       cleanRun('nuxt-main', 3),
     ];
+
+    const gate = evaluateRustTopologyPreferGate({
+      mode: 'compare',
+      currentCorpus: 'lab-self',
+      rustTopologyScanner: matchedScanner(),
+      quorumEvidence: quorum,
+    });
+
+    expect(gate.status).toBe('blocked-corpus-quorum');
+    expect(gate.reason).toBe('required-corpus-history-incomplete');
+    expect(gate.incompleteCorpora).toEqual(['nuxt-main']);
+  });
+
+  it('does not count dirty-source quorum runs as clean evidence', () => {
+    const quorum = cleanQuorum();
+    quorum.runs['nuxt-main'][2] = {
+      ...quorum.runs['nuxt-main'][2],
+      collector: {
+        ...quorum.runs['nuxt-main'][2].collector,
+        sourceDirty: true,
+        workingTreeClean: false,
+      },
+    };
 
     const gate = evaluateRustTopologyPreferGate({
       mode: 'compare',
