@@ -10,7 +10,11 @@ import {
   defaultEvidence,
   normalizeRootMap,
   parseCorpusRootEntry,
+  pathExists,
   readOrCreateQuorumEvidence,
+  recordRustTopologyQuorum,
+  recordRustTopologyQuorumBatch,
+  renderQuorumSummary,
   validateRunRecord,
 } from '../_lib/rust-topology-quorum.mjs';
 import {
@@ -173,5 +177,124 @@ describe('Rust topology quorum collector core', () => {
       'geulbat-phase1',
       completeRun(),
     )).toThrow(/rustSidecarSourceCommit differs/);
+  });
+
+  it('records every required corpus in all-required batch mode', async () => {
+    const dir = tempDir('lumin-quorum-all-required');
+    const roots = REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA.map(
+      (corpus) => `${corpus}=C:/corpora/${corpus}`,
+    );
+
+    const result = await recordRustTopologyQuorumBatch({
+      allRequired: true,
+      corpusRoots: roots,
+      quorumPath: path.join(dir, 'quorum.json'),
+      outputRoot: path.join(dir, 'outputs'),
+      rustSidecarBinary: 'target/release/lumin-topology-scanner.exe',
+      rustSidecarSourceCommit: 'rust-commit',
+      labSourceCommit: 'lab-commit',
+      machineOs: 'Microsoft Windows NT 10.0.26200.0',
+      now: () => '2026-06-15T18:48:28+09:00',
+      sourceState: () => completeRun().collector,
+      runner: async ({ command }) => ({
+        exitCode: 0,
+        command,
+        commandWallElapsedMs: 50,
+        topology: matchedTopology(),
+      }),
+    });
+
+    expect(Object.keys(result.evidence.runs).sort()).toEqual(
+      [...REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA].sort(),
+    );
+    expect(result.commands).toHaveLength(REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA.length);
+  });
+
+  it('records completed compare failures when scanner metadata exists', async () => {
+    const dir = tempDir('lumin-quorum-completed-failure');
+    const failedTopology = matchedTopology();
+    failedTopology.meta.rustTopologyScanner = {
+      ...failedTopology.meta.rustTopologyScanner,
+      status: 'risk-mismatch',
+      mismatches: 1,
+    };
+
+    const result = await recordRustTopologyQuorum({
+      corpus: 'geulbat-phase1',
+      root: 'C:/corpora/geulbat-phase1',
+      quorumPath: path.join(dir, 'quorum.json'),
+      outputRoot: path.join(dir, 'outputs'),
+      rustSidecarBinary: 'target/release/lumin-topology-scanner.exe',
+      rustSidecarSourceCommit: 'rust-commit',
+      labSourceCommit: 'lab-commit',
+      machineOs: 'Microsoft Windows NT 10.0.26200.0',
+      now: () => '2026-06-15T18:48:28+09:00',
+      sourceState: () => completeRun().collector,
+      runner: async () => ({
+        exitCode: 0,
+        command: 'node measure-topology.mjs --no-incremental --clear-incremental-cache --rust-topology-scanner compare',
+        commandWallElapsedMs: 50,
+        topology: failedTopology,
+      }),
+    });
+
+    expect(result.record).toMatchObject({
+      sidecarStatus: 'risk-mismatch',
+      mismatches: 1,
+    });
+  });
+
+  it('does not append quorum evidence when the runner hard-fails before scanner metadata exists', async () => {
+    const dir = tempDir('lumin-quorum-hard-failure');
+    const quorumPath = path.join(dir, 'quorum.json');
+
+    await expect(recordRustTopologyQuorum({
+      corpus: 'geulbat-phase1',
+      root: 'C:/corpora/geulbat-phase1',
+      quorumPath,
+      outputRoot: path.join(dir, 'outputs'),
+      rustSidecarBinary: 'target/release/lumin-topology-scanner.exe',
+      rustSidecarSourceCommit: 'rust-commit',
+      labSourceCommit: 'lab-commit',
+      machineOs: 'Microsoft Windows NT 10.0.26200.0',
+      sourceState: () => completeRun().collector,
+      runner: async () => ({
+        exitCode: 1,
+        command: 'node measure-topology.mjs --no-incremental --clear-incremental-cache --rust-topology-scanner compare',
+        commandWallElapsedMs: 10,
+        topology: null,
+      }),
+    })).rejects.toThrow(/hard measure-topology failure/);
+
+    expect(pathExists(quorumPath)).toBe(false);
+  });
+
+  it('renders a summary with M3 gate verification and oracle status', () => {
+    const evidence = {
+      ...defaultEvidence('rust-commit'),
+      runs: Object.fromEntries(
+        REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA.map((corpus) => [
+          corpus,
+          [completeRun(), completeRun(), completeRun()],
+        ]),
+      ),
+    };
+
+    const summary = renderQuorumSummary({
+      evidence,
+      gateCheck: {
+        command: 'node measure-topology.mjs --rust-topology-prefer-gate --rust-topology-prefer-quorum baselines/rust-topology-prefer-quorum.json',
+        status: 'eligible',
+        preferEnabled: false,
+        jsRemainsOracle: true,
+      },
+      commands: ['node scripts/record-rust-topology-quorum.mjs --all-required --repeat 3'],
+    });
+
+    expect(summary).toContain('# M4 Rust Topology Quorum Evidence');
+    expect(summary).toContain('node measure-topology.mjs --rust-topology-prefer-gate');
+    expect(summary).toContain('`status`: `eligible`');
+    expect(summary).toContain('`preferEnabled`: `false`');
+    expect(summary).toContain('`jsRemainsOracle`: `true`');
   });
 });

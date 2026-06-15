@@ -234,3 +234,167 @@ export function defaultEvidence(rustSidecarSourceCommit) {
     runs: {},
   };
 }
+
+function nextRunOutputDir(outputRoot, corpus, runIndex) {
+  return path.join(outputRoot, corpus, `run-${String(runIndex).padStart(3, '0')}`);
+}
+
+function isSummaryCleanRun(run) {
+  const collector = run?.collector;
+  return (
+    run?.sidecarStatus === 'matched' &&
+    run?.mismatches === 0 &&
+    run?.cacheMode === 'no-incremental' &&
+    collector?.sourceDirty === false &&
+    collector?.workingTreeClean === true &&
+    collector?.labWorkingTreeClean === true &&
+    collector?.rustSidecarWorkingTreeClean === true
+  );
+}
+
+function latestThreeStatus(runs = []) {
+  const recent = runs.slice(-3);
+  const clean = recent.length === 3 && recent.every(isSummaryCleanRun);
+  return clean ? 'clean' : 'incomplete';
+}
+
+export async function recordRustTopologyQuorum({
+  corpus,
+  root,
+  quorumPath = RUST_TOPOLOGY_PREFER_QUORUM_PATH,
+  outputRoot = DEFAULT_M4_QUORUM_OUTPUT_ROOT,
+  rustSidecarBinary,
+  rustSidecarSourceCommit,
+  labSourceCommit,
+  machineOs,
+  timeoutMs = 60000,
+  now = () => new Date().toISOString(),
+  runner,
+  sourceState,
+} = {}) {
+  if (!runner) throw new Error('runner is required for quorum recording');
+  if (!sourceState) throw new Error('sourceState probe is required for quorum evidence');
+  const rootMap = normalizeRootMap({ corpus, root });
+  if (!rootMap[corpus]) throw new Error(`missing root for corpus: ${corpus}`);
+  const evidence = readOrCreateQuorumEvidence(quorumPath, rustSidecarSourceCommit);
+  validateQuorumEvidence(evidence);
+  const existingRuns = evidence.runs?.[corpus] ?? [];
+  const outputDir = nextRunOutputDir(outputRoot, corpus, existingRuns.length + 1);
+  mkdirSync(outputDir, { recursive: true });
+  const args = [
+    'measure-topology.mjs',
+    '--root',
+    rootMap[corpus],
+    '--output',
+    outputDir,
+    '--no-incremental',
+    '--clear-incremental-cache',
+    '--rust-topology-scanner',
+    'compare',
+    '--rust-topology-scanner-bin',
+    rustSidecarBinary,
+    '--rust-topology-timeout-ms',
+    String(timeoutMs),
+  ];
+  const command = ['node', ...args].join(' ');
+  const run = await runner({ corpus, root: rootMap[corpus], outputDir, command, args, timeoutMs });
+  if (run.exitCode !== 0 && !run.topology?.meta?.rustTopologyScanner) {
+    throw new Error('hard measure-topology failure: no scanner metadata');
+  }
+  const record = buildRunRecordFromTopology({
+    corpus,
+    corpusRoot: rootMap[corpus],
+    outputDir,
+    topology: run.topology,
+    command: run.command ?? command,
+    commandWallElapsedMs: run.commandWallElapsedMs,
+    labSourceCommit,
+    rustSidecarSourceCommit,
+    rustSidecarBinary,
+    machineOs,
+    recordedAt: now(),
+    collector: sourceState(),
+  });
+  const updated = appendRunRecord(evidence, corpus, record);
+  writeJsonAtomic(quorumPath, updated);
+  return { evidence: updated, record, commands: [run.command ?? command] };
+}
+
+export async function recordRustTopologyQuorumBatch({
+  allRequired = false,
+  corpus,
+  root,
+  corpusRoots = [],
+  rootsJson,
+  repeat = 1,
+  ...rest
+} = {}) {
+  const rootMap = normalizeRootMap({
+    allRequired,
+    corpus,
+    root,
+    corpusRoots,
+    rootsJson,
+  });
+  if (Object.keys(rootMap).length === 0) {
+    throw new Error('no quorum corpora selected; pass --corpus/--root or --all-required roots');
+  }
+  const commands = [];
+  let lastResult = null;
+  for (let i = 0; i < repeat; i++) {
+    for (const [name, corpusRoot] of Object.entries(rootMap)) {
+      lastResult = await recordRustTopologyQuorum({
+        corpus: name,
+        root: corpusRoot,
+        ...rest,
+      });
+      commands.push(...(lastResult.commands ?? []));
+    }
+  }
+  return { ...lastResult, commands, rootMap };
+}
+
+export function renderQuorumSummary({ evidence, gateCheck, commands = [] } = {}) {
+  validateQuorumEvidence(evidence);
+  const lines = [
+    '# M4 Rust Topology Quorum Evidence',
+    '',
+    `Date: ${new Date().toISOString().slice(0, 10)}`,
+    '',
+    '## Decision',
+    '',
+    'This records quorum evidence for the Rust topology scanner. `prefer` remains disabled and JS remains authoritative.',
+    '',
+    '## Commands',
+    '',
+    ...commands.map((command) => `- \`${command}\``),
+    '',
+    '## Corpus Runs',
+    '',
+    '| Corpus | Runs | Latest Three | Files Compared | Mismatches | Command Wall ms | Scanner Bridge ms | Sidecar ms |',
+    '| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |',
+  ];
+  for (const corpus of REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA) {
+    const runs = evidence.runs?.[corpus] ?? [];
+    const last = runs.at(-1) ?? {};
+    lines.push(`| \`${corpus}\` | ${runs.length} | ${latestThreeStatus(runs)} | ${last.filesCompared ?? 0} | ${last.mismatches ?? 0} | ${last.commandWallElapsedMs ?? 0} | ${last.scannerBridgeElapsedMs ?? 0} | ${last.sidecarElapsedMs ?? 0} |`);
+  }
+  lines.push(
+    '',
+    '## M3 Gate Verification',
+    '',
+    'Command:',
+    '',
+    '```bash',
+    gateCheck?.command ?? '',
+    '```',
+    '',
+    `- \`status\`: \`${gateCheck?.status ?? 'unknown'}\``,
+    `- \`preferEnabled\`: \`${String(gateCheck?.preferEnabled)}\``,
+    `- \`jsRemainsOracle\`: \`${String(gateCheck?.jsRemainsOracle)}\``,
+    '',
+    'Private CI was not used.',
+    '',
+  );
+  return lines.join('\n');
+}
