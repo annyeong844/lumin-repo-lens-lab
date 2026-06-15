@@ -261,6 +261,12 @@ required-field list to require `commandWallElapsedMs` and
 `scannerBridgeElapsedMs` instead. That gate update is allowed because it changes
 only quorum evidence validation, not topology output.
 
+M4 must also update the M3 gate clean-run predicate to reject dirty-source
+diagnostic runs. A run with `collector.sourceDirty === true`,
+`collector.workingTreeClean !== true`, or more specific dirty flags such as
+`collector.labWorkingTreeClean !== true` / `collector.rustSidecarWorkingTreeClean !== true`
+must not contribute to the latest-three clean streak.
+
 ## Summary Artifact
 
 M4 should also write:
@@ -343,8 +349,8 @@ Test fixtures should be small but real:
 - use minimal `topology.json` files with actual `meta.rustTopologyScanner`
   shapes the bridge can produce
 - use temporary directories for quorum output
-- use a fake `measure-topology` runner injected into the collector rather than
-  creating tests that fail only because the script file does not exist
+- use a fake `measure-topology` runner injected into the collector so tests
+  exercise collector behavior instead of scaffolding presence
 
 ## Artifact Contract
 
