@@ -21,6 +21,7 @@ Typical lab surfaces:
 
 Current lab notes:
 
+- [M4 Rust topology quorum evidence design - 2026-06-15](m4-rust-topology-quorum-evidence-design-2026-06-15.md)
 - [M3 Rust topology prefer gate design - 2026-06-15](m3-rust-topology-prefer-gate-design-2026-06-15.md)
 - [Self-audit health note - 2026-04-26](self-audit-health-2026-04-26.md)
 - [Suyeon dead export dogfood note - 2026-04-26](suyeon-dead-export-dogfood-2026-04-26.md)
