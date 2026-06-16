@@ -21,6 +21,7 @@ Typical lab surfaces:
 
 Current lab notes:
 
+- [M6 Rust source health design - 2026-06-16](m6-rust-source-health-design-2026-06-16.md)
 - [M5 Rust topology prefer closeout - 2026-06-16](../../baselines/m5-rust-topology-prefer-closeout-2026-06-16.md)
 - [M5 Rust topology prefer design - 2026-06-15](m5-rust-topology-prefer-design-2026-06-15.md)
 - [M4 Rust topology quorum evidence design - 2026-06-15](m4-rust-topology-quorum-evidence-design-2026-06-15.md)
