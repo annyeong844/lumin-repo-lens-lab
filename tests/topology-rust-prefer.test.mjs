@@ -538,6 +538,51 @@ describe("topology Rust scanner and prefer integration", () => {
     }
   }, 30000);
 
+  it("blocks visibly when prefer quorum evidence is malformed", () => {
+    const fixture = createTempRepoFixture({
+      prefix: "vitest-topology-rust-prefer-malformed-quorum-",
+      packageJson: { name: "rust-prefer-malformed-quorum-fx", type: "module" },
+    });
+    try {
+      fixture.write("src/empty.mjs", "export const value = 1;\n");
+      const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
+      const malformedQuorumPath = path.join(fixture.root, "malformed-quorum.json");
+      writeFileSync(malformedQuorumPath, "{ bad json", "utf8");
+
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
+        args: [
+          "--no-incremental",
+          "--clear-incremental-cache",
+          "--rust-topology-scanner",
+          "prefer",
+          "--rust-topology-scanner-bin",
+          sidecar,
+          "--rust-sidecar-source-commit",
+          FAKE_RUST_SIDECAR_COMMIT,
+          "--rust-topology-prefer-gate",
+          "--rust-topology-prefer-gate-corpus",
+          "lab-self",
+          "--rust-topology-prefer-quorum",
+          malformedQuorumPath,
+        ],
+      });
+
+      expect(result.topology.meta.rustTopologyPreferGate).toMatchObject({
+        status: "blocked-corpus-quorum",
+        reason: "quorum-evidence-invalid",
+      });
+      expect(result.topology.meta.rustTopologyPreferGate.quorumReadError).toMatchObject({
+        reason: "quorum-evidence-invalid",
+        filePath: malformedQuorumPath,
+      });
+      expectBlockedPrefer(result, "blocked-quorum-invalid");
+      expect(result.topology.summary.files).toBe(1);
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30000);
+
   it("blocks when the M3 prefer gate is not eligible", () => {
     const fixture = createTempRepoFixture({
       prefix: "vitest-topology-rust-prefer-ineligible-gate-",

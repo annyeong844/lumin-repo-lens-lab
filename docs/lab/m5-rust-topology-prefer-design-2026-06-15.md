@@ -123,6 +123,12 @@ cannot:
 - `prefer` must be rejected if the M3 gate is not `eligible`;
 - `off` and `compare` must remain available as instant rollback.
 
+Packaged skill runs should pass `--rust-topology-prefer-quorum` explicitly.
+The maintainer checkout has a lab-root default quorum path, but the public
+package does not treat packaged baseline evidence as an implicit approval
+stamp. If a packaged run cannot locate the supplied quorum evidence, `prefer`
+must block visibly rather than guessing from package-local files.
+
 ## Gate Requirements
 
 Before Rust output may replace JS topology output for a run, all of these must
@@ -277,6 +283,7 @@ extends the vocabulary:
 - `not-requested`
 - `gate-eligible-artifact-guard-passed`
 - `blocked-quorum-missing`
+- `blocked-quorum-invalid`
 - `blocked-gate-missing`
 - `blocked-gate-ineligible`
 - `blocked-binary-not-found`

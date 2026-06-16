@@ -144,6 +144,21 @@ describe('Rust topology prefer gate', () => {
     }
   });
 
+  it('keeps sidecar failure classification when failure metadata has no policyVersion', () => {
+    const scanner = matchedScanner({ status: 'binary-not-found' });
+    delete scanner.policyVersion;
+
+    const gate = evaluateRustTopologyPreferGate({
+      mode: 'compare',
+      currentCorpus: 'lab-self',
+      rustTopologyScanner: scanner,
+      quorumEvidence: cleanQuorum(),
+    });
+
+    expect(gate.status).toBe('blocked-sidecar-failure');
+    expect(gate.reason).toBe('binary-not-found');
+  });
+
   it('blocks unknown scanner statuses instead of treating quorum as enough', () => {
     const gate = evaluateRustTopologyPreferGate({
       mode: 'compare',

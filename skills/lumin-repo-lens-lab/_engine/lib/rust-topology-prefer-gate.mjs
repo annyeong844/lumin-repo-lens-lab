@@ -81,7 +81,13 @@ export function readRustTopologyPreferQuorum(filePath) {
     });
   } catch (error) {
     if (error?.code === 'ENOENT') return null;
-    throw error;
+    return {
+      readError: {
+        reason: 'quorum-evidence-invalid',
+        message: error?.cause?.message ?? error?.message ?? 'unknown quorum read failure',
+        filePath,
+      },
+    };
   }
 }
 
@@ -202,19 +208,6 @@ export function evaluateRustTopologyPreferGate({
     });
   }
 
-  if (rustTopologyScanner.policyVersion !== policyVersion) {
-    return baseGate({
-      mode,
-      currentCorpus,
-      rustTopologyScanner,
-      quorumEvidence,
-      policyVersion,
-      status: 'blocked-policy-version',
-      reason: 'policy-version-mismatch',
-      extra: gateExtra,
-    });
-  }
-
   const mismatchStatusMap = {
     'count-mismatch': 'blocked-count-mismatch',
     'edge-mismatch': 'blocked-edge-mismatch',
@@ -242,6 +235,19 @@ export function evaluateRustTopologyPreferGate({
       policyVersion,
       status: 'blocked-sidecar-failure',
       reason: rustTopologyScanner.status,
+      extra: gateExtra,
+    });
+  }
+
+  if (rustTopologyScanner.policyVersion !== policyVersion) {
+    return baseGate({
+      mode,
+      currentCorpus,
+      rustTopologyScanner,
+      quorumEvidence,
+      policyVersion,
+      status: 'blocked-policy-version',
+      reason: 'policy-version-mismatch',
       extra: gateExtra,
     });
   }
@@ -295,6 +301,19 @@ export function evaluateRustTopologyPreferGate({
       status: 'blocked-corpus-quorum',
       reason: 'current-corpus-not-required',
       extra: gateExtra,
+    });
+  }
+
+  if (quorumEvidence?.readError) {
+    return baseGate({
+      mode,
+      currentCorpus,
+      rustTopologyScanner,
+      quorumEvidence,
+      policyVersion,
+      status: 'blocked-corpus-quorum',
+      reason: quorumEvidence.readError.reason,
+      extra: { ...gateExtra, quorumReadError: quorumEvidence.readError },
     });
   }
 
