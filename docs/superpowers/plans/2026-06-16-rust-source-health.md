@@ -586,7 +586,7 @@ fn classify_path(path: &str) -> Vec<String> {
 
 Add the remaining helper functions in the same file:
 
-- `count_items(root)`: count syntax nodes whose kind is one of `FN`, `STRUCT`, `ENUM`, `TRAIT`, `IMPL`, `MOD`, `CONST`, `STATIC`, `TYPE_ALIAS`.
+- `count_items(root)`: count syntax nodes whose kind is one of `FN`, `STRUCT`, `ENUM`, `TRAIT`, `IMPL`, `MODULE`, `CONST`, `STATIC`, `TYPE_ALIAS`.
 - `function_is_unsafe(node)`: return true when an `FN` node has a direct child token with `SyntaxKind::UNSAFE_KW`.
 - `is_unsafe_block_expr(node)`: return true for a block expression whose direct children include `SyntaxKind::UNSAFE_KW`; do not depend on a speculative unsafe-expression syntax kind.
 - `line_span(line_index, range)`: compute inclusive line span from `LineIndex::location`; use `range.end() - 1` for the end point when the range is non-empty so a node ending at the next line start does not count an extra line.
