@@ -14,6 +14,8 @@ public package claims include them.
 ## Commits
 
 - Source-side implementation commit: `90f271e` (`Harden Rust topology prefer gate`)
+- Source-side closeout polish commit: `d6a99cc` (`Close out M5 prefer polish`)
+- Closeout evidence clarification commit: `9bf0062` (`Clarify M5 closeout evidence`)
 - Public package PR: `annyeong844/lumin-repo-lens-lab#2`
 - Public package head commit: `6864890`
 - Public package merge commit: `bdd5c3f`
@@ -76,7 +78,7 @@ Implemented as source-side follow-up after the package closeout:
   metadata lacks `policyVersion`;
 - packaged skill quorum behavior is documented as explicit-path driven.
 
-Validation for the source-side follow-up:
+Validation for the runtime source-side follow-up (`d6a99cc`):
 
 - targeted Vitest: `3 files / 51 tests passed`
 - M5 surrounding Vitest: `6 files / 75 tests passed`
@@ -84,4 +86,12 @@ Validation for the source-side follow-up:
 - `node scripts/check-drift.mjs` passed
 - `node scripts/update-test-doc.mjs --check` passed
 - `git diff --check` passed, CRLF warnings only
-- `fallback-js|fallbackUsed` grep found no matches
+- legacy fallback reason grep over runtime and test source paths found no matches;
+  closeout notes were excluded from that grep.
+
+Additional closeout clarification validation (`9bf0062`):
+
+- `node --check tests/rust-topology-prefer.test.mjs` passed
+- targeted Vitest: `3 files / 52 tests passed`
+- M5 surrounding Vitest: `6 files / 76 tests passed`
+- `git diff --check` passed, CRLF warnings only
