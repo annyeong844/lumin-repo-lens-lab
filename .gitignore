@@ -3,6 +3,7 @@ output/
 review-output*/
 dist/
 plugins/auditing-repo-structure/
+experiments/rust-sidecar/*/target/
 # Lab / generated working surfaces
 p6-corpus/
 canonical-draft/*.md
