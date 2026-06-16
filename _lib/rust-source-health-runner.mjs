@@ -13,6 +13,8 @@ import { TextDecoder } from 'node:util';
 import { atomicWrite } from './atomic-write.mjs';
 import {
   RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES,
+  RUST_SOURCE_HEALTH_DEFAULT_EXCLUDE,
+  RUST_SOURCE_HEALTH_DEFAULT_INCLUDE,
   RUST_SOURCE_HEALTH_PARSER,
   RUST_SOURCE_HEALTH_SCHEMA_VERSION,
   sortRustHealthArtifact,
@@ -21,8 +23,10 @@ import {
   validateRustHealthSidecarArtifact,
 } from './rust-source-health-schema.mjs';
 
-const DEFAULT_INCLUDE = ['**/*.rs'];
-const DEFAULT_EXCLUDE = ['target/**', 'vendor/**'];
+export class RustSourceHealthConfigError extends Error {}
+
+const DEFAULT_INCLUDE = RUST_SOURCE_HEALTH_DEFAULT_INCLUDE;
+const DEFAULT_EXCLUDE = RUST_SOURCE_HEALTH_DEFAULT_EXCLUDE;
 const UTF8_DECODER = new TextDecoder('utf-8', {
   fatal: true,
   ignoreBOM: true,
@@ -50,12 +54,12 @@ function assertSafeRelativePath(relativePath) {
     path.isAbsolute(relativePath) ||
     relativePath.startsWith('\\') ||
     relativePath.includes('\\') ||
-    /^[A-Za-z]:/.test(relativePath) ||
+    relativePath.includes(':') ||
     relativePath.split('/').some((segment) =>
       segment.length === 0 || segment === '.' || segment === '..'
     )
   ) {
-    throw new Error(`unsafe rust source health path: ${relativePath}`);
+    throw new RustSourceHealthConfigError(`unsafe rust source health path: ${relativePath}`);
   }
 }
 
@@ -71,7 +75,9 @@ function assertDefaultPathPolicy({ include, exclude }) {
     !sameStringList(include, DEFAULT_INCLUDE) ||
     !sameStringList(exclude, DEFAULT_EXCLUDE)
   ) {
-    throw new Error('custom rust source health path policy is not supported yet');
+    throw new RustSourceHealthConfigError(
+      'custom rust source health path policy is not supported yet',
+    );
   }
 }
 
@@ -133,13 +139,13 @@ export function collectRustSourceHealthInput({
   threadCount,
   workerStackBytes = RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES,
 } = {}) {
-  if (!root) throw new Error('root is required');
+  if (!root) throw new RustSourceHealthConfigError('root is required');
   assertDefaultPathPolicy({ include, exclude });
   if (
     !Number.isInteger(workerStackBytes) ||
     workerStackBytes < RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES
   ) {
-    throw new Error(
+    throw new RustSourceHealthConfigError(
       `workerStackBytes must be an integer >= ${RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES}`,
     );
   }
@@ -147,13 +153,22 @@ export function collectRustSourceHealthInput({
     threadCount !== undefined &&
     (!Number.isInteger(threadCount) || threadCount <= 0)
   ) {
-    throw new Error('threadCount must be a positive integer when provided');
+    throw new RustSourceHealthConfigError(
+      'threadCount must be a positive integer when provided',
+    );
   }
 
   const rootAbs = path.resolve(root);
+  if (!existsSync(rootAbs)) {
+    throw new RustSourceHealthConfigError(
+      `rust source health root not found: ${rootAbs}`,
+    );
+  }
   const rootStat = lstatSync(rootAbs);
   if (!rootStat.isDirectory()) {
-    throw new Error(`rust source health root is not a directory: ${rootAbs}`);
+    throw new RustSourceHealthConfigError(
+      `rust source health root is not a directory: ${rootAbs}`,
+    );
   }
 
   const files = [];
@@ -185,12 +200,12 @@ export function collectRustSourceHealthInput({
 }
 
 export function runRustSourceHealthSidecar({ binary, input, timeoutMs = 60000 } = {}) {
-  if (!binary) throw new Error('rust source health binary is required');
+  if (!binary) throw new RustSourceHealthConfigError('rust source health binary is required');
   if (!existsSync(binary)) {
-    throw new Error(`rust source health binary not found: ${binary}`);
+    throw new RustSourceHealthConfigError(`rust source health binary not found: ${binary}`);
   }
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error('timeoutMs must be a positive number');
+    throw new RustSourceHealthConfigError('timeoutMs must be a positive number');
   }
 
   const shouldUseShell =
@@ -282,6 +297,9 @@ export function buildFinalRustHealthArtifact({
   sidecarSourceCommit,
   binarySha256,
 } = {}) {
+  if ((sidecarArtifact?.skippedFiles ?? []).length !== 0) {
+    throw new Error('sidecar skippedFiles must be empty');
+  }
   if (!sidecarSourceCommit) {
     throw new Error('sidecarSourceCommit is required');
   }
@@ -322,10 +340,12 @@ export async function runRustSourceHealth({
   threadCount,
   workerStackBytes = RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES,
 } = {}) {
-  if (!binary) throw new Error('rust source health binary is required');
+  if (!binary) throw new RustSourceHealthConfigError('rust source health binary is required');
   const binaryPath = path.resolve(binary);
   if (!existsSync(binaryPath)) {
-    throw new Error(`rust source health binary not found: ${binaryPath}`);
+    throw new RustSourceHealthConfigError(
+      `rust source health binary not found: ${binaryPath}`,
+    );
   }
   const binarySha256 = hashFileSha256(binaryPath);
   const { input, skippedFiles, pathPolicy } = collectRustSourceHealthInput({

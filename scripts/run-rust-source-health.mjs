@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 
-import { runRustSourceHealth } from '../_lib/rust-source-health-runner.mjs';
+import {
+  RustSourceHealthConfigError,
+  runRustSourceHealth,
+} from '../_lib/rust-source-health-runner.mjs';
 
 class UsageError extends Error {}
 
@@ -67,5 +70,8 @@ async function main() {
 
 main().catch((error) => {
   console.error(error?.stack ?? error?.message ?? String(error));
-  process.exitCode = error instanceof UsageError ? 2 : 1;
+  process.exitCode =
+    error instanceof UsageError || error instanceof RustSourceHealthConfigError
+      ? 2
+      : 1;
 });

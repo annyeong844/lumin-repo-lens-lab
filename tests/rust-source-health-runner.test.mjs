@@ -190,7 +190,7 @@ describe('Rust source health runner', () => {
     });
     expect(result.artifact.meta.input.pathPolicy).toEqual({
       include: ['**/*.rs'],
-      exclude: ['target/**', 'vendor/**'],
+      exclude: ['**/target/**', '**/vendor/**'],
     });
     expect(result.artifact.summary).toEqual(
       summarizeRustHealthArtifact(result.artifact),
@@ -251,14 +251,14 @@ describe('Rust source health runner', () => {
       collectRustSourceHealthInput({
         root,
         include: ['**/*.md'],
-        exclude: ['target/**', 'vendor/**'],
+        exclude: ['**/target/**', '**/vendor/**'],
       }),
     ).toThrow(/custom rust source health path policy is not supported yet/);
     expect(() =>
       collectRustSourceHealthInput({
         root,
         include: ['**/*.rs'],
-        exclude: ['target/**'],
+        exclude: ['**/target/**'],
       }),
     ).toThrow(/custom rust source health path policy is not supported yet/);
   });
@@ -327,13 +327,53 @@ describe('Rust source health runner', () => {
     const artifact = buildFinalRustHealthArtifact({
       sidecarArtifact,
       skippedFiles: [{ path: 'src/bad.rs', reason: 'invalid-utf8' }],
-      pathPolicy: { include: ['**/*.rs'], exclude: ['target/**', 'vendor/**'] },
+      pathPolicy: { include: ['**/*.rs'], exclude: ['**/target/**', '**/vendor/**'] },
       sidecarSourceCommit: 'abc123',
       binarySha256: `sha256:${'a'.repeat(64)}`,
     });
 
     expect(artifact.summary.skippedFiles).toBe(1);
     expect(validateRustHealthFinalArtifact(artifact)).toEqual([]);
+  });
+
+  it('rejects sidecar-owned skipped files at final artifact assembly boundary', () => {
+    const sidecarArtifact = {
+      schemaVersion: RUST_SOURCE_HEALTH_SCHEMA_VERSION,
+      meta: {
+        producer: 'rust-source-health',
+        mode: 'syntax-only',
+        parser: { ...RUST_SOURCE_HEALTH_PARSER },
+        policy: {
+          version: RUST_SOURCE_HEALTH_POLICY_VERSION,
+          thresholds: { maxFunctionLines: 80, maxImplLines: 200 },
+        },
+        runtime: { threadCount: 1, workerStackBytes: 16777216 },
+        limits: ['syntax-only', 'no-type-info', 'no-trait-solving', 'no-borrow-check'],
+      },
+      summary: {
+        files: 0,
+        skippedFiles: 1,
+        parseErrorFiles: 0,
+        parseErrors: 0,
+        functions: 0,
+        unsafeBlocks: 0,
+        unsafeFunctions: 0,
+        signals: 0,
+        signalsByKind: {},
+      },
+      skippedFiles: [{ path: 'src/sidecar.rs', reason: 'invalid-utf8' }],
+      files: {},
+    };
+
+    expect(() =>
+      buildFinalRustHealthArtifact({
+        sidecarArtifact,
+        skippedFiles: [],
+        pathPolicy: { include: ['**/*.rs'], exclude: ['**/target/**', '**/vendor/**'] },
+        sidecarSourceCommit: 'abc123',
+        binarySha256: `sha256:${'a'.repeat(64)}`,
+      }),
+    ).toThrow(/sidecar skippedFiles must be empty/);
   });
 
   it('passes runtime thread count and rejects too-small worker stack before sidecar execution', async () => {
@@ -547,7 +587,7 @@ describe('Rust source health runner', () => {
         windowsHide: true,
       },
     );
-    expect(failure.status).toBe(1);
+    expect(failure.status).toBe(2);
     expect(failure.stderr).toMatch(/rust source health binary not found/);
   });
 });

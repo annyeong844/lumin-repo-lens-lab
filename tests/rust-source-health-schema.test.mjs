@@ -19,7 +19,7 @@ function artifact(overrides = {}) {
         binarySha256: `sha256:${'b'.repeat(64)}`,
       },
       input: {
-        pathPolicy: { include: ['**/*.rs'], exclude: ['target/**', 'vendor/**'] },
+        pathPolicy: { include: ['**/*.rs'], exclude: ['**/target/**', '**/vendor/**'] },
       },
       runtime: { threadCount: 2, workerStackBytes: 16777216 },
       limits: ['syntax-only', 'no-type-info', 'no-trait-solving', 'no-borrow-check'],
@@ -46,7 +46,7 @@ function artifact(overrides = {}) {
       signals: 2,
       signalsByKind: { 'clone-call': 1, 'unwrap-call': 1 },
     },
-    skippedFiles: [{ path: 'target/generated.rs', reason: 'excluded-by-path-policy' }],
+    skippedFiles: [{ path: 'src/bad.rs', reason: 'invalid-utf8' }],
     files: {
       'src/lib.rs': {
         sha256: `sha256:${'a'.repeat(64)}`,
@@ -132,6 +132,26 @@ describe('Rust source health schema', () => {
     expect(problems).toContain('skippedFiles.bad.rs.reason invalid');
   });
 
+  it('rejects malformed final path policy metadata', () => {
+    const missing = artifact();
+    missing.meta.input.pathPolicy = {};
+    const malformed = artifact();
+    malformed.meta.input.pathPolicy = { include: [123], exclude: 'target/**' };
+
+    expect(validateRustHealthFinalArtifact(missing)).toEqual(
+      expect.arrayContaining([
+        'meta.input.pathPolicy.include mismatch',
+        'meta.input.pathPolicy.exclude mismatch',
+      ]),
+    );
+    expect(validateRustHealthFinalArtifact(malformed)).toEqual(
+      expect.arrayContaining([
+        'meta.input.pathPolicy.include mismatch',
+        'meta.input.pathPolicy.exclude mismatch',
+      ]),
+    );
+  });
+
   it('returns validation problems instead of throwing for malformed collection fields', () => {
     const value = artifact();
     value.skippedFiles = {};
@@ -143,6 +163,23 @@ describe('Rust source health schema', () => {
     expect(problems).toContain('skippedFiles must be an array');
     expect(problems).toContain('files.src/lib.rs.signals must be an array');
     expect(problems).toContain('files.src/lib.rs.parse.errors must be an array');
+  });
+
+  it('returns validation problems instead of throwing for malformed nested entries', () => {
+    const value = artifact();
+    value.skippedFiles = [null];
+    value.files['src/lib.rs'].signals = [null];
+    value.files['src/lib.rs'].parse.errors = [null];
+    value.files['src/null.rs'] = null;
+
+    expect(() => validateRustHealthFinalArtifact(value)).not.toThrow();
+    const problems = validateRustHealthFinalArtifact(value);
+    expect(problems).toEqual(expect.arrayContaining([
+      'skippedFiles.0 must be an object',
+      'files.src/lib.rs.signals.0 must be an object',
+      'files.src/lib.rs.parse.errors.0 must be an object',
+      'files.src/null.rs must be an object',
+    ]));
   });
 
   it('returns validation problems instead of throwing for non-object artifacts', () => {

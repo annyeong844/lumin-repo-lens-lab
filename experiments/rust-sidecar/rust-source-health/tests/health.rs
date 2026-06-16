@@ -159,6 +159,16 @@ fn rejects_unsupported_schema_without_json_artifact() {
 }
 
 #[test]
+fn rejects_relative_root_without_json_artifact() {
+    let mut value = request(vec![file("src/lib.rs", "fn main() {}", 'f')]);
+    value["root"] = json!("relative/repo");
+    let output = run_sidecar(value);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("root must be absolute"));
+}
+
+#[test]
 fn rejects_unsafe_file_paths_without_json_artifact() {
     for bad_path in [
         "src\\lib.rs",

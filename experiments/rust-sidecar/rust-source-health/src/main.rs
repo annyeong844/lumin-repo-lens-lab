@@ -84,9 +84,7 @@ fn validate_request(request: &HealthRequest) -> Result<()> {
     if request.schema_version != SCHEMA_VERSION {
         bail!("unsupported schemaVersion {}", request.schema_version);
     }
-    if request.root.trim().is_empty() {
-        bail!("root is required");
-    }
+    validate_root(&request.root)?;
     if request.parser.edition_policy != PARSER_EDITION_POLICY
         || request.parser.edition != PARSER_EDITION
         || request.parser.edition_source != PARSER_EDITION_SOURCE
@@ -113,6 +111,20 @@ fn validate_request(request: &HealthRequest) -> Result<()> {
         validate_sha256(&file.sha256, &file.path)?;
     }
     Ok(())
+}
+
+fn validate_root(root: &str) -> Result<()> {
+    if root.trim().is_empty() {
+        bail!("root is required");
+    }
+    if !is_absoluteish_root(root) {
+        bail!("root must be absolute");
+    }
+    Ok(())
+}
+
+fn is_absoluteish_root(root: &str) -> bool {
+    root.starts_with('/') || root.as_bytes().get(1) == Some(&b':')
 }
 
 fn validate_file_path(path: &str) -> Result<()> {

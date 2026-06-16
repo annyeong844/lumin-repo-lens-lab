@@ -130,7 +130,7 @@ Sidecar stdin should be JSON-only:
   ],
   "pathPolicy": {
     "include": ["**/*.rs"],
-    "exclude": ["target/**", "vendor/**"]
+    "exclude": ["**/target/**", "**/vendor/**"]
   },
   "parser": {
     "editionPolicy": "fixed",
@@ -174,11 +174,11 @@ appends wrapper-owned skipped-file evidence for matched files it could not
 decode, validates the final artifact, and writes `rust-health.json`. The
 sidecar does not accept an output path or write files in the product slice.
 
-The wrapper also owns path policy. Product-slice `target/**` and `vendor/**`
-matches are traversal-pruned and recorded in `meta.input.pathPolicy`, not
-expanded into per-file `skippedFiles` entries. `skippedFiles` is reserved for
-matched Rust source files that could not be analyzed after collection, such as
-invalid UTF-8.
+The wrapper also owns path policy. Product-slice paths containing a `target` or
+`vendor` segment are traversal-pruned and recorded in `meta.input.pathPolicy`
+as `**/target/**` and `**/vendor/**`, not expanded into per-file
+`skippedFiles` entries. `skippedFiles` is reserved for matched Rust source
+files that could not be analyzed after collection, such as invalid UTF-8.
 
 ## Artifact Contract
 
@@ -224,7 +224,7 @@ Product contract shape:
     "input": {
       "pathPolicy": {
         "include": ["**/*.rs"],
-        "exclude": ["target/**", "vendor/**"]
+        "exclude": ["**/target/**", "**/vendor/**"]
       }
     },
     "limits": [
@@ -255,10 +255,6 @@ the empty contract shape:
 
 ```json
 [
-  {
-    "path": "target/generated.rs",
-    "reason": "excluded-by-path-policy"
-  },
   {
     "path": "src/not-rust.rs",
     "reason": "invalid-utf8"
