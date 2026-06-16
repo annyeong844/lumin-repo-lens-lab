@@ -14,6 +14,7 @@ export const RUST_TOPOLOGY_PREFER_REASONS = Object.freeze([
   'not-requested',
   'gate-eligible-artifact-guard-passed',
   'blocked-quorum-missing',
+  'blocked-quorum-invalid',
   'blocked-gate-missing',
   'blocked-gate-ineligible',
   'blocked-binary-not-found',
@@ -201,9 +202,12 @@ export function evaluateRustTopologyPrefer({
   }
   if (!rustTopologyPreferGate) return blocked({ reason: 'blocked-gate-missing', base });
   if (!hasValidPreferGateContract(rustTopologyPreferGate)) {
-    const reason = rustTopologyPreferGate.reason === 'quorum-evidence-missing'
-      ? 'blocked-quorum-missing'
-      : 'blocked-gate-ineligible';
+    const gateBlockReasonMap = new Map([
+      ['quorum-evidence-missing', 'blocked-quorum-missing'],
+      ['quorum-evidence-invalid', 'blocked-quorum-invalid'],
+    ]);
+    const reason = gateBlockReasonMap.get(rustTopologyPreferGate.reason) ??
+      'blocked-gate-ineligible';
     return blocked({ reason, base });
   }
   if (sourceCommitMismatch({ rustSidecarSourceCommit, expectedRustSidecarSourceCommit })) {
