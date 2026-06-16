@@ -76,7 +76,14 @@ function writeFakeSidecar(dir, body) {
   return binary;
 }
 
-function fakeSidecarBody({ capturePath, malformed = false, hang = false } = {}) {
+function fakeSidecarBody({
+  capturePath,
+  malformed = false,
+  hang = false,
+  dropLastFile = false,
+  rewriteFirstSha = false,
+  sidecarSkippedFiles = false,
+} = {}) {
   if (hang) return 'setTimeout(() => {}, 10000);\n';
   if (malformed) return "process.stdout.write('{bad json');\n";
   return `
@@ -91,9 +98,10 @@ process.stdin.on('end', () => {
     writeFileSync(${JSON.stringify(capturePath)}, stdin, 'utf8');
   }
   const files = {};
-  for (const file of request.files) {
+  const returnedFiles = ${dropLastFile ? 'request.files.slice(0, -1)' : 'request.files'};
+  for (const [index, file] of returnedFiles.entries()) {
     files[file.path] = {
-      sha256: file.sha256,
+      sha256: ${rewriteFirstSha ? "index === 0 ? `sha256:${'f'.repeat(64)}` : file.sha256" : 'file.sha256'},
       facts: {
         items: 1,
         functions: 1,
@@ -133,7 +141,7 @@ process.stdin.on('end', () => {
     },
     summary: {
       files: Object.keys(files).length,
-      skippedFiles: 0,
+      skippedFiles: ${sidecarSkippedFiles ? 1 : 0},
       parseErrorFiles: 0,
       parseErrors: 0,
       functions: Object.keys(files).length,
@@ -142,7 +150,7 @@ process.stdin.on('end', () => {
       signals: 0,
       signalsByKind: {}
     },
-    skippedFiles: [],
+    skippedFiles: ${sidecarSkippedFiles ? "[{ path: 'sidecar-skipped.rs', reason: 'invalid-utf8' }]" : '[]'},
     files
   };
   process.stdout.write(JSON.stringify(artifact));
@@ -341,6 +349,64 @@ describe('Rust source health runner', () => {
         timeoutMs: 5000,
       }),
     ).rejects.toThrow(/invalid rust source health sidecar JSON/);
+    expect(existsSync(output)).toBe(false);
+  });
+
+  it('rejects sidecar output that drops an input file', async () => {
+    const dir = tempDir('lumin-rust-health-runner-coverage-drop');
+    const root = path.join(dir, 'repo');
+    const output = path.join(dir, 'rust-health.json');
+    writeText(path.join(root, 'src', 'a.rs'), 'pub fn a() {}\n');
+    writeText(path.join(root, 'src', 'b.rs'), 'pub fn b() {}\n');
+    const binary = writeFakeSidecar(dir, fakeSidecarBody({ dropLastFile: true }));
+
+    await expect(
+      runRustSourceHealth({
+        root,
+        output,
+        binary,
+        sidecarSourceCommit: 'abc123',
+        timeoutMs: 5000,
+      }),
+    ).rejects.toThrow(/sidecar file coverage mismatch/);
+    expect(existsSync(output)).toBe(false);
+  });
+
+  it('rejects sidecar output that changes a file sha256', async () => {
+    const dir = tempDir('lumin-rust-health-runner-coverage-sha');
+    const root = path.join(dir, 'repo');
+    const output = path.join(dir, 'rust-health.json');
+    writeText(path.join(root, 'src', 'lib.rs'), 'pub fn main() {}\n');
+    const binary = writeFakeSidecar(dir, fakeSidecarBody({ rewriteFirstSha: true }));
+
+    await expect(
+      runRustSourceHealth({
+        root,
+        output,
+        binary,
+        sidecarSourceCommit: 'abc123',
+        timeoutMs: 5000,
+      }),
+    ).rejects.toThrow(/sidecar sha256 mismatch for src\/lib.rs/);
+    expect(existsSync(output)).toBe(false);
+  });
+
+  it('rejects sidecar-owned skipped file evidence', async () => {
+    const dir = tempDir('lumin-rust-health-runner-coverage-skipped');
+    const root = path.join(dir, 'repo');
+    const output = path.join(dir, 'rust-health.json');
+    writeText(path.join(root, 'src', 'lib.rs'), 'pub fn main() {}\n');
+    const binary = writeFakeSidecar(dir, fakeSidecarBody({ sidecarSkippedFiles: true }));
+
+    await expect(
+      runRustSourceHealth({
+        root,
+        output,
+        binary,
+        sidecarSourceCommit: 'abc123',
+        timeoutMs: 5000,
+      }),
+    ).rejects.toThrow(/sidecar skippedFiles must be empty/);
     expect(existsSync(output)).toBe(false);
   });
 

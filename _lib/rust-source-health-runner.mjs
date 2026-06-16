@@ -199,7 +199,41 @@ export function runRustSourceHealthSidecar({ binary, input, timeoutMs = 60000 } 
   if (problems.length > 0) {
     throw new Error(`invalid rust source health sidecar artifact: ${problems.join('; ')}`);
   }
+  const coverageProblems = sidecarCoverageProblems({ artifact, input });
+  if (coverageProblems.length > 0) {
+    throw new Error(
+      `invalid rust source health sidecar coverage: ${coverageProblems.join('; ')}`,
+    );
+  }
   return artifact;
+}
+
+function sidecarCoverageProblems({ artifact, input }) {
+  const problems = [];
+  const expected = new Map(
+    (input?.files ?? []).map((file) => [file.path, file.sha256]),
+  );
+  const actual = artifact?.files ?? {};
+  const expectedPaths = [...expected.keys()].sort();
+  const actualPaths = Object.keys(actual).sort();
+
+  if (JSON.stringify(actualPaths) !== JSON.stringify(expectedPaths)) {
+    problems.push(
+      `sidecar file coverage mismatch: expected ${expectedPaths.length} files but found ${actualPaths.length}`,
+    );
+  }
+
+  for (const [filePath, expectedSha] of expected) {
+    if (actual[filePath]?.sha256 !== expectedSha) {
+      problems.push(`sidecar sha256 mismatch for ${filePath}`);
+    }
+  }
+
+  if ((artifact?.skippedFiles ?? []).length !== 0) {
+    problems.push('sidecar skippedFiles must be empty');
+  }
+
+  return problems;
 }
 
 export function buildFinalRustHealthArtifact({
