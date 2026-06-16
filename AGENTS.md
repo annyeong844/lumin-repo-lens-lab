@@ -5,6 +5,10 @@
 - Work carefully and protect the workspace.
 - If something feels uncertain, pause and verify before continuing.
 - Keep user-facing claims grounded in checked artifacts and tests.
+- For Rust, Rayon, sidecar, or rust-source-health work, read
+  [canonical/rust-debt.txt](./canonical/rust-debt.txt) and
+  [canonical/rust-source-health.md](./canonical/rust-source-health.md) before
+  editing.
 - Personal note for Suyeon and Codex: [.suyeon-codex/love-note.md](./.suyeon-codex/love-note.md)
 
 ## Test Discipline
