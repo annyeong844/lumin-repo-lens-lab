@@ -27,10 +27,10 @@
       "no-trait-solving",
       "no-borrow-check"
     ],
-    "generated": "2026-06-16T14:52:42.401Z",
+    "generated": "2026-06-16T15:18:37.490Z",
     "sidecar": {
-      "sourceCommit": "b90951b23a0aeb5d56041443b9c3fe60833419e1",
-      "binarySha256": "sha256:6b60ef0a0b741308653bf3a896587a7d1313490dc76aaf464ff026bb8e3f1a62"
+      "sourceCommit": "dc0ff0378804b0a1f8437b4120493f3cc6e938ea",
+      "binarySha256": "sha256:faeadf31f0e6cc2f97899ea7829c9ed8cc71bcc33be643cf1af6c9a47519f353"
     },
     "input": {
       "pathPolicy": {
@@ -38,8 +38,8 @@
           "**/*.rs"
         ],
         "exclude": [
-          "target/**",
-          "vendor/**"
+          "**/target/**",
+          "**/vendor/**"
         ]
       }
     }
@@ -49,7 +49,7 @@
     "skippedFiles": 0,
     "parseErrorFiles": 0,
     "parseErrors": 0,
-    "functions": 94,
+    "functions": 97,
     "unsafeBlocks": 0,
     "unsafeFunctions": 0,
     "signals": 16,
@@ -158,10 +158,10 @@
       }
     },
     "experiments/rust-sidecar/rust-source-health/src/main.rs": {
-      "sha256": "sha256:6f45855e4e21c76a8c71914efd6f839ca54e054a5d907825b8f313f31dc0cd36",
+      "sha256": "sha256:f6205985bf513ca625d31e0f03e51e1d35caa01e6f5d3185b975a791e12d924d",
       "facts": {
-        "items": 12,
-        "functions": 4,
+        "items": 14,
+        "functions": 6,
         "maxFunctionLines": 59,
         "unsafeBlocks": 0,
         "unsafeFunctions": 0
@@ -277,10 +277,10 @@
       }
     },
     "experiments/rust-sidecar/rust-source-health/tests/health.rs": {
-      "sha256": "sha256:46b2ecc03a6c08f5bad1ab28b8191a264d6799cc009fb448798c4b795dce8f59",
+      "sha256": "sha256:703f07d4a1c54f562cf09072d3ee33fc5be868ed8c2ea943810deac15dc989bc",
       "facts": {
-        "items": 12,
-        "functions": 12,
+        "items": 13,
+        "functions": 13,
         "maxFunctionLines": 30,
         "unsafeBlocks": 0,
         "unsafeFunctions": 0

@@ -10,7 +10,7 @@ node scripts/run-rust-source-health.mjs `
   --root . `
   --output baselines/m6-rust-source-health-local/rust-health.json `
   --rust-source-health-bin experiments/rust-sidecar/rust-source-health/target/release/lumin-rust-source-health.exe `
-  --sidecar-source-commit b90951b23a0aeb5d56041443b9c3fe60833419e1 `
+  --sidecar-source-commit dc0ff0378804b0a1f8437b4120493f3cc6e938ea `
   --threads 2 `
   --worker-stack-bytes 16777216
 ```
@@ -32,4 +32,5 @@ Notes:
   final validation, and artifact writes.
 - The Rust sidecar receives request JSON on stdin and emits artifact JSON on
   stdout only.
-- The wrapper does not traverse excluded `target/**` or `vendor/**` directories.
+- The wrapper does not traverse excluded `**/target/**` or `**/vendor/**`
+  directories.
