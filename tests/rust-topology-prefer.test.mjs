@@ -153,6 +153,20 @@ describe('Rust topology prefer decision', () => {
     });
   });
 
+  it('maps malformed quorum gate evidence to blocked-quorum-invalid', () => {
+    expect(evaluateRustTopologyPrefer(base({
+      rustTopologyPreferGate: {
+        status: 'blocked-corpus-quorum',
+        reason: 'quorum-evidence-invalid',
+        preferEnabled: false,
+        jsRemainsOracle: true,
+      },
+    }))).toMatchObject({
+      status: 'blocked',
+      reason: 'blocked-quorum-invalid',
+    });
+  });
+
   it('blocks when matched scanner metadata is malformed', () => {
     expect(evaluateRustTopologyPrefer(base({
       rustTopologyScanner: { ...matchedScanner, mismatches: undefined },

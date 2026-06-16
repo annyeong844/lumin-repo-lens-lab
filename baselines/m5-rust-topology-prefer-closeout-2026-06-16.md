@@ -6,6 +6,11 @@ This note closes the M5 lab-only Rust topology `prefer` package pass. It records
 evidence only; it does not approve default Rust, stable
 `/lumin-repo-lens:*`, or broad Rust replacement claims.
 
+The public package CI and cache evidence below cover package merge `bdd5c3f`.
+The accepted follow-up polish at the end of this note is source-side evidence
+after that package merge. Those polish changes need a later package sync before
+public package claims include them.
+
 ## Commits
 
 - Source-side implementation commit: `90f271e` (`Harden Rust topology prefer gate`)
@@ -63,10 +68,20 @@ passed, and Public Package CI proved `npm run smoke` on Node 20 and Node 22.
 
 ## Accepted Follow-Ups
 
-Implemented after the package closeout:
+Implemented as source-side follow-up after the package closeout:
 
 - malformed quorum evidence becomes visible blocked metadata instead of an
   artifact-less hard crash;
 - sidecar failure statuses retain their failure classification even when failure
   metadata lacks `policyVersion`;
 - packaged skill quorum behavior is documented as explicit-path driven.
+
+Validation for the source-side follow-up:
+
+- targeted Vitest: `3 files / 51 tests passed`
+- M5 surrounding Vitest: `6 files / 75 tests passed`
+- `node --check` passed for touched root and skill mirror runtime files
+- `node scripts/check-drift.mjs` passed
+- `node scripts/update-test-doc.mjs --check` passed
+- `git diff --check` passed, CRLF warnings only
+- `fallback-js|fallbackUsed` grep found no matches
