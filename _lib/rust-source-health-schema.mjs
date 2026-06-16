@@ -1,0 +1,285 @@
+export const RUST_SOURCE_HEALTH_SCHEMA_VERSION = 1;
+export const RUST_SOURCE_HEALTH_POLICY_VERSION = 'm6-rust-source-health-syntax-v1';
+export const RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES = 16 * 1024 * 1024;
+export const RUST_SOURCE_HEALTH_PARSER = Object.freeze({
+  kind: 'ra_ap_syntax',
+  version: '0.0.337',
+  editionPolicy: 'fixed',
+  edition: '2021',
+  editionSource: 'm6-policy-default',
+});
+
+export function sortRustHealthArtifact(artifact) {
+  const files = Object.fromEntries(
+    Object.entries(artifact.files ?? {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([file, value]) => [
+        file,
+        {
+          ...value,
+          signals: [...(value.signals ?? [])].sort(compareSignals),
+          parse: {
+            ...(value.parse ?? {}),
+            errors: [...(value.parse?.errors ?? [])].sort(compareParseErrors),
+          },
+        },
+      ]),
+  );
+  const skippedFiles = [...(artifact.skippedFiles ?? [])]
+    .sort((left, right) => String(left.path).localeCompare(String(right.path)));
+  return { ...artifact, skippedFiles, files };
+}
+
+function compareSignals(left, right) {
+  return (
+    Number(left?.location?.byteStart ?? 0) -
+      Number(right?.location?.byteStart ?? 0) ||
+    String(left?.kind ?? '').localeCompare(String(right?.kind ?? ''))
+  );
+}
+
+function compareParseErrors(left, right) {
+  return (
+    Number(left?.location?.byteStart ?? 0) -
+      Number(right?.location?.byteStart ?? 0) ||
+    String(left?.message ?? '').localeCompare(String(right?.message ?? ''))
+  );
+}
+
+export function stableObject(value = {}) {
+  return Object.fromEntries(
+    Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isSha256(value) {
+  return typeof value === 'string' && /^sha256:[a-f0-9]{64}$/i.test(value);
+}
+
+function isLocation(value) {
+  return isPlainObject(value) &&
+    Number.isInteger(value.line) &&
+    value.line > 0 &&
+    Number.isInteger(value.column) &&
+    value.column > 0 &&
+    Number.isInteger(value.endLine) &&
+    value.endLine > 0 &&
+    Number.isInteger(value.endColumn) &&
+    value.endColumn > 0 &&
+    Number.isInteger(value.byteStart) &&
+    value.byteStart >= 0 &&
+    Number.isInteger(value.byteEnd) &&
+    value.byteEnd >= value.byteStart;
+}
+
+export function summarizeRustHealthArtifact(artifact) {
+  const fileEntries = Object.values(artifact.files ?? {});
+  const signals = fileEntries.flatMap((entry) => entry.signals ?? []);
+  const parseErrors = fileEntries.flatMap((entry) => entry.parse?.errors ?? []);
+  const signalsByKind = {};
+  for (const signal of signals) {
+    const kind = String(signal.kind ?? '');
+    signalsByKind[kind] = (signalsByKind[kind] ?? 0) + 1;
+  }
+  return {
+    files: fileEntries.length,
+    skippedFiles: Array.isArray(artifact.skippedFiles) ? artifact.skippedFiles.length : 0,
+    parseErrorFiles: fileEntries.filter((entry) => entry.parse?.ok === false).length,
+    parseErrors: parseErrors.length,
+    functions: fileEntries.reduce((sum, entry) => sum + Number(entry.facts?.functions ?? 0), 0),
+    unsafeBlocks: fileEntries.reduce((sum, entry) => sum + Number(entry.facts?.unsafeBlocks ?? 0), 0),
+    unsafeFunctions: fileEntries.reduce(
+      (sum, entry) => sum + Number(entry.facts?.unsafeFunctions ?? 0),
+      0,
+    ),
+    signals: signals.length,
+    signalsByKind,
+  };
+}
+
+export function rustHealthInvariantProblems(artifact) {
+  const expected = summarizeRustHealthArtifact(artifact);
+  const actual = artifact.summary ?? {};
+  const problems = [];
+  for (const [key, value] of Object.entries(expected)) {
+    if (key === 'signalsByKind') {
+      if (
+        JSON.stringify(stableObject(actual.signalsByKind ?? {})) !==
+        JSON.stringify(stableObject(value))
+      ) {
+        problems.push('summary.signalsByKind mismatch');
+      }
+    } else if (actual[key] !== value) {
+      problems.push(`summary.${key} expected ${value} but found ${actual[key]}`);
+    }
+  }
+  return problems;
+}
+
+function isIsoTimestamp(value) {
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+}
+
+function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
+  const problems = [];
+  if (artifact?.schemaVersion !== RUST_SOURCE_HEALTH_SCHEMA_VERSION) {
+    problems.push('schemaVersion mismatch');
+  }
+  if (artifact?.meta?.producer !== 'rust-source-health') {
+    problems.push('meta.producer mismatch');
+  }
+  if (artifact?.meta?.mode !== 'syntax-only') {
+    problems.push('meta.mode mismatch');
+  }
+  if (
+    !Number.isInteger(artifact?.meta?.runtime?.threadCount) ||
+    artifact.meta.runtime.threadCount <= 0
+  ) {
+    problems.push('meta.runtime.threadCount invalid');
+  }
+  if (
+    !Number.isInteger(artifact?.meta?.runtime?.workerStackBytes) ||
+    artifact.meta.runtime.workerStackBytes < RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES
+  ) {
+    problems.push('meta.runtime.workerStackBytes invalid');
+  }
+  const limits = artifact?.meta?.limits;
+  for (const limit of ['syntax-only', 'no-type-info', 'no-trait-solving', 'no-borrow-check']) {
+    if (!Array.isArray(limits) || !limits.includes(limit)) {
+      problems.push(`meta.limits missing ${limit}`);
+    }
+  }
+  if (artifact?.meta?.policy?.version !== RUST_SOURCE_HEALTH_POLICY_VERSION) {
+    problems.push('policy.version mismatch');
+  }
+  const thresholds = artifact?.meta?.policy?.thresholds;
+  if (
+    !Number.isInteger(thresholds?.maxFunctionLines) ||
+    thresholds.maxFunctionLines <= 0
+  ) {
+    problems.push('policy.thresholds.maxFunctionLines invalid');
+  }
+  if (
+    !Number.isInteger(thresholds?.maxImplLines) ||
+    thresholds.maxImplLines <= 0
+  ) {
+    problems.push('policy.thresholds.maxImplLines invalid');
+  }
+  if (artifact?.meta?.parser?.kind !== RUST_SOURCE_HEALTH_PARSER.kind) {
+    problems.push('parser.kind mismatch');
+  }
+  if (artifact?.meta?.parser?.version !== RUST_SOURCE_HEALTH_PARSER.version) {
+    problems.push('parser.version mismatch');
+  }
+  if (artifact?.meta?.parser?.editionPolicy !== RUST_SOURCE_HEALTH_PARSER.editionPolicy) {
+    problems.push('parser.editionPolicy mismatch');
+  }
+  if (artifact?.meta?.parser?.edition !== RUST_SOURCE_HEALTH_PARSER.edition) {
+    problems.push('parser.edition mismatch');
+  }
+  if (artifact?.meta?.parser?.editionSource !== RUST_SOURCE_HEALTH_PARSER.editionSource) {
+    problems.push('parser.editionSource mismatch');
+  }
+  if (requireWrapperMeta) {
+    if (!isIsoTimestamp(artifact?.meta?.generated)) {
+      problems.push('meta.generated invalid');
+    }
+    if (
+      typeof artifact?.meta?.sidecar?.sourceCommit !== 'string' ||
+      artifact.meta.sidecar.sourceCommit.length === 0
+    ) {
+      problems.push('meta.sidecar.sourceCommit missing');
+    }
+    if (!isSha256(artifact?.meta?.sidecar?.binarySha256)) {
+      problems.push('meta.sidecar.binarySha256 invalid');
+    }
+    if (!isPlainObject(artifact?.meta?.input?.pathPolicy)) {
+      problems.push('meta.input.pathPolicy missing');
+    }
+  }
+  if (!isPlainObject(artifact?.files)) {
+    problems.push('files must be an object');
+  }
+  if (!Array.isArray(artifact?.skippedFiles)) {
+    problems.push('skippedFiles must be an array');
+  }
+  const allowedSkippedReasons = new Set(['excluded-by-path-policy', 'invalid-utf8']);
+  for (const skipped of artifact?.skippedFiles ?? []) {
+    if (typeof skipped.path !== 'string' || skipped.path.length === 0) {
+      problems.push('skippedFiles.path invalid');
+    }
+    if (!allowedSkippedReasons.has(skipped.reason)) {
+      problems.push(`skippedFiles.${skipped.path ?? '<unknown>'}.reason invalid`);
+    }
+  }
+  for (const [filePath, file] of Object.entries(artifact?.files ?? {})) {
+    if (!isSha256(file?.sha256)) {
+      problems.push(`files.${filePath}.sha256 invalid`);
+    }
+    if (!isPlainObject(file?.facts)) {
+      problems.push(`files.${filePath}.facts missing`);
+    }
+    for (const key of [
+      'items',
+      'functions',
+      'maxFunctionLines',
+      'unsafeBlocks',
+      'unsafeFunctions',
+    ]) {
+      if (!Number.isInteger(file?.facts?.[key]) || file.facts[key] < 0) {
+        problems.push(`files.${filePath}.facts.${key} invalid`);
+      }
+    }
+    if (!Array.isArray(file?.signals)) {
+      problems.push(`files.${filePath}.signals must be an array`);
+    }
+    if (!isPlainObject(file?.parse) || typeof file.parse.ok !== 'boolean') {
+      problems.push(`files.${filePath}.parse invalid`);
+    }
+    if (!isPlainObject(file?.path) || !Array.isArray(file.path.classifications)) {
+      problems.push(`files.${filePath}.path invalid`);
+    }
+    for (const signal of file?.signals ?? []) {
+      if (typeof signal.kind !== 'string' || signal.kind.length === 0) {
+        problems.push(`files.${filePath}.signal.kind invalid`);
+      }
+      if (signal.severity !== 'review') {
+        problems.push(`files.${filePath}.signal.severity mismatch`);
+      }
+      if (signal.claim !== 'syntax-only') {
+        problems.push(`files.${filePath}.signal.claim mismatch`);
+      }
+      if (!isLocation(signal.location)) {
+        problems.push(`files.${filePath}.signal.location invalid`);
+      }
+    }
+    for (const parseError of file?.parse?.errors ?? []) {
+      if (typeof parseError.message !== 'string' || parseError.message.length === 0) {
+        problems.push(`files.${filePath}.parse.error.message invalid`);
+      }
+      if (parseError.claim !== 'syntax-only') {
+        problems.push(`files.${filePath}.parse.error.claim mismatch`);
+      }
+      if (!isLocation(parseError.location)) {
+        problems.push(`files.${filePath}.parse.error.location invalid`);
+      }
+    }
+  }
+  problems.push(...rustHealthInvariantProblems(artifact));
+  return problems;
+}
+
+export function validateRustHealthSidecarArtifact(artifact) {
+  return validateRustHealthArtifactShape(artifact, { requireWrapperMeta: false });
+}
+
+export function validateRustHealthFinalArtifact(artifact) {
+  return validateRustHealthArtifactShape(artifact, { requireWrapperMeta: true });
+}
+
+export const validateRustHealthArtifact = validateRustHealthFinalArtifact;
+
