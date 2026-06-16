@@ -39,7 +39,7 @@ Rust source health emits a separate `rust-health.json` artifact.
 | Rust type / enum / struct | `PascalCase` | `FileHealth`, `RuntimeConfig` |
 | Rust constant | `SCREAMING_SNAKE_CASE` | `PARSER_VERSION` |
 | JS function / variable | `camelCase` | `runRustSourceHealth`, `hasPathSegment` |
-| JS constant | `SCREAMING_SNAKE_CASE` | `RUST_HEALTH_SCHEMA_VERSION` |
+| JS constant | `SCREAMING_SNAKE_CASE` | `RUST_SOURCE_HEALTH_SCHEMA_VERSION` |
 | File path | `kebab-case` unless local convention already exists | `rust-source-health-runner.mjs` |
 
 Lowering examples:
@@ -107,12 +107,15 @@ the logic.
 |---|---|---|
 | review signal construction | `review_signal(kind, line_index, range)` | `src/signals.rs` |
 | parse error construction | `syntax_parse_error(message, line_index, range)` | `src/signals.rs` |
-| location conversion | `LineIndex::location(range)` | `src/locations.rs` |
+| location conversion | `LineIndex::location(byte_start, byte_end)` | `src/locations.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
 | unsafe block syntax check | `is_unsafe_block_expr(node)` | `src/analyzer.rs` |
 | method call signal scan | `collect_method_call_signals(...)` | `src/analyzer.rs` |
 | macro call signal scan | `collect_macro_call_signals(...)` | `src/analyzer.rs` |
+
+`review_signal` and `syntax_parse_error` are the only production helpers that
+convert `TextRange` into `Location`.
 
 ### JavaScript
 

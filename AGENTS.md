@@ -14,7 +14,7 @@
 ## Test Discipline
 
 - Tests must prove product behavior, not scaffolding accidents.
-- Use one minimum guaranteed happy path, realistic edge cases that can actually occur, and hard-stop paths where the product must refuse to proceed.
+- Use one core happy path, realistic edge cases that can actually occur, and hard-stop paths where the product must refuse to proceed.
 - Create importable code before tests import it; a test whose only value is proving a file, function, or module exists is not useful.
 - Good failures are behavioral: the scanner missed an import, the bridge reported the wrong mismatch, the collector appended evidence it should have refused.
 - Bad failures are scaffolding trivia: a file is absent, a helper is not exported, or a placeholder module has not been created yet.

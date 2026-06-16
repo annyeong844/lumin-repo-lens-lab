@@ -136,6 +136,10 @@ Sidecar stdin should be JSON-only:
     "editionPolicy": "fixed",
     "edition": "2021",
     "editionSource": "m6-policy-default"
+  },
+  "runtime": {
+    "threadCount": 2,
+    "workerStackBytes": 16777216
   }
 }
 ```
@@ -210,6 +214,10 @@ Product contract shape:
         "maxFunctionLines": 80,
         "maxImplLines": 200
       }
+    },
+    "runtime": {
+      "threadCount": 2,
+      "workerStackBytes": 16777216
     },
     "input": {
       "pathPolicy": {

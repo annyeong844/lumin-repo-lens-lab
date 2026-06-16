@@ -551,18 +551,18 @@ fn collect_facts_and_signals(
                 let lines = line_span(line_index, node.text_range());
                 facts.max_function_lines = facts.max_function_lines.max(lines);
                 if lines > thresholds.max_function_lines {
-                    push_syntax_signal(signals, "oversized-function", line_index, node.text_range());
+                    signals.push(review_signal("oversized-function", line_index, node.text_range()));
                 }
             }
             SyntaxKind::IMPL => {
                 let lines = line_span(line_index, node.text_range());
                 if lines > thresholds.max_impl_lines {
-                    push_syntax_signal(signals, "oversized-impl", line_index, node.text_range());
+                    signals.push(review_signal("oversized-impl", line_index, node.text_range()));
                 }
             }
             _ if is_unsafe_block_expr(&node) => {
                 facts.unsafe_blocks += 1;
-                push_syntax_signal(signals, "unsafe-block", line_index, node.text_range());
+                signals.push(review_signal("unsafe-block", line_index, node.text_range()));
             }
             _ => {}
         }
@@ -570,10 +570,6 @@ fn collect_facts_and_signals(
     facts.items = count_items(root);
     collect_syntax_signals(root, line_index, signals);
     facts
-}
-
-fn push_syntax_signal(signals: &mut Vec<Signal>, kind: &str, line_index: &LineIndex, range: TextRange) {
-    signals.push(review_signal(kind, line_index, range));
 }
 
 fn classify_path(path: &str) -> Vec<String> {
@@ -605,9 +601,9 @@ for node in root.descendants() {
     if let Some(call) = ast::MethodCallExpr::cast(node.clone()) {
         if let Some(name_ref) = call.name_ref() {
             match name_ref.text().as_str() {
-                "unwrap" => push_syntax_signal(signals, "unwrap-call", line_index, node.text_range()),
-                "expect" => push_syntax_signal(signals, "expect-call", line_index, node.text_range()),
-                "clone" => push_syntax_signal(signals, "clone-call", line_index, node.text_range()),
+                "unwrap" => signals.push(review_signal("unwrap-call", line_index, node.text_range())),
+                "expect" => signals.push(review_signal("expect-call", line_index, node.text_range())),
+                "clone" => signals.push(review_signal("clone-call", line_index, node.text_range())),
                 _ => {}
             }
         }
@@ -643,6 +639,8 @@ mod analyzer;
 mod locations;
 mod parallel;
 mod protocol;
+mod signals;
+mod summary;
 
 use std::io::{self, Read};
 
@@ -1580,6 +1578,11 @@ git diff --name-only origin/main...HEAD
 
 Expected changed paths are limited to:
 
+- `AGENTS.md`
+- `canonical/index.md`
+- `canonical/rust-debt.txt`
+- `canonical/rust-source-health.md`
+- `docs/lab/m6-rust-source-health-design-2026-06-16.md`
 - `docs/superpowers/plans/2026-06-16-rust-source-health.md`
 - `experiments/rust-sidecar/rust-source-health/**`
 - `_lib/rust-source-health-schema.mjs`
