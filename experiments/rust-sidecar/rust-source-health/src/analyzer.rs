@@ -116,13 +116,21 @@ fn collect_facts_and_signals(
 }
 
 fn classify_path(path: &str) -> Vec<String> {
-    if path.contains("/generated/") || path.ends_with("generated.rs") {
+    if has_path_segment(path, "generated") || file_name(path) == "generated.rs" {
         vec!["generated".to_string()]
-    } else if path.contains("/tests/") || path.ends_with("_test.rs") {
+    } else if has_path_segment(path, "tests") || file_name(path).ends_with("_test.rs") {
         vec!["test".to_string()]
     } else {
         vec!["source".to_string()]
     }
+}
+
+fn has_path_segment(path: &str, segment: &str) -> bool {
+    path.split('/').any(|part| part == segment)
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
 }
 
 fn count_items(root: &SyntaxNode) -> usize {

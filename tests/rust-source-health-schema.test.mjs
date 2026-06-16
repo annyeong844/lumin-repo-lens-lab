@@ -145,6 +145,65 @@ describe('Rust source health schema', () => {
     expect(problems).toContain('files.src/lib.rs.parse.errors must be an array');
   });
 
+  it('returns validation problems instead of throwing for non-object artifacts', () => {
+    expect(() => validateRustHealthFinalArtifact(null)).not.toThrow();
+    expect(() => validateRustHealthFinalArtifact(undefined)).not.toThrow();
+    expect(validateRustHealthFinalArtifact(null)).toContain('artifact must be an object');
+    expect(validateRustHealthFinalArtifact(undefined)).toContain('artifact must be an object');
+  });
+
+  it('rejects unsafe artifact paths and malformed path metadata', () => {
+    const value = artifact({
+      files: {
+        '../evil.rs': {
+          ...artifact().files['src/lib.rs'],
+          path: { classifications: [123], suppressed: 'no' },
+        },
+      },
+      skippedFiles: [{ path: '../evil.rs', reason: 'invalid-utf8' }],
+    });
+    value.summary = summarizeRustHealthArtifact(value);
+
+    const problems = validateRustHealthFinalArtifact(value);
+    expect(problems).toContain('files.../evil.rs.path key invalid');
+    expect(problems).toContain('files.../evil.rs.path.classifications invalid');
+    expect(problems).toContain('files.../evil.rs.path.suppressed invalid');
+    expect(problems).toContain('skippedFiles.../evil.rs.path invalid');
+  });
+
+  it('rejects inconsistent parse ok and parse errors state', () => {
+    const okWithErrors = artifact();
+    okWithErrors.files['src/lib.rs'].parse = {
+      ok: true,
+      errors: [
+        {
+          message: 'expected expression',
+          claim: 'syntax-only',
+          location: {
+            line: 1,
+            column: 1,
+            endLine: 1,
+            endColumn: 1,
+            byteStart: 0,
+            byteEnd: 0,
+          },
+        },
+      ],
+    };
+    okWithErrors.summary = summarizeRustHealthArtifact(okWithErrors);
+
+    const notOkWithoutErrors = artifact();
+    notOkWithoutErrors.files['src/lib.rs'].parse = { ok: false, errors: [] };
+    notOkWithoutErrors.summary = summarizeRustHealthArtifact(notOkWithoutErrors);
+
+    expect(validateRustHealthFinalArtifact(okWithErrors)).toContain(
+      'files.src/lib.rs.parse.ok true with parse errors',
+    );
+    expect(validateRustHealthFinalArtifact(notOkWithoutErrors)).toContain(
+      'files.src/lib.rs.parse.ok false without parse errors',
+    );
+  });
+
   it('sorts file keys, skipped files, signals, and parse errors deterministically', () => {
     const sorted = sortRustHealthArtifact({
       ...artifact(),

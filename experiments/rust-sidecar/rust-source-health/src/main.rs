@@ -122,8 +122,23 @@ fn validate_file_path(path: &str) -> Result<()> {
     if path.starts_with('/') || path.starts_with('\\') {
         bail!("file path must be root-relative: {}", path);
     }
-    if path.split('/').any(|part| part == "..") {
-        bail!("file path must not contain .. segments: {}", path);
+    if path.contains('\\') {
+        bail!("file path must use POSIX slash separators: {}", path);
+    }
+    if path.contains(':') {
+        bail!(
+            "file path must not contain drive prefixes or colons: {}",
+            path
+        );
+    }
+    if path
+        .split('/')
+        .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        bail!(
+            "file path must not contain empty, ., or .. segments: {}",
+            path
+        );
     }
     Ok(())
 }

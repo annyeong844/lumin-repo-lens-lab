@@ -23,7 +23,14 @@ import {
 
 const DEFAULT_INCLUDE = ['**/*.rs'];
 const DEFAULT_EXCLUDE = ['target/**', 'vendor/**'];
-const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });
+const UTF8_DECODER = new TextDecoder('utf-8', {
+  fatal: true,
+  ignoreBOM: true,
+});
+
+function compareCodeUnit(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 
 function sha256Bytes(buffer) {
   return `sha256:${createHash('sha256').update(buffer).digest('hex')}`;
@@ -41,9 +48,30 @@ function assertSafeRelativePath(relativePath) {
   if (
     relativePath.length === 0 ||
     path.isAbsolute(relativePath) ||
-    relativePath.split('/').some((segment) => segment === '..')
+    relativePath.startsWith('\\') ||
+    relativePath.includes('\\') ||
+    /^[A-Za-z]:/.test(relativePath) ||
+    relativePath.split('/').some((segment) =>
+      segment.length === 0 || segment === '.' || segment === '..'
+    )
   ) {
     throw new Error(`unsafe rust source health path: ${relativePath}`);
+  }
+}
+
+function sameStringList(left, right) {
+  return Array.isArray(left) &&
+    Array.isArray(right) &&
+    left.length === right.length &&
+    left.every((value, index) => value === right[index]);
+}
+
+function assertDefaultPathPolicy({ include, exclude }) {
+  if (
+    !sameStringList(include, DEFAULT_INCLUDE) ||
+    !sameStringList(exclude, DEFAULT_EXCLUDE)
+  ) {
+    throw new Error('custom rust source health path policy is not supported yet');
   }
 }
 
@@ -67,7 +95,7 @@ function isRustSourcePath(relativePath) {
 
 function collectRustFiles({ rootAbs, dirAbs, files, skippedFiles }) {
   const entries = readdirSync(dirAbs, { withFileTypes: true })
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort((left, right) => compareCodeUnit(left.name, right.name));
 
   for (const entry of entries) {
     const absolutePath = path.join(dirAbs, entry.name);
@@ -106,6 +134,7 @@ export function collectRustSourceHealthInput({
   workerStackBytes = RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES,
 } = {}) {
   if (!root) throw new Error('root is required');
+  assertDefaultPathPolicy({ include, exclude });
   if (
     !Number.isInteger(workerStackBytes) ||
     workerStackBytes < RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES
@@ -149,7 +178,7 @@ export function collectRustSourceHealthInput({
       runtime,
     },
     skippedFiles: skippedFiles.sort((left, right) =>
-      left.path.localeCompare(right.path),
+      compareCodeUnit(left.path, right.path),
     ),
     pathPolicy,
   };
@@ -222,6 +251,16 @@ function sidecarCoverageProblems({ artifact, input }) {
       `sidecar file coverage mismatch: expected ${expectedPaths.length} files but found ${actualPaths.length}`,
     );
   }
+  const actualPathSet = new Set(actualPaths);
+  const expectedPathSet = new Set(expectedPaths);
+  const missingPaths = expectedPaths.filter((filePath) => !actualPathSet.has(filePath));
+  const extraPaths = actualPaths.filter((filePath) => !expectedPathSet.has(filePath));
+  if (missingPaths.length > 0) {
+    problems.push(`sidecar missing files: ${missingPaths.join(', ')}`);
+  }
+  if (extraPaths.length > 0) {
+    problems.push(`sidecar returned unexpected files: ${extraPaths.join(', ')}`);
+  }
 
   for (const [filePath, expectedSha] of expected) {
     if (actual[filePath]?.sha256 !== expectedSha) {
@@ -283,7 +322,11 @@ export async function runRustSourceHealth({
   threadCount,
   workerStackBytes = RUST_SOURCE_HEALTH_DEFAULT_WORKER_STACK_BYTES,
 } = {}) {
+  if (!binary) throw new Error('rust source health binary is required');
   const binaryPath = path.resolve(binary);
+  if (!existsSync(binaryPath)) {
+    throw new Error(`rust source health binary not found: ${binaryPath}`);
+  }
   const binarySha256 = hashFileSha256(binaryPath);
   const { input, skippedFiles, pathPolicy } = collectRustSourceHealthInput({
     root,

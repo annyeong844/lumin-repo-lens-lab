@@ -12,7 +12,7 @@ export const RUST_SOURCE_HEALTH_PARSER = Object.freeze({
 export function sortRustHealthArtifact(artifact) {
   const files = Object.fromEntries(
     Object.entries(artifact.files ?? {})
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareCodeUnit(left, right))
       .map(([file, value]) => [
         file,
         {
@@ -26,15 +26,19 @@ export function sortRustHealthArtifact(artifact) {
       ]),
   );
   const skippedFiles = [...(artifact.skippedFiles ?? [])]
-    .sort((left, right) => String(left.path).localeCompare(String(right.path)));
+    .sort((left, right) => compareCodeUnit(String(left.path), String(right.path)));
   return { ...artifact, skippedFiles, files };
+}
+
+function compareCodeUnit(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function compareSignals(left, right) {
   return (
     Number(left?.location?.byteStart ?? 0) -
       Number(right?.location?.byteStart ?? 0) ||
-    String(left?.kind ?? '').localeCompare(String(right?.kind ?? ''))
+    compareCodeUnit(String(left?.kind ?? ''), String(right?.kind ?? ''))
   );
 }
 
@@ -42,13 +46,13 @@ function compareParseErrors(left, right) {
   return (
     Number(left?.location?.byteStart ?? 0) -
       Number(right?.location?.byteStart ?? 0) ||
-    String(left?.message ?? '').localeCompare(String(right?.message ?? ''))
+    compareCodeUnit(String(left?.message ?? ''), String(right?.message ?? ''))
   );
 }
 
 export function stableObject(value = {}) {
   return Object.fromEntries(
-    Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
+    Object.entries(value).sort(([left], [right]) => compareCodeUnit(left, right)),
   );
 }
 
@@ -58,6 +62,18 @@ function isPlainObject(value) {
 
 function isSha256(value) {
   return typeof value === 'string' && /^sha256:[a-f0-9]{64}$/i.test(value);
+}
+
+function isSafeRelativeSlashPath(value) {
+  return typeof value === 'string' &&
+    value.length > 0 &&
+    !value.startsWith('/') &&
+    !value.startsWith('\\') &&
+    !value.includes('\\') &&
+    !/^[A-Za-z]:/.test(value) &&
+    !value.split('/').some((segment) =>
+      segment.length === 0 || segment === '.' || segment === '..'
+    );
 }
 
 function isLocation(value) {
@@ -76,8 +92,11 @@ function isLocation(value) {
     value.byteEnd >= value.byteStart;
 }
 
-export function summarizeRustHealthArtifact(artifact) {
-  const fileEntries = Object.values(artifact.files ?? {});
+export function summarizeRustHealthArtifact(artifact = {}) {
+  const safeArtifact = isPlainObject(artifact) ? artifact : {};
+  const fileEntries = Object.values(
+    isPlainObject(safeArtifact.files) ? safeArtifact.files : {},
+  );
   const signals = fileEntries.flatMap((entry) => entry.signals ?? []);
   const parseErrors = fileEntries.flatMap((entry) => entry.parse?.errors ?? []);
   const signalsByKind = {};
@@ -87,7 +106,7 @@ export function summarizeRustHealthArtifact(artifact) {
   }
   return {
     files: fileEntries.length,
-    skippedFiles: Array.isArray(artifact.skippedFiles) ? artifact.skippedFiles.length : 0,
+    skippedFiles: Array.isArray(safeArtifact.skippedFiles) ? safeArtifact.skippedFiles.length : 0,
     parseErrorFiles: fileEntries.filter((entry) => entry.parse?.ok === false).length,
     parseErrors: parseErrors.length,
     functions: fileEntries.reduce((sum, entry) => sum + Number(entry.facts?.functions ?? 0), 0),
@@ -103,7 +122,8 @@ export function summarizeRustHealthArtifact(artifact) {
 
 export function rustHealthInvariantProblems(artifact) {
   const expected = summarizeRustHealthArtifact(artifact);
-  const actual = artifact.summary ?? {};
+  const safeArtifact = isPlainObject(artifact) ? artifact : {};
+  const actual = isPlainObject(safeArtifact.summary) ? safeArtifact.summary : {};
   const problems = [];
   for (const [key, value] of Object.entries(expected)) {
     if (key === 'signalsByKind') {
@@ -126,6 +146,10 @@ function isIsoTimestamp(value) {
 
 function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
   const problems = [];
+  if (!isPlainObject(artifact)) {
+    problems.push('artifact must be an object');
+    artifact = {};
+  }
   if (artifact?.schemaVersion !== RUST_SOURCE_HEALTH_SCHEMA_VERSION) {
     problems.push('schemaVersion mismatch');
   }
@@ -212,14 +236,21 @@ function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
     ? artifact.skippedFiles
     : [];
   for (const skipped of skippedFiles) {
-    if (typeof skipped.path !== 'string' || skipped.path.length === 0) {
+    if (!isSafeRelativeSlashPath(skipped.path)) {
       problems.push('skippedFiles.path invalid');
+      if (typeof skipped.path === 'string' && skipped.path.length > 0) {
+        problems.push(`skippedFiles.${skipped.path}.path invalid`);
+      }
     }
     if (!allowedSkippedReasons.has(skipped.reason)) {
       problems.push(`skippedFiles.${skipped.path ?? '<unknown>'}.reason invalid`);
     }
   }
+  const allowedPathClassifications = new Set(['source', 'test', 'generated']);
   for (const [filePath, file] of Object.entries(artifact?.files ?? {})) {
+    if (!isSafeRelativeSlashPath(filePath)) {
+      problems.push(`files.${filePath}.path key invalid`);
+    }
     if (!isSha256(file?.sha256)) {
       problems.push(`files.${filePath}.sha256 invalid`);
     }
@@ -245,6 +276,18 @@ function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
     }
     if (!isPlainObject(file?.path) || !Array.isArray(file.path.classifications)) {
       problems.push(`files.${filePath}.path invalid`);
+    } else {
+      if (
+        !file.path.classifications.every((classification) =>
+          typeof classification === 'string' &&
+            allowedPathClassifications.has(classification)
+        )
+      ) {
+        problems.push(`files.${filePath}.path.classifications invalid`);
+      }
+      if (typeof file.path.suppressed !== 'boolean') {
+        problems.push(`files.${filePath}.path.suppressed invalid`);
+      }
     }
     const signals = Array.isArray(file?.signals) ? file.signals : [];
     for (const signal of signals) {
@@ -265,6 +308,12 @@ function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
       problems.push(`files.${filePath}.parse.errors must be an array`);
     }
     const parseErrors = Array.isArray(file?.parse?.errors) ? file.parse.errors : [];
+    if (file?.parse?.ok === true && parseErrors.length > 0) {
+      problems.push(`files.${filePath}.parse.ok true with parse errors`);
+    }
+    if (file?.parse?.ok === false && parseErrors.length === 0) {
+      problems.push(`files.${filePath}.parse.ok false without parse errors`);
+    }
     for (const parseError of parseErrors) {
       if (typeof parseError.message !== 'string' || parseError.message.length === 0) {
         problems.push(`files.${filePath}.parse.error.message invalid`);

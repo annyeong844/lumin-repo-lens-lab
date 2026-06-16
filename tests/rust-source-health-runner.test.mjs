@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -223,6 +224,45 @@ describe('Rust source health runner', () => {
     expect(result.artifact.summary.skippedFiles).toBe(1);
   });
 
+  it('preserves UTF-8 BOM text while hashing raw file bytes', () => {
+    const dir = tempDir('lumin-rust-health-runner-bom');
+    const root = path.join(dir, 'repo');
+    const filePath = path.join(root, 'src', 'bom.rs');
+    writeBytes(filePath, [
+      0xef,
+      0xbb,
+      0xbf,
+      ...Buffer.from('fn main() {}\n', 'utf8'),
+    ]);
+
+    const { input } = collectRustSourceHealthInput({ root });
+
+    expect(input.files).toHaveLength(1);
+    expect(input.files[0].text.startsWith('\uFEFF')).toBe(true);
+    expect(input.files[0].sha256).toBe(hashFile(filePath));
+  });
+
+  it('rejects custom path policy until matcher semantics exist', () => {
+    const dir = tempDir('lumin-rust-health-runner-policy');
+    const root = path.join(dir, 'repo');
+    writeText(path.join(root, 'src', 'lib.rs'), 'pub fn ok() {}\n');
+
+    expect(() =>
+      collectRustSourceHealthInput({
+        root,
+        include: ['**/*.md'],
+        exclude: ['target/**', 'vendor/**'],
+      }),
+    ).toThrow(/custom rust source health path policy is not supported yet/);
+    expect(() =>
+      collectRustSourceHealthInput({
+        root,
+        include: ['**/*.rs'],
+        exclude: ['target/**'],
+      }),
+    ).toThrow(/custom rust source health path policy is not supported yet/);
+  });
+
   it('applies path policy with root-relative slash paths and does not follow symlinks', () => {
     const dir = tempDir('lumin-rust-health-runner-path-policy');
     const root = path.join(dir, 'repo');
@@ -410,6 +450,32 @@ describe('Rust source health runner', () => {
     expect(existsSync(output)).toBe(false);
   });
 
+  it('reports missing and extra sidecar coverage paths', async () => {
+    const dir = tempDir('lumin-rust-health-runner-coverage-paths');
+    const root = path.join(dir, 'repo');
+    const output = path.join(dir, 'rust-health.json');
+    writeText(path.join(root, 'src', 'a.rs'), 'pub fn a() {}\n');
+    writeText(path.join(root, 'src', 'b.rs'), 'pub fn b() {}\n');
+    const binary = writeFakeSidecar(
+      dir,
+      fakeSidecarBody().replace(
+        'const returnedFiles = request.files;',
+        "const returnedFiles = [request.files[0], { ...request.files[1], path: 'src/c.rs' }];",
+      ),
+    );
+
+    await expect(
+      runRustSourceHealth({
+        root,
+        output,
+        binary,
+        sidecarSourceCommit: 'abc123',
+        timeoutMs: 5000,
+      }),
+    ).rejects.toThrow(/sidecar missing files: src\/b.rs; sidecar returned unexpected files: src\/c.rs/);
+    expect(existsSync(output)).toBe(false);
+  });
+
   it('treats sidecar timeout as a hard failure without partial output', async () => {
     const dir = tempDir('lumin-rust-health-runner-timeout');
     const root = path.join(dir, 'repo');
@@ -448,5 +514,40 @@ describe('Rust source health runner', () => {
     expect(existsSync(path.join(root, 'topology.json'))).toBe(false);
     expect(existsSync(path.join(root, 'topology.sarif'))).toBe(false);
     expect(existsSync(path.join(root, 'baselines', 'rust-topology-prefer-quorum.json'))).toBe(false);
+  });
+
+  it('classifies CLI usage failures as exit 2 and analysis failures as exit 1', () => {
+    const usage = spawnSync(process.execPath, ['scripts/run-rust-source-health.mjs'], {
+      cwd: path.resolve('.'),
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    expect(usage.status).toBe(2);
+    expect(usage.stderr).toMatch(/--root is required/);
+
+    const dir = tempDir('lumin-rust-health-cli-exits');
+    const root = path.join(dir, 'repo');
+    writeText(path.join(root, 'src', 'lib.rs'), 'pub fn ok() {}\n');
+    const failure = spawnSync(
+      process.execPath,
+      [
+        'scripts/run-rust-source-health.mjs',
+        '--root',
+        root,
+        '--output',
+        path.join(dir, 'rust-health.json'),
+        '--rust-source-health-bin',
+        path.join(dir, 'missing-sidecar.exe'),
+        '--sidecar-source-commit',
+        'abc123',
+      ],
+      {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+        windowsHide: true,
+      },
+    );
+    expect(failure.status).toBe(1);
+    expect(failure.stderr).toMatch(/rust source health binary not found/);
   });
 });

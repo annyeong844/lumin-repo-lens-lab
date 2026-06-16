@@ -116,6 +116,27 @@ fn records_parse_errors_as_file_data() {
 }
 
 #[test]
+fn classifies_root_level_test_and_generated_paths() {
+    let value = stdout_json(run_sidecar(request(vec![
+        file("tests/integration.rs", "fn integration() {}", 'd'),
+        file("generated/bindings.rs", "fn generated() {}", 'e'),
+        file("src/notgenerated.rs", "fn source() {}", 'f'),
+    ])));
+    assert_eq!(
+        value["files"]["tests/integration.rs"]["path"]["classifications"],
+        json!(["test"])
+    );
+    assert_eq!(
+        value["files"]["generated/bindings.rs"]["path"]["classifications"],
+        json!(["generated"])
+    );
+    assert_eq!(
+        value["files"]["src/notgenerated.rs"]["path"]["classifications"],
+        json!(["source"])
+    );
+}
+
+#[test]
 fn emits_files_in_deterministic_path_order() {
     let value = stdout_json(run_sidecar(request(vec![
         file("src/z.rs", "fn z() {}", 'd'),
@@ -125,6 +146,41 @@ fn emits_files_in_deterministic_path_order() {
     let a_pos = text.find("src/a.rs").unwrap();
     let z_pos = text.find("src/z.rs").unwrap();
     assert!(a_pos < z_pos);
+}
+
+#[test]
+fn rejects_unsupported_schema_without_json_artifact() {
+    let mut value = request(vec![file("src/lib.rs", "fn main() {}", 'f')]);
+    value["schemaVersion"] = json!(999);
+    let output = run_sidecar(value);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unsupported schemaVersion"));
+}
+
+#[test]
+fn rejects_unsafe_file_paths_without_json_artifact() {
+    for bad_path in [
+        "src\\lib.rs",
+        "C:/repo/src/lib.rs",
+        "src//lib.rs",
+        "./src/lib.rs",
+        "src/../lib.rs",
+    ] {
+        let output = run_sidecar(request(vec![file(bad_path, "fn main() {}", 'f')]));
+        assert!(!output.status.success(), "path should fail: {}", bad_path);
+        assert!(
+            output.stdout.is_empty(),
+            "path should not emit JSON: {}",
+            bad_path
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("file path"),
+            "stderr should mention file path for {}: {}",
+            bad_path,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 #[test]

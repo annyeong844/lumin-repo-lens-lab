@@ -170,13 +170,15 @@ This is a little stricter than letting the sidecar crawl the tree. Good. The
 sidecar is a parser/analyzer, not a second file discovery engine.
 
 The sidecar emits artifact JSON to stdout. The wrapper validates that JSON,
-appends wrapper-owned skipped-file evidence, validates the final artifact, and
-writes `rust-health.json`. The sidecar does not accept an output path or write
-files in the product slice.
+appends wrapper-owned skipped-file evidence for matched files it could not
+decode, validates the final artifact, and writes `rust-health.json`. The
+sidecar does not accept an output path or write files in the product slice.
 
-The wrapper also owns skipped-file evidence created by path policy. Excluded
-paths should be appended to the final artifact by the wrapper, not invented by
-the sidecar.
+The wrapper also owns path policy. Product-slice `target/**` and `vendor/**`
+matches are traversal-pruned and recorded in `meta.input.pathPolicy`, not
+expanded into per-file `skippedFiles` entries. `skippedFiles` is reserved for
+matched Rust source files that could not be analyzed after collection, such as
+invalid UTF-8.
 
 ## Artifact Contract
 
@@ -398,7 +400,7 @@ Recorded file-level findings:
 
 - Rust source parse errors;
 - unsupported syntax shapes;
-- files skipped by explicit path policy.
+- matched files skipped after collection, such as invalid UTF-8.
 
 Do not swallow sidecar errors. If the sidecar cannot run, the M6 artifact should
 not pretend to be complete.
