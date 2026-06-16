@@ -2,6 +2,7 @@ import { MODULE_EDGE_SCANNER_POLICY_VERSION } from './js-module-edge-scanner.mjs
 import { readJsonFile } from './artifacts.mjs';
 
 export const RUST_TOPOLOGY_PREFER_QUORUM_PATH = 'baselines/rust-topology-prefer-quorum.json';
+export const RUST_TOPOLOGY_PREFER_QUORUM_SCHEMA_VERSION = 1;
 export const REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA = [
   'geulbat-phase1',
   'lab-self',
@@ -13,6 +14,7 @@ const REQUIRED_QUORUM_RUN_FIELDS = [
   'labSourceCommit',
   'rustSidecarSourceCommit',
   'rustSidecarBinary',
+  'rustSidecarBinarySha256',
   'command',
   'corpusRoot',
   'cacheMode',
@@ -101,11 +103,27 @@ function hasCleanSourceDiagnostics(run) {
   );
 }
 
-function cleanRunMatches(run, rustSidecarSourceCommit, policyVersion) {
+function isPositiveInteger(value) {
+  return Number.isInteger(value) && value > 0;
+}
+
+function hasFullScannerCoverage(run) {
+  return isPositiveInteger(run?.fileCount) &&
+    isPositiveInteger(run?.filesCompared) &&
+    run.filesCompared === run.fileCount;
+}
+
+function cleanRunMatches(run, {
+  rustSidecarSourceCommit,
+  rustSidecarBinarySha256,
+  policyVersion,
+}) {
   return (
     hasRequiredRunFields(run) &&
     hasCleanSourceDiagnostics(run) &&
+    hasFullScannerCoverage(run) &&
     run?.rustSidecarSourceCommit === rustSidecarSourceCommit &&
+    run?.rustSidecarBinarySha256 === rustSidecarBinarySha256 &&
     run?.cacheMode === 'no-incremental' &&
     run?.mismatches === 0 &&
     run?.sidecarStatus === 'matched' &&
@@ -114,19 +132,29 @@ function cleanRunMatches(run, rustSidecarSourceCommit, policyVersion) {
 }
 
 function incompleteRequiredCorpora(quorumEvidence, policyVersion) {
-  const sourceCommit = quorumEvidence?.rustSidecarSourceCommit;
+  const rustSidecarSourceCommit = quorumEvidence?.rustSidecarSourceCommit;
+  const rustSidecarBinarySha256 = quorumEvidence?.rustSidecarBinarySha256;
   const runs = quorumEvidence?.runs ?? {};
   return REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA.filter((corpus) => {
     const recentRuns = (Array.isArray(runs[corpus]) ? runs[corpus] : []).slice(-3);
     return recentRuns.length < 3 ||
-      !recentRuns.every((run) => cleanRunMatches(run, sourceCommit, policyVersion));
+      !recentRuns.every((run) => cleanRunMatches(run, {
+        rustSidecarSourceCommit,
+        rustSidecarBinarySha256,
+        policyVersion,
+      }));
   });
 }
 
 function cacheModeForCurrentCorpus(quorumEvidence, currentCorpus, policyVersion) {
-  const sourceCommit = quorumEvidence?.rustSidecarSourceCommit;
+  const rustSidecarSourceCommit = quorumEvidence?.rustSidecarSourceCommit;
+  const rustSidecarBinarySha256 = quorumEvidence?.rustSidecarBinarySha256;
   const runs = quorumEvidence?.runs?.[currentCorpus] ?? [];
-  const cleanRun = runs.find((run) => cleanRunMatches(run, sourceCommit, policyVersion));
+  const cleanRun = runs.find((run) => cleanRunMatches(run, {
+    rustSidecarSourceCommit,
+    rustSidecarBinarySha256,
+    policyVersion,
+  }));
   return cleanRun?.cacheMode ?? null;
 }
 
@@ -174,10 +202,7 @@ export function evaluateRustTopologyPreferGate({
     });
   }
 
-  if (
-    rustTopologyScanner.policyVersion &&
-    rustTopologyScanner.policyVersion !== policyVersion
-  ) {
+  if (rustTopologyScanner.policyVersion !== policyVersion) {
     return baseGate({
       mode,
       currentCorpus,
@@ -290,10 +315,20 @@ export function evaluateRustTopologyPreferGate({
     });
   }
 
-  if (
-    quorumEvidence.policyVersion &&
-    quorumEvidence.policyVersion !== policyVersion
-  ) {
+  if (quorumEvidence.schemaVersion !== RUST_TOPOLOGY_PREFER_QUORUM_SCHEMA_VERSION) {
+    return baseGate({
+      mode,
+      currentCorpus,
+      rustTopologyScanner,
+      quorumEvidence,
+      policyVersion,
+      status: 'blocked-corpus-quorum',
+      reason: 'quorum-schema-version-mismatch',
+      extra: gateExtra,
+    });
+  }
+
+  if (quorumEvidence.policyVersion !== policyVersion) {
     return baseGate({
       mode,
       currentCorpus,
@@ -302,6 +337,19 @@ export function evaluateRustTopologyPreferGate({
       policyVersion,
       status: 'blocked-policy-version',
       reason: 'quorum-policy-version-mismatch',
+      extra: gateExtra,
+    });
+  }
+
+  if (!quorumEvidence.rustSidecarBinarySha256) {
+    return baseGate({
+      mode,
+      currentCorpus,
+      rustTopologyScanner,
+      quorumEvidence,
+      policyVersion,
+      status: 'blocked-corpus-quorum',
+      reason: 'quorum-binary-sha-missing',
       extra: gateExtra,
     });
   }

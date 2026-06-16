@@ -7,7 +7,7 @@ import { REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA } from './rust-topology-prefer-ga
 export const RUST_TOPOLOGY_PREFER_STATUSES = Object.freeze([
   'not-requested',
   'used-rust',
-  'fallback-js',
+  'blocked',
 ]);
 
 export const RUST_TOPOLOGY_PREFER_REASONS = Object.freeze([
@@ -17,9 +17,11 @@ export const RUST_TOPOLOGY_PREFER_REASONS = Object.freeze([
   'blocked-gate-missing',
   'blocked-gate-ineligible',
   'blocked-binary-not-found',
+  'blocked-unsupported-platform',
   'blocked-timeout',
   'blocked-non-zero-exit',
   'blocked-invalid-json-output',
+  'blocked-unsupported-file-type-or-syntax',
   'blocked-policy-version',
   'blocked-sidecar-source-commit',
   'blocked-sidecar-binary-sha256',
@@ -35,9 +37,11 @@ export const RUST_TOPOLOGY_PREFER_REASONS = Object.freeze([
 
 const SCANNER_TO_PREFER_REASON = new Map([
   ['binary-not-found', 'blocked-binary-not-found'],
+  ['unsupported-platform', 'blocked-unsupported-platform'],
   ['timeout', 'blocked-timeout'],
   ['non-zero-exit', 'blocked-non-zero-exit'],
   ['invalid-json-output', 'blocked-invalid-json-output'],
+  ['unsupported-file-type-or-syntax', 'blocked-unsupported-file-type-or-syntax'],
   ['count-mismatch', 'blocked-count-mismatch'],
   ['edge-mismatch', 'blocked-edge-mismatch'],
   ['risk-mismatch', 'blocked-risk-mismatch'],
@@ -73,12 +77,11 @@ export function compareTopologyArtifactContract(jsArtifact, rustArtifact) {
   };
 }
 
-function fallback({ reason, base }) {
+function blocked({ reason, base }) {
   return {
     ...base,
-    status: 'fallback-js',
+    status: 'blocked',
     usedRust: false,
-    fallbackUsed: true,
     reason,
   };
 }
@@ -87,7 +90,7 @@ function sourceCommitMismatch({
   rustSidecarSourceCommit,
   expectedRustSidecarSourceCommit,
 }) {
-  if (!expectedRustSidecarSourceCommit) return false;
+  if (!expectedRustSidecarSourceCommit) return true;
   if (!rustSidecarSourceCommit) return true;
   return rustSidecarSourceCommit !== expectedRustSidecarSourceCommit;
 }
@@ -108,6 +111,16 @@ function hasMalformedMatchedScannerMetadata(rustTopologyScanner) {
     rustTopologyScanner.policyVersion !== MODULE_EDGE_SCANNER_POLICY_VERSION;
 }
 
+function isPositiveInteger(value) {
+  return Number.isInteger(value) && value > 0;
+}
+
+function hasFullCurrentCoverage({ currentFileCount, filesCompared }) {
+  return isPositiveInteger(currentFileCount) &&
+    isPositiveInteger(filesCompared) &&
+    filesCompared === currentFileCount;
+}
+
 function hasValidPreferGateContract(rustTopologyPreferGate) {
   return rustTopologyPreferGate?.status === 'eligible' &&
     rustTopologyPreferGate.preferEnabled === false &&
@@ -121,6 +134,7 @@ export function evaluateRustTopologyPrefer({
   currentCorpus,
   rustTopologyScanner,
   rustTopologyPreferGate,
+  currentFileCount,
   quorumEvidencePath,
   rustSidecarBinary,
   rustSidecarSourceCommit,
@@ -143,6 +157,7 @@ export function evaluateRustTopologyPrefer({
     rustSidecarBuildProfile,
     quorumEvidence: quorumEvidencePath ?? null,
     gateStatus: rustTopologyPreferGate?.status ?? null,
+    currentFileCount: currentFileCount ?? null,
     filesCompared: rustTopologyScanner?.filesCompared ?? 0,
     mismatches: rustTopologyScanner?.mismatches ?? 0,
     sidecarTiming: rustTopologyScanner?.sidecarTiming ?? null,
@@ -154,52 +169,56 @@ export function evaluateRustTopologyPrefer({
       ...base,
       status: 'not-requested',
       usedRust: false,
-      fallbackUsed: false,
       reason: 'not-requested',
     };
   }
-  if (isIncremental) return fallback({ reason: 'blocked-cache-mode', base });
+  if (isIncremental) return blocked({ reason: 'blocked-cache-mode', base });
   if (!REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA.includes(currentCorpus)) {
-    return fallback({ reason: 'blocked-corpus-scope', base });
+    return blocked({ reason: 'blocked-corpus-scope', base });
   }
-  if (!rustTopologyScanner) return fallback({ reason: 'blocked-unknown-sidecar-status', base });
+  if (!rustTopologyScanner) return blocked({ reason: 'blocked-unknown-sidecar-status', base });
   if (rustTopologyScanner.reason === 'policy-version-mismatch') {
-    return fallback({ reason: 'blocked-policy-version', base });
+    return blocked({ reason: 'blocked-policy-version', base });
   }
   if (rustTopologyScanner.status !== 'matched') {
-    return fallback({
+    return blocked({
       reason: SCANNER_TO_PREFER_REASON.get(rustTopologyScanner.status) ??
         'blocked-unknown-sidecar-status',
       base,
     });
   }
   if (rustTopologyScanner.policyVersion !== MODULE_EDGE_SCANNER_POLICY_VERSION) {
-    return fallback({ reason: 'blocked-policy-version', base });
+    return blocked({ reason: 'blocked-policy-version', base });
   }
   if (hasMalformedMatchedScannerMetadata(rustTopologyScanner)) {
-    return fallback({ reason: 'blocked-unknown-sidecar-status', base });
+    return blocked({ reason: 'blocked-unknown-sidecar-status', base });
   }
-  if (!rustTopologyPreferGate) return fallback({ reason: 'blocked-gate-missing', base });
+  if (!hasFullCurrentCoverage({
+    currentFileCount,
+    filesCompared: rustTopologyScanner.filesCompared,
+  })) {
+    return blocked({ reason: 'blocked-count-mismatch', base });
+  }
+  if (!rustTopologyPreferGate) return blocked({ reason: 'blocked-gate-missing', base });
   if (!hasValidPreferGateContract(rustTopologyPreferGate)) {
     const reason = rustTopologyPreferGate.reason === 'quorum-evidence-missing'
       ? 'blocked-quorum-missing'
       : 'blocked-gate-ineligible';
-    return fallback({ reason, base });
+    return blocked({ reason, base });
   }
   if (sourceCommitMismatch({ rustSidecarSourceCommit, expectedRustSidecarSourceCommit })) {
-    return fallback({ reason: 'blocked-sidecar-source-commit', base });
+    return blocked({ reason: 'blocked-sidecar-source-commit', base });
   }
   if (binaryShaMismatch({ rustSidecarBinarySha256, expectedRustSidecarBinarySha256 })) {
-    return fallback({ reason: 'blocked-sidecar-binary-sha256', base });
+    return blocked({ reason: 'blocked-sidecar-binary-sha256', base });
   }
   if (artifactGuard?.status !== 'passed') {
-    return fallback({ reason: 'blocked-artifact-contract', base });
+    return blocked({ reason: 'blocked-artifact-contract', base });
   }
   return {
     ...base,
     status: 'used-rust',
     usedRust: true,
-    fallbackUsed: false,
     reason: 'gate-eligible-artifact-guard-passed',
   };
 }

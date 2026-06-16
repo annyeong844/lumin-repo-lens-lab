@@ -15,6 +15,7 @@ import {
   recordRustTopologyQuorum,
   recordRustTopologyQuorumBatch,
   renderQuorumSummary,
+  validateQuorumEvidence,
   validateRunRecord,
 } from '../_lib/rust-topology-quorum.mjs';
 import {
@@ -47,6 +48,7 @@ function completeRun(overrides = {}) {
     labSourceCommit: 'lab-commit',
     rustSidecarSourceCommit: 'rust-commit',
     rustSidecarBinary: 'target/release/lumin-topology-scanner.exe',
+    rustSidecarBinarySha256: 'sha256:abc',
     command: 'node measure-topology.mjs --no-incremental --clear-incremental-cache --rust-topology-scanner compare',
     corpusRoot: 'C:/corpora/geulbat-phase1',
     cacheMode: 'no-incremental',
@@ -85,13 +87,14 @@ describe('Rust topology quorum collector core', () => {
       labSourceCommit: 'lab-commit',
       rustSidecarSourceCommit: 'rust-commit',
       rustSidecarBinary: 'target/release/lumin-topology-scanner.exe',
+      rustSidecarBinarySha256: 'sha256:abc',
       machineOs: 'Microsoft Windows NT 10.0.26200.0',
       recordedAt: '2026-06-15T18:49:28+09:00',
       collector: first.collector,
     });
 
     const updated = appendRunRecord({
-      ...defaultEvidence('rust-commit'),
+      ...defaultEvidence('rust-commit', 'sha256:abc'),
       runs: { 'geulbat-phase1': [first] },
     }, 'geulbat-phase1', second);
 
@@ -161,19 +164,33 @@ describe('Rust topology quorum collector core', () => {
     const missingCollector = completeRun();
     delete missingCollector.collector;
     expect(() => validateRunRecord(missingCollector)).toThrow(/collector/);
+
+    expect(() => validateRunRecord(completeRun({ fileCount: 1000, filesCompared: 1 })))
+      .toThrow(/filesCompared must equal fileCount/);
+
+    expect(() => validateRunRecord(completeRun({ filesCompared: 0 })))
+      .toThrow(/filesCompared must be a positive integer/);
+  });
+
+  it('requires quorum evidence policyVersion before accepting the ledger', () => {
+    const evidence = defaultEvidence('rust-commit', 'sha256:abc');
+    delete evidence.policyVersion;
+
+    expect(() => validateQuorumEvidence(evidence)).toThrow(/policyVersion mismatch/);
   });
 
   it('creates default evidence for a missing quorum file and rejects mixed source commits', () => {
     const dir = tempDir('lumin-quorum-first-run');
     const quorumPath = path.join(dir, 'missing-quorum.json');
 
-    expect(readOrCreateQuorumEvidence(quorumPath, 'rust-commit')).toMatchObject({
+    expect(readOrCreateQuorumEvidence(quorumPath, 'rust-commit', 'sha256:abc')).toMatchObject({
       rustSidecarSourceCommit: 'rust-commit',
+      rustSidecarBinarySha256: 'sha256:abc',
       runs: {},
     });
 
     expect(() => appendRunRecord(
-      defaultEvidence('different-rust-commit'),
+      defaultEvidence('different-rust-commit', 'sha256:abc'),
       'geulbat-phase1',
       completeRun(),
     )).toThrow(/rustSidecarSourceCommit differs/);
@@ -191,6 +208,7 @@ describe('Rust topology quorum collector core', () => {
       quorumPath: path.join(dir, 'quorum.json'),
       outputRoot: path.join(dir, 'outputs'),
       rustSidecarBinary: 'target/release/lumin-topology-scanner.exe',
+      rustSidecarBinarySha256: 'sha256:abc',
       rustSidecarSourceCommit: 'rust-commit',
       labSourceCommit: 'lab-commit',
       machineOs: 'Microsoft Windows NT 10.0.26200.0',
@@ -225,6 +243,7 @@ describe('Rust topology quorum collector core', () => {
       quorumPath: path.join(dir, 'quorum.json'),
       outputRoot: path.join(dir, 'outputs'),
       rustSidecarBinary: 'target/release/lumin-topology-scanner.exe',
+      rustSidecarBinarySha256: 'sha256:abc',
       rustSidecarSourceCommit: 'rust-commit',
       labSourceCommit: 'lab-commit',
       machineOs: 'Microsoft Windows NT 10.0.26200.0',
@@ -254,6 +273,7 @@ describe('Rust topology quorum collector core', () => {
       quorumPath,
       outputRoot: path.join(dir, 'outputs'),
       rustSidecarBinary: 'target/release/lumin-topology-scanner.exe',
+      rustSidecarBinarySha256: 'sha256:abc',
       rustSidecarSourceCommit: 'rust-commit',
       labSourceCommit: 'lab-commit',
       machineOs: 'Microsoft Windows NT 10.0.26200.0',
@@ -271,7 +291,7 @@ describe('Rust topology quorum collector core', () => {
 
   it('renders a summary with M3 gate verification and oracle status', () => {
     const evidence = {
-      ...defaultEvidence('rust-commit'),
+      ...defaultEvidence('rust-commit', 'sha256:abc'),
       runs: Object.fromEntries(
         REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA.map((corpus) => [
           corpus,

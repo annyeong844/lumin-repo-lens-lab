@@ -36,7 +36,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       },
       {
         "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
@@ -64,7 +65,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       },
       {
         "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
@@ -92,7 +94,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       }
     ],
     "lab-self": [
@@ -122,7 +125,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       },
       {
         "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
@@ -150,7 +154,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       },
       {
         "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
@@ -178,7 +183,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       }
     ],
     "stable-source-clean": [
@@ -208,7 +214,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       },
       {
         "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
@@ -236,7 +243,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       },
       {
         "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
@@ -264,7 +272,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       }
     ],
     "nuxt-main": [
@@ -294,7 +303,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       },
       {
         "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
@@ -322,7 +332,8 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       },
       {
         "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
@@ -350,8 +361,10 @@
           "rustSidecarWorkingTreeClean": true,
           "labSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151",
           "rustSidecarSourceCommit": "d7d5c6aab2397a3a179b4b146779281b26f58151"
-        }
+        },
+        "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
       }
     ]
-  }
+  },
+  "rustSidecarBinarySha256": "sha256:86b2dc48d9fae5f612c371326f27f47b6f2742b36779554f9578a8c3c07da4e1"
 }

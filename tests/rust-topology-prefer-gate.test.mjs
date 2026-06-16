@@ -14,6 +14,7 @@ function cleanRun(corpus, index = 0) {
     labSourceCommit: `lab-${index}`,
     rustSidecarSourceCommit: '87116819c23d1e1adfbfca5def44552856e4f464',
     rustSidecarBinary: 'experiments/rust-sidecar/topology-scanner/target/release/lumin-topology-scanner.exe',
+    rustSidecarBinarySha256: 'sha256:abc',
     command: `node measure-topology.mjs --rust-topology-prefer-gate-corpus ${corpus}`,
     corpusRoot: `C:/corpora/${corpus}`,
     cacheMode: 'no-incremental',
@@ -41,6 +42,7 @@ function cleanQuorum() {
     requiredCorpora: REQUIRED_CORPORA,
     policyVersion: MODULE_EDGE_SCANNER_POLICY_VERSION,
     rustSidecarSourceCommit: '87116819c23d1e1adfbfca5def44552856e4f464',
+    rustSidecarBinarySha256: 'sha256:abc',
     runs: Object.fromEntries(
       REQUIRED_CORPORA.map((corpus) => [
         corpus,
@@ -196,6 +198,109 @@ describe('Rust topology prefer gate', () => {
 
     expect(gate.status).toBe('blocked-policy-version');
     expect(gate.reason).toBe('quorum-policy-version-mismatch');
+  });
+
+  it('blocks when matched scanner metadata is missing policyVersion', () => {
+    const scanner = matchedScanner();
+    delete scanner.policyVersion;
+
+    const gate = evaluateRustTopologyPreferGate({
+      mode: 'compare',
+      currentCorpus: 'lab-self',
+      rustTopologyScanner: scanner,
+      quorumEvidence: cleanQuorum(),
+    });
+
+    expect(gate.status).toBe('blocked-policy-version');
+    expect(gate.reason).toBe('policy-version-mismatch');
+  });
+
+  it('blocks when quorum evidence is missing top-level policyVersion', () => {
+    const quorum = cleanQuorum();
+    delete quorum.policyVersion;
+
+    const gate = evaluateRustTopologyPreferGate({
+      mode: 'compare',
+      currentCorpus: 'lab-self',
+      rustTopologyScanner: matchedScanner(),
+      quorumEvidence: quorum,
+    });
+
+    expect(gate.status).toBe('blocked-policy-version');
+    expect(gate.reason).toBe('quorum-policy-version-mismatch');
+  });
+
+  it('blocks when quorum evidence has no approved binary sha256', () => {
+    const quorum = cleanQuorum();
+    delete quorum.rustSidecarBinarySha256;
+
+    const gate = evaluateRustTopologyPreferGate({
+      mode: 'compare',
+      currentCorpus: 'lab-self',
+      rustTopologyScanner: matchedScanner(),
+      quorumEvidence: quorum,
+    });
+
+    expect(gate.status).toBe('blocked-corpus-quorum');
+    expect(gate.reason).toBe('quorum-binary-sha-missing');
+  });
+
+  it('blocks when quorum schemaVersion is missing or unsupported', () => {
+    for (const schemaVersion of [undefined, 999]) {
+      const quorum = cleanQuorum();
+      if (schemaVersion === undefined) delete quorum.schemaVersion;
+      else quorum.schemaVersion = schemaVersion;
+
+      const gate = evaluateRustTopologyPreferGate({
+        mode: 'prefer',
+        currentCorpus: 'lab-self',
+        rustTopologyScanner: matchedScanner(),
+        quorumEvidence: quorum,
+      });
+
+      expect(gate.status).toBe('blocked-corpus-quorum');
+      expect(gate.reason).toBe('quorum-schema-version-mismatch');
+    }
+  });
+
+  it('blocks quorum runs that are matched but not full coverage', () => {
+    const quorum = cleanQuorum();
+    for (const runs of Object.values(quorum.runs)) {
+      for (const run of runs) {
+        run.fileCount = 1000;
+        run.filesCompared = 1;
+      }
+    }
+
+    const gate = evaluateRustTopologyPreferGate({
+      mode: 'prefer',
+      currentCorpus: 'lab-self',
+      rustTopologyScanner: matchedScanner(),
+      quorumEvidence: quorum,
+    });
+
+    expect(gate.status).toBe('blocked-corpus-quorum');
+    expect(gate.reason).toBe('required-corpus-history-incomplete');
+    expect(gate.incompleteCorpora).toEqual(REQUIRED_CORPORA);
+  });
+
+  it('blocks quorum runs recorded with a different binary sha256', () => {
+    const quorum = cleanQuorum();
+    quorum.rustSidecarBinarySha256 = 'sha256:new-approved';
+    for (const runs of Object.values(quorum.runs)) {
+      for (const run of runs) run.rustSidecarBinarySha256 = 'sha256:old-recorded';
+    }
+
+    const gate = evaluateRustTopologyPreferGate({
+      mode: 'prefer',
+      currentCorpus: 'lab-self',
+      rustTopologyScanner: matchedScanner(),
+      quorumEvidence: quorum,
+    });
+
+    expect(gate.status).toBe('blocked-corpus-quorum');
+    expect(gate.reason).toBe('required-corpus-history-incomplete');
+    expect(gate.incompleteCorpora).toEqual(REQUIRED_CORPORA);
   });
 
   it('blocks matched runs when quorum evidence is incomplete', () => {

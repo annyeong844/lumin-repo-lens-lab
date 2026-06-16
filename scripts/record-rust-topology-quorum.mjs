@@ -12,6 +12,7 @@ import {
   renderQuorumSummary,
   writeTextAtomic,
 } from '../_lib/rust-topology-quorum.mjs';
+import { hashFileSha256 } from '../_lib/rust-topology-prefer.mjs';
 import {
   RUST_TOPOLOGY_PREFER_QUORUM_PATH,
 } from '../_lib/rust-topology-prefer-gate.mjs';
@@ -138,9 +139,13 @@ if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
 
 const labSourceCommit = values['lab-source-commit'] ?? runGit(['rev-parse', 'HEAD']);
 const rustSidecarSourceCommit = values['rust-sidecar-source-commit'];
+const rustSidecarBinary = path.resolve(repoRoot, values['rust-topology-scanner-bin']);
+const rustSidecarBinarySha256 = hashFileSha256(rustSidecarBinary);
 const rustSidecarRoot = path.join(repoRoot, 'experiments', 'rust-sidecar', 'topology-scanner');
 const labWorkingTreeClean = runGit(['status', '--porcelain']) === '';
 const rustSidecarWorkingTreeClean = runGit(['status', '--porcelain', '--', '.'], rustSidecarRoot) === '';
+const quorumPath = path.resolve(repoRoot, values.quorum);
+const outputRoot = path.resolve(repoRoot, values['output-root']);
 const sourceDiagnostics = {
   workingTreeClean: labWorkingTreeClean && rustSidecarWorkingTreeClean,
   sourceDirty: !(labWorkingTreeClean && rustSidecarWorkingTreeClean),
@@ -157,9 +162,10 @@ const result = await recordRustTopologyQuorumBatch({
   corpusRoots: values['corpus-root'],
   rootsJson: values['roots-json'],
   repeat,
-  quorumPath: values.quorum,
-  outputRoot: values['output-root'],
-  rustSidecarBinary: values['rust-topology-scanner-bin'],
+  quorumPath,
+  outputRoot,
+  rustSidecarBinary,
+  rustSidecarBinarySha256,
   rustSidecarSourceCommit,
   labSourceCommit,
   machineOs: `${platform()} ${release()}`,
@@ -174,9 +180,9 @@ if (!gateCheckRoot) {
 }
 const gateCheck = runGateCheck({
   root: gateCheckRoot,
-  outputRoot: values['output-root'],
-  rustSidecarBinary: values['rust-topology-scanner-bin'],
-  quorumPath: values.quorum,
+  outputRoot,
+  rustSidecarBinary,
+  quorumPath,
   corpus: values['gate-check-corpus'],
   timeoutMs,
 });
@@ -186,5 +192,5 @@ const summary = renderQuorumSummary({
   gateCheck,
   commands: result?.commands ?? [],
 });
-writeTextAtomic('baselines/m4-rust-topology-quorum-2026-06-15.md', summary);
-console.log(`[rust-topology-quorum] updated ${values.quorum}`);
+writeTextAtomic(path.join(repoRoot, 'baselines/m4-rust-topology-quorum-2026-06-15.md'), summary);
+console.log(`[rust-topology-quorum] updated ${quorumPath}`);
