@@ -27,9 +27,9 @@
       "no-trait-solving",
       "no-borrow-check"
     ],
-    "generated": "2026-06-16T14:11:24.880Z",
+    "generated": "2026-06-16T14:22:02.838Z",
     "sidecar": {
-      "sourceCommit": "4a2392f74cd4acf33c7923ec83bb962db2e09b39",
+      "sourceCommit": "3a16143c91f62eb4a243855cdbf6a7a5ead37b90",
       "binarySha256": "sha256:b0b00011b3032aa68749d27907ee118757d93e3cf3a48f3a1792983646134529"
     },
     "input": {
