@@ -6,13 +6,14 @@
 //        [--include-type-edges] [--cache-root <dir>] [--no-incremental] \
 //        [--clear-incremental-cache] [--rust-topology-scanner off|compare|prefer] \
 //        [--rust-topology-scanner-bin <path>] [--rust-topology-timeout-ms <ms>] \
-//        [--rust-sidecar-source-commit <sha>] [--rust-sidecar-binary-sha256 <sha256:...>] \
+//        [--rust-sidecar-source-commit <sha>] \
 //        [--rust-topology-prefer-gate] [--rust-topology-prefer-gate-corpus <name>] \
 //        [--rust-topology-prefer-quorum <file>] \
 //        [--verbose]
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { parseOxcOrThrow } from './_lib/parse-oxc.mjs';
 import { parseCliArgs } from './_lib/cli.mjs';
@@ -70,12 +71,15 @@ const cli = parseCliArgs({
   'rust-topology-scanner-bin': { type: 'string' },
   'rust-topology-timeout-ms': { type: 'string', default: '60000' },
   'rust-sidecar-source-commit': { type: 'string' },
-  'rust-sidecar-binary-sha256': { type: 'string' },
   'rust-topology-prefer-gate': { type: 'boolean', default: false },
   'rust-topology-prefer-gate-corpus': { type: 'string' },
   'rust-topology-prefer-quorum': { type: 'string' },
 });
 const { root, output, verbose } = cli;
+const producerDir = path.dirname(fileURLToPath(import.meta.url));
+const labRoot = path.basename(producerDir) === 'producers'
+  ? path.resolve(producerDir, '..', '..')
+  : producerDir;
 const phaseTimer = createProducerPhaseTimer({
   producer: 'measure-topology.mjs',
   output,
@@ -643,9 +647,9 @@ const rustScannerComparison = compareRustTopologyScanner({
   timeoutMs: Number(cli.raw['rust-topology-timeout-ms'] ?? 60000),
 });
 const rustPreferGateEnabled = cli.raw['rust-topology-prefer-gate'] === true;
-const rustPreferQuorumPath = path.resolve(
-  cli.raw['rust-topology-prefer-quorum'] ?? RUST_TOPOLOGY_PREFER_QUORUM_PATH,
-);
+const rustPreferQuorumPath = cli.raw['rust-topology-prefer-quorum']
+  ? path.resolve(cli.raw['rust-topology-prefer-quorum'])
+  : path.join(labRoot, RUST_TOPOLOGY_PREFER_QUORUM_PATH);
 const rustPreferQuorumEvidence = rustPreferGateEnabled && !(rustPreferRequested && isIncremental)
   ? readRustTopologyPreferQuorum(rustPreferQuorumPath)
   : null;
@@ -718,12 +722,13 @@ const rustTopologyPrefer = rustPreferRequested
       currentCorpus: cli.raw['rust-topology-prefer-gate-corpus'],
       rustTopologyScanner: rustScannerComparison.metadata,
       rustTopologyPreferGate,
+      currentFileCount: jsArtifact.summary.files,
       quorumEvidencePath: rustPreferQuorumPath,
       rustSidecarBinary: cli.raw['rust-topology-scanner-bin'],
       rustSidecarSourceCommit: cli.raw['rust-sidecar-source-commit'],
       expectedRustSidecarSourceCommit: rustPreferQuorumEvidence?.rustSidecarSourceCommit,
       rustSidecarBinarySha256,
-      expectedRustSidecarBinarySha256: cli.raw['rust-sidecar-binary-sha256'],
+      expectedRustSidecarBinarySha256: rustPreferQuorumEvidence?.rustSidecarBinarySha256,
       artifactGuard,
     })
   : null;
@@ -744,3 +749,9 @@ const lensLabel = includeTypeEdges ? 'static' : 'runtime';
 console.log(`[m2s1] ${files.length} files, ${artifact.summary.totalLoc.toLocaleString()} LOC, ${artifact.summary.internalEdges} edges (lens: ${lensLabel})`);
 console.log(`[m2s1] SCC ${artifact.summary.sccCount} (max ${artifact.summary.maxSccSize}), 1000 LOC+ ${artifact.summary.oneThousandPlusFiles}`);
 console.log(`[m2s1] saved → ${outPath}`);
+
+if (rustTopologyPrefer?.status === 'blocked') {
+  console.error(`[m2s1] Rust topology prefer blocked: ${rustTopologyPrefer.reason}`);
+  console.error(`[m2s1] diagnostic artifact saved → ${outPath}`);
+  process.exitCode = 1;
+}

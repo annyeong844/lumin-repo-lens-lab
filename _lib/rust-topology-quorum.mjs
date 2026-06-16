@@ -6,17 +6,18 @@ import { readJsonFile } from './artifacts.mjs';
 import { MODULE_EDGE_SCANNER_POLICY_VERSION } from './js-module-edge-scanner.mjs';
 import {
   REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA,
+  RUST_TOPOLOGY_PREFER_QUORUM_SCHEMA_VERSION,
   RUST_TOPOLOGY_PREFER_QUORUM_PATH,
 } from './rust-topology-prefer-gate.mjs';
 
-export const QUORUM_SCHEMA_VERSION = 1;
-export const DEFAULT_M4_QUORUM_OUTPUT_ROOT =
-  'C:/Users/endof/Downloads/lumin-perf-lab/baselines/m4-rust-topology-quorum';
+export const QUORUM_SCHEMA_VERSION = RUST_TOPOLOGY_PREFER_QUORUM_SCHEMA_VERSION;
+export const DEFAULT_M4_QUORUM_OUTPUT_ROOT = 'baselines/m4-rust-topology-quorum';
 
 const REQUIRED_RUN_FIELDS = [
   'labSourceCommit',
   'rustSidecarSourceCommit',
   'rustSidecarBinary',
+  'rustSidecarBinarySha256',
   'command',
   'corpusRoot',
   'cacheMode',
@@ -43,6 +44,10 @@ function assertRequiredCorpus(corpus) {
 
 function slashPath(value) {
   return String(value ?? '').replaceAll('\\', '/');
+}
+
+function isPositiveInteger(value) {
+  return Number.isInteger(value) && value > 0;
 }
 
 export function parseCorpusRootEntry(entry) {
@@ -107,8 +112,27 @@ export function validateRunRecord(record) {
   if (record.cacheMode !== 'no-incremental') {
     throw new Error(`quorum evidence requires no-incremental cache mode: ${record.cacheMode}`);
   }
+  if (!isPositiveInteger(record.fileCount)) {
+    throw new Error(`run record fileCount must be a positive integer: ${record.fileCount}`);
+  }
+  if (!isPositiveInteger(record.filesCompared)) {
+    throw new Error(`run record filesCompared must be a positive integer: ${record.filesCompared}`);
+  }
+  if (record.filesCompared !== record.fileCount) {
+    throw new Error('run record filesCompared must equal fileCount for M5 full-coverage quorum');
+  }
   if (!record.collector || typeof record.collector !== 'object') {
     throw new Error('run record missing collector source diagnostics');
+  }
+  for (const field of [
+    'workingTreeClean',
+    'sourceDirty',
+    'labWorkingTreeClean',
+    'rustSidecarWorkingTreeClean',
+  ]) {
+    if (typeof record.collector[field] !== 'boolean') {
+      throw new Error(`collector source diagnostic must be boolean: ${field}`);
+    }
   }
   return record;
 }
@@ -128,6 +152,12 @@ export function validateQuorumEvidence(evidence) {
   if (!evidence.runs || typeof evidence.runs !== 'object' || Array.isArray(evidence.runs)) {
     throw new Error('quorum evidence must contain runs object');
   }
+  if (evidence.policyVersion !== MODULE_EDGE_SCANNER_POLICY_VERSION) {
+    throw new Error(`quorum evidence policyVersion mismatch: ${evidence.policyVersion}`);
+  }
+  if (!evidence.rustSidecarBinarySha256) {
+    throw new Error('quorum evidence missing rustSidecarBinarySha256');
+  }
   return evidence;
 }
 
@@ -140,6 +170,9 @@ export function appendRunRecord(evidence, corpus, record) {
   const checked = validateRunRecord(record);
   if (checked.rustSidecarSourceCommit !== base.rustSidecarSourceCommit) {
     throw new Error('run record rustSidecarSourceCommit differs from quorum evidence');
+  }
+  if (checked.rustSidecarBinarySha256 !== base.rustSidecarBinarySha256) {
+    throw new Error('run record rustSidecarBinarySha256 differs from quorum evidence');
   }
   if (checked.policyVersion !== base.policyVersion) {
     throw new Error('run record policyVersion differs from quorum evidence');
@@ -163,6 +196,7 @@ export function buildRunRecordFromTopology({
   labSourceCommit,
   rustSidecarSourceCommit,
   rustSidecarBinary,
+  rustSidecarBinarySha256,
   machineOs,
   recordedAt,
   collector,
@@ -176,6 +210,7 @@ export function buildRunRecordFromTopology({
     labSourceCommit,
     rustSidecarSourceCommit,
     rustSidecarBinary,
+    rustSidecarBinarySha256,
     command,
     corpusRoot: slashPath(corpusRoot),
     cacheMode: 'no-incremental',
@@ -207,8 +242,8 @@ export function readQuorumEvidence(filePath = RUST_TOPOLOGY_PREFER_QUORUM_PATH) 
   }
 }
 
-export function readOrCreateQuorumEvidence(filePath, rustSidecarSourceCommit) {
-  return readQuorumEvidence(filePath) ?? defaultEvidence(rustSidecarSourceCommit);
+export function readOrCreateQuorumEvidence(filePath, rustSidecarSourceCommit, rustSidecarBinarySha256) {
+  return readQuorumEvidence(filePath) ?? defaultEvidence(rustSidecarSourceCommit, rustSidecarBinarySha256);
 }
 
 export function writeJsonAtomic(filePath, value) {
@@ -225,12 +260,13 @@ export function pathExists(filePath) {
   return existsSync(filePath);
 }
 
-export function defaultEvidence(rustSidecarSourceCommit) {
+export function defaultEvidence(rustSidecarSourceCommit, rustSidecarBinarySha256) {
   return {
     schemaVersion: QUORUM_SCHEMA_VERSION,
     requiredCorpora: [...REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA],
     policyVersion: MODULE_EDGE_SCANNER_POLICY_VERSION,
     rustSidecarSourceCommit,
+    rustSidecarBinarySha256,
     runs: {},
   };
 }
@@ -239,12 +275,18 @@ function nextRunOutputDir(outputRoot, corpus, runIndex) {
   return path.join(outputRoot, corpus, `run-${String(runIndex).padStart(3, '0')}`);
 }
 
-function isSummaryCleanRun(run) {
+function isSummaryCleanRun(run, evidence) {
   const collector = run?.collector;
   return (
     run?.sidecarStatus === 'matched' &&
     run?.mismatches === 0 &&
     run?.cacheMode === 'no-incremental' &&
+    run?.rustSidecarSourceCommit === evidence?.rustSidecarSourceCommit &&
+    run?.rustSidecarBinarySha256 === evidence?.rustSidecarBinarySha256 &&
+    run?.policyVersion === evidence?.policyVersion &&
+    isPositiveInteger(run?.fileCount) &&
+    isPositiveInteger(run?.filesCompared) &&
+    run.filesCompared === run.fileCount &&
     collector?.sourceDirty === false &&
     collector?.workingTreeClean === true &&
     collector?.labWorkingTreeClean === true &&
@@ -252,9 +294,9 @@ function isSummaryCleanRun(run) {
   );
 }
 
-function latestThreeStatus(runs = []) {
+function latestThreeStatus(runs = [], evidence) {
   const recent = runs.slice(-3);
-  const clean = recent.length === 3 && recent.every(isSummaryCleanRun);
+  const clean = recent.length === 3 && recent.every((run) => isSummaryCleanRun(run, evidence));
   return clean ? 'clean' : 'incomplete';
 }
 
@@ -264,6 +306,7 @@ export async function recordRustTopologyQuorum({
   quorumPath = RUST_TOPOLOGY_PREFER_QUORUM_PATH,
   outputRoot = DEFAULT_M4_QUORUM_OUTPUT_ROOT,
   rustSidecarBinary,
+  rustSidecarBinarySha256,
   rustSidecarSourceCommit,
   labSourceCommit,
   machineOs,
@@ -276,7 +319,11 @@ export async function recordRustTopologyQuorum({
   if (!sourceState) throw new Error('sourceState probe is required for quorum evidence');
   const rootMap = normalizeRootMap({ corpus, root });
   if (!rootMap[corpus]) throw new Error(`missing root for corpus: ${corpus}`);
-  const evidence = readOrCreateQuorumEvidence(quorumPath, rustSidecarSourceCommit);
+  const evidence = readOrCreateQuorumEvidence(
+    quorumPath,
+    rustSidecarSourceCommit,
+    rustSidecarBinarySha256,
+  );
   validateQuorumEvidence(evidence);
   const existingRuns = evidence.runs?.[corpus] ?? [];
   const outputDir = nextRunOutputDir(outputRoot, corpus, existingRuns.length + 1);
@@ -311,6 +358,7 @@ export async function recordRustTopologyQuorum({
     labSourceCommit,
     rustSidecarSourceCommit,
     rustSidecarBinary,
+    rustSidecarBinarySha256,
     machineOs,
     recordedAt: now(),
     collector: sourceState(),
@@ -377,7 +425,7 @@ export function renderQuorumSummary({ evidence, gateCheck, commands = [] } = {})
   for (const corpus of REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA) {
     const runs = evidence.runs?.[corpus] ?? [];
     const last = runs.at(-1) ?? {};
-    lines.push(`| \`${corpus}\` | ${runs.length} | ${latestThreeStatus(runs)} | ${last.filesCompared ?? 0} | ${last.mismatches ?? 0} | ${last.commandWallElapsedMs ?? 0} | ${last.scannerBridgeElapsedMs ?? 0} | ${last.sidecarElapsedMs ?? 0} |`);
+    lines.push(`| \`${corpus}\` | ${runs.length} | ${latestThreeStatus(runs, evidence)} | ${last.filesCompared ?? 0} | ${last.mismatches ?? 0} | ${last.commandWallElapsedMs ?? 0} | ${last.scannerBridgeElapsedMs ?? 0} | ${last.sidecarElapsedMs ?? 0} |`);
   }
   lines.push(
     '',

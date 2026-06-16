@@ -13,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const FAKE_RUST_SIDECAR_COMMIT = "87116819c23d1e1adfbfca5def44552856e4f464";
 
-function runTopologyWithStderr(fixture, { output = fixture.output, args = [] } = {}) {
+function runTopologyWithStderr(fixture, { output = fixture.output, args = [], allowFailure = false } = {}) {
   const result = spawnSync(
     process.execPath,
     [
@@ -26,7 +26,7 @@ function runTopologyWithStderr(fixture, { output = fixture.output, args = [] } =
     ],
     { encoding: "utf8" },
   );
-  if (result.status !== 0) {
+  if (result.status !== 0 && !allowFailure) {
     throw new Error(
       [
         `measure-topology exited with ${result.status}`,
@@ -35,10 +35,12 @@ function runTopologyWithStderr(fixture, { output = fixture.output, args = [] } =
       ].join("\n"),
     );
   }
+  const topologyPath = path.join(output, "topology.json");
   return {
+    status: result.status,
     stderr: result.stderr,
     topology: JSON.parse(
-      readFileSync(path.join(output, "topology.json"), "utf8"),
+      readFileSync(topologyPath, "utf8"),
     ),
   };
 }
@@ -119,7 +121,7 @@ process.stdin.on("end", () => {
   return command;
 }
 
-function cleanQuorumEvidence() {
+function cleanQuorumEvidence(sidecar) {
   const requiredCorpora = [
     "geulbat-phase1",
     "lab-self",
@@ -128,13 +130,16 @@ function cleanQuorumEvidence() {
   ];
   const policyVersion = MODULE_EDGE_SCANNER_POLICY_VERSION;
   const rustSidecarSourceCommit = FAKE_RUST_SIDECAR_COMMIT;
+  const rustSidecarBinary = sidecar ?? "experiments/rust-sidecar/topology-scanner/target/release/lumin-topology-scanner.exe";
+  const rustSidecarBinarySha256 = sidecar ? hashFileSha256(sidecar) : "sha256:abc";
   const runs = Object.fromEntries(
     requiredCorpora.map((corpus) => [
       corpus,
       [0, 1, 2].map((index) => ({
         labSourceCommit: `lab-${index}`,
         rustSidecarSourceCommit,
-        rustSidecarBinary: "experiments/rust-sidecar/topology-scanner/target/release/lumin-topology-scanner.exe",
+        rustSidecarBinary,
+        rustSidecarBinarySha256,
         command: `node measure-topology.mjs --rust-topology-prefer-gate-corpus ${corpus}`,
         corpusRoot: `C:/corpora/${corpus}`,
         cacheMode: "no-incremental",
@@ -161,6 +166,7 @@ function cleanQuorumEvidence() {
     requiredCorpora,
     policyVersion,
     rustSidecarSourceCommit,
+    rustSidecarBinarySha256,
     runs,
   };
 }
@@ -174,6 +180,16 @@ function normalizeTopologyForGateContract(topology) {
   }
   normalized.summary.performance.scannerMs = "<scannerMs>";
   return normalized;
+}
+
+function expectBlockedPrefer(result, reason) {
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(`Rust topology prefer blocked: ${reason}`);
+  expect(result.topology.meta.rustTopologyPrefer).toMatchObject({
+    status: "blocked",
+    reason,
+    usedRust: false,
+  });
 }
 
 describe("topology Rust scanner and prefer integration", () => {
@@ -224,7 +240,7 @@ describe("topology Rust scanner and prefer integration", () => {
       fixture.write("src/empty.mjs", "export const value = 1;\n");
       const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
       const quorumPath = path.join(fixture.root, "rust-topology-prefer-quorum.json");
-      writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(), null, 2));
+      writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(sidecar), null, 2));
 
       const commonArgs = [
         "--no-incremental",
@@ -325,7 +341,7 @@ describe("topology Rust scanner and prefer integration", () => {
       fixture.write("src/empty.mjs", "export const value = 1;\n");
       const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
       const quorumPath = path.join(fixture.root, "rust-topology-prefer-quorum.json");
-      writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(), null, 2));
+      writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(sidecar), null, 2));
 
       const topology = runTopologyWithStderr(fixture, {
         args: [
@@ -339,8 +355,6 @@ describe("topology Rust scanner and prefer integration", () => {
           "1000",
           "--rust-sidecar-source-commit",
           FAKE_RUST_SIDECAR_COMMIT,
-          "--rust-sidecar-binary-sha256",
-          hashFileSha256(sidecar),
           "--rust-topology-prefer-gate",
           "--rust-topology-prefer-gate-corpus",
           "lab-self",
@@ -354,7 +368,6 @@ describe("topology Rust scanner and prefer integration", () => {
         mode: "prefer",
         status: "used-rust",
         usedRust: true,
-        fallbackUsed: false,
         reason: "gate-eligible-artifact-guard-passed",
         rustSidecarSourceCommit: FAKE_RUST_SIDECAR_COMMIT,
       });
@@ -365,7 +378,91 @@ describe("topology Rust scanner and prefer integration", () => {
     }
   }, 30000);
 
-  it("falls back to JS topology when the prefer sidecar binary is missing", () => {
+  it("blocks when the sidecar binary hash is not approved by quorum evidence", () => {
+    const fixture = createTempRepoFixture({
+      prefix: "vitest-topology-rust-prefer-quorum-sha-",
+      packageJson: { name: "rust-prefer-quorum-sha-fx", type: "module" },
+    });
+    try {
+      fixture.write("src/empty.mjs", "export const value = 1;\n");
+      const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
+      const quorum = cleanQuorumEvidence(sidecar);
+      quorum.rustSidecarBinarySha256 = "sha256:not-the-sidecar";
+      for (const runs of Object.values(quorum.runs)) {
+        for (const run of runs) run.rustSidecarBinarySha256 = "sha256:not-the-sidecar";
+      }
+      const quorumPath = path.join(fixture.root, "rust-topology-prefer-quorum.json");
+      writeFileSync(quorumPath, JSON.stringify(quorum, null, 2));
+
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
+        args: [
+          "--no-incremental",
+          "--clear-incremental-cache",
+          "--rust-topology-scanner",
+          "prefer",
+          "--rust-topology-scanner-bin",
+          sidecar,
+          "--rust-topology-timeout-ms",
+          "1000",
+          "--rust-sidecar-source-commit",
+          FAKE_RUST_SIDECAR_COMMIT,
+          "--rust-topology-prefer-gate",
+          "--rust-topology-prefer-gate-corpus",
+          "lab-self",
+          "--rust-topology-prefer-quorum",
+          quorumPath,
+        ],
+      });
+
+      expectBlockedPrefer(result, "blocked-sidecar-binary-sha256");
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30000);
+
+  it("blocks prefer when the current run is not full coverage", () => {
+    const fixture = createTempRepoFixture({
+      prefix: "vitest-topology-rust-prefer-current-coverage-",
+      packageJson: { name: "rust-prefer-current-coverage-fx", type: "module" },
+    });
+    try {
+      fixture.write("src/empty.mjs", "export const value = 1;\n");
+      fixture.write("src/tool.py", "def helper():\n    return 1\n");
+      const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
+      const quorumPath = path.join(fixture.root, "rust-topology-prefer-quorum.json");
+      writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(sidecar), null, 2));
+
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
+        args: [
+          "--no-incremental",
+          "--clear-incremental-cache",
+          "--rust-topology-scanner",
+          "prefer",
+          "--rust-topology-scanner-bin",
+          sidecar,
+          "--rust-topology-timeout-ms",
+          "1000",
+          "--rust-sidecar-source-commit",
+          FAKE_RUST_SIDECAR_COMMIT,
+          "--rust-topology-prefer-gate",
+          "--rust-topology-prefer-gate-corpus",
+          "lab-self",
+          "--rust-topology-prefer-quorum",
+          quorumPath,
+        ],
+      });
+
+      expectBlockedPrefer(result, "blocked-count-mismatch");
+      expect(result.topology.summary.files).toBe(2);
+      expect(result.topology.meta.rustTopologyPrefer.filesCompared).toBe(1);
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30000);
+
+  it("blocks when the prefer sidecar binary is missing", () => {
     const fixture = createTempRepoFixture({
       prefix: "vitest-topology-rust-prefer-missing-binary-",
       packageJson: { name: "rust-prefer-missing-binary-fx", type: "module" },
@@ -376,7 +473,8 @@ describe("topology Rust scanner and prefer integration", () => {
       const quorumPath = path.join(fixture.root, "rust-topology-prefer-quorum.json");
       writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(), null, 2));
 
-      const topology = runTopologyWithStderr(fixture, {
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
         args: [
           "--no-incremental",
           "--clear-incremental-cache",
@@ -392,21 +490,16 @@ describe("topology Rust scanner and prefer integration", () => {
           "--rust-topology-prefer-quorum",
           quorumPath,
         ],
-      }).topology;
-
-      expect(topology.meta.rustTopologyPrefer).toMatchObject({
-        status: "fallback-js",
-        usedRust: false,
-        fallbackUsed: true,
-        reason: "blocked-binary-not-found",
       });
-      expect(topology.edges.length).toBeGreaterThan(0);
+
+      expectBlockedPrefer(result, "blocked-binary-not-found");
+      expect(result.topology.edges.length).toBeGreaterThan(0);
     } finally {
       fixture.cleanup();
     }
   }, 30000);
 
-  it("falls back visibly when prefer quorum evidence is missing", () => {
+  it("blocks visibly when prefer quorum evidence is missing", () => {
     const fixture = createTempRepoFixture({
       prefix: "vitest-topology-rust-prefer-missing-quorum-",
       packageJson: { name: "rust-prefer-missing-quorum-fx", type: "module" },
@@ -415,7 +508,8 @@ describe("topology Rust scanner and prefer integration", () => {
       fixture.write("src/empty.mjs", "export const value = 1;\n");
       const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
 
-      const topology = runTopologyWithStderr(fixture, {
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
         args: [
           "--no-incremental",
           "--clear-incremental-cache",
@@ -425,32 +519,71 @@ describe("topology Rust scanner and prefer integration", () => {
           sidecar,
           "--rust-sidecar-source-commit",
           FAKE_RUST_SIDECAR_COMMIT,
-          "--rust-sidecar-binary-sha256",
-          hashFileSha256(sidecar),
           "--rust-topology-prefer-gate",
           "--rust-topology-prefer-gate-corpus",
           "lab-self",
           "--rust-topology-prefer-quorum",
           path.join(fixture.root, "missing-quorum.json"),
         ],
-      }).topology;
+      });
 
-      expect(topology.meta.rustTopologyPreferGate).toMatchObject({
+      expect(result.topology.meta.rustTopologyPreferGate).toMatchObject({
         status: "blocked-corpus-quorum",
         reason: "quorum-evidence-missing",
       });
-      expect(topology.meta.rustTopologyPrefer).toMatchObject({
-        status: "fallback-js",
-        reason: "blocked-quorum-missing",
-        usedRust: false,
-      });
-      expect(topology.summary.files).toBe(1);
+      expectBlockedPrefer(result, "blocked-quorum-missing");
+      expect(result.topology.summary.files).toBe(1);
     } finally {
       fixture.cleanup();
     }
   }, 30000);
 
-  it("falls back when the M3 prefer gate is not eligible", () => {
+  it("blocks visibly when prefer quorum evidence is malformed", () => {
+    const fixture = createTempRepoFixture({
+      prefix: "vitest-topology-rust-prefer-malformed-quorum-",
+      packageJson: { name: "rust-prefer-malformed-quorum-fx", type: "module" },
+    });
+    try {
+      fixture.write("src/empty.mjs", "export const value = 1;\n");
+      const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
+      const malformedQuorumPath = path.join(fixture.root, "malformed-quorum.json");
+      writeFileSync(malformedQuorumPath, "{ bad json", "utf8");
+
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
+        args: [
+          "--no-incremental",
+          "--clear-incremental-cache",
+          "--rust-topology-scanner",
+          "prefer",
+          "--rust-topology-scanner-bin",
+          sidecar,
+          "--rust-sidecar-source-commit",
+          FAKE_RUST_SIDECAR_COMMIT,
+          "--rust-topology-prefer-gate",
+          "--rust-topology-prefer-gate-corpus",
+          "lab-self",
+          "--rust-topology-prefer-quorum",
+          malformedQuorumPath,
+        ],
+      });
+
+      expect(result.topology.meta.rustTopologyPreferGate).toMatchObject({
+        status: "blocked-corpus-quorum",
+        reason: "quorum-evidence-invalid",
+      });
+      expect(result.topology.meta.rustTopologyPreferGate.quorumReadError).toMatchObject({
+        reason: "quorum-evidence-invalid",
+        filePath: malformedQuorumPath,
+      });
+      expectBlockedPrefer(result, "blocked-quorum-invalid");
+      expect(result.topology.summary.files).toBe(1);
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30000);
+
+  it("blocks when the M3 prefer gate is not eligible", () => {
     const fixture = createTempRepoFixture({
       prefix: "vitest-topology-rust-prefer-ineligible-gate-",
       packageJson: { name: "rust-prefer-ineligible-gate-fx", type: "module" },
@@ -458,12 +591,13 @@ describe("topology Rust scanner and prefer integration", () => {
     try {
       fixture.write("src/empty.mjs", "export const value = 1;\n");
       const sidecar = writeFakeRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
-      const quorum = cleanQuorumEvidence();
+      const quorum = cleanQuorumEvidence(sidecar);
       quorum.runs["nuxt-main"] = quorum.runs["nuxt-main"].slice(0, 2);
       const quorumPath = path.join(fixture.root, "rust-topology-prefer-quorum.json");
       writeFileSync(quorumPath, JSON.stringify(quorum, null, 2));
 
-      const topology = runTopologyWithStderr(fixture, {
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
         args: [
           "--no-incremental",
           "--clear-incremental-cache",
@@ -473,27 +607,22 @@ describe("topology Rust scanner and prefer integration", () => {
           sidecar,
           "--rust-sidecar-source-commit",
           FAKE_RUST_SIDECAR_COMMIT,
-          "--rust-sidecar-binary-sha256",
-          hashFileSha256(sidecar),
           "--rust-topology-prefer-gate",
           "--rust-topology-prefer-gate-corpus",
           "lab-self",
           "--rust-topology-prefer-quorum",
           quorumPath,
         ],
-      }).topology;
-
-      expect(topology.meta.rustTopologyPreferGate.status).toBe("blocked-corpus-quorum");
-      expect(topology.meta.rustTopologyPrefer).toMatchObject({
-        status: "fallback-js",
-        reason: "blocked-gate-ineligible",
       });
+
+      expect(result.topology.meta.rustTopologyPreferGate.status).toBe("blocked-corpus-quorum");
+      expectBlockedPrefer(result, "blocked-gate-ineligible");
     } finally {
       fixture.cleanup();
     }
   }, 30000);
 
-  it("falls back when scanner parity passes but the artifact guard catches LOC drift", () => {
+  it("blocks when scanner parity passes but the artifact guard catches LOC drift", () => {
     const fixture = createTempRepoFixture({
       prefix: "vitest-topology-rust-prefer-artifact-guard-",
       packageJson: { name: "rust-prefer-artifact-guard-fx", type: "module" },
@@ -502,9 +631,10 @@ describe("topology Rust scanner and prefer integration", () => {
       fixture.write("src/empty.mjs", "export const value = 1;\n");
       const sidecar = writeWrongLocRustTopologySidecar(path.join(fixture.output, "fake-sidecar"));
       const quorumPath = path.join(fixture.root, "rust-topology-prefer-quorum.json");
-      writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(), null, 2));
+      writeFileSync(quorumPath, JSON.stringify(cleanQuorumEvidence(sidecar), null, 2));
 
-      const topology = runTopologyWithStderr(fixture, {
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
         args: [
           "--no-incremental",
           "--clear-incremental-cache",
@@ -514,29 +644,23 @@ describe("topology Rust scanner and prefer integration", () => {
           sidecar,
           "--rust-sidecar-source-commit",
           FAKE_RUST_SIDECAR_COMMIT,
-          "--rust-sidecar-binary-sha256",
-          hashFileSha256(sidecar),
           "--rust-topology-prefer-gate",
           "--rust-topology-prefer-gate-corpus",
           "lab-self",
           "--rust-topology-prefer-quorum",
           quorumPath,
         ],
-      }).topology;
-
-      expect(topology.meta.rustTopologyScanner.status).toBe("matched");
-      expect(topology.meta.rustTopologyPrefer).toMatchObject({
-        status: "fallback-js",
-        reason: "blocked-artifact-contract",
-        usedRust: false,
       });
-      expect(topology.nodes["src/empty.mjs"].loc).toBe(2);
+
+      expect(result.topology.meta.rustTopologyScanner.status).toBe("matched");
+      expectBlockedPrefer(result, "blocked-artifact-contract");
+      expect(result.topology.nodes["src/empty.mjs"].loc).toBe(2);
     } finally {
       fixture.cleanup();
     }
   }, 30000);
 
-  it("falls back without running Rust when prefer is requested with incremental cache coverage", () => {
+  it("blocks without running Rust when prefer is requested with incremental cache coverage", () => {
     const fixture = createTempRepoFixture({
       prefix: "vitest-topology-rust-prefer-cache-mode-",
       packageJson: { name: "rust-prefer-cache-mode-fx", type: "module" },
@@ -544,27 +668,24 @@ describe("topology Rust scanner and prefer integration", () => {
     try {
       fixture.write("src/empty.mjs", "export const value = 1;\n");
 
-      const topology = runTopologyWithStderr(fixture, {
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
         args: [
           "--rust-topology-scanner",
           "prefer",
           "--rust-topology-prefer-gate-corpus",
           "lab-self",
         ],
-      }).topology;
-
-      expect(topology.meta.rustTopologyPrefer).toMatchObject({
-        status: "fallback-js",
-        reason: "blocked-cache-mode",
-        usedRust: false,
       });
-      expect(topology.summary.files).toBe(1);
+
+      expectBlockedPrefer(result, "blocked-cache-mode");
+      expect(result.topology.summary.files).toBe(1);
     } finally {
       fixture.cleanup();
     }
   }, 30000);
 
-  it("falls back before Rust ownership when prefer is requested for a non-required corpus", () => {
+  it("blocks before Rust ownership when prefer is requested for a non-required corpus", () => {
     const fixture = createTempRepoFixture({
       prefix: "vitest-topology-rust-prefer-corpus-scope-",
       packageJson: { name: "rust-prefer-corpus-scope-fx", type: "module" },
@@ -572,7 +693,8 @@ describe("topology Rust scanner and prefer integration", () => {
     try {
       fixture.write("src/empty.mjs", "export const value = 1;\n");
 
-      const topology = runTopologyWithStderr(fixture, {
+      const result = runTopologyWithStderr(fixture, {
+        allowFailure: true,
         args: [
           "--no-incremental",
           "--clear-incremental-cache",
@@ -581,14 +703,10 @@ describe("topology Rust scanner and prefer integration", () => {
           "--rust-topology-prefer-gate-corpus",
           "random-repo",
         ],
-      }).topology;
-
-      expect(topology.meta.rustTopologyPrefer).toMatchObject({
-        status: "fallback-js",
-        reason: "blocked-corpus-scope",
-        usedRust: false,
       });
-      expect(topology.summary.files).toBe(1);
+
+      expectBlockedPrefer(result, "blocked-corpus-scope");
+      expect(result.topology.summary.files).toBe(1);
     } finally {
       fixture.cleanup();
     }

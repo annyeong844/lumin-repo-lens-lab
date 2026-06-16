@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Keep tests behavior-focused: minimum guaranteed happy path, realistic edge cases, and hard-stop paths. Do not add scaffolding tests that only prove files, functions, or modules exist.
 
-**Goal:** Implement lab-only, explicit opt-in, run-level Rust topology `prefer` mode with visible JS fallback and strict artifact guard.
+**Goal:** Implement lab-only, explicit opt-in, run-level Rust topology `prefer` mode with visible blocked prefer diagnostic and strict artifact guard.
 
-**Architecture:** Keep `measure-topology.mjs` as the orchestrator and JS as the safe fallback. Add a small pure decision module for prefer metadata, reuse the existing Rust scanner bridge and M3 quorum gate, and build a Rust candidate topology artifact only when the run is no-incremental, fixed-corpus, gate-eligible, policy-matched, and sidecar-matched. The first M5 implementation runs artifact guard on every prefer run.
+**Architecture:** Keep `measure-topology.mjs` as the orchestrator and JS as the diagnostic hard stop. Add a small pure decision module for prefer metadata, reuse the existing Rust scanner bridge and M3 quorum gate, and build a Rust candidate topology artifact only when the run is no-incremental, fixed-corpus, gate-eligible, policy-matched, and sidecar-matched. The first M5 implementation runs artifact guard on every prefer run.
 
 **Tech Stack:** Node.js ESM, existing `measure-topology.mjs`, existing Rust sidecar bridge, existing M3 prefer gate, Vitest, PowerShell-friendly CLI commands.
 
@@ -38,13 +38,13 @@
 - Modify: `measure-topology.mjs`
   - Accept `--rust-topology-scanner prefer`.
   - Keep compare/off paths unchanged.
-  - In prefer mode, run the existing JS path first, run Rust comparison, evaluate the gate, build a Rust candidate artifact, run artifact guard, then write either Rust artifact or JS fallback artifact with `meta.rustTopologyPrefer`.
+  - In prefer mode, run the existing JS path first, run Rust comparison, evaluate the gate, build a Rust candidate artifact, run artifact guard, then write either Rust artifact or blocked prefer diagnostic artifact with `meta.rustTopologyPrefer`.
 - Modify: `tests/rust-topology-scanner-bridge.test.mjs`
   - Add behavior coverage for binary identity only if the bridge owns it; otherwise leave bridge tests unchanged.
 - Create: `tests/rust-topology-prefer.test.mjs`
   - Pure behavior checks for prefer decision metadata.
 - Modify: `tests/topology-producer-cross-edges.test.mjs`
-  - Add end-to-end producer behavior for prefer happy path, fallback paths, artifact guard mismatch, and rollback.
+  - Add end-to-end producer behavior for prefer happy path, blocked paths, artifact guard mismatch, and rollback.
 - Modify: `tests/README.md`
   - Regenerate after adding the new test file.
 - Modify mirror files under `skills/lumin-repo-lens-lab/_engine/` only after root implementation passes:
@@ -56,7 +56,7 @@
 **Files:**
 - Modify: `docs/lab/m5-rust-topology-prefer-design-2026-06-15.md`
 
-- [ ] **Step 1: Add exact fallback reasons for scope blocks**
+- [ ] **Step 1: Add exact blocked reasons for scope blocks**
 
 In the `Prefer Status Vocabulary` section, add these reasons:
 
@@ -80,7 +80,7 @@ rg -n "blocked-cache-mode|blocked-corpus-scope|scope path|corpus path" docs/lab/
 Expected:
 
 - both new reasons appear in the exact vocabulary list;
-- scope/corpus validation language points to exact fallback metadata, not vague wording.
+- scope/corpus validation language points to exact blocked metadata, not vague wording.
 
 ## Task 2: Add The Prefer Decision Module
 
@@ -102,7 +102,7 @@ import { REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA } from './rust-topology-prefer-ga
 export const RUST_TOPOLOGY_PREFER_STATUSES = Object.freeze([
   'not-requested',
   'used-rust',
-  'fallback-js',
+  'blocked',
 ]);
 
 export const RUST_TOPOLOGY_PREFER_REASONS = Object.freeze([
@@ -168,12 +168,11 @@ export function compareTopologyArtifactContract(jsArtifact, rustArtifact) {
   };
 }
 
-function fallback({ reason, base }) {
+function blocked({ reason, base }) {
   return {
     ...base,
-    status: 'fallback-js',
+    status: 'blocked',
     usedRust: false,
-    fallbackUsed: true,
     reason,
   };
 }
@@ -212,49 +211,47 @@ export function evaluateRustTopologyPrefer({
       ...base,
       status: 'not-requested',
       usedRust: false,
-      fallbackUsed: false,
       reason: 'not-requested',
     };
   }
-  if (isIncremental) return fallback({ reason: 'blocked-cache-mode', base });
+  if (isIncremental) return blocked({ reason: 'blocked-cache-mode', base });
   if (!REQUIRED_RUST_TOPOLOGY_PREFER_CORPORA.includes(currentCorpus)) {
-    return fallback({ reason: 'blocked-corpus-scope', base });
+    return blocked({ reason: 'blocked-corpus-scope', base });
   }
-  if (!rustTopologyPreferGate) return fallback({ reason: 'blocked-gate-missing', base });
+  if (!rustTopologyPreferGate) return blocked({ reason: 'blocked-gate-missing', base });
   if (rustTopologyPreferGate.status !== 'eligible') {
     const reason = rustTopologyPreferGate.reason === 'quorum-evidence-missing'
       ? 'blocked-quorum-missing'
       : 'blocked-gate-ineligible';
-    return fallback({ reason, base });
+    return blocked({ reason, base });
   }
-  if (!rustTopologyScanner) return fallback({ reason: 'blocked-unknown-sidecar-status', base });
+  if (!rustTopologyScanner) return blocked({ reason: 'blocked-unknown-sidecar-status', base });
   if (
     rustTopologyScanner.policyVersion &&
     rustTopologyScanner.policyVersion !== MODULE_EDGE_SCANNER_POLICY_VERSION
   ) {
-    return fallback({ reason: 'blocked-policy-version', base });
+    return blocked({ reason: 'blocked-policy-version', base });
   }
   if (rustTopologyScanner.reason === 'policy-version-mismatch') {
-    return fallback({ reason: 'blocked-policy-version', base });
+    return blocked({ reason: 'blocked-policy-version', base });
   }
   if (rustTopologyScanner.status !== 'matched') {
-    return fallback({
+    return blocked({
       reason: SCANNER_TO_PREFER_REASON.get(rustTopologyScanner.status) ??
         'blocked-unknown-sidecar-status',
       base,
     });
   }
   if ((rustTopologyScanner.mismatches ?? 0) !== 0) {
-    return fallback({ reason: 'blocked-unknown-sidecar-status', base });
+    return blocked({ reason: 'blocked-unknown-sidecar-status', base });
   }
   if (artifactGuard?.status !== 'passed') {
-    return fallback({ reason: 'blocked-artifact-contract', base });
+    return blocked({ reason: 'blocked-artifact-contract', base });
   }
   return {
     ...base,
     status: 'used-rust',
     usedRust: true,
-    fallbackUsed: false,
     reason: 'gate-eligible-artifact-guard-passed',
   };
 }
@@ -313,7 +310,6 @@ describe('Rust topology prefer decision', () => {
     expect(evaluateRustTopologyPrefer(base())).toMatchObject({
       status: 'used-rust',
       usedRust: true,
-      fallbackUsed: false,
       reason: 'gate-eligible-artifact-guard-passed',
       gateStatus: 'eligible',
       policyVersion: MODULE_EDGE_SCANNER_POLICY_VERSION,
@@ -322,16 +318,15 @@ describe('Rust topology prefer decision', () => {
 
   it('falls back visibly when prefer is requested with incremental cache coverage', () => {
     expect(evaluateRustTopologyPrefer(base({ isIncremental: true }))).toMatchObject({
-      status: 'fallback-js',
+      status: 'blocked',
       usedRust: false,
-      fallbackUsed: true,
       reason: 'blocked-cache-mode',
     });
   });
 
   it('falls back visibly when current corpus is outside the fixed required set', () => {
     expect(evaluateRustTopologyPrefer(base({ currentCorpus: 'random-repo' }))).toMatchObject({
-      status: 'fallback-js',
+      status: 'blocked',
       reason: 'blocked-corpus-scope',
     });
   });
@@ -340,7 +335,7 @@ describe('Rust topology prefer decision', () => {
     expect(evaluateRustTopologyPrefer(base({
       rustTopologyScanner: { ...matchedScanner, status: 'edge-mismatch', mismatches: 1 },
     }))).toMatchObject({
-      status: 'fallback-js',
+      status: 'blocked',
       reason: 'blocked-edge-mismatch',
     });
   });
@@ -349,7 +344,7 @@ describe('Rust topology prefer decision', () => {
     expect(evaluateRustTopologyPrefer(base({
       artifactGuard: { status: 'failed', passed: false },
     }))).toMatchObject({
-      status: 'fallback-js',
+      status: 'blocked',
       reason: 'blocked-artifact-contract',
     });
   });
@@ -541,7 +536,7 @@ function buildRustTopologyEntryFromScannerResult(f, rustResult) {
 }
 ```
 
-This intentionally does not try to recover fallback edges for `ok:false` Rust results. Artifact guard must catch any loss. If the guard fails, JS wins.
+This intentionally does not try to recover replacement edges for `ok:false` Rust results. Artifact guard must catch any loss. If the guard fails, prefer is blocked.
 
 - [ ] **Step 4: Build a Rust candidate entry map only after scanner comparison**
 
@@ -589,7 +584,7 @@ If the binary is missing, the scanner metadata will already be `binary-not-found
 
 - [ ] **Step 2: Assemble JS artifact first**
 
-Keep the JS artifact as the fallback artifact. It must include:
+Keep the JS artifact as the diagnostic artifact. It must include:
 
 - `meta.rustTopologyScanner` when scanner metadata exists;
 - `meta.rustTopologyPreferGate` when gate is enabled.
@@ -650,7 +645,7 @@ finalArtifact.meta.rustTopologyPrefer = rustTopologyPrefer;
 
 Write `finalArtifact`.
 
-Do not write two topology files in M5. The single output must be honest about whether Rust was used or JS fallback was used.
+Do not write two topology files in M5. The single output must be honest about whether Rust was used or blocked prefer diagnostic was used.
 
 ## Task 6: Add End-To-End Prefer Behavior Checks
 
@@ -705,7 +700,6 @@ it("uses Rust for explicit prefer when gate is eligible and artifact guard passe
       mode: "prefer",
       status: "used-rust",
       usedRust: true,
-      fallbackUsed: false,
       reason: "gate-eligible-artifact-guard-passed",
     });
     expect(topology.summary.files).toBe(1);
@@ -716,15 +710,14 @@ it("uses Rust for explicit prefer when gate is eligible and artifact guard passe
 }, 30000);
 ```
 
-- [ ] **Step 2: Add missing-binary fallback**
+- [ ] **Step 2: Add missing-binary blocked path**
 
 Use a real fixture with one import and pass a missing sidecar path. Expect:
 
 ```js
 expect(topology.meta.rustTopologyPrefer).toMatchObject({
-  status: "fallback-js",
+  status: "blocked",
   usedRust: false,
-  fallbackUsed: true,
   reason: "blocked-binary-not-found",
 });
 expect(topology.edges.length).toBeGreaterThan(0);
@@ -732,19 +725,19 @@ expect(topology.edges.length).toBeGreaterThan(0);
 
 This proves the user still gets JS topology output.
 
-- [ ] **Step 3: Add ineligible-gate fallback**
+- [ ] **Step 3: Add ineligible-gate blocked path**
 
 Use a quorum file with one required corpus missing. Expect:
 
 ```js
 expect(topology.meta.rustTopologyPrefer).toMatchObject({
-  status: "fallback-js",
+  status: "blocked",
   reason: "blocked-gate-ineligible",
 });
 expect(topology.meta.rustTopologyPreferGate.status).toBe("blocked-corpus-quorum");
 ```
 
-- [ ] **Step 4: Add artifact-guard fallback with a plausible sidecar bug**
+- [ ] **Step 4: Add artifact-guard blocked path with a plausible sidecar bug**
 
 Add a fake sidecar variant that returns the same edges and risk but wrong `loc`.
 The existing scanner comparison ignores LOC, so scanner status can be `matched`,
@@ -755,7 +748,7 @@ Expected:
 ```js
 expect(topology.meta.rustTopologyScanner.status).toBe("matched");
 expect(topology.meta.rustTopologyPrefer).toMatchObject({
-  status: "fallback-js",
+  status: "blocked",
   reason: "blocked-artifact-contract",
   usedRust: false,
 });
@@ -770,7 +763,7 @@ Run `prefer` without `--no-incremental`. Expect:
 
 ```js
 expect(topology.meta.rustTopologyPrefer).toMatchObject({
-  status: "fallback-js",
+  status: "blocked",
   reason: "blocked-cache-mode",
 });
 ```
@@ -783,7 +776,7 @@ Run `prefer` with `--rust-topology-prefer-gate-corpus random-repo`. Expect:
 
 ```js
 expect(topology.meta.rustTopologyPrefer).toMatchObject({
-  status: "fallback-js",
+  status: "blocked",
   reason: "blocked-corpus-scope",
 });
 ```
@@ -934,7 +927,7 @@ Include:
 - [ ] Binary SHA-256 is recorded.
 - [ ] Policy version uses `MODULE_EDGE_SCANNER_POLICY_VERSION`.
 - [ ] Artifact guard runs on every prefer run.
-- [ ] JS fallback metadata is visible for every blocked path.
+- [ ] blocked prefer diagnostic metadata is visible for every blocked path.
 - [ ] Tests are behavior-first and do not check mere file/function existence.
 - [ ] Private CI is not triggered.
 

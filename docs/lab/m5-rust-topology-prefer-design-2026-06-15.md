@@ -10,8 +10,8 @@ lab plugin only.
 This is not approval to enable Rust by default. It is not approval to ship
 Rust replacement in the stable `/lumin-repo-lens:*` namespace. The correct
 take is simple: Rust can be tried as a gated whole-run replacement candidate,
-but JS remains the safe fallback and the public truth until the evidence is
-boring for longer.
+but blocked `prefer` runs must fail loudly after writing diagnostics until the
+evidence is boring for longer.
 
 M5 should be conservative enough that a bad Rust run is annoying, not
 dangerous.
@@ -123,6 +123,12 @@ cannot:
 - `prefer` must be rejected if the M3 gate is not `eligible`;
 - `off` and `compare` must remain available as instant rollback.
 
+Packaged skill runs should pass `--rust-topology-prefer-quorum` explicitly.
+The maintainer checkout has a lab-root default quorum path, but the public
+package does not treat packaged baseline evidence as an implicit approval
+stamp. If a packaged run cannot locate the supplied quorum evidence, `prefer`
+must block visibly rather than guessing from package-local files.
+
 ## Gate Requirements
 
 Before Rust output may replace JS topology output for a run, all of these must
@@ -188,7 +194,7 @@ JS must be used when any of these occur:
 - any unknown sidecar status;
 - any unknown prefer status.
 
-Fallback metadata must say why. No silent fallback.
+Blocked metadata must say why. No swallowed failure.
 
 ## Metadata Contract
 
@@ -202,7 +208,6 @@ M5 should add one prefer decision object under topology metadata, for example:
     "mode": "prefer",
     "status": "used-rust",
     "usedRust": true,
-    "fallbackUsed": false,
     "reason": "gate-eligible-artifact-guard-passed",
     "gateStatus": "eligible",
     "quorumEvidence": "baselines/rust-topology-prefer-quorum.json",
@@ -224,7 +229,7 @@ M5 should add one prefer decision object under topology metadata, for example:
 }
 ```
 
-When JS fallback is used:
+When `prefer` is blocked:
 
 ```json
 {
@@ -232,9 +237,8 @@ When JS fallback is used:
     "schemaVersion": 1,
     "requested": true,
     "mode": "prefer",
-    "status": "fallback-js",
+    "status": "blocked",
     "usedRust": false,
-    "fallbackUsed": true,
     "reason": "blocked-risk-mismatch",
     "gateStatus": "eligible",
     "artifactGuard": {
@@ -271,7 +275,7 @@ M5 must compute and record `rustSidecarBinarySha256` itself.
 
 - `not-requested`
 - `used-rust`
-- `fallback-js`
+- `blocked`
 
 `rustTopologyPrefer.reason` may use only these values unless a later design
 extends the vocabulary:
@@ -279,12 +283,15 @@ extends the vocabulary:
 - `not-requested`
 - `gate-eligible-artifact-guard-passed`
 - `blocked-quorum-missing`
+- `blocked-quorum-invalid`
 - `blocked-gate-missing`
 - `blocked-gate-ineligible`
 - `blocked-binary-not-found`
+- `blocked-unsupported-platform`
 - `blocked-timeout`
 - `blocked-non-zero-exit`
 - `blocked-invalid-json-output`
+- `blocked-unsupported-file-type-or-syntax`
 - `blocked-policy-version`
 - `blocked-sidecar-source-commit`
 - `blocked-sidecar-binary-sha256`
@@ -298,7 +305,7 @@ extends the vocabulary:
 - `blocked-unknown-prefer-status`
 
 No fuzzy strings. If a reason needs to be added, add it deliberately and cover
-the user-visible fallback path that produces it.
+the user-visible blocked path that produces it.
 
 ## Artifact Guard
 
@@ -360,8 +367,17 @@ The fixed required corpus set remains:
 
 The latest-three clean-run semantics remain M3/M4-owned. M5 only asks whether
 the gate is eligible for the current corpus and current policy/source pair.
+The gate must re-validate that the latest three runs for each required corpus
+were recorded with the same approved Rust sidecar binary SHA-256 and the same
+scanner policy. For the initial fixed-corpus M5 rollout, a clean quorum run also
+requires positive `fileCount` and `filesCompared` values with
+`filesCompared === fileCount`; this is a conservative rollout guard for the
+current required corpora, not a general claim about all future topology inputs.
 
 Do not infer corpus identity from root paths. Use an explicit corpus name.
+In M5, the corpus name is an operator assertion tied to the M4 recorded corpus
+set. Arbitrary root identity proof needs a later corpus manifest or identity
+hash design.
 
 Initial M5 `prefer` may run only when the current corpus is one of the fixed
 required corpora above. Arbitrary-repo prefer is out of scope until a later
@@ -400,8 +416,8 @@ Rollback must be boring:
 - `--rust-topology-scanner off` uses JS only;
 - `--rust-topology-scanner compare` records comparison metadata but JS remains
   authoritative;
-- removing the quorum file or making the gate ineligible forces JS fallback;
-- deleting the Rust sidecar binary forces JS fallback with visible metadata.
+- removing the quorum file or making the gate ineligible blocks `prefer` with visible metadata;
+- deleting the Rust sidecar binary blocks `prefer` with visible metadata.
 
 No persisted default should make future runs accidentally prefer Rust.
 
@@ -414,10 +430,10 @@ Minimum useful checks:
 
 - happy path: explicit prefer + eligible gate + artifact guard pass uses Rust
   for the whole run and records `usedRust: true`;
-- fallback path: missing binary uses JS and records `fallback-js`;
-- mismatch path: risk or edge mismatch uses JS and records the exact block
+- blocked path: missing binary exits non-zero after writing diagnostics;
+- mismatch path: risk or edge mismatch exits non-zero and records the exact block
   reason;
-- gate path: ineligible quorum uses JS and records the gate status;
+- gate path: ineligible quorum blocks `prefer` and records the gate status;
 - artifact path: any non-metadata topology diff blocks prefer;
 - scope path: incremental/cache-aware prefer is rejected;
 - corpus path: non-required corpus prefer is rejected;
@@ -432,7 +448,7 @@ M5 design is ready for implementation when review agrees that:
 - explicit opt-in is mandatory;
 - run-level only is mandatory;
 - M3 `eligible` is mandatory;
-- fallback is visible and JS-owned;
+- blocked paths write diagnostics and exit non-zero;
 - artifact guard is strict enough;
 - rollback is obvious;
 - private CI remains unused;
@@ -445,9 +461,9 @@ M5 implementation is not complete until it proves:
 - `prefer` cannot run without eligible gate evidence;
 - `prefer` cannot run outside the fixed required corpus set;
 - `prefer` cannot run with incremental/cache-aware coverage;
-- `prefer` either uses Rust for the full run or falls back to JS for the full
-  run;
-- fallback metadata is clear;
+- `prefer` either uses Rust for the full run or writes blocked diagnostics and
+  exits non-zero;
+- blocked metadata is clear;
 - artifact guard prevents accidental contract drift.
 
 ## Open Review Questions
