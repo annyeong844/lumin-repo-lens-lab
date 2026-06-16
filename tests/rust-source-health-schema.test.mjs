@@ -132,6 +132,19 @@ describe('Rust source health schema', () => {
     expect(problems).toContain('skippedFiles.bad.rs.reason invalid');
   });
 
+  it('returns validation problems instead of throwing for malformed collection fields', () => {
+    const value = artifact();
+    value.skippedFiles = {};
+    value.files['src/lib.rs'].signals = {};
+    value.files['src/lib.rs'].parse.errors = {};
+
+    expect(() => validateRustHealthFinalArtifact(value)).not.toThrow();
+    const problems = validateRustHealthFinalArtifact(value);
+    expect(problems).toContain('skippedFiles must be an array');
+    expect(problems).toContain('files.src/lib.rs.signals must be an array');
+    expect(problems).toContain('files.src/lib.rs.parse.errors must be an array');
+  });
+
   it('sorts file keys, skipped files, signals, and parse errors deterministically', () => {
     const sorted = sortRustHealthArtifact({
       ...artifact(),
@@ -251,4 +264,3 @@ describe('Rust source health schema', () => {
     expect(summarizeRustHealthArtifact(artifact())).toEqual(artifact().summary);
   });
 });
-

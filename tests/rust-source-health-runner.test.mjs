@@ -239,10 +239,7 @@ describe('Rust source health runner', () => {
       'src/targeted.rs',
       'src/vendor_name.rs',
     ]);
-    expect(skippedFiles).toEqual([
-      { path: 'target/generated.rs', reason: 'excluded-by-path-policy' },
-      { path: 'vendor/lib.rs', reason: 'excluded-by-path-policy' },
-    ]);
+    expect(skippedFiles).toEqual([]);
     for (const file of input.files) {
       expect(path.isAbsolute(file.path)).toBe(false);
       expect(file.path.includes('..')).toBe(false);

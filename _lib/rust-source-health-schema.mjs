@@ -208,7 +208,10 @@ function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
     problems.push('skippedFiles must be an array');
   }
   const allowedSkippedReasons = new Set(['excluded-by-path-policy', 'invalid-utf8']);
-  for (const skipped of artifact?.skippedFiles ?? []) {
+  const skippedFiles = Array.isArray(artifact?.skippedFiles)
+    ? artifact.skippedFiles
+    : [];
+  for (const skipped of skippedFiles) {
     if (typeof skipped.path !== 'string' || skipped.path.length === 0) {
       problems.push('skippedFiles.path invalid');
     }
@@ -243,7 +246,8 @@ function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
     if (!isPlainObject(file?.path) || !Array.isArray(file.path.classifications)) {
       problems.push(`files.${filePath}.path invalid`);
     }
-    for (const signal of file?.signals ?? []) {
+    const signals = Array.isArray(file?.signals) ? file.signals : [];
+    for (const signal of signals) {
       if (typeof signal.kind !== 'string' || signal.kind.length === 0) {
         problems.push(`files.${filePath}.signal.kind invalid`);
       }
@@ -257,7 +261,11 @@ function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
         problems.push(`files.${filePath}.signal.location invalid`);
       }
     }
-    for (const parseError of file?.parse?.errors ?? []) {
+    if (!Array.isArray(file?.parse?.errors)) {
+      problems.push(`files.${filePath}.parse.errors must be an array`);
+    }
+    const parseErrors = Array.isArray(file?.parse?.errors) ? file.parse.errors : [];
+    for (const parseError of parseErrors) {
       if (typeof parseError.message !== 'string' || parseError.message.length === 0) {
         problems.push(`files.${filePath}.parse.error.message invalid`);
       }
@@ -282,4 +290,3 @@ export function validateRustHealthFinalArtifact(artifact) {
 }
 
 export const validateRustHealthArtifact = validateRustHealthFinalArtifact;
-

@@ -27,9 +27,9 @@
       "no-trait-solving",
       "no-borrow-check"
     ],
-    "generated": "2026-06-16T13:56:55.905Z",
+    "generated": "2026-06-16T14:11:24.880Z",
     "sidecar": {
-      "sourceCommit": "a76bc31ae45ea0aa361df25b3b024e20e77af5ed",
+      "sourceCommit": "4a2392f74cd4acf33c7923ec83bb962db2e09b39",
       "binarySha256": "sha256:b0b00011b3032aa68749d27907ee118757d93e3cf3a48f3a1792983646134529"
     },
     "input": {
@@ -46,7 +46,7 @@
   },
   "summary": {
     "files": 12,
-    "skippedFiles": 4,
+    "skippedFiles": 0,
     "parseErrorFiles": 0,
     "parseErrors": 0,
     "functions": 89,
@@ -60,24 +60,7 @@
       "oversized-function": 1
     }
   },
-  "skippedFiles": [
-    {
-      "path": "experiments/rust-sidecar/rust-source-health/target/debug/build/serde_core-a574b47eecc4d54c/out/private.rs",
-      "reason": "excluded-by-path-policy"
-    },
-    {
-      "path": "experiments/rust-sidecar/rust-source-health/target/debug/build/serde-38142dd3d0018dab/out/private.rs",
-      "reason": "excluded-by-path-policy"
-    },
-    {
-      "path": "experiments/rust-sidecar/rust-source-health/target/release/build/serde_core-d02068bca46ae735/out/private.rs",
-      "reason": "excluded-by-path-policy"
-    },
-    {
-      "path": "experiments/rust-sidecar/rust-source-health/target/release/build/serde-45ce9a9451367cdc/out/private.rs",
-      "reason": "excluded-by-path-policy"
-    }
-  ],
+  "skippedFiles": [],
   "files": {
     "experiments/rust-sidecar/rust-source-health/src/analyzer.rs": {
       "sha256": "sha256:dfbe2642bc7d156f80b5e1f2abc06b2a164cc1ca3a096cd69c56b348ca06448d",

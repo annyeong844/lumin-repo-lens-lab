@@ -10,7 +10,7 @@ node scripts/run-rust-source-health.mjs `
   --root . `
   --output baselines/m6-rust-source-health-local/rust-health.json `
   --rust-source-health-bin experiments/rust-sidecar/rust-source-health/target/release/lumin-rust-source-health.exe `
-  --sidecar-source-commit a76bc31ae45ea0aa361df25b3b024e20e77af5ed `
+  --sidecar-source-commit 4a2392f74cd4acf33c7923ec83bb962db2e09b39 `
   --threads 2 `
   --worker-stack-bytes 16777216
 ```
@@ -19,7 +19,7 @@ Observed summary:
 
 ```text
 files=12
-skippedFiles=4
+skippedFiles=0
 parseErrorFiles=0
 parseErrors=0
 signals=16
@@ -32,6 +32,4 @@ Notes:
   final validation, and artifact writes.
 - The Rust sidecar receives request JSON on stdin and emits artifact JSON on
   stdout only.
-- Skipped files in this smoke are excluded `target/**` Rust files produced by
-  local Cargo builds.
-
+- The wrapper does not traverse excluded `target/**` or `vendor/**` directories.

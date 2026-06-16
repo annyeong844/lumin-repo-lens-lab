@@ -75,6 +75,7 @@ function collectRustFiles({ rootAbs, dirAbs, files, skippedFiles }) {
     assertSafeRelativePath(relativePath);
 
     if (entry.isSymbolicLink()) continue;
+    if (isExcludedByPathPolicy(relativePath)) continue;
 
     if (entry.isDirectory()) {
       collectRustFiles({ rootAbs, dirAbs: absolutePath, files, skippedFiles });
@@ -82,11 +83,6 @@ function collectRustFiles({ rootAbs, dirAbs, files, skippedFiles }) {
     }
 
     if (!entry.isFile() || !isRustSourcePath(relativePath)) continue;
-
-    if (isExcludedByPathPolicy(relativePath)) {
-      skippedFiles.push({ path: relativePath, reason: 'excluded-by-path-policy' });
-      continue;
-    }
 
     const rawBytes = readFileSync(absolutePath);
     const sha256 = sha256Bytes(rawBytes);
@@ -275,4 +271,3 @@ export async function runRustSourceHealth({
   const outputPath = writeRustHealthArtifact({ output, artifact });
   return { output: outputPath, artifact, input, skippedFiles };
 }
-
