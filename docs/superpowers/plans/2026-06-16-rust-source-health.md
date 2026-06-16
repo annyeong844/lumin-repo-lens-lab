@@ -568,7 +568,8 @@ fn collect_facts_and_signals(
         }
     }
     facts.items = count_items(root);
-    collect_syntax_signals(root, line_index, signals);
+    collect_method_call_signals(root, line_index, signals);
+    collect_macro_call_signals(root, line_index, signals);
     facts
 }
 
@@ -589,22 +590,23 @@ Add the remaining helper functions in the same file:
 - `function_is_unsafe(node)`: return true when an `FN` node has a direct child token with `SyntaxKind::UNSAFE_KW`.
 - `is_unsafe_block_expr(node)`: return true for a block expression whose direct children include `SyntaxKind::UNSAFE_KW`; do not depend on a speculative unsafe-expression syntax kind.
 - `line_span(line_index, range)`: compute inclusive line span from `LineIndex::location`; use `range.end() - 1` for the end point when the range is non-empty so a node ending at the next line start does not count an extra line.
-- `collect_syntax_signals(root, line_index, signals)`: inspect syntax shape, not bare identifier occurrences:
-  - use `ast::MethodCallExpr` and emit `unwrap-call`, `expect-call`, or `clone-call` only when the method name is exactly `unwrap`, `expect`, or `clone`;
-  - use `ast::MacroCall` for `panic!`, `todo!`, and `unimplemented!` when possible; fall back to token scanning only for macro syntax that `ast::MacroCall` cannot cast.
+- `collect_method_call_signals(root, line_index, signals)`: use `ast::MethodCallExpr` and emit `unwrap-call`, `expect-call`, or `clone-call` only when the method name is exactly `unwrap`, `expect`, or `clone`; do not emit for bare identifiers.
+- `collect_macro_call_signals(root, line_index, signals)`: use `ast::MacroCall` for `panic!`, `todo!`, and `unimplemented!` when possible; fall back to token scanning only for macro syntax that `ast::MacroCall` cannot cast.
 - Do not implement summary calculation in this file; use `crate::summary::summarize`.
 
 Use this `ast::MethodCallExpr` pattern for method-call signals:
 
 ```rust
-for node in root.descendants() {
-    if let Some(call) = ast::MethodCallExpr::cast(node.clone()) {
-        if let Some(name_ref) = call.name_ref() {
-            match name_ref.text().as_str() {
-                "unwrap" => signals.push(review_signal("unwrap-call", line_index, node.text_range())),
-                "expect" => signals.push(review_signal("expect-call", line_index, node.text_range())),
-                "clone" => signals.push(review_signal("clone-call", line_index, node.text_range())),
-                _ => {}
+fn collect_method_call_signals(root: &SyntaxNode, line_index: &LineIndex, signals: &mut Vec<Signal>) {
+    for node in root.descendants() {
+        if let Some(call) = ast::MethodCallExpr::cast(node.clone()) {
+            if let Some(name_ref) = call.name_ref() {
+                match name_ref.text().as_str() {
+                    "unwrap" => signals.push(review_signal("unwrap-call", line_index, node.text_range())),
+                    "expect" => signals.push(review_signal("expect-call", line_index, node.text_range())),
+                    "clone" => signals.push(review_signal("clone-call", line_index, node.text_range())),
+                    _ => {}
+                }
             }
         }
     }
@@ -851,6 +853,10 @@ export function sortRustHealthArtifact(artifact) {
         {
           ...value,
           signals: [...(value.signals ?? [])].sort(compareSignals),
+          parse: {
+            ...(value.parse ?? {}),
+            errors: [...(value.parse?.errors ?? [])].sort(compareParseErrors),
+          },
         },
       ]),
   );
@@ -864,6 +870,14 @@ function compareSignals(left, right) {
     Number(left?.location?.byteStart ?? 0) -
       Number(right?.location?.byteStart ?? 0) ||
     String(left?.kind ?? '').localeCompare(String(right?.kind ?? ''))
+  );
+}
+
+function compareParseErrors(left, right) {
+  return (
+    Number(left?.location?.byteStart ?? 0) -
+      Number(right?.location?.byteStart ?? 0) ||
+    String(left?.message ?? '').localeCompare(String(right?.message ?? ''))
   );
 }
 
@@ -974,6 +988,19 @@ function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
   if (artifact?.meta?.policy?.version !== RUST_SOURCE_HEALTH_POLICY_VERSION) {
     problems.push('policy.version mismatch');
   }
+  const thresholds = artifact?.meta?.policy?.thresholds;
+  if (
+    !Number.isInteger(thresholds?.maxFunctionLines) ||
+    thresholds.maxFunctionLines <= 0
+  ) {
+    problems.push('policy.thresholds.maxFunctionLines invalid');
+  }
+  if (
+    !Number.isInteger(thresholds?.maxImplLines) ||
+    thresholds.maxImplLines <= 0
+  ) {
+    problems.push('policy.thresholds.maxImplLines invalid');
+  }
   if (artifact?.meta?.parser?.kind !== RUST_SOURCE_HEALTH_PARSER.kind) {
     problems.push('parser.kind mismatch');
   }
@@ -1009,12 +1036,32 @@ function validateRustHealthArtifactShape(artifact, { requireWrapperMeta }) {
   if (!Array.isArray(artifact?.skippedFiles)) {
     problems.push('skippedFiles must be an array');
   }
+  const allowedSkippedReasons = new Set(['excluded-by-path-policy', 'invalid-utf8']);
+  for (const skipped of artifact?.skippedFiles ?? []) {
+    if (typeof skipped.path !== 'string' || skipped.path.length === 0) {
+      problems.push('skippedFiles.path invalid');
+    }
+    if (!allowedSkippedReasons.has(skipped.reason)) {
+      problems.push(`skippedFiles.${skipped.path ?? '<unknown>'}.reason invalid`);
+    }
+  }
   for (const [filePath, file] of Object.entries(artifact?.files ?? {})) {
     if (!isSha256(file?.sha256)) {
       problems.push(`files.${filePath}.sha256 invalid`);
     }
     if (!isPlainObject(file?.facts)) {
       problems.push(`files.${filePath}.facts missing`);
+    }
+    for (const key of [
+      'items',
+      'functions',
+      'maxFunctionLines',
+      'unsafeBlocks',
+      'unsafeFunctions',
+    ]) {
+      if (!Number.isInteger(file?.facts?.[key]) || file.facts[key] < 0) {
+        problems.push(`files.${filePath}.facts.${key} invalid`);
+      }
     }
     if (!Array.isArray(file?.signals)) {
       problems.push(`files.${filePath}.signals must be an array`);
@@ -1096,7 +1143,10 @@ function artifact(overrides = {}) {
       },
       runtime: { threadCount: 2, workerStackBytes: 16777216 },
       limits: ['syntax-only', 'no-type-info', 'no-trait-solving', 'no-borrow-check'],
-      policy: { version: 'm6-rust-source-health-syntax-v1', thresholds: {} },
+      policy: {
+        version: 'm6-rust-source-health-syntax-v1',
+        thresholds: { maxFunctionLines: 80, maxImplLines: 200 },
+      },
       parser: {
         kind: 'ra_ap_syntax',
         version: '0.0.337',
@@ -1120,7 +1170,13 @@ function artifact(overrides = {}) {
     files: {
       'src/lib.rs': {
         sha256: `sha256:${'a'.repeat(64)}`,
-        facts: { functions: 2, unsafeBlocks: 1, unsafeFunctions: 1 },
+        facts: {
+          items: 3,
+          functions: 2,
+          maxFunctionLines: 12,
+          unsafeBlocks: 1,
+          unsafeFunctions: 1,
+        },
         signals: [
           {
             kind: 'unwrap-call',
@@ -1166,6 +1222,22 @@ describe('Rust source health schema', () => {
     );
   });
 
+  it('rejects malformed thresholds, facts, and skipped file records', () => {
+    const value = artifact();
+    value.meta.policy.thresholds.maxFunctionLines = 0;
+    value.files['src/lib.rs'].facts.functions = -1;
+    value.skippedFiles = [
+      { path: '', reason: 'invalid-utf8' },
+      { path: 'bad.rs', reason: 'unknown-reason' },
+    ];
+
+    const problems = validateRustHealthFinalArtifact(value);
+    expect(problems).toContain('policy.thresholds.maxFunctionLines invalid');
+    expect(problems).toContain('files.src/lib.rs.facts.functions invalid');
+    expect(problems).toContain('skippedFiles.path invalid');
+    expect(problems).toContain('skippedFiles.bad.rs.reason invalid');
+  });
+
   it('sorts file keys, skipped files, and signals deterministically', () => {
     const sorted = sortRustHealthArtifact({
       ...artifact(),
@@ -1175,6 +1247,13 @@ describe('Rust source health schema', () => {
       ],
       files: {
         'z.rs': {
+          facts: {
+            items: 0,
+            functions: 0,
+            maxFunctionLines: 0,
+            unsafeBlocks: 0,
+            unsafeFunctions: 0,
+          },
           signals: [
             {
               kind: 'z',
@@ -1183,8 +1262,31 @@ describe('Rust source health schema', () => {
               location: { line: 1, column: 10, endLine: 1, endColumn: 11, byteStart: 9, byteEnd: 10 },
             },
           ],
+          parse: {
+            ok: false,
+            errors: [
+              {
+                message: 'late',
+                claim: 'syntax-only',
+                location: { line: 1, column: 9, endLine: 1, endColumn: 10, byteStart: 8, byteEnd: 9 },
+              },
+              {
+                message: 'early',
+                claim: 'syntax-only',
+                location: { line: 1, column: 1, endLine: 1, endColumn: 2, byteStart: 0, byteEnd: 1 },
+              },
+            ],
+          },
+          path: { classifications: ['source'], suppressed: false },
         },
         'a.rs': {
+          facts: {
+            items: 0,
+            functions: 0,
+            maxFunctionLines: 0,
+            unsafeBlocks: 0,
+            unsafeFunctions: 0,
+          },
           signals: [
             {
               kind: 'late',
@@ -1199,12 +1301,18 @@ describe('Rust source health schema', () => {
               location: { line: 1, column: 2, endLine: 1, endColumn: 7, byteStart: 1, byteEnd: 6 },
             },
           ],
+          parse: { ok: true, errors: [] },
+          path: { classifications: ['source'], suppressed: false },
         },
       },
     });
     expect(Object.keys(sorted.files)).toEqual(['a.rs', 'z.rs']);
     expect(sorted.skippedFiles.map((file) => file.path)).toEqual(['a.rs', 'z.rs']);
     expect(sorted.files['a.rs'].signals.map((signal) => signal.kind)).toEqual([
+      'early',
+      'late',
+    ]);
+    expect(sorted.files['z.rs'].parse.errors.map((error) => error.message)).toEqual([
       'early',
       'late',
     ]);
