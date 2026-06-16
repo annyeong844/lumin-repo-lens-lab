@@ -1,0 +1,547 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "producer": "rust-source-health",
+    "mode": "syntax-only",
+    "parser": {
+      "kind": "ra_ap_syntax",
+      "version": "0.0.337",
+      "editionPolicy": "fixed",
+      "edition": "2021",
+      "editionSource": "m6-policy-default"
+    },
+    "policy": {
+      "version": "m6-rust-source-health-syntax-v1",
+      "thresholds": {
+        "maxFunctionLines": 80,
+        "maxImplLines": 200
+      }
+    },
+    "runtime": {
+      "threadCount": 2,
+      "workerStackBytes": 16777216
+    },
+    "limits": [
+      "syntax-only",
+      "no-type-info",
+      "no-trait-solving",
+      "no-borrow-check"
+    ],
+    "generated": "2026-06-16T13:56:55.905Z",
+    "sidecar": {
+      "sourceCommit": "a76bc31ae45ea0aa361df25b3b024e20e77af5ed",
+      "binarySha256": "sha256:b0b00011b3032aa68749d27907ee118757d93e3cf3a48f3a1792983646134529"
+    },
+    "input": {
+      "pathPolicy": {
+        "include": [
+          "**/*.rs"
+        ],
+        "exclude": [
+          "target/**",
+          "vendor/**"
+        ]
+      }
+    }
+  },
+  "summary": {
+    "files": 12,
+    "skippedFiles": 4,
+    "parseErrorFiles": 0,
+    "parseErrors": 0,
+    "functions": 89,
+    "unsafeBlocks": 0,
+    "unsafeFunctions": 0,
+    "signals": 16,
+    "signalsByKind": {
+      "clone-call": 6,
+      "expect-call": 6,
+      "unwrap-call": 3,
+      "oversized-function": 1
+    }
+  },
+  "skippedFiles": [
+    {
+      "path": "experiments/rust-sidecar/rust-source-health/target/debug/build/serde_core-a574b47eecc4d54c/out/private.rs",
+      "reason": "excluded-by-path-policy"
+    },
+    {
+      "path": "experiments/rust-sidecar/rust-source-health/target/debug/build/serde-38142dd3d0018dab/out/private.rs",
+      "reason": "excluded-by-path-policy"
+    },
+    {
+      "path": "experiments/rust-sidecar/rust-source-health/target/release/build/serde_core-d02068bca46ae735/out/private.rs",
+      "reason": "excluded-by-path-policy"
+    },
+    {
+      "path": "experiments/rust-sidecar/rust-source-health/target/release/build/serde-45ce9a9451367cdc/out/private.rs",
+      "reason": "excluded-by-path-policy"
+    }
+  ],
+  "files": {
+    "experiments/rust-sidecar/rust-source-health/src/analyzer.rs": {
+      "sha256": "sha256:dfbe2642bc7d156f80b5e1f2abc06b2a164cc1ca3a096cd69c56b348ca06448d",
+      "facts": {
+        "items": 10,
+        "functions": 10,
+        "maxFunctionLines": 46,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [
+        {
+          "kind": "clone-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 55,
+            "column": 17,
+            "endLine": 55,
+            "endColumn": 36,
+            "byteStart": 1785,
+            "byteEnd": 1804
+          }
+        },
+        {
+          "kind": "clone-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 68,
+            "column": 9,
+            "endLine": 68,
+            "endColumn": 26,
+            "byteStart": 2072,
+            "byteEnd": 2089
+          }
+        },
+        {
+          "kind": "clone-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 178,
+            "column": 55,
+            "endLine": 178,
+            "endColumn": 67,
+            "byteStart": 5645,
+            "byteEnd": 5657
+          }
+        },
+        {
+          "kind": "clone-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 203,
+            "column": 50,
+            "endLine": 203,
+            "endColumn": 62,
+            "byteStart": 6506,
+            "byteEnd": 6518
+          }
+        }
+      ],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/rust-source-health/src/locations.rs": {
+      "sha256": "sha256:2c0193d85c856ce74dd7f3b9cc613928f11bb4b6e5779e052e6bfca08a391bec",
+      "facts": {
+        "items": 5,
+        "functions": 3,
+        "maxFunctionLines": 12,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/rust-source-health/src/main.rs": {
+      "sha256": "sha256:96068b6ed6a253625172db0917decd2d4a0e292840a5f3a1f016e210b6c00dfb",
+      "facts": {
+        "items": 12,
+        "functions": 4,
+        "maxFunctionLines": 59,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/rust-source-health/src/parallel.rs": {
+      "sha256": "sha256:8e2307c10510cd95f5af530bbcdf7003d354ee5c9c88b2eba3a3094ab5b9c690",
+      "facts": {
+        "items": 2,
+        "functions": 1,
+        "maxFunctionLines": 17,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/rust-source-health/src/protocol.rs": {
+      "sha256": "sha256:ad658bce6ea58e44684b1648a040cef54887fe6af42dcc26bed9f8668ac5c4a2",
+      "facts": {
+        "items": 31,
+        "functions": 2,
+        "maxFunctionLines": 6,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/rust-source-health/src/signals.rs": {
+      "sha256": "sha256:398a6993904d0c053457235cdf213d6cc1c40619214218a7a76be2280a65096f",
+      "facts": {
+        "items": 4,
+        "functions": 4,
+        "maxFunctionLines": 8,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/rust-source-health/src/summary.rs": {
+      "sha256": "sha256:acce0ca7b87055e6efac2fd1090d1f7575894f52ed218f2e8857e0a15887413b",
+      "facts": {
+        "items": 1,
+        "functions": 1,
+        "maxFunctionLines": 26,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [
+        {
+          "kind": "clone-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 23,
+            "column": 24,
+            "endLine": 23,
+            "endColumn": 43,
+            "byteStart": 752,
+            "byteEnd": 771
+          }
+        }
+      ],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/rust-source-health/tests/health.rs": {
+      "sha256": "sha256:ba1546d479d73081195561f4135bae6694c04f6d2189cd3d4ceb3888e1a7e1d4",
+      "facts": {
+        "items": 9,
+        "functions": 9,
+        "maxFunctionLines": 30,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [
+        {
+          "kind": "expect-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 7,
+            "column": 21,
+            "endLine": 12,
+            "endColumn": 33,
+            "byteStart": 227,
+            "byteEnd": 389
+          }
+        },
+        {
+          "kind": "expect-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 13,
+            "column": 5,
+            "endLine": 18,
+            "endColumn": 33,
+            "byteStart": 395,
+            "byteEnd": 542
+          }
+        },
+        {
+          "kind": "expect-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 13,
+            "column": 5,
+            "endLine": 16,
+            "endColumn": 25,
+            "byteStart": 395,
+            "byteEnd": 458
+          }
+        },
+        {
+          "kind": "expect-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 19,
+            "column": 5,
+            "endLine": 19,
+            "endColumn": 54,
+            "byteStart": 548,
+            "byteEnd": 597
+          }
+        },
+        {
+          "kind": "expect-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 57,
+            "column": 5,
+            "endLine": 57,
+            "endColumn": 65,
+            "byteStart": 1497,
+            "byteEnd": 1557
+          }
+        },
+        {
+          "kind": "unwrap-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 124,
+            "column": 16,
+            "endLine": 124,
+            "endColumn": 63,
+            "byteStart": 3777,
+            "byteEnd": 3824
+          }
+        },
+        {
+          "kind": "unwrap-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 125,
+            "column": 17,
+            "endLine": 125,
+            "endColumn": 47,
+            "byteStart": 3842,
+            "byteEnd": 3872
+          }
+        },
+        {
+          "kind": "unwrap-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 126,
+            "column": 17,
+            "endLine": 126,
+            "endColumn": 47,
+            "byteStart": 3890,
+            "byteEnd": 3920
+          }
+        }
+      ],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "test"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/topology-scanner/src/main.rs": {
+      "sha256": "sha256:324b968ca5d81233a32350cc3012fdebc8dfc5fbd39464b0cd4d3d9ebe020104",
+      "facts": {
+        "items": 3,
+        "functions": 1,
+        "maxFunctionLines": 31,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/topology-scanner/src/protocol.rs": {
+      "sha256": "sha256:bcfa6a0eed697d7d09b120a40e32aa55eba7348c9f1d0c020dea7e195c88d842",
+      "facts": {
+        "items": 5,
+        "functions": 0,
+        "maxFunctionLines": 0,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/topology-scanner/src/scanner.rs": {
+      "sha256": "sha256:34fece9d52a858f8eace3ef54b4b40bed749528aa2a2b72a665e8719a0e64be9",
+      "facts": {
+        "items": 24,
+        "functions": 23,
+        "maxFunctionLines": 91,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [
+        {
+          "kind": "clone-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 151,
+            "column": 21,
+            "endLine": 151,
+            "endColumn": 34,
+            "byteStart": 4507,
+            "byteEnd": 4520
+          }
+        },
+        {
+          "kind": "oversized-function",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 359,
+            "column": 1,
+            "endLine": 449,
+            "endColumn": 2,
+            "byteStart": 9951,
+            "byteEnd": 12500
+          }
+        },
+        {
+          "kind": "expect-call",
+          "severity": "review",
+          "claim": "syntax-only",
+          "location": {
+            "line": 377,
+            "column": 23,
+            "endLine": 379,
+            "endColumn": 62,
+            "byteStart": 10563,
+            "byteEnd": 10656
+          }
+        }
+      ],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "source"
+        ],
+        "suppressed": false
+      }
+    },
+    "experiments/rust-sidecar/topology-scanner/tests/parity.rs": {
+      "sha256": "sha256:4775c95967ffd6716b226a6ba1803dcf42dce476b147cefedb8f606e5c688319",
+      "facts": {
+        "items": 33,
+        "functions": 31,
+        "maxFunctionLines": 36,
+        "unsafeBlocks": 0,
+        "unsafeFunctions": 0
+      },
+      "signals": [],
+      "parse": {
+        "ok": true,
+        "errors": []
+      },
+      "path": {
+        "classifications": [
+          "test"
+        ],
+        "suppressed": false
+      }
+    }
+  }
+}
