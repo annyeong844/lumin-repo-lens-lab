@@ -27,10 +27,10 @@
       "no-trait-solving",
       "no-borrow-check"
     ],
-    "generated": "2026-06-16T14:22:02.838Z",
+    "generated": "2026-06-16T14:52:42.401Z",
     "sidecar": {
-      "sourceCommit": "3a16143c91f62eb4a243855cdbf6a7a5ead37b90",
-      "binarySha256": "sha256:b0b00011b3032aa68749d27907ee118757d93e3cf3a48f3a1792983646134529"
+      "sourceCommit": "b90951b23a0aeb5d56041443b9c3fe60833419e1",
+      "binarySha256": "sha256:6b60ef0a0b741308653bf3a896587a7d1313490dc76aaf464ff026bb8e3f1a62"
     },
     "input": {
       "pathPolicy": {
@@ -49,7 +49,7 @@
     "skippedFiles": 0,
     "parseErrorFiles": 0,
     "parseErrors": 0,
-    "functions": 89,
+    "functions": 94,
     "unsafeBlocks": 0,
     "unsafeFunctions": 0,
     "signals": 16,
@@ -63,10 +63,10 @@
   "skippedFiles": [],
   "files": {
     "experiments/rust-sidecar/rust-source-health/src/analyzer.rs": {
-      "sha256": "sha256:dfbe2642bc7d156f80b5e1f2abc06b2a164cc1ca3a096cd69c56b348ca06448d",
+      "sha256": "sha256:6ac532a5b1a9ba97babe7cc6cf92ffc23f1fa9444d388eba8d06bd35e230131f",
       "facts": {
-        "items": 10,
-        "functions": 10,
+        "items": 12,
+        "functions": 12,
         "maxFunctionLines": 46,
         "unsafeBlocks": 0,
         "unsafeFunctions": 0
@@ -103,12 +103,12 @@
           "severity": "review",
           "claim": "syntax-only",
           "location": {
-            "line": 178,
+            "line": 186,
             "column": 55,
-            "endLine": 178,
+            "endLine": 186,
             "endColumn": 67,
-            "byteStart": 5645,
-            "byteEnd": 5657
+            "byteStart": 5863,
+            "byteEnd": 5875
           }
         },
         {
@@ -116,12 +116,12 @@
           "severity": "review",
           "claim": "syntax-only",
           "location": {
-            "line": 203,
+            "line": 211,
             "column": 50,
-            "endLine": 203,
+            "endLine": 211,
             "endColumn": 62,
-            "byteStart": 6506,
-            "byteEnd": 6518
+            "byteStart": 6724,
+            "byteEnd": 6736
           }
         }
       ],
@@ -158,7 +158,7 @@
       }
     },
     "experiments/rust-sidecar/rust-source-health/src/main.rs": {
-      "sha256": "sha256:96068b6ed6a253625172db0917decd2d4a0e292840a5f3a1f016e210b6c00dfb",
+      "sha256": "sha256:6f45855e4e21c76a8c71914efd6f839ca54e054a5d907825b8f313f31dc0cd36",
       "facts": {
         "items": 12,
         "functions": 4,
@@ -277,10 +277,10 @@
       }
     },
     "experiments/rust-sidecar/rust-source-health/tests/health.rs": {
-      "sha256": "sha256:ba1546d479d73081195561f4135bae6694c04f6d2189cd3d4ceb3888e1a7e1d4",
+      "sha256": "sha256:46b2ecc03a6c08f5bad1ab28b8191a264d6799cc009fb448798c4b795dce8f59",
       "facts": {
-        "items": 9,
-        "functions": 9,
+        "items": 12,
+        "functions": 12,
         "maxFunctionLines": 30,
         "unsafeBlocks": 0,
         "unsafeFunctions": 0
@@ -356,12 +356,12 @@
           "severity": "review",
           "claim": "syntax-only",
           "location": {
-            "line": 124,
+            "line": 145,
             "column": 16,
-            "endLine": 124,
+            "endLine": 145,
             "endColumn": 63,
-            "byteStart": 3777,
-            "byteEnd": 3824
+            "byteStart": 4470,
+            "byteEnd": 4517
           }
         },
         {
@@ -369,12 +369,12 @@
           "severity": "review",
           "claim": "syntax-only",
           "location": {
-            "line": 125,
+            "line": 146,
             "column": 17,
-            "endLine": 125,
+            "endLine": 146,
             "endColumn": 47,
-            "byteStart": 3842,
-            "byteEnd": 3872
+            "byteStart": 4535,
+            "byteEnd": 4565
           }
         },
         {
@@ -382,12 +382,12 @@
           "severity": "review",
           "claim": "syntax-only",
           "location": {
-            "line": 126,
+            "line": 147,
             "column": 17,
-            "endLine": 126,
+            "endLine": 147,
             "endColumn": 47,
-            "byteStart": 3890,
-            "byteEnd": 3920
+            "byteStart": 4583,
+            "byteEnd": 4613
           }
         }
       ],

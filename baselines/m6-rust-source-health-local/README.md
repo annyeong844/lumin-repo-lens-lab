@@ -10,7 +10,7 @@ node scripts/run-rust-source-health.mjs `
   --root . `
   --output baselines/m6-rust-source-health-local/rust-health.json `
   --rust-source-health-bin experiments/rust-sidecar/rust-source-health/target/release/lumin-rust-source-health.exe `
-  --sidecar-source-commit 3a16143c91f62eb4a243855cdbf6a7a5ead37b90 `
+  --sidecar-source-commit b90951b23a0aeb5d56041443b9c3fe60833419e1 `
   --threads 2 `
   --worker-stack-bytes 16777216
 ```
