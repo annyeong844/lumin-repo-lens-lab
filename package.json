@@ -1,7 +1,7 @@
 {
   "name": "lumin-repo-lens-lab-scripts",
   "version": "0.0.0-lab.0",
-  "description": "Lab fork of Lumin Repo Lens for isolated performance and Rust sidecar experiments.",
+  "description": "TS/JS monorepo evidence engine lab; public CLI: audit-repo.mjs for isolated performance and Rust sidecar experiments.",
   "type": "module",
   "private": true,
   "license": "MIT",
