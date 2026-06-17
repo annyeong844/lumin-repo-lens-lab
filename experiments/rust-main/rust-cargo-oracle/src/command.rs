@@ -1,9 +1,9 @@
-use anyhow::{anyhow, bail, Context, Result};
-use std::io::Read;
-use std::path::Path;
+use anyhow::{bail, Context, Result};
+use std::fs::{self, File};
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::metadata::CargoMetadata;
 use crate::OracleOptions;
@@ -71,23 +71,26 @@ pub(crate) fn run_command(
     timeout_ms: u64,
 ) -> Result<CommandOutput> {
     let started = Instant::now();
-    let mut child = Command::new(command)
+    let stdout_path = temp_output_path("stdout");
+    let stderr_path = temp_output_path("stderr");
+    let stdout_file = File::create(&stdout_path)
+        .with_context(|| format!("failed to create stdout capture {}", stdout_path.display()))?;
+    let stderr_file = File::create(&stderr_path)
+        .with_context(|| format!("failed to create stderr capture {}", stderr_path.display()))?;
+    let child_result = Command::new(command)
         .args(args)
         .current_dir(cwd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .with_context(|| format!("failed to spawn {}", command))?;
-    let stdout = child
-        .stdout
-        .take()
-        .context("failed to capture stdout pipe")?;
-    let stderr = child
-        .stderr
-        .take()
-        .context("failed to capture stderr pipe")?;
-    let stdout_reader = read_pipe(stdout);
-    let stderr_reader = read_pipe(stderr);
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn();
+    let mut child = match child_result {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = fs::remove_file(&stdout_path);
+            let _ = fs::remove_file(&stderr_path);
+            return Err(error).with_context(|| format!("failed to spawn {}", command));
+        }
+    };
     let mut timed_out = false;
     let status: ExitStatus;
 
@@ -107,26 +110,28 @@ pub(crate) fn run_command(
 
     Ok(CommandOutput {
         status: status.code(),
-        stdout: join_pipe(stdout_reader, "stdout")?,
-        stderr: join_pipe(stderr_reader, "stderr")?,
+        stdout: read_temp_output(&stdout_path, "stdout")?,
+        stderr: read_temp_output(&stderr_path, "stderr")?,
         timed_out,
         elapsed_ms: started.elapsed().as_millis(),
     })
 }
 
-fn read_pipe<R: Read + Send + 'static>(mut pipe: R) -> JoinHandle<std::io::Result<Vec<u8>>> {
-    thread::spawn(move || {
-        let mut out = Vec::new();
-        pipe.read_to_end(&mut out)?;
-        Ok(out)
-    })
+fn temp_output_path(kind: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    std::env::temp_dir().join(format!(
+        "lumin-rust-cargo-oracle-{}-{unique}-{kind}.log",
+        std::process::id()
+    ))
 }
 
-fn join_pipe(handle: JoinHandle<std::io::Result<Vec<u8>>>, name: &str) -> Result<String> {
-    let bytes = handle
-        .join()
-        .map_err(|_| anyhow!("{name} reader thread panicked"))?
-        .with_context(|| format!("{name} reader failed"))?;
+fn read_temp_output(path: &Path, name: &str) -> Result<String> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("{name} capture read failed: {}", path.display()))?;
+    let _ = fs::remove_file(path);
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
