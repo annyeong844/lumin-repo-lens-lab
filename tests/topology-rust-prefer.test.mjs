@@ -172,7 +172,7 @@ function cleanQuorumEvidence(sidecar) {
 }
 
 function normalizeTopologyForGateContract(topology) {
-  const normalized = structuredClone(topology);
+  const normalized = globalThis.structuredClone(topology);
   delete normalized.meta.rustTopologyPreferGate;
   normalized.meta.generated = "<generated>";
   if (normalized.meta.rustTopologyScanner) {
