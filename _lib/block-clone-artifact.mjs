@@ -157,9 +157,9 @@ function compressionRanks(values) {
 
 export function buildSuffixArray(values) {
   const n = values.length;
-  let sa = Array.from({ length: n }, (_, index) => index);
+  const sa = Array.from({ length: n }, (_, index) => index);
   let rank = compressionRanks(values);
-  let nextRank = new Array(n);
+  const nextRank = new Array(n);
 
   for (let width = 1; width < n; width *= 2) {
     sa.sort(

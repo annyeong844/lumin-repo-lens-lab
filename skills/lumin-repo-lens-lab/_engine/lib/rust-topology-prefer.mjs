@@ -55,7 +55,7 @@ export function hashFileSha256(filePath) {
 }
 
 export function normalizeTopologyForRustPreferGuard(topology) {
-  const normalized = structuredClone(topology);
+  const normalized = globalThis.structuredClone(topology);
   if (normalized?.meta) {
     normalized.meta.generated = '<generated>';
     delete normalized.meta.rustTopologyScanner;

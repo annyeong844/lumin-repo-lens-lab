@@ -42,7 +42,7 @@ function baseGate({
   mode,
   currentCorpus,
   rustTopologyScanner,
-  quorumEvidence,
+  quorumEvidence: _quorumEvidence,
   policyVersion,
   status,
   reason,

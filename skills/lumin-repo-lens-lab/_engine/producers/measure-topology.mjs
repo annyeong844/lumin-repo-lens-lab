@@ -391,7 +391,7 @@ function buildRustCandidateEntries({ jsEntries, rustResults }) {
   const rustByFile = new Map(
     (rustResults ?? []).map((entry) => [String(entry.file).replaceAll('\\', '/'), entry]),
   );
-  const entries = structuredClone(jsEntries);
+  const entries = globalThis.structuredClone(jsEntries);
   for (const file of rustComparableJsResults.map((entry) => entry.file)) {
     const key = file.replaceAll('\\', '/');
     entries[file] = buildRustTopologyEntryFromScannerResult(file, rustByFile.get(key));
