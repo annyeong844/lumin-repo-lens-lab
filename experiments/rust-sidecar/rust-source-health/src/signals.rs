@@ -1,12 +1,12 @@
 use crate::locations::LineIndex;
-use crate::protocol::{ParseError, Signal};
+use crate::protocol::{Claim, ParseError, Severity, Signal, SignalKind};
 use ra_ap_syntax::TextRange;
 
-pub fn review_signal(kind: &str, line_index: &LineIndex, range: TextRange) -> Signal {
+pub fn review_signal(kind: SignalKind, line_index: &LineIndex, range: TextRange) -> Signal {
     Signal {
-        kind: kind.to_string(),
-        severity: "review".to_string(),
-        claim: "syntax-only".to_string(),
+        kind,
+        severity: Severity::Review,
+        claim: Claim::SyntaxOnly,
         location: location_for_range(line_index, range),
     }
 }
@@ -14,7 +14,7 @@ pub fn review_signal(kind: &str, line_index: &LineIndex, range: TextRange) -> Si
 pub fn syntax_parse_error(message: String, line_index: &LineIndex, range: TextRange) -> ParseError {
     ParseError {
         message,
-        claim: "syntax-only".to_string(),
+        claim: Claim::SyntaxOnly,
         location: location_for_range(line_index, range),
     }
 }

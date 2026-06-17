@@ -74,9 +74,8 @@ Use:
 - syntax_parse_error
 - LineIndex::location
 - summarize
-- summarizeRustHealthArtifact
-- validateRustHealthSidecarArtifact
-- validateRustHealthFinalArtifact
+- analyze_request
+- wrapper::run_cli
 
 8. String vocabulary drift
 

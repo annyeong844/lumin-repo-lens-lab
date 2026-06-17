@@ -2,8 +2,8 @@
 
 > **Role:** table of contents for the canonical spine. This file is the entry point when a new session needs to learn what is invariant in this skill.
 > **Owner:** this file.
-> **Status:** spine v1 (11 files). Will grow when lifecycle/refresh get promoted.
-> **Last updated:** 2026-06-16
+> **Status:** spine v1.
+> **Last updated:** 2026-06-17
 
 ---
 
@@ -26,8 +26,8 @@ Methodology borrowed from `rustlike3-clone`: invariants here, phases in `p{N}/se
 | `classification-gates.md` | duplicate / single-identity classification ordering with fixed precedence | P3 (canon draft), P4 (shape duplication) |
 | `any-contamination.md` | how the skill handles `any`/`as any`/implicit-any; semantic vs structural analysis boundary | P1 (pre-write shape lookup), P3 (canon draft), P4 (shape duplication) |
 | `canon-drift.md` | formal drift categories, parser contract, `canon-drift.json` shape | P5 (check-canon drift detector) |
-| `rust-debt.txt` | Rust debt checklist: clone, ownership, Rayon, protocol leakage, fallback, determinism | M6 / Rust source health work |
-| `rust-source-health.md` | Rust source health naming, shape, helper, protocol, and Rayon pool contract | M6 / Rust source health work |
+| `evidence-ladder.md` | confidence / coverage / oracle authority contract across languages | any semantic, syntax-health, or cross-language evidence work |
+| `oracle-registry.json` | data source for language oracle slots and authority | any implementation that emits or renders oracle-backed evidence |
 
 ## 3. Reading order by goal
 
@@ -36,7 +36,7 @@ Methodology borrowed from `rustlike3-clone`: invariants here, phases in `p{N}/se
 - **"I am implementing P3 canon draft"**: `invariants.md` → `fact-model.md` → `identity-and-alias.md` → `classification-gates.md` → `any-contamination.md`.
 - **"I am implementing P4 shape duplication"**: `invariants.md` → `fact-model.md` → `classification-gates.md` → `any-contamination.md` (critical — shape hash must exclude contaminated identities).
 - **"I am implementing P5 check-canon drift detector"**: `invariants.md` → `fact-model.md` §7 → `canon-drift.md` (category enum + parser contract + JSON shape) → `classification-gates.md` §9/§10.3/§11.4/§12.3 (label sets the parser validates against) → `identity-and-alias.md` §2 (identity format for type/helper drift).
-- **"I am implementing M6 Rust source health"**: `invariants.md` → `rust-debt.txt` → `rust-source-health.md`. Add `fact-model.md` only if the implementation writes or consumes a shared fact artifact outside `rust-health.json`.
+- **"I am implementing semantic oracle, syntax health, or cross-language evidence"**: `invariants.md` → `evidence-ladder.md` → `oracle-registry.json` → the language-specific canonical file (`any-contamination.md` for TS type escapes, future Rust/Python canon when promoted).
 - **"I am reviewing a spec"**: all of the above; they are each short by design.
 
 ## 4. What's deferred (skeleton only, promoted when needed)

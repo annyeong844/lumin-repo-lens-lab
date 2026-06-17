@@ -9,6 +9,8 @@ pub const PARSER_EDITION: &str = "2021";
 pub const PARSER_EDITION_POLICY: &str = "fixed";
 pub const PARSER_EDITION_SOURCE: &str = "m6-policy-default";
 pub const DEFAULT_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
+pub const DEFAULT_INCLUDE: &[&str] = &["**/*.rs"];
+pub const DEFAULT_EXCLUDE: &[&str] = &["**/target/**", "**/vendor/**"];
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,6 +86,12 @@ pub struct ResponseMeta {
     pub policy: PolicyMeta,
     pub runtime: RuntimeMeta,
     pub limits: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sidecar: Option<SidecarMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<InputMeta>,
 }
 
 #[derive(Debug, Serialize)]
@@ -117,6 +125,19 @@ pub struct RuntimeMeta {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidecarMeta {
+    pub source_commit: String,
+    pub binary_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputMeta {
+    pub path_policy: PathPolicy,
+}
+
+#[derive(Debug, Serialize)]
 pub struct SkippedFile {
     pub path: String,
     pub reason: String,
@@ -144,10 +165,36 @@ pub struct Facts {
 
 #[derive(Debug, Serialize)]
 pub struct Signal {
-    pub kind: String,
-    pub severity: String,
-    pub claim: String,
+    pub kind: SignalKind,
+    pub severity: Severity,
+    pub claim: Claim,
     pub location: Location,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SignalKind {
+    OversizedFunction,
+    OversizedImpl,
+    UnsafeBlock,
+    UnwrapCall,
+    ExpectCall,
+    CloneCall,
+    PanicMacro,
+    TodoMacro,
+    UnimplementedMacro,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Severity {
+    Review,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Claim {
+    SyntaxOnly,
 }
 
 #[derive(Debug, Serialize)]
@@ -160,7 +207,7 @@ pub struct ParseStatus {
 #[derive(Debug, Serialize)]
 pub struct ParseError {
     pub message: String,
-    pub claim: String,
+    pub claim: Claim,
     pub location: Location,
 }
 
@@ -192,5 +239,5 @@ pub struct Summary {
     pub unsafe_blocks: usize,
     pub unsafe_functions: usize,
     pub signals: usize,
-    pub signals_by_kind: BTreeMap<String, usize>,
+    pub signals_by_kind: BTreeMap<SignalKind, usize>,
 }

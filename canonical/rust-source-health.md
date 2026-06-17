@@ -3,7 +3,7 @@
 > **Role:** canonical naming, shape, helper, and module contract for the Rust source health track.
 > **Owner:** this file.
 > **Status:** M6 spine addition.
-> **Last updated:** 2026-06-16
+> **Last updated:** 2026-06-17
 
 ---
 
@@ -34,28 +34,26 @@ Rust source health emits a separate `rust-health.json` artifact.
 |---|---|---|
 | JSON field | `camelCase` | `signalsByKind`, `byteStart`, `unsafeBlocks` |
 | JSON string enum / reason / kind | `kebab-case` | `unwrap-call`, `invalid-utf8`, `syntax-only` |
-| CLI flag | `kebab-case` | `--rust-source-health-bin`, `--worker-stack-bytes` |
+| CLI flag | `kebab-case` | `--source-commit`, `--worker-stack-bytes` |
 | Rust module / function / field | `snake_case` | `review_signal`, `worker_stack_bytes` |
 | Rust type / enum / struct | `PascalCase` | `FileHealth`, `RuntimeConfig` |
 | Rust constant | `SCREAMING_SNAKE_CASE` | `PARSER_VERSION` |
-| JS function / variable | `camelCase` | `runRustSourceHealth`, `hasPathSegment` |
-| JS constant | `SCREAMING_SNAKE_CASE` | `RUST_SOURCE_HEALTH_SCHEMA_VERSION` |
-| File path | `kebab-case` unless local convention already exists | `rust-source-health-runner.mjs` |
+| File path | `kebab-case` unless local convention already exists | `rust-source-health` |
 
 Lowering examples:
 
-| Concept | JSON | Rust | JS |
-|---|---|---|---|
-| unwrap method signal | `unwrap-call` | `review_signal("unwrap-call", ...)` | validated as `signal.kind` |
-| parse error | `parse.errors[]` | `syntax_parse_error(...)` | `validateRustHealthFinalArtifact(...)` |
-| worker stack bytes | `workerStackBytes` | `worker_stack_bytes` | `workerStackBytes` |
-| source hash | `sha256` | `sha256` | `sha256` |
+| Concept | JSON | Rust |
+|---|---|---|
+| unwrap method signal | `unwrap-call` | `review_signal(SignalKind::UnwrapCall, ...)` |
+| parse error | `parse.errors[]` | `syntax_parse_error(...)` |
+| worker stack bytes | `workerStackBytes` | `worker_stack_bytes` |
+| source hash | `sha256` | `sha256` |
 
 ## 4. Owned Protocol Boundary
 
-All JSON-visible shapes are project-owned structs or plain JS objects. No
+All JSON-visible shapes are project-owned Rust structs. No
 `ra_ap_syntax` type may cross into the protocol, public module surface, JSON
-artifact, or JS validator.
+artifact, or validator.
 
 Allowed:
 
@@ -82,22 +80,18 @@ The protocol owns its names. The parser is an implementation detail.
 | `src/summary.rs` | `summarize(...)` for `BTreeMap<String, FileHealth>` | signal construction, path policy |
 | `src/parallel.rs` | local Rayon `ThreadPool`, `RuntimeConfig`, stack/thread policy | AST storage, file analysis |
 | `src/analyzer.rs` | syntax traversal and file-level analysis | protocol schema changes, final artifact metadata |
-| `src/main.rs` | stdin/stdout contract, request validation, pool install, exit behavior | filesystem walking, output file writes |
+| `src/main.rs` | stdin/stdout compatibility mode, CLI dispatch, request validation, pool install, exit behavior | parser traversal |
+| `src/wrapper.rs` | Rust-main file discovery, path policy, hashing, UTF-8 decode, skipped-file evidence, final metadata, artifact write | parser traversal, signal construction |
 
 No extra Rust module may create `Signal`, `ParseError`, `Summary`, `Location`,
 or runtime pool settings unless this table is amended first.
 
-## 6. Canonical JS Modules
+## 6. JavaScript Boundary
 
-| File | Owns | Must not own |
-|---|---|---|
-| `_lib/rust-source-health-schema.mjs` | schema constants, summary recompute, sidecar/final validators | filesystem walking, child process execution |
-| `_lib/rust-source-health-runner.mjs` | file collection, path policy, hashing, UTF-8 decode, sidecar execution, final artifact assembly | schema rules not delegated to the schema module |
-| `scripts/run-rust-source-health.mjs` | lab CLI parsing and user-facing command wiring | duplicate schema validation, duplicate path policy |
-
-If a second JS file wants to compute summary, validate locations, decide path
-policy, or assemble final metadata, it imports these modules. It does not clone
-the logic.
+Rust source health does not own a JavaScript wrapper surface anymore. The M6
+Rust binary is the implementation surface for both stdin compatibility and
+Rust-main CLI execution. New `rust-source-health` `.mjs` wrappers are forbidden
+unless this canonical file is amended with a migration reason.
 
 ## 7. Canonical Constructors And Helpers
 
@@ -116,23 +110,6 @@ the logic.
 
 `review_signal` and `syntax_parse_error` are the only production helpers that
 convert `TextRange` into `Location`.
-
-### JavaScript
-
-| Purpose | Canonical name | Owner |
-|---|---|---|
-| sidecar artifact validation | `validateRustHealthSidecarArtifact(artifact)` | `_lib/rust-source-health-schema.mjs` |
-| final artifact validation | `validateRustHealthFinalArtifact(artifact)` | `_lib/rust-source-health-schema.mjs` |
-| summary recompute | `summarizeRustHealthArtifact(artifact)` | `_lib/rust-source-health-schema.mjs` |
-| invariant diagnostics | `rustHealthInvariantProblems(artifact)` | `_lib/rust-source-health-schema.mjs` |
-| stable object compare | `stableObject(value)` | `_lib/rust-source-health-schema.mjs` |
-| path segment predicate | `hasPathSegment(path, segment)` | `_lib/rust-source-health-runner.mjs` |
-| path exclusion policy | `isExcludedByPathPolicy(path)` | `_lib/rust-source-health-runner.mjs` |
-| input collection | `collectRustSourceHealthInput(options)` | `_lib/rust-source-health-runner.mjs` |
-| sidecar execution | `runRustSourceHealthSidecar(options)` | `_lib/rust-source-health-runner.mjs` |
-| final assembly | `buildFinalRustHealthArtifact(options)` | `_lib/rust-source-health-runner.mjs` |
-| artifact write | `writeRustHealthArtifact(outputPath, artifact)` | `_lib/rust-source-health-runner.mjs` |
-| full run | `runRustSourceHealth(options)` | `_lib/rust-source-health-runner.mjs` |
 
 ## 8. Do Not Invent These Again
 
@@ -167,7 +144,7 @@ Rust source health code must not hand-build these shapes outside their owners:
 - `ParseError`
 - `Location`
 - `Summary`
-- final `rust-health.json` metadata
+- final `rust-health.json` metadata outside `src/wrapper.rs` / `src/main.rs`
 - Rayon runtime pool configuration
 
 Allowed exception: tests may build literal fixtures when the point is validator
@@ -202,8 +179,8 @@ Final artifacts must satisfy these counts:
 - `summary.unsafeBlocks === sum(files[*].facts.unsafeBlocks)`
 - `summary.unsafeFunctions === sum(files[*].facts.unsafeFunctions)`
 
-The wrapper recomputes summary after adding wrapper-owned skipped-file evidence.
-It does not trust sidecar summary after mutation.
+Rust-main wrapper mode recomputes summary after adding skipped-file evidence.
+stdin compatibility mode emits no skipped-file evidence.
 
 ## 12. Path And Artifact Ordering
 
@@ -221,7 +198,7 @@ It does not trust sidecar summary after mutation.
 Before adding any Rust source health helper:
 
 1. Search this file for the intended concept.
-2. Search `_lib/` and `experiments/rust-sidecar/` for the intended behavior.
+2. Search `experiments/rust-sidecar/` for the intended behavior.
 3. If an owner exists, import it.
 4. If no owner exists, amend this file with the new canonical name and owner.
 5. Only then implement.
@@ -234,7 +211,7 @@ Before a Rust source health implementation review packet is accepted, run scans
 equivalent to:
 
 ```bash
-rg -n "makeSignal|buildSignal|signalForRange|makeParseError|buildParseError|toLocation|rangeToLocation|buildSummary|countSummary|summarizeSignals|createThreadPool|globalThreadPool" experiments/rust-sidecar _lib scripts tests
+rg -n "makeSignal|buildSignal|signalForRange|makeParseError|buildParseError|toLocation|rangeToLocation|buildSummary|countSummary|summarizeSignals|createThreadPool|globalThreadPool" experiments/rust-sidecar tests
 rg -n "pub use ra_ap_syntax|ra_ap_syntax::.*(Request|Response|FileHealth|Signal|ParseError|Location|Summary)" experiments/rust-sidecar
 rg -n "Signal \\{|ParseError \\{|Summary \\{" experiments/rust-sidecar/rust-source-health/src
 ```

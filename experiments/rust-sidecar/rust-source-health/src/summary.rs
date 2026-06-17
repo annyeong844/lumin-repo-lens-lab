@@ -18,10 +18,7 @@ pub fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
         summary.signals += file.signals.len();
 
         for signal in &file.signals {
-            *summary
-                .signals_by_kind
-                .entry(signal.kind.clone())
-                .or_insert(0) += 1;
+            *summary.signals_by_kind.entry(signal.kind).or_insert(0) += 1;
         }
     }
 

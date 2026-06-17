@@ -1,0 +1,2 @@
+    Checking type-error-e0308 v0.1.0 (C:\Users\endof\Downloads\lumin-perf-lab\review\m7-cargo-json-diagnostic-capture-v2-20260617-024134\fixtures\type-error-e0308)
+error: could not compile `type-error-e0308` (lib) due to 1 previous error

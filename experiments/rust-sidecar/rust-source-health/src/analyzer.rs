@@ -1,7 +1,10 @@
 use crate::locations::LineIndex;
-use crate::protocol::{Facts, FileHealth, ParseStatus, PathMeta, RequestFile, Signal, Thresholds};
+use crate::protocol::{
+    Facts, FileHealth, ParseStatus, ParserRequest, PathMeta, RequestFile, Signal, SignalKind,
+    Thresholds, PARSER_EDITION, PARSER_EDITION_POLICY, PARSER_EDITION_SOURCE,
+};
 use crate::signals::{review_signal, syntax_parse_error, text_size_to_usize};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use ra_ap_syntax::{ast, AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRange};
 use rayon::prelude::*;
 use std::collections::BTreeMap;
@@ -9,10 +12,12 @@ use std::collections::BTreeMap;
 pub fn analyze_files(
     files: &[RequestFile],
     thresholds: &Thresholds,
+    parser: &ParserRequest,
 ) -> Result<BTreeMap<String, FileHealth>> {
+    let edition = parser_edition(parser)?;
     let analyzed = files
         .par_iter()
-        .map(|file| analyze_file(file, thresholds))
+        .map(|file| analyze_file(file, thresholds, edition))
         .collect::<Vec<_>>();
 
     let mut out = BTreeMap::new();
@@ -23,8 +28,29 @@ pub fn analyze_files(
     Ok(out)
 }
 
-fn analyze_file(file: &RequestFile, thresholds: &Thresholds) -> Result<(String, FileHealth)> {
-    let parse = SourceFile::parse(&file.text, Edition::Edition2021);
+fn parser_edition(parser: &ParserRequest) -> Result<Edition> {
+    if parser.edition_policy != PARSER_EDITION_POLICY
+        || parser.edition != PARSER_EDITION
+        || parser.edition_source != PARSER_EDITION_SOURCE
+    {
+        bail!("unsupported parser edition policy");
+    }
+    configured_parser_edition()
+}
+
+fn configured_parser_edition() -> Result<Edition> {
+    match PARSER_EDITION {
+        "2021" => Ok(Edition::Edition2021),
+        value => bail!("unsupported configured parser edition {}", value),
+    }
+}
+
+fn analyze_file(
+    file: &RequestFile,
+    thresholds: &Thresholds,
+    edition: Edition,
+) -> Result<(String, FileHealth)> {
+    let parse = SourceFile::parse(&file.text, edition);
     let source_file = parse.tree();
     let root = source_file.syntax();
     let line_index = LineIndex::new(&file.text);
@@ -86,7 +112,7 @@ fn collect_facts_and_signals(
                 facts.max_function_lines = facts.max_function_lines.max(lines);
                 if lines > thresholds.max_function_lines {
                     signals.push(review_signal(
-                        "oversized-function",
+                        SignalKind::OversizedFunction,
                         line_index,
                         node.text_range(),
                     ));
@@ -96,7 +122,7 @@ fn collect_facts_and_signals(
                 let lines = line_span(line_index, node.text_range());
                 if lines > thresholds.max_impl_lines {
                     signals.push(review_signal(
-                        "oversized-impl",
+                        SignalKind::OversizedImpl,
                         line_index,
                         node.text_range(),
                     ));
@@ -104,7 +130,11 @@ fn collect_facts_and_signals(
             }
             _ if is_unsafe_block_expr(&node) => {
                 facts.unsafe_blocks += 1;
-                signals.push(review_signal("unsafe-block", line_index, node.text_range()));
+                signals.push(review_signal(
+                    SignalKind::UnsafeBlock,
+                    line_index,
+                    node.text_range(),
+                ));
             }
             _ => {}
         }
@@ -130,7 +160,7 @@ fn has_path_segment(path: &str, segment: &str) -> bool {
 }
 
 fn file_name(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
+    path.rsplit_once('/').map_or(path, |(_, name)| name)
 }
 
 fn count_items(root: &SyntaxNode) -> usize {
@@ -186,15 +216,21 @@ fn collect_method_call_signals(
         if let Some(call) = ast::MethodCallExpr::cast(node.clone()) {
             if let Some(name_ref) = call.name_ref() {
                 match name_ref.text().as_str() {
-                    "unwrap" => {
-                        signals.push(review_signal("unwrap-call", line_index, node.text_range()))
-                    }
-                    "expect" => {
-                        signals.push(review_signal("expect-call", line_index, node.text_range()))
-                    }
-                    "clone" => {
-                        signals.push(review_signal("clone-call", line_index, node.text_range()))
-                    }
+                    "unwrap" => signals.push(review_signal(
+                        SignalKind::UnwrapCall,
+                        line_index,
+                        node.text_range(),
+                    )),
+                    "expect" => signals.push(review_signal(
+                        SignalKind::ExpectCall,
+                        line_index,
+                        node.text_range(),
+                    )),
+                    "clone" => signals.push(review_signal(
+                        SignalKind::CloneCall,
+                        line_index,
+                        node.text_range(),
+                    )),
                     _ => {}
                 }
             }
@@ -209,22 +245,28 @@ fn collect_macro_call_signals(
 ) {
     for node in root.descendants() {
         if let Some(call) = ast::MacroCall::cast(node.clone()) {
-            let text = call.syntax().text().to_string();
-            let name = text
-                .split('!')
-                .next()
-                .unwrap_or_default()
-                .trim()
-                .rsplit("::")
-                .next()
-                .unwrap_or_default();
+            let Some(name_ref) = call
+                .path()
+                .and_then(|path| path.segment())
+                .and_then(|segment| segment.name_ref())
+            else {
+                continue;
+            };
+            let name = name_ref.text();
+            let name = name.as_str();
             match name {
-                "panic" => {
-                    signals.push(review_signal("panic-macro", line_index, node.text_range()))
-                }
-                "todo" => signals.push(review_signal("todo-macro", line_index, node.text_range())),
+                "panic" => signals.push(review_signal(
+                    SignalKind::PanicMacro,
+                    line_index,
+                    node.text_range(),
+                )),
+                "todo" => signals.push(review_signal(
+                    SignalKind::TodoMacro,
+                    line_index,
+                    node.text_range(),
+                )),
                 "unimplemented" => signals.push(review_signal(
-                    "unimplemented-macro",
+                    SignalKind::UnimplementedMacro,
                     line_index,
                     node.text_range(),
                 )),

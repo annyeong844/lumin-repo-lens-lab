@@ -21,11 +21,6 @@ Typical lab surfaces:
 
 Current lab notes:
 
-- [M6 Rust source health design - 2026-06-16](m6-rust-source-health-design-2026-06-16.md)
-- [M5 Rust topology prefer closeout - 2026-06-16](../../baselines/m5-rust-topology-prefer-closeout-2026-06-16.md)
-- [M5 Rust topology prefer design - 2026-06-15](m5-rust-topology-prefer-design-2026-06-15.md)
-- [M4 Rust topology quorum evidence design - 2026-06-15](m4-rust-topology-quorum-evidence-design-2026-06-15.md)
-- [M3 Rust topology prefer gate design - 2026-06-15](m3-rust-topology-prefer-gate-design-2026-06-15.md)
 - [Self-audit health note - 2026-04-26](self-audit-health-2026-04-26.md)
 - [Suyeon dead export dogfood note - 2026-04-26](suyeon-dead-export-dogfood-2026-04-26.md)
 - [WT-18 artifact read measurement - 2026-05-10](wt18-artifact-read-measurement-2026-05-10.md)
@@ -79,6 +74,9 @@ Current lab notes:
 - [WT-SFC Storybook Vue corpus calibration - 2026-05-31](wt-sfc-storybook-vue-corpus-calibration-2026-05-31.md)
 - [WT-SFC Nuxt main corpus calibration - 2026-06-01](wt-sfc-nuxt-main-corpus-calibration-2026-06-01.md)
 - [WT-SFC beta.86 Nuxt alias helper filter verification - 2026-06-02](wt-sfc-beta86-nuxt-alias-helper-filter-verification-2026-06-02.md)
+- [M7 Semantic Oracle Design - 2026-06-17](m7-semantic-oracle-design-2026-06-17.md)
+- [M7 Rust cargo oracle structure review - 2026-06-17](m7-rust-cargo-oracle-structure-review-2026-06-17.md)
+- [M7 Rust cargo oracle structure verification - 2026-06-17](m7-rust-cargo-oracle-structure-verification-2026-06-17.md)
 
 Production-ready default tracking should treat generated draft markdown
 under `canonical-draft/*.md`, review output directories, benchmark
