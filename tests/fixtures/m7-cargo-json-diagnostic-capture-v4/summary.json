@@ -1,0 +1,1326 @@
+{
+  "captureRoot": "<CAPTURE_ROOT>",
+  "pathsRedacted": {
+    "summaryPathsRedacted": true,
+    "rawPathsRedacted": false
+  },
+  "pathStyle": "windows-msvc",
+  "toolchain": {
+    "cargoVersion": "cargo 1.96.0 (30a34c682 2026-05-25)",
+    "rustcVersionVerbose": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: x86_64-pc-windows-msvc\nrelease: 1.96.0\nLLVM version: 22.1.2",
+    "host": "x86_64-pc-windows-msvc",
+    "profile": "dev",
+    "capturedAt": "2026-06-16T17:58:49.132Z"
+  },
+  "normalizedDiagnosticSchema": {
+    "codeNamespaceDerivation": [
+      "code === null -> rustc-codeless",
+      "code.code matches ^E[0-9]+$ -> rustc-error",
+      "other non-empty code.code -> rustc-non-ecode",
+      "otherwise -> unknown"
+    ],
+    "classifierRules": [
+      "level not in {error, warning} -> non-finding; never candidate",
+      "diagnostics without selected user-code primary spans are not user-facing findings",
+      "level error with only non-user primary span -> coverage unavailable; not candidate",
+      "rustc-non-ecode -> rule-backed lint diagnostic before level-based verified classification",
+      "rustc-error + level error + user primary -> verified rustc error diagnostic",
+      "rustc-codeless + level error + user primary -> verified codeless rustc error diagnostic",
+      "remaining real warning/error diagnostics with user primary -> candidate fallback; never verified"
+    ],
+    "codeKindValues": [
+      "null-error-code",
+      "rustc-error-code",
+      "non-ecode-name",
+      "unknown"
+    ],
+    "primarySpanValues": [
+      "user-code",
+      "dependency",
+      "generated",
+      "unknown"
+    ]
+  },
+  "summaries": [
+    {
+      "name": "borrow-error-e0502",
+      "fixture": "borrow-error-e0502",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 3,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 2,
+      "findingCount": 1,
+      "nonFindingCount": 1,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": {
+            "code": "E0502",
+            "explanation": "A variable already borrowed with a certain mutability (either mutable or\nimmutable) was borrowed again with a different mutability.\n\nErroneous code example:\n\n```compile_fail,E0502\nfn bar(x: &mut i32) {}\nfn foo(a: &mut i32) {\n    let y = &a; // a is borrowed as immutable.\n    bar(a); // error: cannot borrow `*a` as mutable because `a` is also borrowed\n            //        as immutable\n    println!(\"{}\", y);\n}\n```\n\nTo fix this error, ensure that you don't have any other references to the\nvariable before trying to access it with a different mutability:\n\n```\nfn bar(x: &mut i32) {}\nfn foo(a: &mut i32) {\n    bar(a);\n    let y = &a; // ok!\n    println!(\"{}\", y);\n}\n```\n\nFor more information on Rust's ownership system, take a look at the\n[References & Borrowing][references-and-borrowing] section of the Book.\n\n[references-and-borrowing]: https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html\n"
+          },
+          "normalized": {
+            "codePresence": "present-value",
+            "codeValue": "E0502",
+            "codeNamespace": "rustc-error",
+            "codeKind": "rustc-error-code",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "verified",
+            "claimKind": "verified.rust.rustc-error-diagnostic",
+            "coverageEffect": null,
+            "rule": "ecode-error-user-code-primary"
+          },
+          "message": "cannot borrow `value` as mutable because it is also borrowed as immutable",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 4,
+              "line_end": 4,
+              "column_start": 19,
+              "column_end": 29,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "error[E0502]: cannot borrow `value` as mutable because it is also borrowed as immutable"
+        },
+        {
+          "level": "failure-note",
+          "rawCode": null,
+          "normalized": {
+            "codePresence": "present-null",
+            "codeValue": null,
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code",
+            "primarySpan": "unknown"
+          },
+          "classification": {
+            "disposition": "non-finding",
+            "confidence": null,
+            "claimKind": null,
+            "coverageEffect": null,
+            "rule": "note-help-failure-note-are-not-findings"
+          },
+          "message": "For more information about this error, try `rustc --explain E0502`.",
+          "primarySpans": [],
+          "renderedFirstLine": "For more information about this error, try `rustc --explain E0502`."
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.borrow-error-e0502.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.borrow-error-e0502.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "borrow-error-e0502",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "build-script-failure",
+      "fixture": "build-script-failure",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 2,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 0,
+      "findingCount": 0,
+      "nonFindingCount": 0,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [],
+      "coverage": [
+        {
+          "id": "cov.build-script-failure.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.build-script-failure.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "build-script-failure",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "compile-error-codeless",
+      "fixture": "compile-error-codeless",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 2,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 1,
+      "findingCount": 1,
+      "nonFindingCount": 0,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": null,
+          "normalized": {
+            "codePresence": "present-null",
+            "codeValue": null,
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "verified",
+            "claimKind": "verified.rust.rustc-codeless-error-diagnostic",
+            "coverageEffect": null,
+            "rule": "codeless-error-user-code-primary"
+          },
+          "message": "intentional compile_error fixture",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 1,
+              "line_end": 1,
+              "column_start": 1,
+              "column_end": 52,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "error: intentional compile_error fixture"
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.compile-error-codeless.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.compile-error-codeless.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "compile-error-codeless",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "deny-lint-error",
+      "fixture": "deny-lint-error",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 2,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 1,
+      "findingCount": 1,
+      "nonFindingCount": 0,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": {
+            "code": "unused_variables",
+            "explanation": null
+          },
+          "normalized": {
+            "codePresence": "present-value",
+            "codeValue": "unused_variables",
+            "codeNamespace": "rustc-non-ecode",
+            "codeKind": "non-ecode-name",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "rule-backed",
+            "claimKind": "rule-backed.rust.rustc-lint-diagnostic",
+            "coverageEffect": null,
+            "rule": "non-ecode-code-name-treated-as-rule-backed-before-level"
+          },
+          "message": "unused variable: `unused_value`",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 4,
+              "line_end": 4,
+              "column_start": 9,
+              "column_end": 21,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "error: unused variable: `unused_value`"
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.deny-lint-error.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.deny-lint-error.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "deny-lint-error",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "dependency-error-outside-workspace",
+      "fixture": "dependency-error-outside-workspace",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 3,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 2,
+      "findingCount": 0,
+      "nonFindingCount": 1,
+      "coverageUnavailableDiagnosticCount": 1,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": {
+            "code": "E0308",
+            "explanation": "Expected type did not match the received type.\n\nErroneous code examples:\n\n```compile_fail,E0308\nfn plus_one(x: i32) -> i32 {\n    x + 1\n}\n\nplus_one(\"Not a number\");\n//       ^^^^^^^^^^^^^^ expected `i32`, found `&str`\n\nif \"Not a bool\" {\n// ^^^^^^^^^^^^ expected `bool`, found `&str`\n}\n\nlet x: f32 = \"Not a float\";\n//     ---   ^^^^^^^^^^^^^ expected `f32`, found `&str`\n//     |\n//     expected due to this\n```\n\nThis error occurs when an expression was used in a place where the compiler\nexpected an expression of a different type. It can occur in several cases, the\nmost common being when calling a function and passing an argument which has a\ndifferent type than the matching type in the function declaration.\n"
+          },
+          "normalized": {
+            "codePresence": "present-value",
+            "codeValue": "E0308",
+            "codeNamespace": "rustc-error",
+            "codeKind": "rustc-error-code",
+            "primarySpan": "dependency"
+          },
+          "classification": {
+            "disposition": "coverage-unavailable",
+            "confidence": null,
+            "claimKind": null,
+            "coverageEffect": "absence-clean-unavailable",
+            "rule": "non-user-code-primary-span-not-user-facing-finding"
+          },
+          "message": "mismatched types",
+          "primarySpans": [
+            {
+              "file_name": "bad_dep\\src\\lib.rs",
+              "line_start": 2,
+              "line_end": 2,
+              "column_start": 22,
+              "column_end": 41,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "dependency"
+            }
+          ],
+          "renderedFirstLine": "error[E0308]: mismatched types"
+        },
+        {
+          "level": "failure-note",
+          "rawCode": null,
+          "normalized": {
+            "codePresence": "present-null",
+            "codeValue": null,
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code",
+            "primarySpan": "unknown"
+          },
+          "classification": {
+            "disposition": "non-finding",
+            "confidence": null,
+            "claimKind": null,
+            "coverageEffect": null,
+            "rule": "note-help-failure-note-are-not-findings"
+          },
+          "message": "For more information about this error, try `rustc --explain E0308`.",
+          "primarySpans": [],
+          "renderedFirstLine": "For more information about this error, try `rustc --explain E0308`."
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.dependency-error-outside-workspace.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.dependency-error-outside-workspace.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false; non-user-code primary error diagnostic encountered",
+          "scope": {
+            "package": "dependency-error-outside-workspace",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "feature-gated-error-default",
+      "fixture": "feature-gated-error",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 0,
+      "stream": {
+        "lineCount": 2,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": true
+        }
+      },
+      "compilerMessageCount": 0,
+      "findingCount": 0,
+      "nonFindingCount": 0,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [],
+      "coverage": [
+        {
+          "id": "cov.feature-gated-error-default.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.feature-gated-error-default.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "ran",
+          "clean": true,
+          "reason": null,
+          "scope": {
+            "package": "feature-gated-error",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "feature-gated-error-features-bad",
+      "fixture": "feature-gated-error",
+      "cargoArgs": [
+        "check",
+        "--message-format=json",
+        "--features",
+        "bad"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 3,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 2,
+      "findingCount": 1,
+      "nonFindingCount": 1,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": {
+            "code": "E0308",
+            "explanation": "Expected type did not match the received type.\n\nErroneous code examples:\n\n```compile_fail,E0308\nfn plus_one(x: i32) -> i32 {\n    x + 1\n}\n\nplus_one(\"Not a number\");\n//       ^^^^^^^^^^^^^^ expected `i32`, found `&str`\n\nif \"Not a bool\" {\n// ^^^^^^^^^^^^ expected `bool`, found `&str`\n}\n\nlet x: f32 = \"Not a float\";\n//     ---   ^^^^^^^^^^^^^ expected `f32`, found `&str`\n//     |\n//     expected due to this\n```\n\nThis error occurs when an expression was used in a place where the compiler\nexpected an expression of a different type. It can occur in several cases, the\nmost common being when calling a function and passing an argument which has a\ndifferent type than the matching type in the function declaration.\n"
+          },
+          "normalized": {
+            "codePresence": "present-value",
+            "codeValue": "E0308",
+            "codeNamespace": "rustc-error",
+            "codeKind": "rustc-error-code",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "verified",
+            "claimKind": "verified.rust.rustc-error-diagnostic",
+            "coverageEffect": null,
+            "rule": "ecode-error-user-code-primary"
+          },
+          "message": "mismatched types",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 3,
+              "line_end": 3,
+              "column_start": 22,
+              "column_end": 38,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "error[E0308]: mismatched types"
+        },
+        {
+          "level": "failure-note",
+          "rawCode": null,
+          "normalized": {
+            "codePresence": "present-null",
+            "codeValue": null,
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code",
+            "primarySpan": "unknown"
+          },
+          "classification": {
+            "disposition": "non-finding",
+            "confidence": null,
+            "claimKind": null,
+            "coverageEffect": null,
+            "rule": "note-help-failure-note-are-not-findings"
+          },
+          "message": "For more information about this error, try `rustc --explain E0308`.",
+          "primarySpans": [],
+          "renderedFirstLine": "For more information about this error, try `rustc --explain E0308`."
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.feature-gated-error-features-bad.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.feature-gated-error-features-bad.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "feature-gated-error",
+            "target": "lib",
+            "featureSet": [
+              "bad"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "macro-expansion-error",
+      "fixture": "macro-expansion-error",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 3,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 2,
+      "findingCount": 1,
+      "nonFindingCount": 1,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": {
+            "code": "E0308",
+            "explanation": "Expected type did not match the received type.\n\nErroneous code examples:\n\n```compile_fail,E0308\nfn plus_one(x: i32) -> i32 {\n    x + 1\n}\n\nplus_one(\"Not a number\");\n//       ^^^^^^^^^^^^^^ expected `i32`, found `&str`\n\nif \"Not a bool\" {\n// ^^^^^^^^^^^^ expected `bool`, found `&str`\n}\n\nlet x: f32 = \"Not a float\";\n//     ---   ^^^^^^^^^^^^^ expected `f32`, found `&str`\n//     |\n//     expected due to this\n```\n\nThis error occurs when an expression was used in a place where the compiler\nexpected an expression of a different type. It can occur in several cases, the\nmost common being when calling a function and passing an argument which has a\ndifferent type than the matching type in the function declaration.\n"
+          },
+          "normalized": {
+            "codePresence": "present-value",
+            "codeValue": "E0308",
+            "codeNamespace": "rustc-error",
+            "codeKind": "rustc-error-code",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "verified",
+            "claimKind": "verified.rust.rustc-error-diagnostic",
+            "coverageEffect": null,
+            "rule": "ecode-error-user-code-primary"
+          },
+          "message": "mismatched types",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 3,
+              "line_end": 3,
+              "column_start": 25,
+              "column_end": 39,
+              "has_expansion": true,
+              "expansion": {
+                "def_site_span": {
+                  "byte_end": 21,
+                  "byte_start": 0,
+                  "column_end": 22,
+                  "column_start": 1,
+                  "expansion": null,
+                  "file_name": "src\\lib.rs",
+                  "is_primary": false,
+                  "label": null,
+                  "line_end": 1,
+                  "line_start": 1,
+                  "suggested_replacement": null,
+                  "suggestion_applicability": null,
+                  "text": [
+                    {
+                      "highlight_end": 22,
+                      "highlight_start": 1,
+                      "text": "macro_rules! make_bad {"
+                    }
+                  ]
+                },
+                "macro_decl_name": "make_bad!",
+                "span": {
+                  "byte_end": 117,
+                  "byte_start": 106,
+                  "column_end": 16,
+                  "column_start": 5,
+                  "expansion": null,
+                  "file_name": "src\\lib.rs",
+                  "is_primary": false,
+                  "label": null,
+                  "line_end": 8,
+                  "line_start": 8,
+                  "suggested_replacement": null,
+                  "suggestion_applicability": null,
+                  "text": [
+                    {
+                      "highlight_end": 16,
+                      "highlight_start": 5,
+                      "text": "    make_bad!();"
+                    }
+                  ]
+                }
+              },
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "error[E0308]: mismatched types"
+        },
+        {
+          "level": "failure-note",
+          "rawCode": null,
+          "normalized": {
+            "codePresence": "present-null",
+            "codeValue": null,
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code",
+            "primarySpan": "unknown"
+          },
+          "classification": {
+            "disposition": "non-finding",
+            "confidence": null,
+            "claimKind": null,
+            "coverageEffect": null,
+            "rule": "note-help-failure-note-are-not-findings"
+          },
+          "message": "For more information about this error, try `rustc --explain E0308`.",
+          "primarySpans": [],
+          "renderedFirstLine": "For more information about this error, try `rustc --explain E0308`."
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.macro-expansion-error.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.macro-expansion-error.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "macro-expansion-error",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "name-resolution-e0425",
+      "fixture": "name-resolution-e0425",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 3,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 2,
+      "findingCount": 1,
+      "nonFindingCount": 1,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": {
+            "code": "E0425",
+            "explanation": "An unresolved name was used.\n\nErroneous code examples:\n\n```compile_fail,E0425\nsomething_that_doesnt_exist::foo;\n// error: unresolved name `something_that_doesnt_exist::foo`\n\n// or:\n\ntrait Foo {\n    fn bar() {\n        Self; // error: unresolved name `Self`\n    }\n}\n\n// or:\n\nlet x = unknown_variable;  // error: unresolved name `unknown_variable`\n```\n\nPlease verify that the name wasn't misspelled and ensure that the\nidentifier being referred to is valid for the given situation. Example:\n\n```\nenum something_that_does_exist {\n    Foo,\n}\n```\n\nOr:\n\n```\nmod something_that_does_exist {\n    pub static foo : i32 = 0i32;\n}\n\nsomething_that_does_exist::foo; // ok!\n```\n\nOr:\n\n```\nlet unknown_variable = 12u32;\nlet x = unknown_variable; // ok!\n```\n\nIf the item is not defined in the current module, it must be imported using a\n`use` statement, like so:\n\n```\n# mod foo { pub fn bar() {} }\n# fn main() {\nuse foo::bar;\nbar();\n# }\n```\n\nIf the item you are importing is not defined in some super-module of the\ncurrent module, then it must also be declared as public (e.g., `pub fn`).\n"
+          },
+          "normalized": {
+            "codePresence": "present-value",
+            "codeValue": "E0425",
+            "codeNamespace": "rustc-error",
+            "codeKind": "rustc-error-code",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "verified",
+            "claimKind": "verified.rust.rustc-error-diagnostic",
+            "coverageEffect": null,
+            "rule": "ecode-error-user-code-primary"
+          },
+          "message": "cannot find function `missing_symbol` in this scope",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 2,
+              "line_end": 2,
+              "column_start": 5,
+              "column_end": 19,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "error[E0425]: cannot find function `missing_symbol` in this scope"
+        },
+        {
+          "level": "failure-note",
+          "rawCode": null,
+          "normalized": {
+            "codePresence": "present-null",
+            "codeValue": null,
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code",
+            "primarySpan": "unknown"
+          },
+          "classification": {
+            "disposition": "non-finding",
+            "confidence": null,
+            "claimKind": null,
+            "coverageEffect": null,
+            "rule": "note-help-failure-note-are-not-findings"
+          },
+          "message": "For more information about this error, try `rustc --explain E0425`.",
+          "primarySpans": [],
+          "renderedFirstLine": "For more information about this error, try `rustc --explain E0425`."
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.name-resolution-e0425.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.name-resolution-e0425.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "name-resolution-e0425",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "parse-error-codeless",
+      "fixture": "parse-error-codeless",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 2,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 1,
+      "findingCount": 1,
+      "nonFindingCount": 0,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": null,
+          "normalized": {
+            "codePresence": "present-null",
+            "codeValue": null,
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "verified",
+            "claimKind": "verified.rust.rustc-codeless-error-diagnostic",
+            "coverageEffect": null,
+            "rule": "codeless-error-user-code-primary"
+          },
+          "message": "this file contains an unclosed delimiter",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 1,
+              "line_end": 1,
+              "column_start": 17,
+              "column_end": 17,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "error: this file contains an unclosed delimiter"
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.parse-error-codeless.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.parse-error-codeless.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "parse-error-codeless",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "success-clean",
+      "fixture": "success-clean",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 0,
+      "stream": {
+        "lineCount": 2,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": true
+        }
+      },
+      "compilerMessageCount": 0,
+      "findingCount": 0,
+      "nonFindingCount": 0,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [],
+      "coverage": [
+        {
+          "id": "cov.success-clean.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.success-clean.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "ran",
+          "clean": true,
+          "reason": null,
+          "scope": {
+            "package": "success-clean",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "type-error-e0308",
+      "fixture": "type-error-e0308",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 101,
+      "stream": {
+        "lineCount": 3,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": false
+        }
+      },
+      "compilerMessageCount": 2,
+      "findingCount": 1,
+      "nonFindingCount": 1,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "error",
+          "rawCode": {
+            "code": "E0308",
+            "explanation": "Expected type did not match the received type.\n\nErroneous code examples:\n\n```compile_fail,E0308\nfn plus_one(x: i32) -> i32 {\n    x + 1\n}\n\nplus_one(\"Not a number\");\n//       ^^^^^^^^^^^^^^ expected `i32`, found `&str`\n\nif \"Not a bool\" {\n// ^^^^^^^^^^^^ expected `bool`, found `&str`\n}\n\nlet x: f32 = \"Not a float\";\n//     ---   ^^^^^^^^^^^^^ expected `f32`, found `&str`\n//     |\n//     expected due to this\n```\n\nThis error occurs when an expression was used in a place where the compiler\nexpected an expression of a different type. It can occur in several cases, the\nmost common being when calling a function and passing an argument which has a\ndifferent type than the matching type in the function declaration.\n"
+          },
+          "normalized": {
+            "codePresence": "present-value",
+            "codeValue": "E0308",
+            "codeNamespace": "rustc-error",
+            "codeKind": "rustc-error-code",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "verified",
+            "claimKind": "verified.rust.rustc-error-diagnostic",
+            "coverageEffect": null,
+            "rule": "ecode-error-user-code-primary"
+          },
+          "message": "mismatched types",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 2,
+              "line_end": 2,
+              "column_start": 22,
+              "column_end": 36,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "error[E0308]: mismatched types"
+        },
+        {
+          "level": "failure-note",
+          "rawCode": null,
+          "normalized": {
+            "codePresence": "present-null",
+            "codeValue": null,
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code",
+            "primarySpan": "unknown"
+          },
+          "classification": {
+            "disposition": "non-finding",
+            "confidence": null,
+            "claimKind": null,
+            "coverageEffect": null,
+            "rule": "note-help-failure-note-are-not-findings"
+          },
+          "message": "For more information about this error, try `rustc --explain E0308`.",
+          "primarySpans": [],
+          "renderedFirstLine": "For more information about this error, try `rustc --explain E0308`."
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.type-error-e0308.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.type-error-e0308.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "unavailable",
+          "clean": null,
+          "reason": "build-finished success was false",
+          "scope": {
+            "package": "type-error-e0308",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    },
+    {
+      "name": "warning-only",
+      "fixture": "warning-only",
+      "cargoArgs": [
+        "check",
+        "--message-format=json"
+      ],
+      "exitCode": 0,
+      "stream": {
+        "lineCount": 3,
+        "invalidJsonLineCount": 0,
+        "streamParseStatus": "complete",
+        "buildFinished": {
+          "success": true
+        }
+      },
+      "compilerMessageCount": 1,
+      "findingCount": 1,
+      "nonFindingCount": 0,
+      "coverageUnavailableDiagnosticCount": 0,
+      "diagnostics": [
+        {
+          "level": "warning",
+          "rawCode": {
+            "code": "unused_variables",
+            "explanation": null
+          },
+          "normalized": {
+            "codePresence": "present-value",
+            "codeValue": "unused_variables",
+            "codeNamespace": "rustc-non-ecode",
+            "codeKind": "non-ecode-name",
+            "primarySpan": "user-code"
+          },
+          "classification": {
+            "disposition": "finding",
+            "confidence": "rule-backed",
+            "claimKind": "rule-backed.rust.rustc-lint-diagnostic",
+            "coverageEffect": null,
+            "rule": "non-ecode-code-name-treated-as-rule-backed-before-level"
+          },
+          "message": "unused variable: `unused_value`",
+          "primarySpans": [
+            {
+              "file_name": "src\\lib.rs",
+              "line_start": 2,
+              "line_end": 2,
+              "column_start": 9,
+              "column_end": 21,
+              "has_expansion": false,
+              "expansion": null,
+              "primarySpanClass": "user-code"
+            }
+          ],
+          "renderedFirstLine": "warning: unused variable: `unused_value`"
+        }
+      ],
+      "coverage": [
+        {
+          "id": "cov.warning-only.cargo-event-stream",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "cargo-event-stream",
+          "status": "ran",
+          "streamParseStatus": "complete",
+          "invalidJsonLineCount": 0
+        },
+        {
+          "id": "cov.warning-only.absence-clean",
+          "oracleId": "rust.cargo-check",
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ],
+          "status": "ran",
+          "clean": true,
+          "reason": null,
+          "scope": {
+            "package": "warning-only",
+            "target": "lib",
+            "featureSet": [
+              "default"
+            ],
+            "targetTriple": "x86_64-pc-windows-msvc",
+            "profile": "dev"
+          }
+        }
+      ]
+    }
+  ]
+}

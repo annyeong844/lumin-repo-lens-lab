@@ -1,0 +1,2 @@
+    Checking success-clean v0.1.0 (C:\Users\endof\Downloads\lumin-perf-lab\review\m7-cargo-json-diagnostic-capture-v2-20260617-024134\fixtures\success-clean)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.45s

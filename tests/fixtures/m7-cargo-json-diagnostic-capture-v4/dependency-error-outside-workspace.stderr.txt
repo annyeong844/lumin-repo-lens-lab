@@ -1,0 +1,3 @@
+     Locking 1 package to latest compatible version
+    Checking bad_dep v0.1.0 (C:\Users\endof\Downloads\lumin-perf-lab\review\m7-cargo-json-diagnostic-capture-v2-20260617-024134\fixtures\dependency-error-outside-workspace\bad_dep)
+error: could not compile `bad_dep` (lib) due to 1 previous error

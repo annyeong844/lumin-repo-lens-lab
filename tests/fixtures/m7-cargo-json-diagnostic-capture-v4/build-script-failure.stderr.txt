@@ -1,0 +1,10 @@
+   Compiling build-script-failure v0.1.0 (C:\Users\endof\Downloads\lumin-perf-lab\review\m7-cargo-json-diagnostic-capture-v2-20260617-024134\fixtures\build-script-failure)
+error: failed to run custom build command for `build-script-failure v0.1.0 (C:\Users\endof\Downloads\lumin-perf-lab\review\m7-cargo-json-diagnostic-capture-v2-20260617-024134\fixtures\build-script-failure)`
+
+Caused by:
+  process didn't exit successfully: `C:\Users\endof\Downloads\lumin-perf-lab\review\m7-cargo-json-diagnostic-capture-v2-20260617-024134\fixtures\build-script-failure\target\debug\build\build-script-failure-ab403f5fa2361eab\build-script-build` (exit code: 101)
+  --- stderr
+
+  thread 'main' (52240) panicked at build.rs:2:5:
+  intentional build script failure
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

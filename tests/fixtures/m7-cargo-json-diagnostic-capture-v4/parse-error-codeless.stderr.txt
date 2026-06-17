@@ -1,0 +1,2 @@
+    Checking parse-error-codeless v0.1.0 (C:\Users\endof\Downloads\lumin-perf-lab\review\m7-cargo-json-diagnostic-capture-v2-20260617-024134\fixtures\parse-error-codeless)
+error: could not compile `parse-error-codeless` (lib) due to 1 previous error

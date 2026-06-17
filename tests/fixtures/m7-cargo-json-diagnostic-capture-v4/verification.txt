@@ -1,0 +1,40 @@
+Verification commands run:
+
+- Created controlled Cargo fixtures for:
+  - success-clean
+  - warning-only
+  - deny-lint-error
+  - type-error-e0308
+  - borrow-error-e0502
+  - name-resolution-e0425
+  - parse-error-codeless
+  - compile-error-codeless
+  - macro-expansion-error
+  - dependency-error-outside-workspace
+  - build-script-failure
+  - feature-gated-error default and --features bad
+- Ran `cargo check --message-format=json` for each fixture/run.
+- Wrote portable `runs.json` with relative stdout/stderr/fixture paths.
+- Captured fixed toolchain metadata in `toolchain.json`.
+- Generated `summary.json` and `summary.md` from the captured cargo JSONL corpus before migrating the M7 implementation to Rust.
+- Verified v4 summary maps:
+  - failure-note diagnostics to `disposition=non-finding`;
+  - dependency primary error diagnostics to `disposition=coverage-unavailable`;
+  - warning-only to `rule-backed.rust.rustc-lint-diagnostic`;
+  - clean coverage to `cleanKind=verified-rustc-error-absence`;
+  - success-clean and warning-only to `absence-clean status=ran`;
+  - failing runs to `absence-clean status=unavailable`.
+- Verified portable regeneration from a copied directory:
+  - run count: 13;
+  - warning-only claim: `rule-backed.rust.rustc-lint-diagnostic`;
+  - dependency disposition: `coverage-unavailable`.
+- Verified missing stdout JSONL causes corpus regeneration to hard-fail, not produce a false complete stream.
+- Removed generated `fixtures/**/target/**` before packaging.
+- Verified the zip entry list after packaging.
+
+Limitations:
+
+- This packet is empirical diagnostic-shape evidence, not runtime implementation.
+- Raw cargo output preserves cargo path spelling.
+- The original capture summarizer span classifier was fixture-aware and must not be copied as production ownership logic.
+- Production coverage entries still need real `analysisInputSetHash`, `registryContentHash`, and policy version fields.
