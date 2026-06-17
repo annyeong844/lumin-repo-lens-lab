@@ -292,11 +292,7 @@ fn findings_from_diagnostics(
                 confidence_tier: tier,
                 claim_kind,
                 message: diagnostic.message.clone(),
-                span: diagnostic
-                    .primary_spans
-                    .first()
-                    .cloned()
-                    .unwrap_or(Value::Null),
+                span: representative_span(&diagnostic.primary_spans),
                 primary_spans: diagnostic.primary_spans.clone(),
                 coverage_ref: EVENT_STREAM_COVERAGE_ID,
                 analysis_input_set_hash: input_hash.to_string(),
@@ -304,6 +300,15 @@ fn findings_from_diagnostics(
             }
         })
         .collect()
+}
+
+fn representative_span(primary_spans: &[Value]) -> Value {
+    primary_spans
+        .iter()
+        .find(|span| span.get("primarySpanClass").and_then(Value::as_str) == Some("user-code"))
+        .or_else(|| primary_spans.first())
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn diagnostics_to_json(diagnostics: &[Diagnostic]) -> Vec<DiagnosticEvidence> {
@@ -325,6 +330,54 @@ fn diagnostics_to_json(diagnostics: &[Diagnostic]) -> Vec<DiagnosticEvidence> {
             rendered_first_line: diagnostic.rendered_first_line.clone(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::representative_span;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn representative_span_prefers_user_code_primary_span() {
+        let spans = vec![
+            json!({
+                "file_name": "bad_dep/src/lib.rs",
+                "primarySpanClass": "dependency"
+            }),
+            json!({
+                "file_name": "src/lib.rs",
+                "primarySpanClass": "user-code"
+            }),
+        ];
+
+        let span = representative_span(&spans);
+
+        assert_eq!(span["file_name"], "src/lib.rs");
+        assert_eq!(span["primarySpanClass"], "user-code");
+    }
+
+    #[test]
+    fn representative_span_falls_back_to_first_primary_span() {
+        let spans = vec![
+            json!({
+                "file_name": "target/generated.rs",
+                "primarySpanClass": "generated"
+            }),
+            json!({
+                "file_name": "bad_dep/src/lib.rs",
+                "primarySpanClass": "dependency"
+            }),
+        ];
+
+        let span = representative_span(&spans);
+
+        assert_eq!(span["file_name"], "target/generated.rs");
+    }
+
+    #[test]
+    fn representative_span_is_null_without_primary_spans() {
+        assert_eq!(representative_span(&[]), Value::Null);
+    }
 }
 
 fn primary_span_class(primary_spans: &[Value]) -> String {
