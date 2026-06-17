@@ -53,4 +53,13 @@ describe("GitHub Actions CI policy", () => {
   it("keeps push CI for main and master", () => {
     expect(workflow).toMatch(/push:\s*\n\s+branches:\s*\[main,\s*master\]/m);
   });
+
+  it("runs Rust cargo checks in CI", () => {
+    expect(workflow).toContain(
+      "cargo test --locked --manifest-path experiments/rust-main/rust-cargo-oracle/Cargo.toml",
+    );
+    expect(workflow).toContain(
+      "cargo test --locked --manifest-path experiments/rust-sidecar/rust-source-health/Cargo.toml",
+    );
+  });
 });
