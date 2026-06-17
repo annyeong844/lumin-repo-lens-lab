@@ -298,6 +298,8 @@ mod tests {
         Toolchain {
             cargo_version: None,
             rustc_version_verbose: None,
+            rustc_bin: "rustc".to_string(),
+            rustc_source: "default:rustc",
             host: Some("host-target".to_string()),
         }
     }

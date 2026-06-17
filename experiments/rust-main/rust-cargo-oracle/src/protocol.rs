@@ -54,6 +54,10 @@ pub struct ToolchainMeta {
     pub cargo_version: Option<String>,
     #[serde(rename = "rustcVersionVerbose")]
     pub rustc_version_verbose: Option<String>,
+    #[serde(rename = "rustcBin")]
+    pub rustc_bin: String,
+    #[serde(rename = "rustcSource")]
+    pub rustc_source: &'static str,
     pub host: Option<String>,
     pub profile: &'static str,
 }
