@@ -97,6 +97,38 @@ fn dependency_package_id_blocks_user_finding_even_when_metadata_omits_dependency
 }
 
 #[test]
+fn metadata_unavailable_preserves_root_user_error_finding() -> Result<()> {
+    let stdout = r#"{"reason":"compiler-message","package_id":"path+file:///fixture/app#0.1.0","target":{"kind":["lib"],"crate_types":["lib"],"name":"app","src_path":"src/lib.rs","edition":"2021"},"message":{"level":"error","message":"mismatched types","code":{"code":"E0308","explanation":null},"spans":[{"file_name":"src/lib.rs","is_primary":true,"line_start":1,"line_end":1,"column_start":1,"column_end":2,"expansion":null}],"children":[],"rendered":"error[E0308]: mismatched types\n"}}"#;
+    let env = FixtureEnv::new_with_stdout_and_raw_metadata(
+        "metadata-unavailable-user-error",
+        stdout,
+        101,
+        "not-json",
+    )?;
+    let artifact = env.run()?;
+
+    let findings = artifact["findings"].as_array().context("findings array")?;
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0]["confidence"]["tier"], "verified");
+    assert_eq!(
+        findings[0]["confidence"]["claimKind"],
+        "verified.rust.rustc-error-diagnostic"
+    );
+    assert_eq!(
+        findings[0]["primarySpans"][0]["primarySpanClass"],
+        "user-code"
+    );
+
+    let absence = coverage(&artifact, "cov.cargo-check.absence-clean")?;
+    assert_eq!(absence["status"], "unavailable");
+    assert!(absence["reason"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("cargo metadata unavailable"));
+    Ok(())
+}
+
+#[test]
 fn dependency_events_do_not_replace_selected_scope_target() -> Result<()> {
     let env = FixtureEnv::new("dependency-error-outside-workspace", 101)?;
     let artifact = env.run()?;
@@ -305,6 +337,30 @@ impl FixtureEnv {
         exit_code: i32,
         metadata_builder: fn(&Path, &str, &str) -> Value,
     ) -> Result<Self> {
+        Self::new_with_stdout_and_metadata_source(name, stdout, exit_code, |root| {
+            Ok(serde_json::to_string_pretty(&metadata_builder(
+                root, name, stdout,
+            ))?)
+        })
+    }
+
+    fn new_with_stdout_and_raw_metadata(
+        name: &str,
+        stdout: &str,
+        exit_code: i32,
+        metadata_stdout: &str,
+    ) -> Result<Self> {
+        Self::new_with_stdout_and_metadata_source(name, stdout, exit_code, |_| {
+            Ok(metadata_stdout.to_string())
+        })
+    }
+
+    fn new_with_stdout_and_metadata_source(
+        name: &str,
+        stdout: &str,
+        exit_code: i32,
+        metadata_source: impl FnOnce(&Path) -> Result<String>,
+    ) -> Result<Self> {
         let temp = TempDir::new()?;
         let root = temp.path().join("workspace");
         fs::create_dir_all(root.join("src"))?;
@@ -321,10 +377,7 @@ impl FixtureEnv {
         )?;
 
         let metadata_path = temp.path().join("metadata.json");
-        fs::write(
-            &metadata_path,
-            serde_json::to_vec_pretty(&metadata_builder(&root, name, stdout))?,
-        )?;
+        fs::write(&metadata_path, metadata_source(&root)?)?;
         let stdout_path = temp.path().join(format!("{name}.stdout.jsonl"));
         fs::write(&stdout_path, stdout)?;
         let fake_cargo = write_fake_cargo(temp.path(), &metadata_path, &stdout_path, exit_code)?;
