@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use lumin_rust_cargo_oracle::{run_oracle, OracleOptions};
 use lumin_rust_source_health::protocol::DEFAULT_WORKER_STACK_BYTES;
 use lumin_rust_source_health::wrapper::{analyze_root, RustSourceHealthOptions};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 const SCHEMA_VERSION: &str = "rust-analyzer-health.v1";
@@ -169,6 +169,7 @@ fn unified_artifact(
 ) -> Result<Value> {
     let semantic_summary = &semantic["summary"];
     let syntax_summary = &syntax["summary"];
+    let files = merged_files(root, &syntax, &semantic);
     Ok(json!({
         "schemaVersion": SCHEMA_VERSION,
         "policyVersion": POLICY_VERSION,
@@ -195,11 +196,90 @@ fn unified_artifact(
             "semanticClean": semantic_summary["semanticClean"],
             "cacheReuse": semantic_summary["cacheReuse"],
         },
+        "files": files,
+        "semanticFindings": semantic["findings"],
         "phases": {
             "syntax": syntax,
             "semantic": semantic,
         },
     }))
+}
+
+fn merged_files(root: &Path, syntax: &Value, semantic: &Value) -> Value {
+    let mut files = Map::new();
+
+    if let Some(syntax_files) = syntax.get("files").and_then(Value::as_object) {
+        for (path, file) in syntax_files {
+            let mut entry = file.clone();
+            if let Some(object) = entry.as_object_mut() {
+                object.insert("semanticFindings".to_string(), Value::Array(Vec::new()));
+            }
+            files.insert(path.clone(), entry);
+        }
+    }
+
+    if let Some(findings) = semantic.get("findings").and_then(Value::as_array) {
+        for finding in findings {
+            let Some(path) = finding_relative_path(root, finding) else {
+                continue;
+            };
+            let entry = files.entry(path).or_insert_with(|| {
+                json!({
+                    "path": {
+                        "classifications": ["source"]
+                    },
+                    "signals": [],
+                    "semanticFindings": []
+                })
+            });
+            if let Some(object) = entry.as_object_mut() {
+                object
+                    .entry("semanticFindings")
+                    .or_insert_with(|| Value::Array(Vec::new()));
+                if let Some(findings) = object
+                    .get_mut("semanticFindings")
+                    .and_then(Value::as_array_mut)
+                {
+                    findings.push(finding.clone());
+                }
+            }
+        }
+    }
+
+    Value::Object(files)
+}
+
+fn finding_relative_path(root: &Path, finding: &Value) -> Option<String> {
+    let span = finding
+        .get("span")
+        .filter(|span| !span.is_null())
+        .or_else(|| {
+            finding
+                .get("primarySpans")
+                .and_then(Value::as_array)
+                .and_then(|spans| spans.first())
+        })?;
+    let file_name = span.get("file_name").and_then(Value::as_str)?;
+    root_relative_path(root, file_name)
+}
+
+fn root_relative_path(root: &Path, file_name: &str) -> Option<String> {
+    let normalized = file_name.replace('\\', "/");
+    let trimmed = normalized.trim_start_matches("./").to_string();
+    if !is_absolute_like(&trimmed) {
+        return Some(trimmed);
+    }
+
+    let root = root.display().to_string().replace('\\', "/");
+    let root = root.trim_end_matches('/');
+    trimmed
+        .strip_prefix(root)
+        .and_then(|suffix| suffix.strip_prefix('/'))
+        .map(str::to_string)
+}
+
+fn is_absolute_like(path: &str) -> bool {
+    path.starts_with('/') || path.as_bytes().get(1).is_some_and(|byte| *byte == b':')
 }
 
 fn value_string(args: &mut impl Iterator<Item = String>, name: &str) -> Result<String> {

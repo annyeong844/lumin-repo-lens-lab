@@ -66,6 +66,13 @@ fn unified_cli_emits_syntax_and_semantic_phases_in_one_artifact() -> Result<()> 
         "unavailable"
     );
 
+    let merged_file = &artifact["files"]["src/lib.rs"];
+    assert_eq!(merged_file["signals"][0]["kind"], "unwrap-call");
+    assert_eq!(
+        merged_file["semanticFindings"][0]["confidence"]["claimKind"],
+        "verified.rust.rustc-error-diagnostic"
+    );
+
     let syntax_signals = artifact["phases"]["syntax"]["files"]["src/lib.rs"]["signals"]
         .as_array()
         .context("syntax signals")?;
