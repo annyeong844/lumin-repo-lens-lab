@@ -15,6 +15,11 @@ pub fn review_signal(kind: SignalKind, line_index: &LineIndex, range: TextRange)
     }
 }
 
+pub fn mute_signal(signal: &mut Signal, reason: SignalMuteReason) {
+    signal.visibility = SignalVisibility::Muted;
+    signal.mute_reason = Some(reason);
+}
+
 pub fn apply_signal_policy(signals: &mut [Signal], classifications: &[String]) {
     let mute_reason = if classifications.iter().any(|value| value == "generated") {
         Some(SignalMuteReason::GeneratedPath)
@@ -24,13 +29,10 @@ pub fn apply_signal_policy(signals: &mut [Signal], classifications: &[String]) {
         None
     };
 
-    for signal in signals {
-        signal.visibility = if mute_reason.is_some() {
-            SignalVisibility::Muted
-        } else {
-            SignalVisibility::Review
-        };
-        signal.mute_reason = mute_reason;
+    if let Some(reason) = mute_reason {
+        for signal in signals {
+            mute_signal(signal, reason);
+        }
     }
 }
 

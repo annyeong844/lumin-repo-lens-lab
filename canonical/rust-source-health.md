@@ -100,6 +100,7 @@ unless this canonical file is amended with a migration reason.
 | Purpose | Canonical name | Owner |
 |---|---|---|
 | review signal construction | `review_signal(kind, line_index, range)` | `src/signals.rs` |
+| signal muting | `mute_signal(signal, reason)` | `src/signals.rs` |
 | signal visibility policy | `apply_signal_policy(signals, classifications)` | `src/signals.rs` |
 | parse error construction | `syntax_parse_error(message, line_index, range)` | `src/signals.rs` |
 | location conversion | `LineIndex::location(byte_start, byte_end)` | `src/locations.rs` |
@@ -203,6 +204,11 @@ stdin compatibility mode emits no skipped-file evidence.
   Rust module files `tests.rs`, `test.rs`, `*.test.rs`, `*.spec.rs`, and
   `*_test.rs` are also test-like. Substrings are not enough: `contest.rs`
   remains source.
+- Rust source health also mutes signals in explicit Rust test-only AST context
+  without dropping raw evidence. Signals inside a direct `#[cfg(test)]` module,
+  impl, or function carry `muteReason: "cfg-test"`. Signals inside a direct
+  `#[test]` function carry `muteReason: "test-attribute"`. This is a review
+  visibility policy only; the signal claim remains `syntax-only`.
 - Output `files` keys are sorted by path.
 - `signals` are sorted by `location.byteStart`, then `kind`.
 - `parse.errors` are sorted by `location.byteStart`, then `message`.

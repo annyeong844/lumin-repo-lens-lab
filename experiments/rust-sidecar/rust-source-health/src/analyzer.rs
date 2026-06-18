@@ -1,9 +1,11 @@
 use crate::locations::LineIndex;
 use crate::protocol::{
     Facts, FileHealth, ParseStatus, ParserRequest, PathMeta, RequestFile, Signal, SignalKind,
-    Thresholds, PARSER_EDITION, PARSER_EDITION_POLICY, PARSER_EDITION_SOURCE,
+    SignalMuteReason, Thresholds, PARSER_EDITION, PARSER_EDITION_POLICY, PARSER_EDITION_SOURCE,
 };
-use crate::signals::{apply_signal_policy, review_signal, syntax_parse_error, text_size_to_usize};
+use crate::signals::{
+    apply_signal_policy, mute_signal, review_signal, syntax_parse_error, text_size_to_usize,
+};
 use anyhow::{bail, Result};
 use ra_ap_syntax::{ast, AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRange};
 use rayon::prelude::*;
@@ -113,29 +115,29 @@ fn collect_facts_and_signals(
                 let lines = line_span(line_index, node.text_range());
                 facts.max_function_lines = facts.max_function_lines.max(lines);
                 if lines > thresholds.max_function_lines {
-                    signals.push(review_signal(
+                    signals.push(contextual_review_signal(
                         SignalKind::OversizedFunction,
                         line_index,
-                        node.text_range(),
+                        &node,
                     ));
                 }
             }
             SyntaxKind::IMPL => {
                 let lines = line_span(line_index, node.text_range());
                 if lines > thresholds.max_impl_lines {
-                    signals.push(review_signal(
+                    signals.push(contextual_review_signal(
                         SignalKind::OversizedImpl,
                         line_index,
-                        node.text_range(),
+                        &node,
                     ));
                 }
             }
             _ if is_unsafe_block_expr(&node) => {
                 facts.unsafe_blocks += 1;
-                signals.push(review_signal(
+                signals.push(contextual_review_signal(
                     SignalKind::UnsafeBlock,
                     line_index,
-                    node.text_range(),
+                    &node,
                 ));
             }
             _ => {}
@@ -246,6 +248,62 @@ fn line_span(line_index: &LineIndex, range: TextRange) -> usize {
     end.line.saturating_sub(start.line) + 1
 }
 
+fn contextual_review_signal(kind: SignalKind, line_index: &LineIndex, node: &SyntaxNode) -> Signal {
+    let mut signal = review_signal(kind, line_index, node.text_range());
+    if let Some(reason) = test_context_mute_reason(node) {
+        mute_signal(&mut signal, reason);
+    }
+    signal
+}
+
+fn test_context_mute_reason(node: &SyntaxNode) -> Option<SignalMuteReason> {
+    for ancestor in node.ancestors() {
+        if let Some(function) = ast::Fn::cast(ancestor.clone()) {
+            if has_direct_test_attr(&function) {
+                return Some(SignalMuteReason::TestAttribute);
+            }
+            if has_direct_cfg_test_attr(&function) {
+                return Some(SignalMuteReason::CfgTest);
+            }
+        }
+        if let Some(module) = ast::Module::cast(ancestor.clone()) {
+            if has_direct_cfg_test_attr(&module) {
+                return Some(SignalMuteReason::CfgTest);
+            }
+        }
+        if let Some(impl_block) = ast::Impl::cast(ancestor) {
+            if has_direct_cfg_test_attr(&impl_block) {
+                return Some(SignalMuteReason::CfgTest);
+            }
+        }
+    }
+    None
+}
+
+fn has_direct_test_attr<T: ast::HasAttrs>(owner: &T) -> bool {
+    owner
+        .attrs()
+        .any(|attr| normalized_attr_text(&attr) == "#[test]")
+}
+
+fn has_direct_cfg_test_attr<T: ast::HasAttrs>(owner: &T) -> bool {
+    owner.attrs().any(|attr| {
+        matches!(
+            normalized_attr_text(&attr).as_str(),
+            "#[cfg(test)]" | "#![cfg(test)]"
+        )
+    })
+}
+
+fn normalized_attr_text(attr: &ast::Attr) -> String {
+    attr.syntax()
+        .text()
+        .to_string()
+        .chars()
+        .filter(|value| !value.is_whitespace())
+        .collect()
+}
+
 fn collect_method_call_signals(
     root: &SyntaxNode,
     line_index: &LineIndex,
@@ -255,20 +313,20 @@ fn collect_method_call_signals(
         if let Some(call) = ast::MethodCallExpr::cast(node.clone()) {
             if let Some(name_ref) = call.name_ref() {
                 match name_ref.text().as_str() {
-                    "unwrap" => signals.push(review_signal(
+                    "unwrap" => signals.push(contextual_review_signal(
                         SignalKind::UnwrapCall,
                         line_index,
-                        node.text_range(),
+                        &node,
                     )),
-                    "expect" => signals.push(review_signal(
+                    "expect" => signals.push(contextual_review_signal(
                         SignalKind::ExpectCall,
                         line_index,
-                        node.text_range(),
+                        &node,
                     )),
-                    "clone" => signals.push(review_signal(
+                    "clone" => signals.push(contextual_review_signal(
                         SignalKind::CloneCall,
                         line_index,
-                        node.text_range(),
+                        &node,
                     )),
                     _ => {}
                 }
@@ -294,20 +352,20 @@ fn collect_macro_call_signals(
             let name = name_ref.text();
             let name = name.as_str();
             match name {
-                "panic" => signals.push(review_signal(
+                "panic" => signals.push(contextual_review_signal(
                     SignalKind::PanicMacro,
                     line_index,
-                    node.text_range(),
+                    &node,
                 )),
-                "todo" => signals.push(review_signal(
+                "todo" => signals.push(contextual_review_signal(
                     SignalKind::TodoMacro,
                     line_index,
-                    node.text_range(),
+                    &node,
                 )),
-                "unimplemented" => signals.push(review_signal(
+                "unimplemented" => signals.push(contextual_review_signal(
                     SignalKind::UnimplementedMacro,
                     line_index,
-                    node.text_range(),
+                    &node,
                 )),
                 _ => {}
             }

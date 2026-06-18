@@ -266,6 +266,89 @@ fn mutes_test_and_generated_signals_without_dropping_raw_evidence() {
 }
 
 #[test]
+fn mutes_cfg_test_module_signals_without_dropping_raw_evidence() {
+    let source = r#"
+#[cfg(test)]
+mod tests {
+    fn helper() {
+        let value = Some(1);
+        let _ = value.unwrap();
+        panic!("boom");
+    }
+}
+
+fn live() {
+    let value = Some(1);
+    let _ = value.unwrap();
+}
+"#;
+    let value = stdout_json(run_sidecar(request(vec![file("src/lib.rs", source, 'a')])));
+    let signals = value["files"]["src/lib.rs"]["signals"].as_array().unwrap();
+
+    assert_eq!(value["summary"]["signals"], 3);
+    assert_eq!(value["summary"]["signalsByKind"]["unwrap-call"], 2);
+    assert_eq!(value["summary"]["signalsByKind"]["panic-macro"], 1);
+    assert_eq!(value["summary"]["reviewSignals"], 1);
+    assert_eq!(value["summary"]["mutedSignals"], 2);
+    assert_eq!(value["summary"]["reviewSignalsByKind"]["unwrap-call"], 1);
+
+    assert_eq!(
+        signals
+            .iter()
+            .filter(|signal| signal["visibility"] == "muted" && signal["muteReason"] == "cfg-test")
+            .count(),
+        2
+    );
+    assert_eq!(
+        signals
+            .iter()
+            .filter(|signal| signal["visibility"] == "review")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn mutes_test_attribute_function_signals_without_dropping_raw_evidence() {
+    let source = r#"
+#[test]
+fn parses() {
+    let value = Some(1);
+    let _ = value.expect("value");
+}
+
+fn live() {
+    let value = Some(1);
+    let _ = value.expect("value");
+}
+"#;
+    let value = stdout_json(run_sidecar(request(vec![file("src/lib.rs", source, 'a')])));
+    let signals = value["files"]["src/lib.rs"]["signals"].as_array().unwrap();
+
+    assert_eq!(value["summary"]["signals"], 2);
+    assert_eq!(value["summary"]["signalsByKind"]["expect-call"], 2);
+    assert_eq!(value["summary"]["reviewSignals"], 1);
+    assert_eq!(value["summary"]["mutedSignals"], 1);
+    assert_eq!(value["summary"]["reviewSignalsByKind"]["expect-call"], 1);
+
+    assert_eq!(
+        signals
+            .iter()
+            .filter(|signal| signal["visibility"] == "muted"
+                && signal["muteReason"] == "test-attribute")
+            .count(),
+        1
+    );
+    assert_eq!(
+        signals
+            .iter()
+            .filter(|signal| signal["visibility"] == "review")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn emits_files_in_deterministic_path_order() {
     let value = stdout_json(run_sidecar(request(vec![
         file("src/z.rs", "fn z() {}", 'd'),

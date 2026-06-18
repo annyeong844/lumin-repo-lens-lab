@@ -224,6 +224,8 @@ pub enum SignalVisibility {
 pub enum SignalMuteReason {
     TestPath,
     GeneratedPath,
+    TestAttribute,
+    CfgTest,
 }
 
 #[derive(Debug, Serialize)]
