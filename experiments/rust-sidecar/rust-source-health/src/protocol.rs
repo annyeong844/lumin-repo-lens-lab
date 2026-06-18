@@ -219,7 +219,7 @@ pub enum SignalVisibility {
     Muted,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SignalMuteReason {
     TestPath,
@@ -275,4 +275,5 @@ pub struct Summary {
     pub muted_signals: usize,
     pub signals_by_visibility: BTreeMap<SignalVisibility, usize>,
     pub review_signals_by_kind: BTreeMap<SignalKind, usize>,
+    pub muted_signals_by_reason: BTreeMap<SignalMuteReason, usize>,
 }

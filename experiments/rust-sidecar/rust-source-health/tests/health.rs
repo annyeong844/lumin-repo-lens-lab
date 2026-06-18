@@ -241,6 +241,11 @@ fn mutes_test_and_generated_signals_without_dropping_raw_evidence() {
     assert_eq!(value["summary"]["signalsByVisibility"]["review"], 1);
     assert_eq!(value["summary"]["signalsByVisibility"]["muted"], 2);
     assert_eq!(value["summary"]["reviewSignalsByKind"]["unwrap-call"], 1);
+    assert_eq!(value["summary"]["mutedSignalsByReason"]["test-path"], 1);
+    assert_eq!(
+        value["summary"]["mutedSignalsByReason"]["generated-path"],
+        1
+    );
 
     assert_eq!(
         value["files"]["src/lib.rs"]["signals"][0]["visibility"],
@@ -291,6 +296,7 @@ fn live() {
     assert_eq!(value["summary"]["reviewSignals"], 1);
     assert_eq!(value["summary"]["mutedSignals"], 2);
     assert_eq!(value["summary"]["reviewSignalsByKind"]["unwrap-call"], 1);
+    assert_eq!(value["summary"]["mutedSignalsByReason"]["cfg-test"], 2);
 
     assert_eq!(
         signals
@@ -330,6 +336,10 @@ fn live() {
     assert_eq!(value["summary"]["reviewSignals"], 1);
     assert_eq!(value["summary"]["mutedSignals"], 1);
     assert_eq!(value["summary"]["reviewSignalsByKind"]["expect-call"], 1);
+    assert_eq!(
+        value["summary"]["mutedSignalsByReason"]["test-attribute"],
+        1
+    );
 
     assert_eq!(
         signals

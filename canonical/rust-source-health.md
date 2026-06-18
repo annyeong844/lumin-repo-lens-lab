@@ -182,6 +182,7 @@ Final artifacts must satisfy these counts:
 - `summary.mutedSignals === count(signals where signal.visibility === "muted")`
 - `summary.signalsByVisibility[visibility] === count(signals where signal.visibility === visibility)`
 - `summary.reviewSignalsByKind[kind] === count(signals where signal.kind === kind and signal.visibility === "review")`
+- `summary.mutedSignalsByReason[reason] === count(signals where signal.visibility === "muted" and signal.muteReason === reason)`
 - `summary.unsafeBlocks === sum(files[*].facts.unsafeBlocks)`
 - `summary.unsafeFunctions === sum(files[*].facts.unsafeFunctions)`
 

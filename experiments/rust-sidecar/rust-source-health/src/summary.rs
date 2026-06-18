@@ -33,6 +33,9 @@ pub fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
                 }
                 SignalVisibility::Muted => {
                     summary.muted_signals += 1;
+                    if let Some(reason) = signal.mute_reason {
+                        *summary.muted_signals_by_reason.entry(reason).or_insert(0) += 1;
+                    }
                 }
             }
         }
