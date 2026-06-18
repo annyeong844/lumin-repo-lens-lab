@@ -249,6 +249,40 @@ pub struct Summary {
     pub candidate_findings: usize,
     #[serde(rename = "coverageUnavailableDiagnostics")]
     pub coverage_unavailable_diagnostics: usize,
+    #[serde(rename = "semanticClean")]
+    pub semantic_clean: SemanticCleanSummary,
+    #[serde(rename = "cacheReuse")]
+    pub cache_reuse: CacheReuseSummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticCleanSummary {
+    pub status: CoverageStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clean: Option<bool>,
+    #[serde(rename = "cleanKind", skip_serializing_if = "Option::is_none")]
+    pub clean_kind: Option<&'static str>,
+    #[serde(rename = "cleanScope", skip_serializing_if = "Option::is_none")]
+    pub clean_scope: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheReuseSummary {
+    pub status: CacheReuseSummaryStatus,
+    pub policy: &'static str,
+    pub reason: &'static str,
+    #[serde(rename = "blockingTargetCount")]
+    pub blocking_target_count: usize,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CacheReuseSummaryStatus {
+    NotReusable,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize)]

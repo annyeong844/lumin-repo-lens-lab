@@ -34,6 +34,13 @@ fn warning_lint_is_rule_backed_without_blocking_verified_error_clean() -> Result
     assert_eq!(absence["status"], "ran");
     assert_eq!(absence["clean"], true);
     assert_eq!(absence["cleanKind"], "verified-rustc-error-absence");
+    assert_eq!(artifact["summary"]["semanticClean"]["status"], "ran");
+    assert_eq!(artifact["summary"]["semanticClean"]["clean"], true);
+    assert_eq!(
+        artifact["summary"]["semanticClean"]["cleanKind"],
+        "verified-rustc-error-absence"
+    );
+    assert_eq!(artifact["summary"]["cacheReuse"]["status"], "not-reusable");
     Ok(())
 }
 
@@ -52,6 +59,14 @@ fn dependency_primary_error_is_coverage_unavailable_not_user_finding() -> Result
         .as_str()
         .unwrap_or_default()
         .contains("non-user-code primary error diagnostic"));
+    assert_eq!(
+        artifact["summary"]["semanticClean"]["status"],
+        "unavailable"
+    );
+    assert!(!artifact["summary"]["semanticClean"]
+        .as_object()
+        .unwrap()
+        .contains_key("clean"));
     Ok(())
 }
 
@@ -258,6 +273,11 @@ fn artifact_marks_analysis_input_set_as_incomplete_for_reuse() -> Result<()> {
         .context("missingInfluenceKinds")?
         .iter()
         .any(|kind| kind == "build-script-runtime-inputs"));
+    assert_eq!(artifact["summary"]["cacheReuse"]["status"], "not-reusable");
+    assert_eq!(
+        artifact["summary"]["cacheReuse"]["policy"],
+        "no-reuse-unless-complete-influence-set-is-captured"
+    );
     Ok(())
 }
 

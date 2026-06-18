@@ -6,10 +6,10 @@ use crate::command::CommandOutput;
 use crate::metadata::{CargoMetadata, CargoPackage};
 use crate::ownership::OwnershipResolver;
 use crate::protocol::{
-    ArtifactMeta, BlockingTarget, CacheReuse, ClaimKind, ClassificationEvidence, ConfidenceTier,
-    CoverageEffect, CoverageEntry, CoverageKind, CoverageStatus, DiagnosticEvidence, Disposition,
-    Finding, FindingConfidence, FindingSource, InputMeta, NormalizedDiagnostic,
-    SemanticHealthArtifact, Summary,
+    ArtifactMeta, BlockingTarget, CacheReuse, CacheReuseSummary, CacheReuseSummaryStatus,
+    ClaimKind, ClassificationEvidence, ConfidenceTier, CoverageEffect, CoverageEntry, CoverageKind,
+    CoverageStatus, DiagnosticEvidence, Disposition, Finding, FindingConfidence, FindingSource,
+    InputMeta, NormalizedDiagnostic, SemanticCleanSummary, SemanticHealthArtifact, Summary,
 };
 use crate::scope::build_scope;
 use crate::toolchain::{toolchain_meta, Toolchain};
@@ -76,7 +76,8 @@ pub(crate) fn build_artifact(input: BuildArtifactInput<'_>) -> SemanticHealthArt
         input.cargo_args,
         input.cargo_bin,
     );
-    let summary = summary(&findings, &diagnostics, &coverage);
+    let cache_reuse = cache_reuse_metadata(input.metadata);
+    let summary = summary(&findings, &diagnostics, &coverage, &cache_reuse);
 
     SemanticHealthArtifact {
         schema_version: SEMANTIC_HEALTH_SCHEMA_VERSION,
@@ -101,7 +102,7 @@ pub(crate) fn build_artifact(input: BuildArtifactInput<'_>) -> SemanticHealthArt
             ],
             toolchain: toolchain_meta(input.toolchain),
             cache_reuse_policy: "no-reuse-unless-complete-influence-set-is-captured",
-            cache_reuse: cache_reuse_metadata(input.metadata),
+            cache_reuse,
             input: InputMeta {
                 root: input.root.display().to_string(),
                 package_name: input.package_name.map(str::to_string),
@@ -411,6 +412,7 @@ fn summary(
     findings: &[Finding],
     diagnostics: &[Diagnostic],
     coverage: &[CoverageEntry],
+    cache_reuse: &CacheReuse,
 ) -> Summary {
     Summary {
         findings: findings.len(),
@@ -437,6 +439,37 @@ fn summary(
                 )
             })
             .count(),
+        semantic_clean: semantic_clean_summary(coverage),
+        cache_reuse: cache_reuse_summary(cache_reuse),
+    }
+}
+
+fn semantic_clean_summary(coverage: &[CoverageEntry]) -> SemanticCleanSummary {
+    coverage
+        .iter()
+        .find(|entry| entry.coverage_kind == CoverageKind::AbsenceClean)
+        .map(|entry| SemanticCleanSummary {
+            status: entry.status,
+            clean: entry.clean,
+            clean_kind: entry.clean_kind,
+            clean_scope: entry.clean_scope,
+            reason: entry.reason.clone(),
+        })
+        .unwrap_or_else(|| SemanticCleanSummary {
+            status: CoverageStatus::Unavailable,
+            clean: None,
+            clean_kind: None,
+            clean_scope: None,
+            reason: Some("absence-clean coverage entry missing".to_string()),
+        })
+}
+
+fn cache_reuse_summary(cache_reuse: &CacheReuse) -> CacheReuseSummary {
+    CacheReuseSummary {
+        status: CacheReuseSummaryStatus::NotReusable,
+        policy: cache_reuse.policy,
+        reason: cache_reuse.reason,
+        blocking_target_count: cache_reuse.blocking_targets.len(),
     }
 }
 
