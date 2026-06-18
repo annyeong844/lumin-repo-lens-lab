@@ -111,7 +111,9 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Test cargo oracle
-        run: cargo test --locked --manifest-path experiments/rust-main/rust-cargo-oracle/Cargo.toml
-      - name: Test Rust source health
-        run: cargo test --locked --manifest-path experiments/rust-sidecar/rust-source-health/Cargo.toml
+      - name: Test unified Rust analyzer
+        run: cargo test --locked --manifest-path experiments/rust-main/lumin-rust-analyzer/Cargo.toml
+      - name: Test internal Rust phases
+        run: |
+          cargo test --locked --manifest-path experiments/rust-main/rust-cargo-oracle/Cargo.toml
+          cargo test --locked --manifest-path experiments/rust-sidecar/rust-source-health/Cargo.toml

@@ -14,6 +14,31 @@ use crate::{analyze_request, FinalMeta};
 
 pub fn run_cli(args: Vec<String>) -> Result<()> {
     let options = WrapperOptions::parse(args)?;
+    let output = options.output.clone();
+    let response = analyze_root(RustSourceHealthOptions {
+        root: options.root,
+        source_commit: options.source_commit,
+        thread_count: options.thread_count,
+        worker_stack_bytes: options.worker_stack_bytes,
+    })?;
+    write_json_atomic(&output, &response)?;
+    println!("[rust-source-health] wrote {}", output.display());
+    println!(
+        "[rust-source-health] files={} skipped={} signals={}",
+        response.summary.files, response.summary.skipped_files, response.summary.signals
+    );
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct RustSourceHealthOptions {
+    pub root: PathBuf,
+    pub source_commit: String,
+    pub thread_count: Option<usize>,
+    pub worker_stack_bytes: usize,
+}
+
+pub fn analyze_root(options: RustSourceHealthOptions) -> Result<crate::protocol::HealthResponse> {
     let root = absolute_existing_dir(&options.root)?;
     let (files, skipped_files) = collect_rust_files(&root)?;
     let path_policy = default_path_policy();
@@ -35,7 +60,7 @@ pub fn run_cli(args: Vec<String>) -> Result<()> {
     let binary_sha256 = hash_file_sha256(
         &std::env::current_exe().context("failed to read current executable path")?,
     )?;
-    let response = analyze_request(
+    analyze_request(
         request,
         skipped_files,
         Some(FinalMeta {
@@ -46,14 +71,7 @@ pub fn run_cli(args: Vec<String>) -> Result<()> {
             },
             input: InputMeta { path_policy },
         }),
-    )?;
-    write_json_atomic(&options.output, &response)?;
-    println!("[rust-source-health] wrote {}", options.output.display());
-    println!(
-        "[rust-source-health] files={} skipped={} signals={}",
-        response.summary.files, response.summary.skipped_files, response.summary.signals
-    );
-    Ok(())
+    )
 }
 
 #[derive(Debug)]

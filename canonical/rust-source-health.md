@@ -26,7 +26,9 @@ implementation plan, review packet, or worker-local convenience helper.
 
 It does not change the JS/TS topology scanner, M2-M5 Rust topology sidecar,
 pre-write gate, SARIF output, markdown audit output, or stable package defaults.
-Rust source health emits a separate `rust-health.json` artifact.
+Rust source health is now a syntax phase inside the unified Rust analyzer
+surface. Its compatibility CLI may still emit `rust-health.json`, but the
+product artifact is the unified Rust analyzer artifact.
 
 ## 3. Naming Lowering
 
@@ -80,7 +82,8 @@ The protocol owns its names. The parser is an implementation detail.
 | `src/summary.rs` | `summarize(...)` for `BTreeMap<String, FileHealth>` | signal construction, path policy |
 | `src/parallel.rs` | local Rayon `ThreadPool`, `RuntimeConfig`, stack/thread policy | AST storage, file analysis |
 | `src/analyzer.rs` | syntax traversal and file-level analysis | protocol schema changes, final artifact metadata |
-| `src/main.rs` | stdin/stdout compatibility mode, CLI dispatch, request validation, pool install, exit behavior | parser traversal |
+| `src/lib.rs` | library phase entrypoint, stdin compatibility dispatch, request validation, pool install, exit behavior | parser traversal |
+| `src/main.rs` | thin compatibility CLI entrypoint that delegates to `src/lib.rs` | parser traversal, request validation |
 | `src/wrapper.rs` | Rust-main file discovery, path policy, hashing, UTF-8 decode, skipped-file evidence, final metadata, artifact write | parser traversal, signal construction |
 
 No extra Rust module may create `Signal`, `ParseError`, `Summary`, `Location`,
@@ -88,10 +91,10 @@ or runtime pool settings unless this table is amended first.
 
 ## 6. JavaScript Boundary
 
-Rust source health does not own a JavaScript wrapper surface anymore. The M6
-Rust binary is the implementation surface for both stdin compatibility and
-Rust-main CLI execution. New `rust-source-health` `.mjs` wrappers are forbidden
-unless this canonical file is amended with a migration reason.
+Rust source health does not own a JavaScript wrapper surface anymore. It is a
+Rust library phase with a thin compatibility CLI. The product execution surface
+is the unified Rust analyzer. New `rust-source-health` `.mjs` wrappers are
+forbidden unless this canonical file is amended with a migration reason.
 
 ## 7. Canonical Constructors And Helpers
 
