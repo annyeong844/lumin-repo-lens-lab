@@ -3,7 +3,7 @@ use crate::protocol::{
     Facts, FileHealth, ParseStatus, ParserRequest, PathMeta, RequestFile, Signal, SignalKind,
     Thresholds, PARSER_EDITION, PARSER_EDITION_POLICY, PARSER_EDITION_SOURCE,
 };
-use crate::signals::{review_signal, syntax_parse_error, text_size_to_usize};
+use crate::signals::{apply_signal_policy, review_signal, syntax_parse_error, text_size_to_usize};
 use anyhow::{bail, Result};
 use ra_ap_syntax::{ast, AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRange};
 use rayon::prelude::*;
@@ -76,6 +76,8 @@ fn analyze_file(
             .cmp(&right.location.byte_start)
             .then(left.kind.cmp(&right.kind))
     });
+    let classifications = classify_path(&file.path);
+    apply_signal_policy(&mut signals, &classifications);
 
     let health = FileHealth {
         sha256: file.sha256.clone(),
@@ -86,7 +88,7 @@ fn analyze_file(
             errors,
         },
         path: PathMeta {
-            classifications: classify_path(&file.path),
+            classifications,
             suppressed: false,
         },
     };
@@ -148,11 +150,48 @@ fn collect_facts_and_signals(
 fn classify_path(path: &str) -> Vec<String> {
     if has_path_segment(path, "generated") || file_name(path) == "generated.rs" {
         vec!["generated".to_string()]
-    } else if has_path_segment(path, "tests") || file_name(path).ends_with("_test.rs") {
+    } else if is_test_like_path(path) {
         vec!["test".to_string()]
     } else {
         vec!["source".to_string()]
     }
+}
+
+fn is_test_like_path(path: &str) -> bool {
+    let base = file_name(path);
+    if base == "tests.rs"
+        || base == "test.rs"
+        || base.ends_with("_test.rs")
+        || base.ends_with(".test.rs")
+        || base.ends_with(".spec.rs")
+    {
+        return true;
+    }
+
+    path.split('/').any(|segment| {
+        matches!(
+            segment,
+            "test"
+                | "tests"
+                | "e2e"
+                | "integration"
+                | "fixtures"
+                | "fixture"
+                | "mocks"
+                | "mock"
+                | "test-support"
+                | "test-utils"
+                | "runtime-tests"
+                | "playground"
+                | "playgrounds"
+                | "examples"
+                | "example"
+                | "benches"
+                | "bench"
+        ) || (segment.len() >= 4 && segment.starts_with("__") && segment.ends_with("__"))
+            || segment.ends_with("-fixture")
+            || segment.ends_with("-fixtures")
+    })
 }
 
 fn has_path_segment(path: &str, segment: &str) -> bool {

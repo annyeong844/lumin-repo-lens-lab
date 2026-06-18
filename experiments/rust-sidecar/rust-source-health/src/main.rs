@@ -16,7 +16,7 @@ use protocol::{
     HealthRequest, HealthResponse, InputMeta, ParserMeta, PolicyMeta, ResponseMeta, RuntimeMeta,
     SidecarMeta, SkippedFile, Thresholds, DEFAULT_EXCLUDE, DEFAULT_INCLUDE, PARSER_EDITION,
     PARSER_EDITION_POLICY, PARSER_EDITION_SOURCE, PARSER_KIND, PARSER_VERSION, POLICY_VERSION,
-    SCHEMA_VERSION,
+    SCHEMA_VERSION, SIGNAL_POLICY_ID, SIGNAL_POLICY_VERSION,
 };
 use sha2::{Digest, Sha256};
 use summary::summarize;
@@ -119,6 +119,10 @@ pub(crate) fn analyze_request(
             policy: PolicyMeta {
                 version: POLICY_VERSION.to_string(),
                 thresholds,
+                signal_policy: protocol::SignalPolicyMeta {
+                    id: SIGNAL_POLICY_ID.to_string(),
+                    version: SIGNAL_POLICY_VERSION.to_string(),
+                },
             },
             runtime: RuntimeMeta {
                 thread_count: pool.current_num_threads(),

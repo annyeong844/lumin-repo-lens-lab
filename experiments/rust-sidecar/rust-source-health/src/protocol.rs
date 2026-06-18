@@ -8,6 +8,8 @@ pub const PARSER_VERSION: &str = "0.0.337";
 pub const PARSER_EDITION: &str = "2021";
 pub const PARSER_EDITION_POLICY: &str = "fixed";
 pub const PARSER_EDITION_SOURCE: &str = "m6-policy-default";
+pub const SIGNAL_POLICY_ID: &str = "rust-source-health-signal-policy";
+pub const SIGNAL_POLICY_VERSION: &str = "rust-source-health-signal-policy.v1";
 pub const DEFAULT_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 pub const DEFAULT_INCLUDE: &[&str] = &["**/*.rs"];
 pub const DEFAULT_EXCLUDE: &[&str] = &["**/target/**", "**/vendor/**"];
@@ -108,6 +110,8 @@ pub struct ParserMeta {
 pub struct PolicyMeta {
     pub version: String,
     pub thresholds: Thresholds,
+    #[serde(rename = "signalPolicy")]
+    pub signal_policy: SignalPolicyMeta,
 }
 
 #[derive(Debug, Serialize, Clone, Copy)]
@@ -115,6 +119,13 @@ pub struct PolicyMeta {
 pub struct Thresholds {
     pub max_function_lines: usize,
     pub max_impl_lines: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignalPolicyMeta {
+    pub id: String,
+    pub version: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -168,6 +179,10 @@ pub struct Signal {
     pub kind: SignalKind,
     pub severity: Severity,
     pub claim: Claim,
+    pub visibility: SignalVisibility,
+    #[serde(rename = "muteReason")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mute_reason: Option<SignalMuteReason>,
     pub location: Location,
 }
 
@@ -195,6 +210,20 @@ pub enum Severity {
 #[serde(rename_all = "kebab-case")]
 pub enum Claim {
     SyntaxOnly,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SignalVisibility {
+    Review,
+    Muted,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SignalMuteReason {
+    TestPath,
+    GeneratedPath,
 }
 
 #[derive(Debug, Serialize)]
@@ -240,4 +269,8 @@ pub struct Summary {
     pub unsafe_functions: usize,
     pub signals: usize,
     pub signals_by_kind: BTreeMap<SignalKind, usize>,
+    pub review_signals: usize,
+    pub muted_signals: usize,
+    pub signals_by_visibility: BTreeMap<SignalVisibility, usize>,
+    pub review_signals_by_kind: BTreeMap<SignalKind, usize>,
 }

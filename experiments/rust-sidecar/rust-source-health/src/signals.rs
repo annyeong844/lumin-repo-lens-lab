@@ -1,5 +1,7 @@
 use crate::locations::LineIndex;
-use crate::protocol::{Claim, ParseError, Severity, Signal, SignalKind};
+use crate::protocol::{
+    Claim, ParseError, Severity, Signal, SignalKind, SignalMuteReason, SignalVisibility,
+};
 use ra_ap_syntax::TextRange;
 
 pub fn review_signal(kind: SignalKind, line_index: &LineIndex, range: TextRange) -> Signal {
@@ -7,7 +9,28 @@ pub fn review_signal(kind: SignalKind, line_index: &LineIndex, range: TextRange)
         kind,
         severity: Severity::Review,
         claim: Claim::SyntaxOnly,
+        visibility: SignalVisibility::Review,
+        mute_reason: None,
         location: location_for_range(line_index, range),
+    }
+}
+
+pub fn apply_signal_policy(signals: &mut [Signal], classifications: &[String]) {
+    let mute_reason = if classifications.iter().any(|value| value == "generated") {
+        Some(SignalMuteReason::GeneratedPath)
+    } else if classifications.iter().any(|value| value == "test") {
+        Some(SignalMuteReason::TestPath)
+    } else {
+        None
+    };
+
+    for signal in signals {
+        signal.visibility = if mute_reason.is_some() {
+            SignalVisibility::Muted
+        } else {
+            SignalVisibility::Review
+        };
+        signal.mute_reason = mute_reason;
     }
 }
 

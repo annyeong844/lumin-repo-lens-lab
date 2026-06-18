@@ -76,7 +76,7 @@ The protocol owns its names. The parser is an implementation detail.
 |---|---|---|
 | `src/protocol.rs` | Request/response structs, schema constants, project-owned enums/strings | parser traversal, signal construction logic |
 | `src/locations.rs` | `LineIndex`, byte-to-line/column conversion | signal kinds, summary counts |
-| `src/signals.rs` | `review_signal(...)`, `syntax_parse_error(...)` | parser traversal, summary counts |
+| `src/signals.rs` | `review_signal(...)`, `syntax_parse_error(...)`, signal visibility policy application | parser traversal, summary counts |
 | `src/summary.rs` | `summarize(...)` for `BTreeMap<String, FileHealth>` | signal construction, path policy |
 | `src/parallel.rs` | local Rayon `ThreadPool`, `RuntimeConfig`, stack/thread policy | AST storage, file analysis |
 | `src/analyzer.rs` | syntax traversal and file-level analysis | protocol schema changes, final artifact metadata |
@@ -100,6 +100,7 @@ unless this canonical file is amended with a migration reason.
 | Purpose | Canonical name | Owner |
 |---|---|---|
 | review signal construction | `review_signal(kind, line_index, range)` | `src/signals.rs` |
+| signal visibility policy | `apply_signal_policy(signals, classifications)` | `src/signals.rs` |
 | parse error construction | `syntax_parse_error(message, line_index, range)` | `src/signals.rs` |
 | location conversion | `LineIndex::location(byte_start, byte_end)` | `src/locations.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
@@ -176,6 +177,10 @@ Final artifacts must satisfy these counts:
 - `summary.parseErrors === sum(files[*].parse.errors.length)`
 - `summary.signals === sum(files[*].signals.length)`
 - `summary.signalsByKind[kind] === count(signals where signal.kind === kind)`
+- `summary.reviewSignals === count(signals where signal.visibility === "review")`
+- `summary.mutedSignals === count(signals where signal.visibility === "muted")`
+- `summary.signalsByVisibility[visibility] === count(signals where signal.visibility === visibility)`
+- `summary.reviewSignalsByKind[kind] === count(signals where signal.kind === kind and signal.visibility === "review")`
 - `summary.unsafeBlocks === sum(files[*].facts.unsafeBlocks)`
 - `summary.unsafeFunctions === sum(files[*].facts.unsafeFunctions)`
 
@@ -188,6 +193,16 @@ stdin compatibility mode emits no skipped-file evidence.
 - Absolute paths and normalized `..` paths are rejected before sidecar input.
 - Symlinked files/directories are not followed in M6.
 - `target` and `vendor` are path segments, not substring matches.
+- Rust source health owns test-like path classification for Rust artifacts.
+  This policy absorbs the legacy JS path-screening convention; the JS helper
+  is not the source of truth for new Rust work. Test-like path segments are
+  exact path components: `tests/`, `test/`, `integration/`, `e2e/`,
+  `fixtures/`, `fixture/`, `mocks/`, `mock/`, `test-support/`,
+  `test-utils/`, `runtime-tests/`, `playground(s)/`, `examples/`,
+  `benches/`, any `__*__/` convention directory, and `*-fixture(s)`.
+  Rust module files `tests.rs`, `test.rs`, `*.test.rs`, `*.spec.rs`, and
+  `*_test.rs` are also test-like. Substrings are not enough: `contest.rs`
+  remains source.
 - Output `files` keys are sorted by path.
 - `signals` are sorted by `location.byteStart`, then `kind`.
 - `parse.errors` are sorted by `location.byteStart`, then `message`.

@@ -115,12 +115,16 @@ unsafe fn do_thing() {}
     assert_eq!(file["parse"]["ok"], true);
     assert_eq!(file["signals"][0]["severity"], "review");
     assert_eq!(file["signals"][0]["claim"], "syntax-only");
+    assert_eq!(file["signals"][0]["visibility"], "review");
+    assert!(file["signals"][0]["muteReason"].is_null());
     assert_eq!(file["facts"]["unsafeBlocks"], 1);
     assert_eq!(file["facts"]["unsafeFunctions"], 1);
     assert_eq!(value["summary"]["signalsByKind"]["clone-call"], 1);
     assert_eq!(value["summary"]["signalsByKind"]["expect-call"], 1);
     assert_eq!(value["summary"]["signalsByKind"]["panic-macro"], 1);
     assert_eq!(value["summary"]["signalsByKind"]["unsafe-block"], 1);
+    assert_eq!(value["summary"]["reviewSignals"], 4);
+    assert_eq!(value["summary"]["mutedSignals"], 0);
 }
 
 #[test]
@@ -174,11 +178,37 @@ fn records_parse_errors_as_file_data() {
 fn classifies_root_level_test_and_generated_paths() {
     let value = stdout_json(run_sidecar(request(vec![
         file("tests/integration.rs", "fn integration() {}", 'd'),
+        file("src/migrate/tests.rs", "fn module_tests() {}", 'g'),
+        file("fixtures/sample.rs", "fn fixture() {}", 'h'),
+        file("src/__mocks__/client.rs", "fn mock_client() {}", 'i'),
+        file("examples/demo.rs", "fn example() {}", 'j'),
+        file("benches/walk.rs", "fn bench() {}", 'k'),
         file("generated/bindings.rs", "fn generated() {}", 'e'),
         file("src/notgenerated.rs", "fn source() {}", 'f'),
+        file("src/contest.rs", "fn contest() {}", 'l'),
     ])));
     assert_eq!(
         value["files"]["tests/integration.rs"]["path"]["classifications"],
+        json!(["test"])
+    );
+    assert_eq!(
+        value["files"]["src/migrate/tests.rs"]["path"]["classifications"],
+        json!(["test"])
+    );
+    assert_eq!(
+        value["files"]["fixtures/sample.rs"]["path"]["classifications"],
+        json!(["test"])
+    );
+    assert_eq!(
+        value["files"]["src/__mocks__/client.rs"]["path"]["classifications"],
+        json!(["test"])
+    );
+    assert_eq!(
+        value["files"]["examples/demo.rs"]["path"]["classifications"],
+        json!(["test"])
+    );
+    assert_eq!(
+        value["files"]["benches/walk.rs"]["path"]["classifications"],
         json!(["test"])
     );
     assert_eq!(
@@ -188,6 +218,50 @@ fn classifies_root_level_test_and_generated_paths() {
     assert_eq!(
         value["files"]["src/notgenerated.rs"]["path"]["classifications"],
         json!(["source"])
+    );
+    assert_eq!(
+        value["files"]["src/contest.rs"]["path"]["classifications"],
+        json!(["source"])
+    );
+}
+
+#[test]
+fn mutes_test_and_generated_signals_without_dropping_raw_evidence() {
+    let source_with_unwrap = "fn main() { let value = Some(1); let _ = value.unwrap(); }";
+    let value = stdout_json(run_sidecar(request(vec![
+        file("src/lib.rs", source_with_unwrap, 'a'),
+        file("tests/integration.rs", source_with_unwrap, 'b'),
+        file("generated/bindings.rs", source_with_unwrap, 'c'),
+    ])));
+
+    assert_eq!(value["summary"]["signals"], 3);
+    assert_eq!(value["summary"]["signalsByKind"]["unwrap-call"], 3);
+    assert_eq!(value["summary"]["reviewSignals"], 1);
+    assert_eq!(value["summary"]["mutedSignals"], 2);
+    assert_eq!(value["summary"]["signalsByVisibility"]["review"], 1);
+    assert_eq!(value["summary"]["signalsByVisibility"]["muted"], 2);
+    assert_eq!(value["summary"]["reviewSignalsByKind"]["unwrap-call"], 1);
+
+    assert_eq!(
+        value["files"]["src/lib.rs"]["signals"][0]["visibility"],
+        "review"
+    );
+    assert!(value["files"]["src/lib.rs"]["signals"][0]["muteReason"].is_null());
+    assert_eq!(
+        value["files"]["tests/integration.rs"]["signals"][0]["visibility"],
+        "muted"
+    );
+    assert_eq!(
+        value["files"]["tests/integration.rs"]["signals"][0]["muteReason"],
+        "test-path"
+    );
+    assert_eq!(
+        value["files"]["generated/bindings.rs"]["signals"][0]["visibility"],
+        "muted"
+    );
+    assert_eq!(
+        value["files"]["generated/bindings.rs"]["signals"][0]["muteReason"],
+        "generated-path"
     );
 }
 
