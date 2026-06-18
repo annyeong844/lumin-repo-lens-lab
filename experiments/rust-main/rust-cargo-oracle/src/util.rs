@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 pub(crate) fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     if let Some(parent) = path.parent() {
@@ -36,10 +36,27 @@ pub(crate) fn sha256_text(text: &str) -> String {
     format!("sha256:{:x}", hasher.finalize())
 }
 
-pub(crate) fn unix_timestamp_string() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        .to_string()
+pub(crate) fn generated_timestamp_string() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generated_timestamp_string;
+
+    #[test]
+    fn generated_timestamp_uses_rfc3339_shape() {
+        let generated = generated_timestamp_string();
+
+        assert!(generated.contains('T'), "{generated}");
+        assert!(generated.ends_with('Z'), "{generated}");
+        assert!(
+            generated
+                .chars()
+                .any(|character| character == '-' || character == ':'),
+            "{generated}"
+        );
+    }
 }

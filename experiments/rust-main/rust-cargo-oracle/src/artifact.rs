@@ -13,7 +13,7 @@ use crate::protocol::{
 };
 use crate::scope::build_scope;
 use crate::toolchain::{toolchain_meta, Toolchain};
-use crate::util::unix_timestamp_string;
+use crate::util::generated_timestamp_string;
 use crate::{
     ABSENCE_CLEAN_COVERAGE_ID, DIAGNOSTIC_POLICY_VERSION, EVENT_STREAM_COVERAGE_ID,
     EVIDENCE_POLICY_VERSION, ORACLE_REGISTRY_VERSION, SEMANTIC_HEALTH_SCHEMA_VERSION,
@@ -86,7 +86,7 @@ pub(crate) fn build_artifact(input: BuildArtifactInput<'_>) -> SemanticHealthArt
         meta: ArtifactMeta {
             producer: "rust-cargo-oracle",
             mode: "semantic-oracle",
-            generated: unix_timestamp_string(),
+            generated: generated_timestamp_string(),
             oracle_registry_version: ORACLE_REGISTRY_VERSION,
             evidence_policy_version: EVIDENCE_POLICY_VERSION,
             diagnostic_policy_version: DIAGNOSTIC_POLICY_VERSION,
