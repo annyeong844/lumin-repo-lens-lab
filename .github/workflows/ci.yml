@@ -67,7 +67,6 @@ jobs:
           while IFS= read -r file; do
             case "$file" in
               .github/workflows/ci.yml)
-                node=true
                 rust=true
                 ;;
               experiments/rust-main/*|experiments/rust-sidecar/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
