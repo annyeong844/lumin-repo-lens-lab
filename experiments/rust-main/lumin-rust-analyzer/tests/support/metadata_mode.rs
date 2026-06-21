@@ -9,8 +9,16 @@ pub fn assert_metadata_only_without_cargo_check(artifact: &Value) -> Result<()> 
     );
     assert_eq!(artifact["artifactRefs"]["syntax"]["rawEmbedded"], false);
     assert_eq!(
-        artifact["artifactRefs"]["syntax"]["rawArtifact"],
-        "run rust-source-health compatibility CLI for full syntax lane evidence"
+        artifact["artifactRefs"]["syntax"]["rawArtifact"]["status"],
+        "available-via-compatibility-cli"
+    );
+    assert_eq!(
+        artifact["artifactRefs"]["syntax"]["rawArtifact"]["cli"],
+        "lumin-rust-source-health"
+    );
+    assert_eq!(
+        artifact["artifactRefs"]["syntax"]["rawArtifact"]["artifactProfile"],
+        "full"
     );
     assert_eq!(
         artifact["artifactRefs"]["semantic"]["artifact"],
@@ -18,8 +26,16 @@ pub fn assert_metadata_only_without_cargo_check(artifact: &Value) -> Result<()> 
     );
     assert_eq!(artifact["artifactRefs"]["semantic"]["rawEmbedded"], false);
     assert_eq!(
-        artifact["artifactRefs"]["semantic"]["rawArtifact"],
-        "run rust-cargo-oracle compatibility CLI for full semantic lane evidence"
+        artifact["artifactRefs"]["semantic"]["rawArtifact"]["status"],
+        "available-via-compatibility-cli"
+    );
+    assert_eq!(
+        artifact["artifactRefs"]["semantic"]["rawArtifact"]["cli"],
+        "lumin-rust-cargo-oracle"
+    );
+    assert_eq!(
+        artifact["artifactRefs"]["semantic"]["rawArtifact"]["cargoCheckMode"],
+        "cargo-check"
     );
     assert_eq!(
         artifact["artifactRefs"]["semantic"]["defaultMode"],
