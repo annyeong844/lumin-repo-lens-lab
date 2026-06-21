@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use serde::Serialize;
-use std::fmt::Debug;
 
 use super::meta::ProductArtifactMeta;
 use super::phases::PhaseBriefs;
@@ -32,50 +31,18 @@ impl ProductArtifact<'_> {
             self.artifact.semantic_findings.len(),
             self.artifact.semantic_diagnostics.len(),
         );
-        if let Some(message) = self
-            .artifact
-            .files
-            .first_invalid_semantic_ref(expected_refs)
-        {
-            bail!("blocked-artifact-contract: {message}");
+        if let Some(error) = self.artifact.files.first_semantic_ref_contract_error(
+            expected_refs,
+            self.artifact.summary.semantic_unlinked_refs(),
+        ) {
+            bail!("blocked-artifact-contract: {error}");
         }
-        let linked_refs = self.artifact.files.semantic_ref_counts();
-        let unlinked_refs = self.artifact.summary.semantic_unlinked_refs();
-        require_equal_contract(
-            "files.semantic.findings.length + summary.semanticUnlinkedFindings",
-            linked_refs.findings() + unlinked_refs.findings(),
-            "semanticFindings.length",
-            expected_refs.findings(),
-        )?;
-        require_equal_contract(
-            "files.semantic.diagnostics.length + summary.semanticUnlinkedDiagnostics",
-            linked_refs.diagnostics() + unlinked_refs.diagnostics(),
-            "semanticDiagnostics.length",
-            expected_refs.diagnostics(),
-        )?;
         Ok(())
     }
 
     pub(crate) fn to_pretty_string(&self) -> serde_json::Result<String> {
         serde_json::to_string_pretty(&self.artifact)
     }
-}
-
-fn require_equal_contract<T>(
-    left_label: &'static str,
-    left: T,
-    right_label: &'static str,
-    right: T,
-) -> Result<()>
-where
-    T: Eq + Debug,
-{
-    if left != right {
-        bail!(
-            "blocked-artifact-contract: {left_label} must match {right_label}: left={left:?} right={right:?}"
-        );
-    }
-    Ok(())
 }
 
 #[derive(Debug, Serialize)]

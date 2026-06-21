@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use lumin_rust_source_health::protocol::FileHealth;
 use serde::Serialize;
@@ -25,7 +26,7 @@ impl<'a> ProductFilesProjection<'a> {
         self.files.len()
     }
 
-    pub(crate) fn semantic_ref_counts(&self) -> SemanticRefCounts {
+    fn semantic_ref_counts(&self) -> SemanticRefCounts {
         self.files
             .values()
             .map(|file| {
@@ -37,25 +38,101 @@ impl<'a> ProductFilesProjection<'a> {
             .fold(SemanticRefCounts::default(), SemanticRefCounts::plus)
     }
 
-    pub(crate) fn first_invalid_semantic_ref(
+    pub(crate) fn first_semantic_ref_contract_error(
         &self,
         expected_refs: SemanticRefCounts,
-    ) -> Option<String> {
+        unlinked_refs: SemanticRefCounts,
+    ) -> Option<SemanticRefContractError<'_>> {
         for (path, file) in &self.files {
             if let Some(index) = file.first_out_of_range_finding_ref(expected_refs) {
-                let finding_count = expected_refs.findings();
-                return Some(format!(
-                    "files[{path}].semantic.findings references semanticFindings[{index}], but semanticFindings.length={finding_count}"
-                ));
+                return Some(SemanticRefContractError::FindingRefOutOfRange {
+                    path,
+                    index,
+                    finding_count: expected_refs.findings(),
+                });
             }
             if let Some(index) = file.first_out_of_range_diagnostic_ref(expected_refs) {
-                let diagnostic_count = expected_refs.diagnostics();
-                return Some(format!(
-                    "files[{path}].semantic.diagnostics references semanticDiagnostics[{index}], but semanticDiagnostics.length={diagnostic_count}"
-                ));
+                return Some(SemanticRefContractError::DiagnosticRefOutOfRange {
+                    path,
+                    index,
+                    diagnostic_count: expected_refs.diagnostics(),
+                });
             }
         }
+        let linked_refs = self.semantic_ref_counts();
+        let total_refs = linked_refs.plus(unlinked_refs);
+        if total_refs.findings() != expected_refs.findings() {
+            return Some(SemanticRefContractError::FindingRefCountMismatch {
+                actual_total: total_refs.findings(),
+                expected_total: expected_refs.findings(),
+            });
+        }
+        if total_refs.diagnostics() != expected_refs.diagnostics() {
+            return Some(SemanticRefContractError::DiagnosticRefCountMismatch {
+                actual_total: total_refs.diagnostics(),
+                expected_total: expected_refs.diagnostics(),
+            });
+        }
         None
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub(crate) enum SemanticRefContractError<'a> {
+    FindingRefOutOfRange {
+        path: &'a str,
+        index: usize,
+        finding_count: usize,
+    },
+    DiagnosticRefOutOfRange {
+        path: &'a str,
+        index: usize,
+        diagnostic_count: usize,
+    },
+    FindingRefCountMismatch {
+        actual_total: usize,
+        expected_total: usize,
+    },
+    DiagnosticRefCountMismatch {
+        actual_total: usize,
+        expected_total: usize,
+    },
+}
+
+impl fmt::Display for SemanticRefContractError<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FindingRefOutOfRange {
+                path,
+                index,
+                finding_count,
+            } => write!(
+                formatter,
+                "files[{path}].semantic.findings references semanticFindings[{index}], but semanticFindings.length={finding_count}"
+            ),
+            Self::DiagnosticRefOutOfRange {
+                path,
+                index,
+                diagnostic_count,
+            } => write!(
+                formatter,
+                "files[{path}].semantic.diagnostics references semanticDiagnostics[{index}], but semanticDiagnostics.length={diagnostic_count}"
+            ),
+            Self::FindingRefCountMismatch {
+                actual_total,
+                expected_total,
+            } => write!(
+                formatter,
+                "files.semantic.findings.length + summary.semanticUnlinkedFindings must match semanticFindings.length: left={actual_total} right={expected_total}"
+            ),
+            Self::DiagnosticRefCountMismatch {
+                actual_total,
+                expected_total,
+            } => write!(
+                formatter,
+                "files.semantic.diagnostics.length + summary.semanticUnlinkedDiagnostics must match semanticDiagnostics.length: left={actual_total} right={expected_total}"
+            ),
+        }
     }
 }
 
