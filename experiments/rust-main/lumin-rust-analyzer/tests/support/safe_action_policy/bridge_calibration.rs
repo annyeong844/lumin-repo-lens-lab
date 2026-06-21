@@ -60,6 +60,21 @@ pub(super) fn assert_safe_action_green_calibrated_bridge(artifact: &Value) -> Re
     Ok(())
 }
 
+pub(super) fn assert_safe_action_missing_schema_calibrated_bridge(artifact: &Value) -> Result<()> {
+    assert_safe_action_bridge_core(artifact)?;
+    assert_eq!(
+        artifact["oracleBridge"]["policy"]["calibrationStatus"],
+        "measured"
+    );
+    let readiness = readiness(artifact);
+    let safe_fix = safe_fix(readiness);
+    assert_eq!(readiness["gate"], "red");
+    assert_eq!(safe_fix["fpRate"], 0.0);
+    assert_no_readiness_reason(artifact, "fp-rate-unknown")?;
+    assert_readiness_reason(artifact, "schema-roundtrip-not-attempted", "red")?;
+    Ok(())
+}
+
 pub(super) fn assert_safe_action_false_positive_calibrated_bridge(artifact: &Value) -> Result<()> {
     assert_safe_action_bridge_core(artifact)?;
     assert_eq!(

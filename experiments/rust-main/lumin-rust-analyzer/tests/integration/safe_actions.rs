@@ -10,6 +10,7 @@ use tempfile::TempDir;
 use crate::support::scenarios::single_package::{
     analyze_cargo_check_single_package, analyze_cargo_check_single_package_with_adjudication,
     analyze_cargo_check_single_package_with_complete_calibration_evidence,
+    analyze_cargo_check_single_package_with_missing_schema_round_trip_evidence,
 };
 #[cfg(windows)]
 use crate::support::{cli, fixtures::package};
@@ -17,7 +18,9 @@ use safe_action_policy_support::{
     assert_safe_action_artifact, assert_safe_action_artifact_with_diagnostic_code,
     assert_safe_action_artifact_with_edit, assert_safe_action_artifact_with_edits,
     assert_safe_action_calibrated_artifact, assert_safe_action_false_positive_calibrated_artifact,
-    assert_safe_action_green_calibrated_artifact, assert_safe_action_unmatched_calibrated_artifact,
+    assert_safe_action_green_calibrated_artifact,
+    assert_safe_action_missing_schema_calibrated_artifact,
+    assert_safe_action_unmatched_calibrated_artifact,
 };
 
 #[test]
@@ -125,6 +128,14 @@ fn unified_cli_reaches_green_with_complete_calibration_evidence() -> Result<()> 
         "pub fn demo() { let mut value = 1; let _ = value; }\n",
     )?;
     assert_safe_action_green_calibrated_artifact(&artifact)
+}
+
+#[test]
+fn unified_cli_blocks_green_when_schema_round_trip_evidence_is_missing() -> Result<()> {
+    let artifact = analyze_cargo_check_single_package_with_missing_schema_round_trip_evidence(
+        "pub fn demo() { let mut value = 1; let _ = value; }\n",
+    )?;
+    assert_safe_action_missing_schema_calibrated_artifact(&artifact)
 }
 
 #[test]

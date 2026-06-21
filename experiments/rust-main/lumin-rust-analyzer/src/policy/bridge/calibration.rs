@@ -120,8 +120,11 @@ fn readiness(
     let safe_needs_adjudication = candidate_counts.safe_fix > 0 && safe_fix.fp_rate.is_none();
     let review_needs_adjudication =
         candidate_counts.review_visible_cleanup > 0 && review_visible_cleanup.fp_rate.is_none();
-    if calibration_adjudication
-        .is_some_and(|adjudication| !adjudication.candidate_counts().is_available())
+    let has_readiness_evidence =
+        calibration_adjudication.is_some_and(CalibrationAdjudication::has_readiness_evidence);
+    if has_readiness_evidence
+        && calibration_adjudication
+            .is_some_and(|adjudication| !adjudication.candidate_counts().is_available())
     {
         reasons.push(OracleBridgeCalibrationReason {
             code: OracleBridgeCalibrationReasonCode::CandidateCountsUnavailable,
@@ -171,7 +174,7 @@ fn readiness(
             detail: "review-visible cleanup FP rate is above the JS/TS readiness threshold",
         });
     }
-    if let Some(adjudication) = calibration_adjudication {
+    if let Some(adjudication) = calibration_adjudication.filter(|_| has_readiness_evidence) {
         match adjudication.schema_round_trip() {
             Some(schema_round_trip) => {
                 if !schema_round_trip.attempted() {

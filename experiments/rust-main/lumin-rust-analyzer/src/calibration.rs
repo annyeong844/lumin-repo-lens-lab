@@ -45,6 +45,14 @@ impl CalibrationAdjudication {
     pub(crate) fn min_adjudicated_per_corpus(&self) -> Option<usize> {
         self.min_adjudicated_per_corpus
     }
+
+    pub(crate) fn has_readiness_evidence(&self) -> bool {
+        !self.corpus.is_empty()
+            || self.schema_round_trip.is_some()
+            || self.candidate_counts.has_readiness_evidence()
+            || self.unresolved_high_findings.is_some()
+            || self.min_adjudicated_per_corpus.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
@@ -106,6 +114,12 @@ pub(crate) struct CalibrationCandidateCounts {
 impl CalibrationCandidateCounts {
     pub(crate) fn is_available(&self) -> bool {
         self.available == Some(true)
+    }
+
+    fn has_readiness_evidence(&self) -> bool {
+        self.available.is_some()
+            || self.review_visible_cleanup.is_some()
+            || !self.by_corpus.is_empty()
     }
 
     pub(crate) fn expected_review_visible_for_corpus(
