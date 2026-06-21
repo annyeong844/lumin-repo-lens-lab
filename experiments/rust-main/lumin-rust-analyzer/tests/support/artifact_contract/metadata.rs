@@ -1,16 +1,19 @@
 use anyhow::Result;
 use serde_json::Value;
+use std::path::Path;
 
 pub(super) fn assert_metadata_and_policy(artifact: &Value) -> Result<()> {
     assert_eq!(artifact["schemaVersion"], "rust-analyzer-health.v1");
     assert_eq!(artifact["meta"]["producer"], "lumin-rust-analyzer");
     assert_eq!(
         artifact["meta"]["input"]["cargoTargetDirMode"],
-        "reusable-temp"
+        "isolated-temp"
     );
-    assert!(artifact["meta"]["input"]["cargoTargetDir"]
+    let cargo_target_dir = artifact["meta"]["input"]["cargoTargetDir"]
         .as_str()
-        .is_some_and(|path| path.contains("lumin-rust-cargo-oracle-reusable-target-")));
+        .unwrap_or_default();
+    assert!(cargo_target_dir.contains("lumin-rust-cargo-oracle-target-"));
+    assert!(!Path::new(cargo_target_dir).exists());
     assert_eq!(artifact["policy"]["owner"], "lumin-rust-analyzer");
     assert_eq!(
         artifact["policy"]["jsTsPrecedent"][0],

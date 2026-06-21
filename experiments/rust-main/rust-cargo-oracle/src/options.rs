@@ -34,7 +34,7 @@ pub fn parse_args() -> Result<CliAction<OracleOptions>> {
     let mut package_name: Option<String> = None;
     let mut repo_root: Option<PathBuf> = None;
     let mut cargo_check_mode = CargoCheckMode::CargoCheck;
-    let mut cargo_target_dir_mode = CargoTargetDirMode::ReusableTemp;
+    let mut cargo_target_dir_mode = CargoTargetDirMode::IsolatedTemp;
     let mut target_paths = Vec::<String>::new();
     let mut targeted_package_cap = DEFAULT_TARGETED_CARGO_CHECK_PACKAGES;
 

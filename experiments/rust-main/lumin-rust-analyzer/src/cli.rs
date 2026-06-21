@@ -41,7 +41,7 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
     let mut thread_count: Option<usize> = None;
     let mut worker_stack_bytes = DEFAULT_WORKER_STACK_BYTES;
     let mut semantic_mode = CargoCheckMode::MetadataOnly;
-    let mut cargo_target_dir_mode = CargoTargetDirMode::ReusableTemp;
+    let mut cargo_target_dir_mode = CargoTargetDirMode::IsolatedTemp;
     let mut targeted_package_cap = DEFAULT_TARGETED_CARGO_CHECK_PACKAGES;
     let mut calibration_adjudication: Option<PathBuf> = None;
 

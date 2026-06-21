@@ -1,8 +1,13 @@
 use anyhow::{Context, Result};
+use serde_json::Value;
+use std::{fs, path::PathBuf};
 use tempfile::TempDir;
 
 use crate::package_scope_usage;
-use crate::support::cli::{assert_usage_error, oracle_command};
+use crate::support::{
+    cli::{assert_usage_error, oracle_command},
+    paths::repo_root,
+};
 
 #[test]
 fn cli_missing_flag_value_exits_2_before_writing_artifact() -> Result<()> {
@@ -118,6 +123,60 @@ fn cli_invalid_timeout_exits_2_before_writing_artifact() -> Result<()> {
 
     assert_usage_error(&output, "invalid --timeout-ms value: soon");
     assert!(!output_path.exists());
+    Ok(())
+}
+
+#[test]
+fn cli_default_cargo_target_dir_mode_is_isolated_temp_without_repo_target() -> Result<()> {
+    let temp = TempDir::new()?;
+    let root = temp.path().join("workspace");
+    fs::create_dir_all(root.join("src"))?;
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )?;
+    fs::write(root.join("src").join("lib.rs"), "pub fn app() {}\n")?;
+    let output_path = temp.path().join("semantic-health.json");
+
+    let output = oracle_command()
+        .arg("--root")
+        .arg(&root)
+        .arg("--repo-root")
+        .arg(repo_root()?)
+        .arg("--output")
+        .arg(&output_path)
+        .arg("--cargo-check-mode")
+        .arg("cargo-check")
+        .output()
+        .context("run rust cargo oracle")?;
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!root.join("target").exists());
+    let artifact: Value =
+        serde_json::from_slice(&fs::read(&output_path)?).context("semantic artifact JSON")?;
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirMode"],
+        "isolated-temp"
+    );
+    let target_dir = PathBuf::from(
+        artifact["meta"]["input"]["cargoTargetDir"]
+            .as_str()
+            .context("cargoTargetDir")?,
+    );
+    assert!(target_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("lumin-rust-cargo-oracle-target-")));
+    assert!(
+        !target_dir.exists(),
+        "isolated cargo target directory should be removed after CLI exit: {}",
+        target_dir.display()
+    );
     Ok(())
 }
 
