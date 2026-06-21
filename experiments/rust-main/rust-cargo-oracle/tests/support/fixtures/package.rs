@@ -63,7 +63,7 @@ impl RealCargoEnv {
         )?;
         fs::write(
             root.join("aaa-slow").join("build.rs"),
-            "fn main() { std::thread::sleep(std::time::Duration::from_secs(30)); }\n",
+            "fn main() { std::thread::sleep(std::time::Duration::from_secs(5)); }\n",
         )?;
         fs::write(
             root.join("bbb-error").join("Cargo.toml"),
