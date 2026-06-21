@@ -11,16 +11,6 @@ pub(super) fn assert_safe_action_bridge_core(artifact: &Value) -> Result<()> {
         artifact["oracleBridge"]["coverage"]["absenceClean"]["clean"],
         true
     );
-    assert_eq!(
-        artifact["oracleBridge"]["policy"]["calibration"]["candidateCounts"]["safeFix"],
-        1
-    );
-    assert_eq!(
-        artifact["oracleBridge"]["policy"]["calibration"]["candidateCounts"]
-            ["reviewVisibleCleanup"],
-        1
-    );
-
     let file_bridge = &artifact["files"]["src/lib.rs"]["oracleBridge"];
     assert!(file_bridge.get("status").is_none());
     assert!(file_bridge.get("parseStatus").is_none());

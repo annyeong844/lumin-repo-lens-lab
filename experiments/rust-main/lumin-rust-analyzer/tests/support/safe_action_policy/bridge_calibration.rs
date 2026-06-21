@@ -5,6 +5,7 @@ use super::bridge_core::assert_safe_action_bridge_core;
 
 pub(super) fn assert_safe_action_bridge(artifact: &Value) -> Result<()> {
     assert_safe_action_bridge_core(artifact)?;
+    assert_calibration_candidate_counts(artifact, 1, 1)?;
     let readiness = readiness(artifact);
     assert_eq!(readiness["gate"], "red");
     assert_eq!(safe_fix(readiness)["fpRate"], serde_json::Value::Null);
@@ -14,6 +15,7 @@ pub(super) fn assert_safe_action_bridge(artifact: &Value) -> Result<()> {
 
 pub(super) fn assert_safe_action_calibrated_bridge(artifact: &Value) -> Result<()> {
     assert_safe_action_bridge_core(artifact)?;
+    assert_calibration_candidate_counts(artifact, 1, 1)?;
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibrationStatus"],
         "measured"
@@ -42,6 +44,7 @@ pub(super) fn assert_safe_action_calibrated_bridge(artifact: &Value) -> Result<(
 
 pub(super) fn assert_safe_action_green_calibrated_bridge(artifact: &Value) -> Result<()> {
     assert_safe_action_bridge_core(artifact)?;
+    assert_calibration_candidate_counts(artifact, 2, 2)?;
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibrationStatus"],
         "measured"
@@ -62,6 +65,7 @@ pub(super) fn assert_safe_action_green_calibrated_bridge(artifact: &Value) -> Re
 
 pub(super) fn assert_safe_action_missing_schema_calibrated_bridge(artifact: &Value) -> Result<()> {
     assert_safe_action_bridge_core(artifact)?;
+    assert_calibration_candidate_counts(artifact, 2, 2)?;
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibrationStatus"],
         "measured"
@@ -77,6 +81,7 @@ pub(super) fn assert_safe_action_missing_schema_calibrated_bridge(artifact: &Val
 
 pub(super) fn assert_safe_action_false_positive_calibrated_bridge(artifact: &Value) -> Result<()> {
     assert_safe_action_bridge_core(artifact)?;
+    assert_calibration_candidate_counts(artifact, 1, 1)?;
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibrationStatus"],
         "measured"
@@ -95,6 +100,7 @@ pub(super) fn assert_safe_action_false_positive_calibrated_bridge(artifact: &Val
 
 pub(super) fn assert_safe_action_unmatched_calibrated_bridge(artifact: &Value) -> Result<()> {
     assert_safe_action_bridge_core(artifact)?;
+    assert_calibration_candidate_counts(artifact, 1, 1)?;
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibrationStatus"],
         "measured"
@@ -120,6 +126,17 @@ fn safe_fix(readiness: &Value) -> &Value {
 
 fn review_visible_cleanup(readiness: &Value) -> &Value {
     &readiness["reviewVisibleCleanup"]
+}
+
+fn assert_calibration_candidate_counts(
+    artifact: &Value,
+    safe_fix: usize,
+    review_visible_cleanup: usize,
+) -> Result<()> {
+    let counts = &artifact["oracleBridge"]["policy"]["calibration"]["candidateCounts"];
+    assert_eq!(counts["safeFix"], safe_fix);
+    assert_eq!(counts["reviewVisibleCleanup"], review_visible_cleanup);
+    Ok(())
 }
 
 fn readiness_reasons(artifact: &Value) -> Result<&Vec<Value>> {

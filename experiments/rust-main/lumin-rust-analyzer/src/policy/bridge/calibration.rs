@@ -42,7 +42,7 @@ impl OracleBridgeCalibrationPolicy {
         calibration_adjudication: Option<&CalibrationAdjudication>,
     ) -> Self {
         let actions = action_policy.semantic_action_counts();
-        let candidate_counts = OracleBridgeCalibrationCandidateCounts {
+        let observed_candidate_counts = OracleBridgeCalibrationCandidateCounts {
             available: true,
             safe_fix: actions.safe_actions(),
             review_fix: actions.review_fix(),
@@ -52,6 +52,8 @@ impl OracleBridgeCalibrationPolicy {
             syntax_muted_evidence: action_policy.syntax_muted_evidence_count(),
             unavailable: actions.coverage_unavailable_diagnostics(),
         };
+        let candidate_counts =
+            calibration_candidate_counts(observed_candidate_counts, calibration_adjudication);
         let status = if calibration_adjudication.is_some() {
             CalibrationStatus::Measured
         } else {
@@ -97,6 +99,39 @@ impl OracleBridgeCalibrationPolicy {
     }
 }
 
+fn calibration_candidate_counts(
+    observed: OracleBridgeCalibrationCandidateCounts,
+    calibration_adjudication: Option<&CalibrationAdjudication>,
+) -> OracleBridgeCalibrationCandidateCounts {
+    let Some(adjudication) = calibration_adjudication else {
+        return observed;
+    };
+    if !adjudication.has_readiness_evidence() {
+        return observed;
+    }
+    let counts = adjudication.candidate_counts();
+    let safe_fix = counts.safe_fix().unwrap_or(0);
+    let review_fix = counts.review_fix().unwrap_or_else(|| {
+        counts
+            .review_visible_cleanup()
+            .unwrap_or(0)
+            .saturating_sub(safe_fix)
+    });
+    let review_visible_cleanup = counts
+        .review_visible_cleanup()
+        .unwrap_or(safe_fix + review_fix);
+    OracleBridgeCalibrationCandidateCounts {
+        available: counts.is_available(),
+        safe_fix,
+        review_fix,
+        review_visible_cleanup,
+        degraded: counts.degraded().unwrap_or(0),
+        muted: counts.muted().unwrap_or(0),
+        syntax_muted_evidence: observed.syntax_muted_evidence,
+        unavailable: observed.unavailable,
+    }
+}
+
 fn readiness(
     candidate_counts: OracleBridgeCalibrationCandidateCounts,
     safe_action_candidates: &[SafeActionCandidate<'_>],
@@ -105,23 +140,24 @@ fn readiness(
     let entries = calibration_adjudication
         .map(CalibrationAdjudication::entries)
         .unwrap_or(&[]);
-    let matched_entries = matched_adjudication_entries(entries, safe_action_candidates);
+    let has_readiness_evidence =
+        calibration_adjudication.is_some_and(CalibrationAdjudication::has_readiness_evidence);
+    let matched_entries =
+        matched_adjudication_entries(entries, safe_action_candidates, has_readiness_evidence);
     let safe_fix = summarize_adjudication(entries, |entry| {
         entry.tier == Some(ActionPolicyTier::SafeFix)
-            && adjudication_matches_candidate(entry, safe_action_candidates)
+            && adjudication_is_in_scope(entry, safe_action_candidates, has_readiness_evidence)
     });
     let review_visible_cleanup = summarize_adjudication(entries, |entry| {
         matches!(
             entry.tier,
             Some(ActionPolicyTier::SafeFix | ActionPolicyTier::ReviewFix)
-        ) && adjudication_matches_candidate(entry, safe_action_candidates)
+        ) && adjudication_is_in_scope(entry, safe_action_candidates, has_readiness_evidence)
     });
     let mut reasons = Vec::new();
     let safe_needs_adjudication = candidate_counts.safe_fix > 0 && safe_fix.fp_rate.is_none();
     let review_needs_adjudication =
         candidate_counts.review_visible_cleanup > 0 && review_visible_cleanup.fp_rate.is_none();
-    let has_readiness_evidence =
-        calibration_adjudication.is_some_and(CalibrationAdjudication::has_readiness_evidence);
     if has_readiness_evidence
         && calibration_adjudication
             .is_some_and(|adjudication| !adjudication.candidate_counts().is_available())
@@ -135,11 +171,7 @@ fn readiness(
     if entries.is_empty()
         || safe_needs_adjudication
         || review_needs_adjudication
-        || corpus_has_unknown_fp_denominator(
-            calibration_adjudication,
-            entries,
-            safe_action_candidates,
-        )
+        || corpus_has_unknown_fp_denominator(calibration_adjudication, entries)
     {
         reasons.push(OracleBridgeCalibrationReason {
             code: OracleBridgeCalibrationReasonCode::FpRateUnknown,
@@ -147,7 +179,11 @@ fn readiness(
             detail: "adjudication denominator is empty or incomplete",
         });
     }
-    if !entries.is_empty() && matched_entries == 0 && candidate_counts.review_visible_cleanup > 0 {
+    if !has_readiness_evidence
+        && !entries.is_empty()
+        && matched_entries == 0
+        && candidate_counts.review_visible_cleanup > 0
+    {
         reasons.push(OracleBridgeCalibrationReason {
             code: OracleBridgeCalibrationReasonCode::AdjudicationCandidateMismatch,
             severity: OracleBridgeCalibrationSeverity::Red,
@@ -237,7 +273,7 @@ fn readiness(
     } else {
         let enough_corpus = calibration_adjudication.is_some_and(enough_corpus);
         let enough_adjudication = calibration_adjudication.is_some_and(|adjudication| {
-            every_corpus_has_enough_adjudication(adjudication, entries, safe_action_candidates)
+            every_corpus_has_enough_adjudication(adjudication, entries)
         });
         if candidate_counts.safe_fix == 0 {
             reasons.push(OracleBridgeCalibrationReason {
@@ -289,12 +325,11 @@ fn enough_corpus(adjudication: &CalibrationAdjudication) -> bool {
 fn every_corpus_has_enough_adjudication(
     adjudication: &CalibrationAdjudication,
     entries: &[CalibrationAdjudicationEntry],
-    safe_action_candidates: &[SafeActionCandidate<'_>],
 ) -> bool {
     if adjudication.corpus().is_empty() {
         return false;
     }
-    let counts = adjudicated_counts_by_corpus(entries, safe_action_candidates);
+    let counts = adjudicated_counts_by_corpus(entries);
     let corpus_total = adjudication.corpus().len();
     let min_adjudicated = adjudication
         .min_adjudicated_per_corpus()
@@ -317,12 +352,11 @@ fn every_corpus_has_enough_adjudication(
 fn corpus_has_unknown_fp_denominator(
     adjudication: Option<&CalibrationAdjudication>,
     entries: &[CalibrationAdjudicationEntry],
-    safe_action_candidates: &[SafeActionCandidate<'_>],
 ) -> bool {
     let Some(adjudication) = adjudication else {
         return false;
     };
-    let denominators = review_visible_denominators_by_corpus(entries, safe_action_candidates);
+    let denominators = review_visible_denominators_by_corpus(entries);
     let corpus_total = adjudication.corpus().len();
     adjudication.corpus().iter().any(|corpus| {
         let Some(name) = corpus.name() else {
@@ -337,15 +371,9 @@ fn corpus_has_unknown_fp_denominator(
     })
 }
 
-fn adjudicated_counts_by_corpus<'a>(
-    entries: &'a [CalibrationAdjudicationEntry],
-    safe_action_candidates: &[SafeActionCandidate<'_>],
-) -> BTreeMap<&'a str, usize> {
+fn adjudicated_counts_by_corpus(entries: &[CalibrationAdjudicationEntry]) -> BTreeMap<&str, usize> {
     let mut counts = BTreeMap::new();
-    for entry in entries
-        .iter()
-        .filter(|entry| adjudication_matches_candidate(entry, safe_action_candidates))
-    {
+    for entry in entries {
         let Some(corpus_name) = entry.corpus_name.as_deref() else {
             continue;
         };
@@ -354,10 +382,9 @@ fn adjudicated_counts_by_corpus<'a>(
     counts
 }
 
-fn review_visible_denominators_by_corpus<'a>(
-    entries: &'a [CalibrationAdjudicationEntry],
-    safe_action_candidates: &[SafeActionCandidate<'_>],
-) -> BTreeMap<&'a str, usize> {
+fn review_visible_denominators_by_corpus(
+    entries: &[CalibrationAdjudicationEntry],
+) -> BTreeMap<&str, usize> {
     let mut counts = BTreeMap::new();
     for entry in entries.iter().filter(|entry| {
         matches!(
@@ -366,7 +393,7 @@ fn review_visible_denominators_by_corpus<'a>(
         ) && matches!(
             entry.verdict,
             CalibrationVerdict::TrueDead | CalibrationVerdict::FalsePositive
-        ) && adjudication_matches_candidate(entry, safe_action_candidates)
+        )
     }) {
         let Some(corpus_name) = entry.corpus_name.as_deref() else {
             continue;
@@ -379,6 +406,7 @@ fn review_visible_denominators_by_corpus<'a>(
 fn matched_adjudication_entries(
     entries: &[CalibrationAdjudicationEntry],
     safe_action_candidates: &[SafeActionCandidate<'_>],
+    has_readiness_evidence: bool,
 ) -> usize {
     entries
         .iter()
@@ -386,9 +414,17 @@ fn matched_adjudication_entries(
             matches!(
                 entry.tier,
                 Some(ActionPolicyTier::SafeFix | ActionPolicyTier::ReviewFix)
-            ) && adjudication_matches_candidate(entry, safe_action_candidates)
+            ) && adjudication_is_in_scope(entry, safe_action_candidates, has_readiness_evidence)
         })
         .count()
+}
+
+fn adjudication_is_in_scope(
+    entry: &CalibrationAdjudicationEntry,
+    safe_action_candidates: &[SafeActionCandidate<'_>],
+    has_readiness_evidence: bool,
+) -> bool {
+    has_readiness_evidence || adjudication_matches_candidate(entry, safe_action_candidates)
 }
 
 fn adjudication_matches_candidate(

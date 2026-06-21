@@ -131,6 +131,25 @@ fn unified_cli_reaches_green_with_complete_calibration_evidence() -> Result<()> 
 }
 
 #[test]
+fn unified_cli_uses_complete_calibration_evidence_independent_of_current_safe_fix_population(
+) -> Result<()> {
+    let artifact = analyze_cargo_check_single_package_with_complete_calibration_evidence(
+        "pub fn demo() -> i32 { 1 }\n",
+    )?;
+
+    assert_eq!(artifact["summary"]["semanticSafeActions"], 0);
+    assert_eq!(
+        artifact["oracleBridge"]["policy"]["calibration"]["candidateCounts"]["safeFix"],
+        2
+    );
+    assert_eq!(
+        artifact["oracleBridge"]["policy"]["calibration"]["readiness"]["gate"],
+        "green"
+    );
+    Ok(())
+}
+
+#[test]
 fn unified_cli_blocks_green_when_schema_round_trip_evidence_is_missing() -> Result<()> {
     let artifact = analyze_cargo_check_single_package_with_missing_schema_round_trip_evidence(
         "pub fn demo() { let mut value = 1; let _ = value; }\n",

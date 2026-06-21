@@ -106,7 +106,11 @@ impl CalibrationCorpusEntry {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CalibrationCandidateCounts {
     available: Option<bool>,
+    safe_fix: Option<usize>,
+    review_fix: Option<usize>,
     review_visible_cleanup: Option<usize>,
+    degraded: Option<usize>,
+    muted: Option<usize>,
     #[serde(default)]
     by_corpus: BTreeMap<String, CalibrationCorpusCandidateCounts>,
 }
@@ -118,8 +122,32 @@ impl CalibrationCandidateCounts {
 
     fn has_readiness_evidence(&self) -> bool {
         self.available.is_some()
+            || self.safe_fix.is_some()
+            || self.review_fix.is_some()
             || self.review_visible_cleanup.is_some()
+            || self.degraded.is_some()
+            || self.muted.is_some()
             || !self.by_corpus.is_empty()
+    }
+
+    pub(crate) fn safe_fix(&self) -> Option<usize> {
+        self.safe_fix
+    }
+
+    pub(crate) fn review_fix(&self) -> Option<usize> {
+        self.review_fix
+    }
+
+    pub(crate) fn review_visible_cleanup(&self) -> Option<usize> {
+        self.review_visible_cleanup
+    }
+
+    pub(crate) fn degraded(&self) -> Option<usize> {
+        self.degraded
+    }
+
+    pub(crate) fn muted(&self) -> Option<usize> {
+        self.muted
     }
 
     pub(crate) fn expected_review_visible_for_corpus(
