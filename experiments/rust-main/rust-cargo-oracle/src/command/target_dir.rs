@@ -35,12 +35,7 @@ impl CargoTargetDir {
 
     fn create_isolated() -> Result<Self> {
         let temp_dir = std::env::temp_dir();
-        cleanup_stale_target_dirs(
-            &temp_dir,
-            ISOLATED_TARGET_DIR_PREFIX,
-            SystemTime::now(),
-            STALE_ISOLATED_TARGET_DIR_MAX_AGE,
-        );
+        cleanup_stale_owned_target_dirs(&temp_dir, SystemTime::now());
         let process_id = std::process::id();
         let started_nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -75,12 +70,7 @@ impl CargoTargetDir {
 
     fn create_reusable(root: &Path, cargo_bin: &str, rustc_bin: &str) -> Result<Self> {
         let temp_dir = std::env::temp_dir();
-        cleanup_stale_target_dirs(
-            &temp_dir,
-            REUSABLE_TARGET_DIR_PREFIX,
-            SystemTime::now(),
-            STALE_REUSABLE_TARGET_DIR_MAX_AGE,
-        );
+        cleanup_stale_owned_target_dirs(&temp_dir, SystemTime::now());
         let path = temp_dir.join(reusable_target_dir_name(root, cargo_bin, rustc_bin));
         fs::create_dir_all(&path)
             .with_context(|| format!("failed to create {}", path.display()))?;
@@ -101,6 +91,21 @@ impl Drop for CargoTargetDir {
             let _ = fs::remove_dir_all(&self.path);
         }
     }
+}
+
+fn cleanup_stale_owned_target_dirs(temp_dir: &Path, now: SystemTime) {
+    cleanup_stale_target_dirs(
+        temp_dir,
+        ISOLATED_TARGET_DIR_PREFIX,
+        now,
+        STALE_ISOLATED_TARGET_DIR_MAX_AGE,
+    );
+    cleanup_stale_target_dirs(
+        temp_dir,
+        REUSABLE_TARGET_DIR_PREFIX,
+        now,
+        STALE_REUSABLE_TARGET_DIR_MAX_AGE,
+    );
 }
 
 fn is_owned_temp_target_dir(path: &Path) -> bool {
@@ -156,8 +161,8 @@ fn reusable_target_dir_name(root: &Path, cargo_bin: &str, rustc_bin: &str) -> St
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_stale_target_dirs, reusable_target_dir_name, ISOLATED_TARGET_DIR_PREFIX,
-        REUSABLE_TARGET_DIR_PREFIX,
+        cleanup_stale_owned_target_dirs, reusable_target_dir_name, ISOLATED_TARGET_DIR_PREFIX,
+        REUSABLE_TARGET_DIR_PREFIX, STALE_REUSABLE_TARGET_DIR_MAX_AGE,
     };
     use anyhow::Result;
     use std::fs;
@@ -171,19 +176,19 @@ mod tests {
         let old_owned = temp
             .path()
             .join(format!("{ISOLATED_TARGET_DIR_PREFIX}-old"));
+        let old_reusable = temp
+            .path()
+            .join(format!("{REUSABLE_TARGET_DIR_PREFIX}-old"));
         let other = temp.path().join("other-tool-target-old");
         fs::create_dir(&old_owned)?;
+        fs::create_dir(&old_reusable)?;
         fs::create_dir(&other)?;
 
-        let future = SystemTime::now() + Duration::from_secs(48 * 60 * 60);
-        cleanup_stale_target_dirs(
-            temp.path(),
-            ISOLATED_TARGET_DIR_PREFIX,
-            future,
-            Duration::from_secs(24 * 60 * 60),
-        );
+        let future = SystemTime::now() + STALE_REUSABLE_TARGET_DIR_MAX_AGE + Duration::from_secs(1);
+        cleanup_stale_owned_target_dirs(temp.path(), future);
 
         assert!(!old_owned.exists());
+        assert!(!old_reusable.exists());
         assert!(other.exists());
         Ok(())
     }
@@ -194,16 +199,16 @@ mod tests {
         let recent_owned = temp
             .path()
             .join(format!("{ISOLATED_TARGET_DIR_PREFIX}-recent"));
+        let recent_reusable = temp
+            .path()
+            .join(format!("{REUSABLE_TARGET_DIR_PREFIX}-recent"));
         fs::create_dir(&recent_owned)?;
+        fs::create_dir(&recent_reusable)?;
 
-        cleanup_stale_target_dirs(
-            temp.path(),
-            ISOLATED_TARGET_DIR_PREFIX,
-            SystemTime::now(),
-            Duration::from_secs(24 * 60 * 60),
-        );
+        cleanup_stale_owned_target_dirs(temp.path(), SystemTime::now());
 
         assert!(recent_owned.exists());
+        assert!(recent_reusable.exists());
         Ok(())
     }
 
