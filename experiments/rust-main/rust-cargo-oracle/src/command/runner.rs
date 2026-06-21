@@ -26,27 +26,10 @@ pub(crate) fn run_cargo_check_for_packages(
     package_names: &[String],
     cargo_target_dir: &Path,
 ) -> Result<CommandOutput> {
-    run_cargo_check_for_packages_with_timeout(
-        root,
-        options,
-        package_names,
-        cargo_target_dir,
-        options.timeout_ms,
-    )
-}
-
-pub(crate) fn run_cargo_check_for_packages_with_timeout(
-    root: &Path,
-    options: &OracleOptions,
-    package_names: &[String],
-    cargo_target_dir: &Path,
-    timeout_ms: u64,
-) -> Result<CommandOutput> {
     run_command(
         &options.cargo_bin,
         &cargo_check_args_for_packages(options.features.as_deref(), package_names),
         root,
-        timeout_ms,
         Some(cargo_target_dir),
     )
 }
@@ -54,7 +37,6 @@ pub(crate) fn run_cargo_check_for_packages_with_timeout(
 pub(crate) fn run_cargo_metadata(
     root: &Path,
     cargo_bin: &str,
-    timeout_ms: u64,
     features: Option<&str>,
     cargo_check_mode: CargoCheckMode,
     cargo_target_dir: &Path,
@@ -69,12 +51,8 @@ pub(crate) fn run_cargo_metadata(
         cargo_bin,
         &cargo_metadata_args(features, dependency_mode),
         root,
-        timeout_ms,
         Some(cargo_target_dir),
     )?;
-    if output.timed_out {
-        bail!("cargo metadata timed out");
-    }
     if output.status != Some(0) {
         bail!("cargo metadata failed: {}", output.stderr.trim());
     }

@@ -1,6 +1,6 @@
 use crate::protocol::{
-    FileHealth, ParserEdition, ParserRequest, RequestFile, Thresholds, PARSER_EDITION,
-    PARSER_EDITION_POLICY, PARSER_EDITION_SOURCE,
+    FileHealth, ParserEdition, ParserRequest, RequestFile, PARSER_EDITION, PARSER_EDITION_POLICY,
+    PARSER_EDITION_SOURCE,
 };
 use crate::usage_error;
 use anyhow::{bail, Result};
@@ -21,13 +21,12 @@ use file::analyze_file;
 
 pub(crate) fn analyze_files(
     files: &[RequestFile],
-    thresholds: &Thresholds,
     parser: &ParserRequest,
 ) -> Result<BTreeMap<String, FileHealth>> {
     let edition = parser_edition(parser)?;
     let analyzed = files
         .par_iter()
-        .map(|file| analyze_file(file, thresholds, edition))
+        .map(|file| analyze_file(file, edition))
         .collect::<Vec<_>>();
 
     let mut out = BTreeMap::new();

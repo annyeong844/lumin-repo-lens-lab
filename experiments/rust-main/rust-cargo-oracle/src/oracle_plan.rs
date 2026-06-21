@@ -11,12 +11,9 @@ pub(crate) fn oracle_plan(
     target_selection: &TargetPackageSelection,
     selected: &[CargoPackage],
     check_output: &CommandOutput,
-    targeted_package_cap: usize,
 ) -> OraclePlan {
     let status = if mode == CargoCheckMode::MetadataOnly || check_output.status.is_none() {
         OraclePlanStatus::NotRun
-    } else if check_output.timed_out {
-        OraclePlanStatus::Timeout
     } else {
         OraclePlanStatus::Ran
     };
@@ -86,7 +83,6 @@ pub(crate) fn oracle_plan(
         omitted_target_path_count,
         candidate_package_count: target_selection.candidate_package_names.len(),
         selected_package_count: selected.len(),
-        targeted_package_cap,
         selected_packages,
         omitted_package_count: target_selection
             .candidate_package_names

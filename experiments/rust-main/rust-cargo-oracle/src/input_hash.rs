@@ -27,7 +27,6 @@ pub(crate) struct AnalysisInputSet<'a> {
     pub(crate) cargo_check_mode: CargoCheckMode,
     pub(crate) cargo_target_dir_mode: CargoTargetDirMode,
     pub(crate) target_paths: &'a [String],
-    pub(crate) targeted_package_cap: usize,
 }
 
 #[derive(Serialize)]
@@ -42,7 +41,6 @@ struct AnalysisInputIdentity<'a> {
     cargo_check_mode: CargoCheckMode,
     cargo_target_dir_mode: CargoTargetDirMode,
     target_paths: &'a [String],
-    targeted_package_cap: usize,
     toolchain: ToolchainIdentity<'a>,
     compilation_environment: &'a BTreeMap<String, String>,
     file_hashes: BTreeMap<String, String>,
@@ -83,7 +81,6 @@ pub(crate) fn analysis_input_set_hash(input: AnalysisInputSet<'_>) -> serde_json
         cargo_check_mode: input.cargo_check_mode,
         cargo_target_dir_mode: input.cargo_target_dir_mode,
         target_paths: input.target_paths,
-        targeted_package_cap: input.targeted_package_cap,
         toolchain: ToolchainIdentity::from(input.toolchain),
         compilation_environment: input.compilation_environment.values(),
         file_hashes: collect_input_file_hashes(

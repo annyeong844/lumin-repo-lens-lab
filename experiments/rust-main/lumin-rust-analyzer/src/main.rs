@@ -64,14 +64,12 @@ fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
         root: root.clone(),
         output: None,
         cargo_bin: options.cargo_bin.clone(),
-        timeout_ms: options.timeout_ms,
         features: options.features.clone(),
         package_name: options.package_name.clone(),
         repo_root: options.repo_root.clone(),
         cargo_check_mode: options.semantic_mode,
         cargo_target_dir_mode: options.cargo_target_dir_mode,
         target_paths,
-        targeted_package_cap: options.targeted_package_cap,
     })?;
     let semantic_ms = semantic_started.elapsed().as_millis();
     let timings = PhaseTimings {

@@ -16,8 +16,6 @@ pub struct Signal {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SignalKind {
-    OversizedFunction,
-    OversizedImpl,
     UnsafeBlock,
     UnwrapCall,
     ExpectCall,

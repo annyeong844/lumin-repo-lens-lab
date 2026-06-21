@@ -2,10 +2,9 @@ use anyhow::{bail, Context, Result};
 use std::fs::{self, OpenOptions};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::environment::TARGET_DIRECTORY_ENV_KEYS;
 
@@ -25,7 +24,6 @@ pub(crate) fn run_command(
     command: &str,
     args: &[String],
     cwd: &Path,
-    timeout_ms: u64,
     cargo_target_dir: Option<&Path>,
 ) -> Result<CommandOutput> {
     let started = Instant::now();
@@ -51,44 +49,15 @@ pub(crate) fn run_command(
             return Err(error).with_context(|| format!("failed to spawn {command}"));
         }
     };
-    let mut timed_out = false;
-    let status: ExitStatus;
-
-    loop {
-        if let Some(exit_status) = child.try_wait()? {
-            status = exit_status;
-            break;
-        }
-        if started.elapsed() >= Duration::from_millis(timeout_ms) {
-            timed_out = true;
-            kill_process_tree(&mut child);
-            status = child.wait()?;
-            break;
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
+    let status = child.wait()?;
 
     Ok(CommandOutput {
         status: status.code(),
         stdout: stdout_capture.read("stdout")?,
         stderr: stderr_capture.read("stderr")?,
-        timed_out,
         elapsed_ms: started.elapsed().as_millis(),
         skip_reason: None,
     })
-}
-
-fn kill_process_tree(child: &mut Child) {
-    #[cfg(windows)]
-    {
-        let pid = child.id().to_string();
-        let _ = Command::new("taskkill")
-            .args(["/PID", &pid, "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    let _ = child.kill();
 }
 
 struct TempOutputCapture {
@@ -159,7 +128,7 @@ mod tests {
         let temp = TempDir::new()?;
         let (command, args) = environment_dump_command();
 
-        let output = run_command(&command, &args, temp.path(), 10_000, Some(temp.path()))?;
+        let output = run_command(&command, &args, temp.path(), Some(temp.path()))?;
 
         assert_eq!(output.status, Some(0));
         assert_env_line(&output.stdout, "CARGO_INCREMENTAL", "0");

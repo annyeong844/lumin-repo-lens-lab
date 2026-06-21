@@ -95,6 +95,14 @@ pub(super) fn assert_safe_action_false_positive_calibrated_bridge(artifact: &Val
     assert_eq!(review_visible_cleanup(readiness)["fpRate"], 1.0);
     assert_readiness_reason(artifact, "safe-fix-fp-threshold", "red")?;
     assert_readiness_reason(artifact, "review-visible-fp-threshold", "red")?;
+    assert_eq!(
+        readiness_reason(artifact, "safe-fix-fp-threshold")?["detail"],
+        "SAFE_FIX FP rate 1"
+    );
+    assert_eq!(
+        readiness_reason(artifact, "review-visible-fp-threshold")?["detail"],
+        "review-visible cleanup FP rate 1"
+    );
     Ok(())
 }
 
@@ -143,6 +151,13 @@ fn readiness_reasons(artifact: &Value) -> Result<&Vec<Value>> {
     readiness(artifact)["reasons"]
         .as_array()
         .context("calibration readiness reasons")
+}
+
+fn readiness_reason<'a>(artifact: &'a Value, code: &str) -> Result<&'a Value> {
+    readiness_reasons(artifact)?
+        .iter()
+        .find(|reason| reason["code"] == code)
+        .with_context(|| format!("missing calibration readiness reason {code}"))
 }
 
 fn assert_readiness_reason(artifact: &Value, code: &str, severity: &str) -> Result<()> {

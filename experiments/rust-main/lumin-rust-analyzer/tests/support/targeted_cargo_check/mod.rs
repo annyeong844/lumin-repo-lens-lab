@@ -26,16 +26,8 @@ pub fn assert_muted_syntax_skip(artifact: &Value) -> Result<()> {
     muted_syntax::assert_skip(artifact)
 }
 
-pub fn assert_broad_scope_capped_run(artifact: &Value) -> Result<()> {
-    broad_scope::assert_capped_run(artifact)
-}
-
-pub fn assert_broad_scope_custom_package_cap_run(
-    artifact: &Value,
-    targeted_package_cap: usize,
-    package_count: usize,
-) -> Result<()> {
-    broad_scope::assert_custom_package_cap_run(artifact, targeted_package_cap, package_count)
+pub fn assert_broad_scope_uncapped_run(artifact: &Value) -> Result<()> {
+    broad_scope::assert_uncapped_run(artifact)
 }
 
 pub fn assert_style_signal_skip(artifact: &Value) -> Result<()> {

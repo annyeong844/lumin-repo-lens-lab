@@ -162,7 +162,6 @@ fn signal_example_priority(kind: SignalKind) -> usize {
         SignalKind::PanicMacro | SignalKind::TodoMacro | SignalKind::UnimplementedMacro => 0,
         SignalKind::UnsafeBlock => 1,
         SignalKind::UnwrapCall | SignalKind::ExpectCall => 2,
-        SignalKind::OversizedFunction | SignalKind::OversizedImpl => 3,
-        SignalKind::CloneCall => 4,
+        SignalKind::CloneCall => 3,
     }
 }

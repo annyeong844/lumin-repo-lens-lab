@@ -221,13 +221,13 @@ impl<'a> ProductPrimarySpanProjection<'a> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct SafeActionCandidate<'a> {
+pub(crate) struct CleanupCandidate<'a> {
     pub(crate) file: Cow<'a, str>,
     pub(crate) diagnostic_code: Option<&'a str>,
     pub(crate) line_start: Option<i64>,
 }
 
-impl<'a> SafeActionCandidate<'a> {
+impl<'a> CleanupCandidate<'a> {
     pub(crate) fn new(
         file: &'a str,
         diagnostic_code: Option<&'a str>,

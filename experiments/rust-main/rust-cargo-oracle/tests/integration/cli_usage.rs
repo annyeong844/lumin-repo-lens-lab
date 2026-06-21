@@ -107,26 +107,6 @@ fn cli_invalid_cargo_target_dir_mode_exits_2_before_writing_artifact() -> Result
 }
 
 #[test]
-fn cli_invalid_timeout_exits_2_before_writing_artifact() -> Result<()> {
-    let temp = TempDir::new()?;
-    let output_path = temp.path().join("semantic-health.json");
-
-    let output = oracle_command()
-        .arg("--root")
-        .arg(temp.path())
-        .arg("--output")
-        .arg(&output_path)
-        .arg("--timeout-ms")
-        .arg("soon")
-        .output()
-        .context("run rust cargo oracle")?;
-
-    assert_usage_error(&output, "invalid --timeout-ms value: soon");
-    assert!(!output_path.exists());
-    Ok(())
-}
-
-#[test]
 fn cli_default_cargo_target_dir_mode_is_isolated_temp_without_repo_target() -> Result<()> {
     let temp = TempDir::new()?;
     let root = temp.path().join("workspace");
@@ -177,26 +157,6 @@ fn cli_default_cargo_target_dir_mode_is_isolated_temp_without_repo_target() -> R
         "isolated cargo target directory should be removed after CLI exit: {}",
         target_dir.display()
     );
-    Ok(())
-}
-
-#[test]
-fn cli_invalid_targeted_package_cap_exits_2_before_writing_artifact() -> Result<()> {
-    let temp = TempDir::new()?;
-    let output_path = temp.path().join("semantic-health.json");
-
-    let output = oracle_command()
-        .arg("--root")
-        .arg(temp.path())
-        .arg("--output")
-        .arg(&output_path)
-        .arg("--targeted-package-cap")
-        .arg("0")
-        .output()
-        .context("run rust cargo oracle")?;
-
-    assert_usage_error(&output, "--targeted-package-cap must be greater than zero");
-    assert!(!output_path.exists());
     Ok(())
 }
 

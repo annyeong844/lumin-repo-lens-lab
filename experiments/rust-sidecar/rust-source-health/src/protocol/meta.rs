@@ -54,15 +54,7 @@ pub struct ParserMeta {
 #[serde(rename_all = "camelCase")]
 pub struct PolicyMeta {
     pub version: String,
-    pub thresholds: Thresholds,
     pub signal_policy: SignalPolicyMeta,
-}
-
-#[derive(Debug, Serialize, Clone, Copy)]
-#[serde(rename_all = "camelCase")]
-pub struct Thresholds {
-    pub max_function_lines: usize,
-    pub max_impl_lines: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

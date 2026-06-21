@@ -15,7 +15,6 @@ pub struct OraclePlan {
     pub omitted_target_path_count: usize,
     pub candidate_package_count: usize,
     pub selected_package_count: usize,
-    pub targeted_package_cap: usize,
     pub selected_packages: Vec<OraclePlanSelectedPackage>,
     pub omitted_package_count: usize,
     pub omitted_package_examples: Vec<String>,

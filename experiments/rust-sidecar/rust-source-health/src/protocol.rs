@@ -20,7 +20,6 @@ pub use location::Location;
 pub use meta::{
     InputMeta, ParserMeta, PolicyMeta, ResponseMeta, RuntimeMeta, SidecarMeta, SignalPolicyMeta,
     SkippedFile, SkippedFileReason, SourceHealthLimit, SourceHealthMode, SourceHealthProducer,
-    Thresholds,
 };
 pub use parse::{ParseError, ParseStatus};
 pub use parser::{ParserEdition, ParserEditionPolicy, ParserEditionSource, ParserKind};

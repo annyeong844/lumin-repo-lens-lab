@@ -63,6 +63,6 @@ pub(crate) fn action_policy<'a>(
             &finding_actions,
             ACTION_SAMPLE_LIMIT,
         ),
-        semantic_safe_action_candidates: semantic::safe_action_candidates(&finding_actions),
+        semantic_cleanup_candidates: semantic::cleanup_candidates(&finding_actions),
     }
 }

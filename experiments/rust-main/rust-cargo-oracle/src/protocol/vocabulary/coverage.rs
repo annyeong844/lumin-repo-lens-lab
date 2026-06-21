@@ -91,6 +91,7 @@ pub enum CoverageUnavailableReason {
     MissingBuildFinishedEvent,
     BuildFinishedSuccessWasFalse,
     BuildFinishedSuccessWasNotTrue,
+    CargoCheckExitedNonZero(i32),
     NonUserCodePrimaryErrorDiagnosticEncountered,
     CargoMetadataUnavailable(String),
     CargoJsonStreamUnavailableOrIncomplete,
@@ -121,6 +122,9 @@ impl CoverageUnavailableReason {
             Self::BuildFinishedSuccessWasNotTrue => {
                 Cow::Borrowed("build-finished success was not true")
             }
+            Self::CargoCheckExitedNonZero(status) => {
+                Cow::Owned(format!("cargo check exited with status {status}"))
+            }
             Self::NonUserCodePrimaryErrorDiagnosticEncountered => {
                 Cow::Borrowed("non-user-code primary error diagnostic encountered")
             }
@@ -141,7 +145,6 @@ impl CoverageUnavailableReason {
 #[serde(rename_all = "kebab-case")]
 pub enum StreamParseStatus {
     Complete,
-    Timeout,
     NoJsonEvents,
     InvalidJson,
     NotRun,

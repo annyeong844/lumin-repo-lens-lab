@@ -3,9 +3,7 @@ use anyhow::Result;
 use crate::support::scenarios::single_package::{
     analyze_targeted_single_package, analyze_targeted_single_package_with_integration,
 };
-use crate::support::scenarios::targeted_broad_workspace::{
-    analyze_targeted_broad_workspace, analyze_targeted_broad_workspace_with_cap,
-};
+use crate::support::scenarios::targeted_broad_workspace::analyze_targeted_broad_workspace;
 use crate::support::scenarios::targeted_two_package_workspace::analyze_targeted_two_package_workspace;
 use crate::support::targeted_cargo_check;
 
@@ -39,16 +37,9 @@ fn unified_cli_targeted_cargo_check_skips_when_only_muted_syntax_exists() -> Res
 }
 
 #[test]
-fn unified_cli_targeted_cargo_check_caps_broad_package_scope_without_disabling_oracle() -> Result<()>
-{
+fn unified_cli_targeted_cargo_check_runs_all_broad_package_scope_by_default() -> Result<()> {
     let artifact = analyze_targeted_broad_workspace(17)?;
-    targeted_cargo_check::assert_broad_scope_capped_run(&artifact)
-}
-
-#[test]
-fn unified_cli_targeted_cargo_check_honors_package_cap_without_disabling_oracle() -> Result<()> {
-    let artifact = analyze_targeted_broad_workspace_with_cap(17, 3)?;
-    targeted_cargo_check::assert_broad_scope_custom_package_cap_run(&artifact, 3, 17)
+    targeted_cargo_check::assert_broad_scope_uncapped_run(&artifact)
 }
 
 #[test]

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use lumin_rust_source_health::protocol::AstOpaqueMuteReason;
@@ -70,6 +71,7 @@ pub(super) struct OracleBridgeCalibrationProjection {
     pub(super) reason: OracleBridgeCalibrationStatusReason,
     pub(super) candidate_counts: OracleBridgeCalibrationCandidateCounts,
     pub(super) readiness: OracleBridgeCalibrationReadiness,
+    pub(super) readiness_policy: OracleBridgeCalibrationReadinessPolicy,
     pub(super) required_evidence: [OracleBridgeCalibrationRequiredEvidence; 3],
     pub(super) js_ts_precedent: OracleBridgeCalibrationPrecedent,
 }
@@ -113,6 +115,17 @@ pub(super) struct OracleBridgeCalibrationReadiness {
 }
 
 #[derive(Debug, Copy, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct OracleBridgeCalibrationReadinessPolicy {
+    pub(super) source: OracleBridgeCalibrationPrecedentRef,
+    pub(super) safe_fix_fp_red_threshold: f64,
+    pub(super) review_visible_fp_red_threshold: f64,
+    pub(super) review_visible_fp_green_threshold: f64,
+    pub(super) min_non_trivial_corpus: usize,
+    pub(super) default_min_adjudicated_per_corpus: usize,
+}
+
+#[derive(Debug, Copy, Clone, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum OracleBridgeCalibrationGate {
     Red,
@@ -120,12 +133,12 @@ pub(super) enum OracleBridgeCalibrationGate {
     Green,
 }
 
-#[derive(Debug, Copy, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct OracleBridgeCalibrationReason {
     pub(super) code: OracleBridgeCalibrationReasonCode,
     pub(super) severity: OracleBridgeCalibrationSeverity,
-    pub(super) detail: &'static str,
+    pub(super) detail: Cow<'static, str>,
 }
 
 #[derive(Debug, Copy, Clone, Serialize)]
@@ -168,6 +181,7 @@ pub(super) struct OracleBridgeCalibrationAdjudicationStats {
 pub(super) struct OracleBridgeCalibrationPrecedent {
     pub(super) measurement_artifact: OracleBridgeCalibrationPrecedentRef,
     pub(super) measurement_owner: OracleBridgeCalibrationPrecedentRef,
+    pub(super) readiness_gate_owner: OracleBridgeCalibrationPrecedentRef,
     pub(super) calibration_corpus_registry: OracleBridgeCalibrationPrecedentRef,
     pub(super) threshold_policy_metadata: OracleBridgeCalibrationPrecedentRef,
 }
@@ -178,6 +192,8 @@ pub(super) enum OracleBridgeCalibrationPrecedentRef {
     MeasurementArtifact,
     #[serde(rename = "_lib/p6-measurement.mjs")]
     MeasurementOwner,
+    #[serde(rename = "_lib/p6-measurement.mjs::computeReadiness")]
+    ReadinessGateOwner,
     #[serde(rename = "_lib/calibration-corpora.mjs")]
     CalibrationCorpusRegistry,
     #[serde(rename = "_lib/threshold-policies.mjs")]

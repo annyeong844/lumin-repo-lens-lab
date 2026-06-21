@@ -19,7 +19,6 @@ use self::check::run_cargo_check_phase;
 pub fn run_oracle(options: OracleOptions) -> Result<SemanticHealthArtifact> {
     let root = canonical_existing_dir_usage(&options.root, "--root")?;
     validate_package_name(options.package_name.as_deref())?;
-    validate_targeted_package_cap(options.targeted_package_cap)?;
 
     let registry_path = options
         .repo_root
@@ -34,7 +33,7 @@ pub fn run_oracle(options: OracleOptions) -> Result<SemanticHealthArtifact> {
     let registry_hash = sha256_file(&registry_path)
         .with_context(|| format!("failed to hash {}", registry_path.display()))?;
 
-    let toolchain = collect_toolchain(&root, &options.cargo_bin, options.timeout_ms);
+    let toolchain = collect_toolchain(&root, &options.cargo_bin);
     let compilation_environment = CompilationEnvironment::from_process();
     let cargo_target_dir = CargoTargetDir::create(
         options.cargo_target_dir_mode,
@@ -46,7 +45,6 @@ pub fn run_oracle(options: OracleOptions) -> Result<SemanticHealthArtifact> {
     let metadata_result = run_cargo_metadata(
         &root,
         &options.cargo_bin,
-        options.timeout_ms,
         options.features.as_deref(),
         options.cargo_check_mode,
         cargo_target_dir.path(),
@@ -62,7 +60,6 @@ pub fn run_oracle(options: OracleOptions) -> Result<SemanticHealthArtifact> {
         metadata.as_ref(),
         &options.target_paths,
         options.package_name.as_deref(),
-        options.targeted_package_cap,
     );
     let check_phase = run_cargo_check_phase(
         &root,
@@ -76,7 +73,6 @@ pub fn run_oracle(options: OracleOptions) -> Result<SemanticHealthArtifact> {
         &target_selection,
         &check_phase.selected_packages,
         &check_phase.output,
-        options.targeted_package_cap,
     );
     let input_hash = analysis_input_set_hash(AnalysisInputSet {
         root: &root,
@@ -91,7 +87,6 @@ pub fn run_oracle(options: OracleOptions) -> Result<SemanticHealthArtifact> {
         cargo_check_mode: options.cargo_check_mode,
         cargo_target_dir_mode: options.cargo_target_dir_mode,
         target_paths: &target_selection.target_paths,
-        targeted_package_cap: options.targeted_package_cap,
     })
     .context("failed to serialize analysis input identity")?;
 
@@ -160,13 +155,4 @@ fn validate_package_exists(
     Err(usage_error(format!(
         "unknown --package {package_name}: no matching package name or package ID in cargo metadata"
     )))
-}
-
-fn validate_targeted_package_cap(value: usize) -> Result<()> {
-    if value == 0 {
-        return Err(usage_error(
-            "--targeted-package-cap must be greater than zero",
-        ));
-    }
-    Ok(())
 }

@@ -7,17 +7,22 @@ use serde::Deserialize;
 
 use crate::policy::ActionPolicyTier;
 
+mod input;
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CalibrationAdjudication {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "input::deserialize_adjudication_entries")]
     entries: Vec<CalibrationAdjudicationEntry>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "input::deserialize_corpus_entries")]
     corpus: Vec<CalibrationCorpusEntry>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "input::deserialize_candidate_counts")]
     candidate_counts: CalibrationCandidateCounts,
+    #[serde(default, deserialize_with = "input::deserialize_schema_round_trip")]
     schema_round_trip: Option<CalibrationSchemaRoundTrip>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_usize")]
     unresolved_high_findings: Option<usize>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_usize")]
     min_adjudicated_per_corpus: Option<usize>,
 }
 
@@ -58,23 +63,34 @@ impl CalibrationAdjudication {
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CalibrationAdjudicationEntry {
+    #[serde(default, deserialize_with = "input::deserialize_optional_string")]
     pub(crate) corpus_name: Option<String>,
+    #[serde(default, deserialize_with = "input::deserialize_action_policy_tier")]
     pub(crate) tier: Option<ActionPolicyTier>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "input::deserialize_calibration_verdict")]
     pub(crate) verdict: CalibrationVerdict,
+    #[serde(default, deserialize_with = "input::deserialize_optional_string")]
     pub(crate) file: Option<String>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_string")]
     pub(crate) diagnostic_code: Option<String>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_i64")]
     pub(crate) line_start: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CalibrationCorpusEntry {
+    #[serde(default, deserialize_with = "input::deserialize_optional_string")]
     name: Option<String>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_string")]
     commit: Option<String>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_string")]
     snapshot_id: Option<String>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_string")]
     content_hash: Option<String>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_bool")]
     worktree_dirty: Option<bool>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_string")]
     loc_bucket: Option<String>,
 }
 
@@ -83,8 +99,15 @@ impl CalibrationCorpusEntry {
         self.name.as_deref()
     }
 
+    pub(crate) fn display_name(&self) -> &str {
+        self.name
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .unwrap_or("(unnamed)")
+    }
+
     pub(crate) fn has_immutable_identity(&self) -> bool {
-        self.commit.is_some() || self.snapshot_id.is_some()
+        has_text(&self.commit) || has_text(&self.snapshot_id)
     }
 
     pub(crate) fn dirty_state_known(&self) -> bool {
@@ -93,8 +116,8 @@ impl CalibrationCorpusEntry {
 
     pub(crate) fn dirty_state_captured(&self) -> bool {
         self.worktree_dirty != Some(true)
-            || self.snapshot_id.is_some()
-            || self.content_hash.is_some()
+            || has_text(&self.snapshot_id)
+            || has_text(&self.content_hash)
     }
 
     pub(crate) fn is_non_trivial(&self) -> bool {
@@ -102,16 +125,32 @@ impl CalibrationCorpusEntry {
     }
 }
 
+fn has_text(value: &Option<String>) -> bool {
+    value.as_deref().is_some_and(|value| !value.is_empty())
+}
+
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CalibrationCandidateCounts {
+    #[serde(
+        default,
+        deserialize_with = "input::deserialize_optional_js_truthy_bool"
+    )]
     available: Option<bool>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_usize")]
     safe_fix: Option<usize>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_usize")]
     review_fix: Option<usize>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_usize")]
     review_visible_cleanup: Option<usize>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_usize")]
     degraded: Option<usize>,
+    #[serde(default, deserialize_with = "input::deserialize_optional_usize")]
     muted: Option<usize>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "input::deserialize_candidate_counts_by_corpus"
+    )]
     by_corpus: BTreeMap<String, CalibrationCorpusCandidateCounts>,
 }
 
@@ -150,13 +189,13 @@ impl CalibrationCandidateCounts {
         self.muted
     }
 
-    pub(crate) fn expected_review_visible_for_corpus(
+    pub(crate) fn expected_review_visible_for_optional_corpus(
         &self,
-        corpus_name: &str,
+        corpus_name: Option<&str>,
         corpus_total: usize,
     ) -> Option<usize> {
-        self.by_corpus
-            .get(corpus_name)
+        corpus_name
+            .and_then(|name| self.by_corpus.get(name))
             .and_then(CalibrationCorpusCandidateCounts::review_visible_cleanup)
             .or_else(|| {
                 (corpus_total == 1)
@@ -169,6 +208,7 @@ impl CalibrationCandidateCounts {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CalibrationCorpusCandidateCounts {
+    #[serde(default, deserialize_with = "input::deserialize_optional_usize")]
     review_visible_cleanup: Option<usize>,
 }
 
@@ -181,8 +221,12 @@ impl CalibrationCorpusCandidateCounts {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CalibrationSchemaRoundTrip {
+    #[serde(
+        default,
+        deserialize_with = "input::deserialize_js_truthy_bool_or_false"
+    )]
     attempted: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "input::deserialize_schema_drift_bugs")]
     known_schema_drift_bugs: Vec<CalibrationSchemaDriftBug>,
 }
 
@@ -209,46 +253,18 @@ pub(crate) enum CalibrationVerdict {
     NotApplicable,
 }
 
-enum CalibrationAdjudicationInput {
-    Entries(Vec<CalibrationAdjudicationEntry>),
-    Object(CalibrationAdjudication),
-}
-
 pub(crate) fn load_adjudication(path: Option<&Path>) -> Result<Option<CalibrationAdjudication>> {
     let Some(path) = path else {
         return Ok(None);
     };
     let bytes = fs::read(path)
         .with_context(|| format!("failed to read calibration adjudication {}", path.display()))?;
-    let input = CalibrationAdjudicationInput::from_slice(&bytes).with_context(|| {
-        format!(
-            "failed to parse calibration adjudication {}",
-            path.display()
-        )
-    })?;
-    Ok(Some(input.into_adjudication()))
-}
-
-impl CalibrationAdjudicationInput {
-    fn from_slice(bytes: &[u8]) -> serde_json::Result<Self> {
-        if bytes
-            .iter()
-            .copied()
-            .find(|byte| !byte.is_ascii_whitespace())
-            == Some(b'[')
-        {
-            return serde_json::from_slice(bytes).map(Self::Entries);
-        }
-        serde_json::from_slice(bytes).map(Self::Object)
-    }
-
-    fn into_adjudication(self) -> CalibrationAdjudication {
-        match self {
-            Self::Entries(entries) => CalibrationAdjudication {
-                entries,
-                ..CalibrationAdjudication::default()
-            },
-            Self::Object(adjudication) => adjudication,
-        }
-    }
+    input::parse_adjudication(&bytes)
+        .with_context(|| {
+            format!(
+                "failed to parse calibration adjudication {}",
+                path.display()
+            )
+        })
+        .map(Some)
 }

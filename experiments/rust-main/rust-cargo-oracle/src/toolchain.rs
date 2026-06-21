@@ -12,23 +12,16 @@ pub(crate) struct Toolchain {
     pub(crate) host: Option<String>,
 }
 
-pub(crate) fn collect_toolchain(root: &Path, cargo_bin: &str, timeout_ms: u64) -> Toolchain {
-    let cargo_version = run_command(
-        cargo_bin,
-        &["--version".to_string()],
-        root,
-        timeout_ms,
-        None,
-    )
-    .ok()
-    .filter(|output| output.status == Some(0))
-    .map(|output| output.stdout.trim().to_string());
+pub(crate) fn collect_toolchain(root: &Path, cargo_bin: &str) -> Toolchain {
+    let cargo_version = run_command(cargo_bin, &["--version".to_string()], root, None)
+        .ok()
+        .filter(|output| output.status == Some(0))
+        .map(|output| output.stdout.trim().to_string());
     let (rustc_bin, rustc_source) = rustc_command_from_env();
-    let rustc_version_verbose =
-        run_command(&rustc_bin, &["-vV".to_string()], root, timeout_ms, None)
-            .ok()
-            .filter(|output| output.status == Some(0))
-            .map(|output| output.stdout.trim().to_string());
+    let rustc_version_verbose = run_command(&rustc_bin, &["-vV".to_string()], root, None)
+        .ok()
+        .filter(|output| output.status == Some(0))
+        .map(|output| output.stdout.trim().to_string());
     let host = rustc_version_verbose
         .as_deref()
         .and_then(|text| text.lines().find_map(|line| line.strip_prefix("host: ")))

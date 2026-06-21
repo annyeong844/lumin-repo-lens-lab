@@ -24,7 +24,6 @@ pub(in crate::product_artifact) struct ProductOraclePlanProjection<'a> {
     omitted_target_path_count: usize,
     candidate_package_count: usize,
     selected_package_count: usize,
-    targeted_package_cap: usize,
     selected_package_examples: Vec<ProductOraclePlanSelectedPackageProjection<'a>>,
     omitted_package_count: usize,
     omitted_package_examples: &'a [String],
@@ -45,7 +44,6 @@ impl<'a> ProductOraclePlanProjection<'a> {
             omitted_target_path_count: plan.omitted_target_path_count,
             candidate_package_count: plan.candidate_package_count,
             selected_package_count: plan.selected_package_count,
-            targeted_package_cap: plan.targeted_package_cap,
             selected_package_examples: plan
                 .selected_packages
                 .iter()

@@ -10,7 +10,5 @@ pub(crate) use output::{
     CommandOutput, CommandSkipReason,
 };
 pub(crate) use process::run_command;
-pub(crate) use runner::{
-    run_cargo_check, run_cargo_check_for_packages_with_timeout, run_cargo_metadata,
-};
+pub(crate) use runner::{run_cargo_check, run_cargo_check_for_packages, run_cargo_metadata};
 pub(crate) use target_dir::CargoTargetDir;

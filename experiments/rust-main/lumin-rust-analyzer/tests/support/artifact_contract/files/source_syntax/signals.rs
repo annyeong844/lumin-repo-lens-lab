@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 pub(super) fn assert_review_signal_projection(merged_file: &Value) {
+    assert!(merged_file["syntax"].get("signals").is_none());
     assert_eq!(
         merged_file["syntax"]["reviewSignals"][0]["kind"],
         "unwrap-call"

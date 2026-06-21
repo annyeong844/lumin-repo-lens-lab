@@ -24,7 +24,6 @@ pub(crate) use lumin_rust_common::usage_error;
 pub use options::{parse_args, OracleOptions};
 pub use protocol::{CargoCheckMode, CargoTargetDirMode};
 
-pub const DEFAULT_TARGETED_CARGO_CHECK_PACKAGES: usize = 16;
 pub const SEMANTIC_HEALTH_SCHEMA_VERSION: &str = "semantic-health.v1";
 pub const EVIDENCE_POLICY_VERSION: &str = "evidence-ladder.v1";
 pub const ORACLE_REGISTRY_VERSION: &str = "oracle-registry.v1";
