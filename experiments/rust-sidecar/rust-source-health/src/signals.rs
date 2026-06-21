@@ -1,10 +1,11 @@
 use crate::locations::LineIndex;
 use crate::protocol::{
-    Claim, ParseError, Severity, Signal, SignalKind, SignalMuteReason, SignalVisibility,
+    Claim, ParseError, PathClassification, Severity, Signal, SignalKind, SignalMuteReason,
+    SignalVisibility,
 };
 use ra_ap_syntax::TextRange;
 
-pub fn review_signal(kind: SignalKind, line_index: &LineIndex, range: TextRange) -> Signal {
+pub(crate) fn review_signal(kind: SignalKind, line_index: &LineIndex, range: TextRange) -> Signal {
     Signal {
         kind,
         severity: Severity::Review,
@@ -15,15 +16,15 @@ pub fn review_signal(kind: SignalKind, line_index: &LineIndex, range: TextRange)
     }
 }
 
-pub fn mute_signal(signal: &mut Signal, reason: SignalMuteReason) {
+pub(crate) fn mute_signal(signal: &mut Signal, reason: SignalMuteReason) {
     signal.visibility = SignalVisibility::Muted;
     signal.mute_reason = Some(reason);
 }
 
-pub fn apply_signal_policy(signals: &mut [Signal], classifications: &[String]) {
-    let mute_reason = if classifications.iter().any(|value| value == "generated") {
+pub(crate) fn apply_signal_policy(signals: &mut [Signal], classifications: &[PathClassification]) {
+    let mute_reason = if classifications.contains(&PathClassification::Generated) {
         Some(SignalMuteReason::GeneratedPath)
-    } else if classifications.iter().any(|value| value == "test") {
+    } else if classifications.contains(&PathClassification::Test) {
         Some(SignalMuteReason::TestPath)
     } else {
         None
@@ -36,7 +37,11 @@ pub fn apply_signal_policy(signals: &mut [Signal], classifications: &[String]) {
     }
 }
 
-pub fn syntax_parse_error(message: String, line_index: &LineIndex, range: TextRange) -> ParseError {
+pub(crate) fn syntax_parse_error(
+    message: String,
+    line_index: &LineIndex,
+    range: TextRange,
+) -> ParseError {
     ParseError {
         message,
         claim: Claim::SyntaxOnly,
@@ -50,6 +55,6 @@ fn location_for_range(line_index: &LineIndex, range: TextRange) -> crate::protoc
     line_index.location(byte_start, byte_end)
 }
 
-pub fn text_size_to_usize(value: ra_ap_syntax::TextSize) -> usize {
+pub(crate) fn text_size_to_usize(value: ra_ap_syntax::TextSize) -> usize {
     u32::from(value) as usize
 }

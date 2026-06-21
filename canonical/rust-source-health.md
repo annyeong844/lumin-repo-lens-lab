@@ -28,7 +28,11 @@ It does not change the JS/TS topology scanner, M2-M5 Rust topology sidecar,
 pre-write gate, SARIF output, markdown audit output, or stable package defaults.
 Rust source health is now a syntax phase inside the unified Rust analyzer
 surface. Its compatibility CLI may still emit `rust-health.json`, but the
-product artifact is the unified Rust analyzer artifact.
+product artifact is the unified Rust analyzer artifact. The compatibility CLI
+defaults to a compact artifact that keeps summary, skipped-file evidence,
+signals, parse status, file facts, and per-file AST counts while omitting raw
+AST fact arrays. Full raw AST facts are diagnostic evidence and require
+`--artifact-profile full`.
 
 ## 3. Naming Lowering
 
@@ -76,15 +80,15 @@ The protocol owns its names. The parser is an implementation detail.
 
 | File | Owns | Must not own |
 |---|---|---|
-| `src/protocol.rs` | Request/response structs, schema constants, project-owned enums/strings | parser traversal, signal construction logic |
+| `src/protocol.rs` / `src/protocol/*.rs` | Request/response structs, schema constants, project-owned enums/strings | parser traversal, signal construction logic |
 | `src/locations.rs` | `LineIndex`, byte-to-line/column conversion | signal kinds, summary counts |
 | `src/signals.rs` | `review_signal(...)`, `syntax_parse_error(...)`, signal visibility policy application | parser traversal, summary counts |
 | `src/summary.rs` | `summarize(...)` for `BTreeMap<String, FileHealth>` | signal construction, path policy |
 | `src/parallel.rs` | local Rayon `ThreadPool`, `RuntimeConfig`, stack/thread policy | AST storage, file analysis |
-| `src/analyzer.rs` | syntax traversal and file-level analysis | protocol schema changes, final artifact metadata |
-| `src/lib.rs` | library phase entrypoint, stdin compatibility dispatch, request validation, pool install, exit behavior | parser traversal |
+| `src/analyzer.rs` / `src/analyzer/*.rs` | syntax traversal, file-level analysis, AST fact extraction, AST opaque surface detection | protocol schema changes, final artifact metadata |
+| `src/lib.rs` / `src/driver/*.rs` | library phase entrypoint, stdin compatibility dispatch, request validation, pool install, exit behavior | parser traversal |
 | `src/main.rs` | thin compatibility CLI entrypoint that delegates to `src/lib.rs` | parser traversal, request validation |
-| `src/wrapper.rs` | Rust-main file discovery, path policy, hashing, UTF-8 decode, skipped-file evidence, final metadata, artifact write | parser traversal, signal construction |
+| `src/wrapper.rs` / `src/wrapper/*.rs` | Rust-main file discovery, path policy, hashing, UTF-8 decode, skipped-file evidence, final metadata, artifact write | parser traversal, signal construction |
 
 No extra Rust module may create `Signal`, `ParseError`, `Summary`, `Location`,
 or runtime pool settings unless this table is amended first.
@@ -107,14 +111,66 @@ forbidden unless this canonical file is amended with a migration reason.
 | signal visibility policy | `apply_signal_policy(signals, classifications)` | `src/signals.rs` |
 | parse error construction | `syntax_parse_error(message, line_index, range)` | `src/signals.rs` |
 | location conversion | `LineIndex::location(byte_start, byte_end)` | `src/locations.rs` |
+| AST fact range conversion | `ast_location(line_index, range)` | `src/analyzer.rs` |
+| file syntax collection | `collect_file_syntax(...)` | `src/analyzer/syntax.rs` |
+| single-pass syntax node dispatch | `collect_syntax_node(...)` | `src/analyzer/syntax/visit.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
 | unsafe block syntax check | `is_unsafe_block_expr(node)` | `src/analyzer.rs` |
-| method call signal scan | `collect_method_call_signals(...)` | `src/analyzer.rs` |
-| macro call signal scan | `collect_macro_call_signals(...)` | `src/analyzer.rs` |
+| method call signal scan | `collect_method_call_signal(...)` | `src/analyzer.rs` |
+| macro call signal scan | `collect_macro_call_signal(...)` | `src/analyzer.rs` |
 
-`review_signal` and `syntax_parse_error` are the only production helpers that
-convert `TextRange` into `Location`.
+`review_signal`, `syntax_parse_error`, and `ast_location` are the only
+production helpers that convert `TextRange` into `Location`.
+
+## 7.1 AST Fact Shape
+
+Rust source health emits a project-owned `files[*].ast` object. This is the
+Rust analogue of the JS/TS extractor shape: cheap syntax observations first,
+then semantic oracles only where the syntax surface is opaque.
+
+Canonical JSON fields:
+
+- `ast.definitions[]`: named Rust item definitions with `kind`, `name`,
+  `visibility`, and `location`.
+- `ast.useTrees[]`: `use` tree observations with raw tree text, optional path,
+  glob status, visibility, and `location`.
+- `ast.pathRefs[]`: qualified expression-position path references with raw path
+  text, terminal name, and `location`. Local variable refs and constructor-like
+  single-segment paths are not emitted as raw path facts.
+- `ast.methodCallCounts`: per-file method-name counts for all observed method
+  call sites.
+- `ast.methodCalls[]`: review-relevant method call observations with method
+  name, receiver text, and `location`. This is not an every-call-site dump.
+- `ast.macroCalls[]`: macro call observations with path/name and `location`.
+- `ast.cfgGates[]`: `cfg` / `cfg_attr` attributes with normalized expression
+  text and `location`.
+- `ast.opaqueSurfaces[]`: syntax surfaces where AST-only analysis must not
+  pretend semantic certainty. Current kinds are `macro-expansion` and
+  `cfg-gate`. Each surface carries `visibility` and optional `muteReason`,
+  using the same practical review/muted discipline as Rust syntax signals.
+
+AST opaque surfaces are evidence, not findings. They are the escalation map for
+the unified analyzer: Cargo/rustc oracle evidence may clear or qualify them, but
+the syntax phase must preserve them raw.
+
+Opaque surface muting is not deletion. Common, low-review-value syntax opacity
+is still auditable as `muted`: test/generated paths, direct test-only AST
+contexts, assertion macros, collection literal macros, data literal macros,
+formatting macros, IO formatting macros, logging macros, built-in derive
+macros, and known data/schema derive macros such as `Serialize`, `Deserialize`,
+`JsonSchema`, `TS`, `ExperimentalApi`, and qualified `prost::Message`. Risky or
+unknown macro expansion remains `review`, including `panic!`, `todo!`,
+`unimplemented!`, custom bang macros, unknown derive macros, and attribute/proc
+macros. Test attribute macros such as `tokio::test` are test context and mute
+the attribute plus syntax inside the function as `test-attribute`. Inert
+compiler/lint/tool attributes such as `allow`, `warn`, `expect`, and
+`rustfmt::skip` are not opaque expansion surfaces. Known derive helper
+attributes such as `serde`, `schemars`, `ts`, `prost`, `clap`, `arg`,
+`command`, and `thiserror` helpers like `error`, `from`, and `source` are not
+standalone opaque expansion surfaces; the owning derive macro remains the
+review or muted surface. Non-test `cfg` gates remain `review` because AST-only
+analysis cannot know which branch is live.
 
 ## 8. Do Not Invent These Again
 
@@ -188,6 +244,17 @@ Final artifacts must satisfy these counts:
 - `summary.mutedSignalsByReason[reason] === count(signals where signal.visibility === "muted" and signal.muteReason === reason)`
 - `summary.unsafeBlocks === sum(files[*].facts.unsafeBlocks)`
 - `summary.unsafeFunctions === sum(files[*].facts.unsafeFunctions)`
+- `summary.definitions === sum(files[*].ast.definitions.length)`
+- `summary.useTrees === sum(files[*].ast.useTrees.length)`
+- `summary.pathRefs === sum(files[*].ast.pathRefs.length)`
+- `summary.methodCallSites === sum(files[*].ast.methodCallCounts values)`
+- `summary.methodCalls === sum(files[*].ast.methodCalls.length)`
+- `summary.macroCalls === sum(files[*].ast.macroCalls.length)`
+- `summary.cfgGates === sum(files[*].ast.cfgGates.length)`
+- `summary.opaqueSurfaces === sum(files[*].ast.opaqueSurfaces.length)`
+- `summary.reviewOpaqueSurfaces === count(ast.opaqueSurfaces where visibility === "review")`
+- `summary.mutedOpaqueSurfaces === count(ast.opaqueSurfaces where visibility === "muted")`
+- `summary.mutedOpaqueSurfacesByReason[reason] === count(ast.opaqueSurfaces where visibility === "muted" and muteReason === reason)`
 
 Rust-main wrapper mode recomputes summary after adding skipped-file evidence.
 stdin compatibility mode emits no skipped-file evidence.
@@ -213,6 +280,14 @@ stdin compatibility mode emits no skipped-file evidence.
   impl, or function carry `muteReason: "cfg-test"`. Signals inside a direct
   `#[test]` function carry `muteReason: "test-attribute"`. This is a review
   visibility policy only; the signal claim remains `syntax-only`.
+- Rust source health applies the same visibility vocabulary to AST opaque
+  surfaces. The raw `ast.opaqueSurfaces[]` evidence stays present, while the
+  unified product artifact exposes review/muted opaque summaries, muted reason
+  counts, and capped review examples instead of embedding full raw AST lanes.
+- The standalone Rust source health CLI follows the same size discipline:
+  `--artifact-profile compact` is the default and emits `astSummary` per file
+  plus capped `reviewOpaqueSurfaceExamples`; `--artifact-profile full` preserves
+  the raw compatibility shape with full `files[*].ast` arrays.
 - Output `files` keys are sorted by path.
 - `signals` are sorted by `location.byteStart`, then `kind`.
 - `parse.errors` are sorted by `location.byteStart`, then `message`.

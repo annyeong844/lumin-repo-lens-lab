@@ -1,0 +1,16 @@
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "link-arg=/DEBUG:NONE"]
+
+[env]
+CARGO_INCREMENTAL = "0"
+
+[alias]
+lumin-build = "build --locked --workspace --profile dev-small"
+lumin-check = "check --locked --workspace --profile dev-small"
+lumin-fmt = "fmt --all --check"
+lumin-clippy = "clippy --locked --workspace --all-targets --profile ci-test"
+lumin-test = "test --locked --workspace --profile ci-test"
+lumin-test-analyzer = "test --locked -p lumin-rust-analyzer --profile ci-test"
+lumin-clean = "clean"
+lumin-clean-dev-small = "clean --profile dev-small"
+lumin-clean-ci-test = "clean --profile ci-test"

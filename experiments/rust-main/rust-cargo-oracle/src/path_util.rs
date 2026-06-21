@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::path::Path;
 
 pub(crate) fn normalize_path_for_compare(path: &Path) -> String {
@@ -20,11 +19,6 @@ pub(crate) fn is_inside_path(path: &Path, root: &Path) -> bool {
     let path = normalize_path_for_compare(path);
     let root = normalize_path_for_compare(root);
     path == root || path.starts_with(&format!("{root}/"))
-}
-
-pub(crate) fn has_path_segment(path: &Path, segment: &str) -> bool {
-    path.components()
-        .any(|component| component.as_os_str() == OsStr::new(segment))
 }
 
 pub(crate) fn has_windows_drive_prefix(value: &str) -> bool {

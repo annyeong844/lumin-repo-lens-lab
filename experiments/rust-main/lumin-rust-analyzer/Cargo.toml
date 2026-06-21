@@ -1,15 +1,25 @@
 [package]
 name = "lumin-rust-analyzer"
-version = "0.0.0-lab.0"
-edition = "2021"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lumin-rust-analyzer"
+path = "src/main.rs"
+test = false
+
+[lints]
+workspace = true
 
 [dependencies]
-anyhow = "1"
-lumin-rust-cargo-oracle = { path = "../rust-cargo-oracle" }
-lumin-rust-source-health = { path = "../../rust-sidecar/rust-source-health" }
-serde_json = "1"
-time = { version = "0.3", features = ["formatting"] }
+anyhow = { workspace = true }
+lumin-rust-cargo-oracle = { workspace = true }
+lumin-rust-common = { workspace = true, features = ["json"] }
+lumin-rust-source-health = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+time = { workspace = true, features = ["formatting"] }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

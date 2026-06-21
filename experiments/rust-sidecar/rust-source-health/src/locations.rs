@@ -1,11 +1,11 @@
 use crate::protocol::Location;
 
-pub struct LineIndex {
+pub(crate) struct LineIndex {
     line_starts: Vec<usize>,
 }
 
 impl LineIndex {
-    pub fn new(text: &str) -> Self {
+    pub(crate) fn new(text: &str) -> Self {
         let mut line_starts = vec![0];
         for (index, byte) in text.bytes().enumerate() {
             if byte == b'\n' {
@@ -16,7 +16,7 @@ impl LineIndex {
     }
 
     /// Returns 1-based line numbers and 1-based UTF-8 byte columns.
-    pub fn location(&self, byte_start: usize, byte_end: usize) -> Location {
+    pub(crate) fn location(&self, byte_start: usize, byte_end: usize) -> Location {
         let (line, column) = self.line_column(byte_start);
         let (end_line, end_column) = self.line_column(byte_end);
         Location {

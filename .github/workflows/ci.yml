@@ -69,7 +69,7 @@ jobs:
               .github/workflows/ci.yml)
                 rust=true
                 ;;
-              experiments/rust-main/*|experiments/rust-sidecar/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
+              experiments/Cargo.toml|experiments/Cargo.lock|experiments/.cargo/*|experiments/rust-common/*|experiments/rust-main/*|experiments/rust-sidecar/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
                 rust=true
                 ;;
               *)
@@ -104,15 +104,20 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && needs.changes.outputs.rust == 'true' }}
     name: Test (Rust)
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust stable
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
+      - name: Check Rust formatting
+        working-directory: experiments
+        run: cargo lumin-fmt
+      - name: Lint unified Rust analyzer
+        working-directory: experiments
+        run: cargo lumin-clippy
       - name: Test unified Rust analyzer
-        run: cargo test --locked --manifest-path experiments/rust-main/lumin-rust-analyzer/Cargo.toml
-      - name: Test internal Rust phases
-        run: |
-          cargo test --locked --manifest-path experiments/rust-main/rust-cargo-oracle/Cargo.toml
-          cargo test --locked --manifest-path experiments/rust-sidecar/rust-source-health/Cargo.toml
+        working-directory: experiments
+        run: cargo lumin-test

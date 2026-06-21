@@ -1,147 +1,66 @@
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process;
+use std::time::Instant;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use lumin_rust_cargo_oracle::{run_oracle, OracleOptions};
-use lumin_rust_source_health::protocol::DEFAULT_WORKER_STACK_BYTES;
-use lumin_rust_source_health::wrapper::{analyze_root, RustSourceHealthOptions};
-use serde_json::{json, Map, Value};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use lumin_rust_common::{
+    atomic_write_json, canonical_existing_dir_usage, is_usage_error, CliAction,
+};
+use lumin_rust_source_health::{analyze_root, RustSourceHealthOptions};
+use product_artifact::{unified_artifact, PhaseTimings};
 
-const SCHEMA_VERSION: &str = "rust-analyzer-health.v1";
-const POLICY_VERSION: &str = "rust-unified-analyzer.v1";
+mod calibration;
+mod cli;
+mod oracle_targeting;
+mod policy;
+mod product_artifact;
+mod product_files;
+mod product_summary;
 
 fn main() {
-    match parse_args().and_then(run_unified_analyzer) {
-        Ok(artifact) => {
-            if let Some(output) = artifact
-                .get("meta")
-                .and_then(|meta| meta.get("output"))
-                .and_then(Value::as_str)
-            {
-                println!("[lumin-rust-analyzer] wrote {output}");
-            } else {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&artifact)
-                        .unwrap_or_else(|_| artifact.to_string())
-                );
-            }
-        }
-        Err(error) => {
-            eprintln!("{error:#}");
-            process::exit(if is_usage_error(&error) { 2 } else { 1 });
-        }
+    match cli::parse_args() {
+        Ok(CliAction::Run(options)) => match run_unified_analyzer(options) {
+            Ok(result) => print_run_result(result),
+            Err(error) => exit_with_error(error),
+        },
+        Ok(CliAction::Help) => {}
+        Err(error) => exit_with_error(error),
     }
 }
 
-#[derive(Debug)]
-struct Options {
-    root: PathBuf,
+fn print_run_result(result: RunResult) {
+    if let Some(output) = result.output {
+        println!("[lumin-rust-analyzer] wrote {}", output.display());
+    } else if let Some(stdout) = result.stdout {
+        println!("{stdout}");
+    }
+}
+
+fn exit_with_error(error: anyhow::Error) -> ! {
+    eprintln!("{error:#}");
+    process::exit(if is_usage_error(&error) { 2 } else { 1 });
+}
+
+struct RunResult {
     output: Option<PathBuf>,
-    source_commit: String,
-    cargo_bin: String,
-    timeout_ms: u64,
-    features: Option<String>,
-    package_name: Option<String>,
-    repo_root: PathBuf,
-    thread_count: Option<usize>,
-    worker_stack_bytes: usize,
+    stdout: Option<String>,
 }
 
-fn parse_args() -> Result<Options> {
-    let mut root: Option<PathBuf> = None;
-    let mut output: Option<PathBuf> = None;
-    let mut source_commit: Option<String> = None;
-    let mut cargo_bin = "cargo".to_string();
-    let mut timeout_ms = 60_000_u64;
-    let mut features: Option<String> = None;
-    let mut package_name: Option<String> = None;
-    let mut repo_root: Option<PathBuf> = None;
-    let mut thread_count: Option<usize> = None;
-    let mut worker_stack_bytes = DEFAULT_WORKER_STACK_BYTES;
-
-    let mut args = env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--root" => root = Some(value_path(&mut args, "--root")?),
-            "--output" => output = Some(value_path(&mut args, "--output")?),
-            "--source-commit" | "--sidecar-source-commit" => {
-                source_commit = Some(value_string(&mut args, "--source-commit")?)
-            }
-            "--cargo-bin" => cargo_bin = value_string(&mut args, "--cargo-bin")?,
-            "--timeout-ms" => {
-                let value = value_string(&mut args, "--timeout-ms")?;
-                timeout_ms = value
-                    .parse::<u64>()
-                    .with_context(|| format!("invalid --timeout-ms value: {value}"))?;
-            }
-            "--features" => features = Some(value_string(&mut args, "--features")?),
-            "--package" => package_name = Some(value_string(&mut args, "--package")?),
-            "--repo-root" => repo_root = Some(value_path(&mut args, "--repo-root")?),
-            "--threads" => {
-                let value = value_string(&mut args, "--threads")?;
-                let parsed = value
-                    .parse::<usize>()
-                    .with_context(|| format!("invalid --threads value: {value}"))?;
-                if parsed == 0 {
-                    bail!("--threads must be greater than zero");
-                }
-                thread_count = Some(parsed);
-            }
-            "--worker-stack-bytes" => {
-                let value = value_string(&mut args, "--worker-stack-bytes")?;
-                worker_stack_bytes = value
-                    .parse::<usize>()
-                    .with_context(|| format!("invalid --worker-stack-bytes value: {value}"))?;
-                if worker_stack_bytes < DEFAULT_WORKER_STACK_BYTES {
-                    bail!(
-                        "--worker-stack-bytes must be at least {}",
-                        DEFAULT_WORKER_STACK_BYTES
-                    );
-                }
-            }
-            "--help" | "-h" => {
-                print_usage();
-                process::exit(0);
-            }
-            unknown => bail!("unknown argument: {unknown}"),
-        }
-    }
-
-    let root = root.unwrap_or(env::current_dir().context("failed to read current directory")?);
-    let output = output.unwrap_or_else(|| root.join("rust-analyzer-health.json"));
-    let repo_root = match repo_root {
-        Some(path) => path,
-        None => find_repo_root(&root).unwrap_or_else(|| PathBuf::from(".")),
-    };
-
-    Ok(Options {
-        root,
-        output: Some(output),
-        source_commit: source_commit.context("--source-commit is required")?,
-        cargo_bin,
-        timeout_ms,
-        features,
-        package_name,
-        repo_root,
-        thread_count,
-        worker_stack_bytes,
-    })
-}
-
-fn run_unified_analyzer(options: Options) -> Result<Value> {
-    let root = canonical_existing_dir(&options.root)
-        .with_context(|| format!("invalid root {}", options.root.display()))?;
+fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
+    let analyzer_started = Instant::now();
+    let root = canonical_existing_dir_usage(&options.root, "--root")?;
+    let syntax_started = Instant::now();
     let syntax = analyze_root(RustSourceHealthOptions {
         root: root.clone(),
         source_commit: options.source_commit.clone(),
         thread_count: options.thread_count,
         worker_stack_bytes: options.worker_stack_bytes,
     })?;
-    let semantic = run_oracle(OracleOptions {
+    let syntax_ms = syntax_started.elapsed().as_millis();
+    let target_paths = oracle_targeting::targeted_oracle_paths(options.semantic_mode, &syntax);
+    let semantic_started = Instant::now();
+    let semantic_artifact = run_oracle(OracleOptions {
         root: root.clone(),
         output: None,
         cargo_bin: options.cargo_bin.clone(),
@@ -149,200 +68,42 @@ fn run_unified_analyzer(options: Options) -> Result<Value> {
         features: options.features.clone(),
         package_name: options.package_name.clone(),
         repo_root: options.repo_root.clone(),
+        cargo_check_mode: options.semantic_mode,
+        cargo_target_dir_mode: options.cargo_target_dir_mode,
+        target_paths,
+        targeted_package_cap: options.targeted_package_cap,
     })?;
-    let syntax_value = serde_json::to_value(syntax).context("failed to serialize syntax phase")?;
-    let artifact = unified_artifact(&options, &root, syntax_value, semantic)?;
+    let semantic_ms = semantic_started.elapsed().as_millis();
+    let timings = PhaseTimings {
+        syntax_ms,
+        semantic_ms,
+        analyzer_ms: analyzer_started.elapsed().as_millis(),
+    };
+    let calibration_adjudication =
+        calibration::load_adjudication(options.calibration_adjudication.as_deref())?;
+    let artifact = unified_artifact(
+        &options,
+        &root,
+        &syntax,
+        &semantic_artifact,
+        calibration_adjudication.as_ref(),
+        timings,
+    )?;
 
-    if let Some(output) = &options.output {
-        write_json_atomic(output, &artifact)
+    let output = options.output.clone();
+    if let Some(output) = &output {
+        atomic_write_json(output, &artifact)
             .with_context(|| format!("failed to write {}", output.display()))?;
     }
-
-    Ok(artifact)
-}
-
-fn unified_artifact(
-    options: &Options,
-    root: &Path,
-    syntax: Value,
-    semantic: Value,
-) -> Result<Value> {
-    let semantic_summary = &semantic["summary"];
-    let syntax_summary = &syntax["summary"];
-    let files = merged_files(root, &syntax, &semantic);
-    Ok(json!({
-        "schemaVersion": SCHEMA_VERSION,
-        "policyVersion": POLICY_VERSION,
-        "meta": {
-            "producer": "lumin-rust-analyzer",
-            "mode": "rust-main",
-            "generated": OffsetDateTime::now_utc().format(&Rfc3339)?,
-            "input": {
-                "root": root.display().to_string(),
-                "packageName": options.package_name,
-                "features": options.features,
-                "cargoBin": options.cargo_bin,
-            },
-            "output": options.output.as_ref().map(|path| path.display().to_string()),
-        },
-        "summary": {
-            "files": syntax_summary["files"],
-            "syntaxReviewSignals": syntax_summary["reviewSignals"],
-            "syntaxMutedSignals": syntax_summary["mutedSignals"],
-            "syntaxMutedSignalsByReason": syntax_summary["mutedSignalsByReason"],
-            "verifiedSemanticFindings": semantic_summary["verifiedFindings"],
-            "ruleBackedSemanticFindings": semantic_summary["ruleBackedFindings"],
-            "candidateSemanticFindings": semantic_summary["candidateFindings"],
-            "semanticClean": semantic_summary["semanticClean"],
-            "cacheReuse": semantic_summary["cacheReuse"],
-        },
-        "files": files,
-        "semanticFindings": semantic["findings"],
-        "phases": {
-            "syntax": syntax,
-            "semantic": semantic,
-        },
-    }))
-}
-
-fn merged_files(root: &Path, syntax: &Value, semantic: &Value) -> Value {
-    let mut files = Map::new();
-
-    if let Some(syntax_files) = syntax.get("files").and_then(Value::as_object) {
-        for (path, file) in syntax_files {
-            let mut entry = file.clone();
-            if let Some(object) = entry.as_object_mut() {
-                object.insert("semanticFindings".to_string(), Value::Array(Vec::new()));
-            }
-            files.insert(path.clone(), entry);
-        }
-    }
-
-    if let Some(findings) = semantic.get("findings").and_then(Value::as_array) {
-        for finding in findings {
-            let Some(path) = finding_relative_path(root, finding) else {
-                continue;
-            };
-            let entry = files.entry(path).or_insert_with(|| {
-                json!({
-                    "path": {
-                        "classifications": ["source"]
-                    },
-                    "signals": [],
-                    "semanticFindings": []
-                })
-            });
-            if let Some(object) = entry.as_object_mut() {
-                object
-                    .entry("semanticFindings")
-                    .or_insert_with(|| Value::Array(Vec::new()));
-                if let Some(findings) = object
-                    .get_mut("semanticFindings")
-                    .and_then(Value::as_array_mut)
-                {
-                    findings.push(finding.clone());
-                }
-            }
-        }
-    }
-
-    Value::Object(files)
-}
-
-fn finding_relative_path(root: &Path, finding: &Value) -> Option<String> {
-    let span = finding
-        .get("span")
-        .filter(|span| !span.is_null())
-        .or_else(|| {
-            finding
-                .get("primarySpans")
-                .and_then(Value::as_array)
-                .and_then(|spans| spans.first())
-        })?;
-    let file_name = span.get("file_name").and_then(Value::as_str)?;
-    root_relative_path(root, file_name)
-}
-
-fn root_relative_path(root: &Path, file_name: &str) -> Option<String> {
-    let normalized = file_name.replace('\\', "/");
-    let trimmed = normalized.trim_start_matches("./").to_string();
-    if !is_absolute_like(&trimmed) {
-        return Some(trimmed);
-    }
-
-    let root = root.display().to_string().replace('\\', "/");
-    let root = root.trim_end_matches('/');
-    trimmed
-        .strip_prefix(root)
-        .and_then(|suffix| suffix.strip_prefix('/'))
-        .map(str::to_string)
-}
-
-fn is_absolute_like(path: &str) -> bool {
-    path.starts_with('/') || path.as_bytes().get(1).is_some_and(|byte| *byte == b':')
-}
-
-fn value_string(args: &mut impl Iterator<Item = String>, name: &str) -> Result<String> {
-    args.next()
-        .filter(|value| !value.trim().is_empty())
-        .with_context(|| format!("{name} requires a value"))
-}
-
-fn value_path(args: &mut impl Iterator<Item = String>, name: &str) -> Result<PathBuf> {
-    Ok(PathBuf::from(value_string(args, name)?))
-}
-
-fn canonical_existing_dir(path: &Path) -> Result<PathBuf> {
-    let path = path.canonicalize()?;
-    if !path.is_dir() {
-        bail!("not a directory");
-    }
-    Ok(path)
-}
-
-fn find_repo_root(start: &Path) -> Option<PathBuf> {
-    let mut cursor = if start.is_file() {
-        start.parent()?.to_path_buf()
+    let stdout = if output.is_none() {
+        Some(
+            artifact
+                .to_pretty_string()
+                .context("failed to serialize rust analyzer artifact")?,
+        )
     } else {
-        start.to_path_buf()
+        None
     };
-    loop {
-        if cursor
-            .join("canonical")
-            .join("oracle-registry.json")
-            .is_file()
-        {
-            return Some(cursor);
-        }
-        if !cursor.pop() {
-            return None;
-        }
-    }
-}
 
-fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temp = path.with_extension("tmp");
-    fs::write(&temp, format!("{}\n", serde_json::to_string_pretty(value)?))?;
-    fs::rename(&temp, path)?;
-    Ok(())
-}
-
-fn is_usage_error(error: &anyhow::Error) -> bool {
-    let message = error.to_string();
-    message.starts_with("unknown argument:")
-        || message.contains(" requires a value")
-        || message.starts_with("invalid --")
-        || message.starts_with("--threads must be greater than zero")
-        || message.starts_with("--worker-stack-bytes must be at least ")
-        || message == "--source-commit is required"
-        || message.starts_with("--package currently supports")
-}
-
-fn print_usage() {
-    eprintln!(
-        "Usage: lumin-rust-analyzer --root <path> --source-commit <sha> [--output <path>] [--cargo-bin <path>] [--timeout-ms <ms>] [--features <csv>] [--package <name>] [--repo-root <path>] [--threads <n>] [--worker-stack-bytes <bytes>]"
-    );
+    Ok(RunResult { output, stdout })
 }

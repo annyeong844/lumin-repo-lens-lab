@@ -1,11 +1,12 @@
 use crate::protocol::{RuntimeRequest, DEFAULT_WORKER_STACK_BYTES};
-use anyhow::{bail, Result};
+use crate::usage_error;
+use anyhow::Result;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
 #[derive(Debug, Clone, Copy)]
-pub struct RuntimeConfig {
-    pub thread_count: Option<usize>,
-    pub worker_stack_bytes: usize,
+pub(crate) struct RuntimeConfig {
+    pub(crate) thread_count: Option<usize>,
+    pub(crate) worker_stack_bytes: usize,
 }
 
 impl TryFrom<RuntimeRequest> for RuntimeConfig {
@@ -13,13 +14,14 @@ impl TryFrom<RuntimeRequest> for RuntimeConfig {
 
     fn try_from(request: RuntimeRequest) -> Result<Self> {
         if matches!(request.thread_count, Some(0)) {
-            bail!("runtime.threadCount must be greater than zero when provided");
+            return Err(usage_error(
+                "runtime.threadCount must be greater than zero when provided",
+            ));
         }
         if request.worker_stack_bytes < DEFAULT_WORKER_STACK_BYTES {
-            bail!(
-                "runtime.workerStackBytes must be at least {}",
-                DEFAULT_WORKER_STACK_BYTES
-            );
+            return Err(usage_error(format!(
+                "runtime.workerStackBytes must be at least {DEFAULT_WORKER_STACK_BYTES}"
+            )));
         }
         Ok(Self {
             thread_count: request.thread_count,
@@ -28,7 +30,7 @@ impl TryFrom<RuntimeRequest> for RuntimeConfig {
     }
 }
 
-pub fn build_pool(config: RuntimeConfig) -> Result<ThreadPool> {
+pub(crate) fn build_pool(config: RuntimeConfig) -> Result<ThreadPool> {
     let mut builder = ThreadPoolBuilder::new().stack_size(config.worker_stack_bytes);
     if let Some(thread_count) = config.thread_count {
         builder = builder.num_threads(thread_count);

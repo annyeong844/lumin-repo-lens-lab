@@ -1,7 +1,7 @@
-use crate::protocol::{FileHealth, SignalVisibility, Summary};
+use crate::protocol::{AstOpaqueSurfaceVisibility, FileHealth, SignalVisibility, Summary};
 use std::collections::BTreeMap;
 
-pub fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
+pub(crate) fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
     let mut summary = Summary {
         files: files.len(),
         ..Summary::default()
@@ -16,6 +16,27 @@ pub fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
         summary.unsafe_blocks += file.facts.unsafe_blocks;
         summary.unsafe_functions += file.facts.unsafe_functions;
         summary.signals += file.signals.len();
+        summary.definitions += file.ast.definitions.len();
+        summary.use_trees += file.ast.use_trees.len();
+        summary.path_refs += file.ast.path_refs.len();
+        summary.method_call_sites += file.ast.method_call_counts.values().sum::<usize>();
+        summary.method_calls += file.ast.method_calls.len();
+        summary.macro_calls += file.ast.macro_calls.len();
+        summary.cfg_gates += file.ast.cfg_gates.len();
+        summary.opaque_surfaces += file.ast.opaque_surfaces.len();
+
+        for surface in &file.ast.opaque_surfaces {
+            match surface.visibility {
+                AstOpaqueSurfaceVisibility::Review => summary.review_opaque_surfaces += 1,
+                AstOpaqueSurfaceVisibility::Muted { mute_reason } => {
+                    summary.muted_opaque_surfaces += 1;
+                    *summary
+                        .muted_opaque_surfaces_by_reason
+                        .entry(mute_reason)
+                        .or_insert(0) += 1;
+                }
+            }
+        }
 
         for signal in &file.signals {
             *summary.signals_by_kind.entry(signal.kind).or_insert(0) += 1;
