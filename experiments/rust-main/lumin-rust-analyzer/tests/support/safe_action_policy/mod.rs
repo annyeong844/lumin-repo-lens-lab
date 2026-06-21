@@ -50,6 +50,14 @@ pub fn assert_safe_action_calibrated_artifact(artifact: &Value) -> Result<()> {
     Ok(())
 }
 
+pub fn assert_safe_action_green_calibrated_artifact(artifact: &Value) -> Result<()> {
+    summary::assert_safe_action_summary(artifact);
+    action_policy::assert_safe_action_policy(artifact)?;
+    finding::assert_safe_action_finding(artifact)?;
+    bridge_calibration::assert_safe_action_green_calibrated_bridge(artifact)?;
+    Ok(())
+}
+
 pub fn assert_safe_action_false_positive_calibrated_artifact(artifact: &Value) -> Result<()> {
     summary::assert_safe_action_summary(artifact);
     action_policy::assert_safe_action_policy(artifact)?;

@@ -28,6 +28,12 @@ pub fn analyze_cargo_check_single_package_with_adjudication(
     run::run_analyzer_with_args(&root, Some("cargo-check"), &extra_args)
 }
 
+pub fn analyze_cargo_check_single_package_with_complete_calibration_evidence(
+    lib_rs: &str,
+) -> Result<Value> {
+    analyze_cargo_check_single_package_with_adjudication(lib_rs, COMPLETE_CALIBRATION_EVIDENCE)
+}
+
 pub fn analyze_metadata_only_single_package(lib_rs: &str) -> Result<Value> {
     analyze_single_package(lib_rs, None)
 }
@@ -62,3 +68,57 @@ fn analyze_single_package(lib_rs: &str, semantic_mode: Option<&str>) -> Result<V
     package::write_single_package_crate(&root, "app", lib_rs)?;
     run::run_analyzer(&root, semantic_mode)
 }
+
+const COMPLETE_CALIBRATION_EVIDENCE: &str = r#"{
+  "corpus": [
+    {
+      "name": "rust-corpus-a",
+      "commit": "abc123",
+      "worktreeDirty": false,
+      "locBucket": "25k"
+    },
+    {
+      "name": "rust-corpus-b",
+      "snapshotId": "snapshot-b",
+      "worktreeDirty": false,
+      "locBucket": "50k"
+    }
+  ],
+  "candidateCounts": {
+    "available": true,
+    "reviewVisibleCleanup": 2,
+    "safeFix": 2,
+    "reviewFix": 0,
+    "degraded": 0,
+    "muted": 0,
+    "byCorpus": {
+      "rust-corpus-a": { "reviewVisibleCleanup": 1, "safeFix": 1, "reviewFix": 0 },
+      "rust-corpus-b": { "reviewVisibleCleanup": 1, "safeFix": 1, "reviewFix": 0 }
+    }
+  },
+  "entries": [
+    {
+      "corpusName": "rust-corpus-a",
+      "tier": "SAFE_FIX",
+      "verdict": "true_dead",
+      "file": "src/lib.rs",
+      "diagnosticCode": "unused_mut",
+      "lineStart": 1,
+      "symbol": "demo"
+    },
+    {
+      "corpusName": "rust-corpus-b",
+      "tier": "SAFE_FIX",
+      "verdict": "true_dead",
+      "file": "src/lib.rs",
+      "diagnosticCode": "unused_mut",
+      "lineStart": 1,
+      "symbol": "demo"
+    }
+  ],
+  "schemaRoundTrip": {
+    "attempted": true,
+    "knownSchemaDriftBugs": []
+  },
+  "minAdjudicatedPerCorpus": 1
+}"#;

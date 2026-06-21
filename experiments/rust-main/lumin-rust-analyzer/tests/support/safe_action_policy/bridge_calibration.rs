@@ -33,8 +33,30 @@ pub(super) fn assert_safe_action_calibrated_bridge(artifact: &Value) -> Result<(
     assert_eq!(safe_fix["falsePositives"], 0);
     assert_eq!(safe_fix["fpRate"], 0.0);
     assert_eq!(review_visible_cleanup(readiness)["fpRate"], 0.0);
+    assert_no_readiness_reason(artifact, "candidate-counts-unavailable")?;
     assert_no_readiness_reason(artifact, "fp-rate-unknown")?;
+    assert_no_readiness_reason(artifact, "schema-roundtrip-not-attempted")?;
     assert_readiness_reason(artifact, "benchmark-incomplete", "yellow")?;
+    Ok(())
+}
+
+pub(super) fn assert_safe_action_green_calibrated_bridge(artifact: &Value) -> Result<()> {
+    assert_safe_action_bridge_core(artifact)?;
+    assert_eq!(
+        artifact["oracleBridge"]["policy"]["calibrationStatus"],
+        "measured"
+    );
+    let readiness = readiness(artifact);
+    let safe_fix = safe_fix(readiness);
+    assert_eq!(readiness["gate"], "green");
+    assert_eq!(safe_fix["trueDead"], 2);
+    assert_eq!(safe_fix["falsePositives"], 0);
+    assert_eq!(safe_fix["fpRate"], 0.0);
+    assert_eq!(review_visible_cleanup(readiness)["fpRate"], 0.0);
+    assert_no_readiness_reason(artifact, "candidate-counts-unavailable")?;
+    assert_no_readiness_reason(artifact, "fp-rate-unknown")?;
+    assert_no_readiness_reason(artifact, "schema-roundtrip-not-attempted")?;
+    assert_no_readiness_reason(artifact, "benchmark-incomplete")?;
     Ok(())
 }
 

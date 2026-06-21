@@ -117,6 +117,7 @@ pub(super) struct OracleBridgeCalibrationReadiness {
 pub(super) enum OracleBridgeCalibrationGate {
     Red,
     Yellow,
+    Green,
 }
 
 #[derive(Debug, Copy, Clone, Serialize)]
@@ -130,10 +131,17 @@ pub(super) struct OracleBridgeCalibrationReason {
 #[derive(Debug, Copy, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum OracleBridgeCalibrationReasonCode {
+    CandidateCountsUnavailable,
     FpRateUnknown,
     AdjudicationCandidateMismatch,
     SafeFixFpThreshold,
     ReviewVisibleFpThreshold,
+    SchemaRoundtripNotAttempted,
+    SchemaDriftKnown,
+    CorpusIdentityMissing,
+    DirtyWorktreeUnknown,
+    DirtyWorktreeWithoutSnapshot,
+    UnresolvedHighFinding,
     SafeFixPopulationEmpty,
     BenchmarkIncomplete,
 }

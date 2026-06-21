@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::calibration::{
     CalibrationAdjudication, CalibrationAdjudicationEntry, CalibrationVerdict,
 };
@@ -20,6 +22,11 @@ const CALIBRATION_REQUIRED_EVIDENCE: [OracleBridgeCalibrationRequiredEvidence; 3
     OracleBridgeCalibrationRequiredEvidence::KnownSafeFixFpDenominator,
     OracleBridgeCalibrationRequiredEvidence::ReadinessGateFromRealCorpus,
 ];
+const SAFE_FIX_FP_RED_THRESHOLD: f64 = 0.05;
+const REVIEW_VISIBLE_FP_RED_THRESHOLD: f64 = 0.25;
+const REVIEW_VISIBLE_FP_GREEN_THRESHOLD: f64 = 0.10;
+const MIN_NON_TRIVIAL_CORPUS: usize = 2;
+const DEFAULT_MIN_ADJUDICATED_PER_CORPUS: usize = 50;
 
 #[derive(Debug, Clone)]
 pub(super) struct OracleBridgeCalibrationPolicy {
@@ -113,7 +120,24 @@ fn readiness(
     let safe_needs_adjudication = candidate_counts.safe_fix > 0 && safe_fix.fp_rate.is_none();
     let review_needs_adjudication =
         candidate_counts.review_visible_cleanup > 0 && review_visible_cleanup.fp_rate.is_none();
-    if entries.is_empty() || safe_needs_adjudication || review_needs_adjudication {
+    if calibration_adjudication
+        .is_some_and(|adjudication| !adjudication.candidate_counts().is_available())
+    {
+        reasons.push(OracleBridgeCalibrationReason {
+            code: OracleBridgeCalibrationReasonCode::CandidateCountsUnavailable,
+            severity: OracleBridgeCalibrationSeverity::Red,
+            detail: "fix-plan.json missing or candidate counts unavailable",
+        });
+    }
+    if entries.is_empty()
+        || safe_needs_adjudication
+        || review_needs_adjudication
+        || corpus_has_unknown_fp_denominator(
+            calibration_adjudication,
+            entries,
+            safe_action_candidates,
+        )
+    {
         reasons.push(OracleBridgeCalibrationReason {
             code: OracleBridgeCalibrationReasonCode::FpRateUnknown,
             severity: OracleBridgeCalibrationSeverity::Red,
@@ -127,7 +151,10 @@ fn readiness(
             detail: "adjudication entries did not match observed Rust cleanup candidates",
         });
     }
-    if safe_fix.fp_rate.is_some_and(|fp_rate| fp_rate >= 0.05) {
+    if safe_fix
+        .fp_rate
+        .is_some_and(|fp_rate| fp_rate >= SAFE_FIX_FP_RED_THRESHOLD)
+    {
         reasons.push(OracleBridgeCalibrationReason {
             code: OracleBridgeCalibrationReasonCode::SafeFixFpThreshold,
             severity: OracleBridgeCalibrationSeverity::Red,
@@ -136,13 +163,67 @@ fn readiness(
     }
     if review_visible_cleanup
         .fp_rate
-        .is_some_and(|fp_rate| fp_rate > 0.25)
+        .is_some_and(|fp_rate| fp_rate > REVIEW_VISIBLE_FP_RED_THRESHOLD)
     {
         reasons.push(OracleBridgeCalibrationReason {
             code: OracleBridgeCalibrationReasonCode::ReviewVisibleFpThreshold,
             severity: OracleBridgeCalibrationSeverity::Red,
             detail: "review-visible cleanup FP rate is above the JS/TS readiness threshold",
         });
+    }
+    if let Some(adjudication) = calibration_adjudication {
+        match adjudication.schema_round_trip() {
+            Some(schema_round_trip) => {
+                if !schema_round_trip.attempted() {
+                    reasons.push(OracleBridgeCalibrationReason {
+                        code: OracleBridgeCalibrationReasonCode::SchemaRoundtripNotAttempted,
+                        severity: OracleBridgeCalibrationSeverity::Red,
+                        detail: "P3/P5 schema round-trip was not attempted",
+                    });
+                }
+                if schema_round_trip.has_known_schema_drift_bugs() {
+                    reasons.push(OracleBridgeCalibrationReason {
+                        code: OracleBridgeCalibrationReasonCode::SchemaDriftKnown,
+                        severity: OracleBridgeCalibrationSeverity::Red,
+                        detail: "known P3/P5 schema drift bug present",
+                    });
+                }
+            }
+            None => reasons.push(OracleBridgeCalibrationReason {
+                code: OracleBridgeCalibrationReasonCode::SchemaRoundtripNotAttempted,
+                severity: OracleBridgeCalibrationSeverity::Red,
+                detail: "P3/P5 schema round-trip was not attempted",
+            }),
+        }
+        for corpus in adjudication.corpus() {
+            if !corpus.has_immutable_identity() {
+                reasons.push(OracleBridgeCalibrationReason {
+                    code: OracleBridgeCalibrationReasonCode::CorpusIdentityMissing,
+                    severity: OracleBridgeCalibrationSeverity::Red,
+                    detail: "calibration corpus lacks commit or snapshot identity",
+                });
+            }
+            if !corpus.dirty_state_known() {
+                reasons.push(OracleBridgeCalibrationReason {
+                    code: OracleBridgeCalibrationReasonCode::DirtyWorktreeUnknown,
+                    severity: OracleBridgeCalibrationSeverity::Red,
+                    detail: "calibration corpus dirty state is unknown",
+                });
+            } else if !corpus.dirty_state_captured() {
+                reasons.push(OracleBridgeCalibrationReason {
+                    code: OracleBridgeCalibrationReasonCode::DirtyWorktreeWithoutSnapshot,
+                    severity: OracleBridgeCalibrationSeverity::Red,
+                    detail: "dirty calibration corpus lacks snapshot or content hash",
+                });
+            }
+        }
+        if adjudication.unresolved_high_findings() > 0 {
+            reasons.push(OracleBridgeCalibrationReason {
+                code: OracleBridgeCalibrationReasonCode::UnresolvedHighFinding,
+                severity: OracleBridgeCalibrationSeverity::Red,
+                detail: "unresolved HIGH calibration finding present",
+            });
+        }
     }
 
     let gate = if reasons
@@ -151,6 +232,10 @@ fn readiness(
     {
         OracleBridgeCalibrationGate::Red
     } else {
+        let enough_corpus = calibration_adjudication.is_some_and(enough_corpus);
+        let enough_adjudication = calibration_adjudication.is_some_and(|adjudication| {
+            every_corpus_has_enough_adjudication(adjudication, entries, safe_action_candidates)
+        });
         if candidate_counts.safe_fix == 0 {
             reasons.push(OracleBridgeCalibrationReason {
                 code: OracleBridgeCalibrationReasonCode::SafeFixPopulationEmpty,
@@ -158,12 +243,27 @@ fn readiness(
                 detail: "SAFE_FIX population is measured zero; autonomous cleanup precision is not measured",
             });
         }
-        reasons.push(OracleBridgeCalibrationReason {
-            code: OracleBridgeCalibrationReasonCode::BenchmarkIncomplete,
-            severity: OracleBridgeCalibrationSeverity::Yellow,
-            detail: "Green corpus/adjudication thresholds not met",
-        });
-        OracleBridgeCalibrationGate::Yellow
+        if !enough_corpus || !enough_adjudication {
+            reasons.push(OracleBridgeCalibrationReason {
+                code: OracleBridgeCalibrationReasonCode::BenchmarkIncomplete,
+                severity: OracleBridgeCalibrationSeverity::Yellow,
+                detail: "Green corpus/adjudication thresholds not met",
+            });
+        }
+        let green = candidate_counts.safe_fix > 0
+            && safe_fix
+                .fp_rate
+                .is_some_and(|fp_rate| fp_rate < SAFE_FIX_FP_RED_THRESHOLD)
+            && review_visible_cleanup
+                .fp_rate
+                .is_some_and(|fp_rate| fp_rate < REVIEW_VISIBLE_FP_GREEN_THRESHOLD)
+            && enough_corpus
+            && enough_adjudication;
+        if green {
+            OracleBridgeCalibrationGate::Green
+        } else {
+            OracleBridgeCalibrationGate::Yellow
+        }
     };
 
     OracleBridgeCalibrationReadiness {
@@ -172,6 +272,105 @@ fn readiness(
         safe_fix,
         review_visible_cleanup,
     }
+}
+
+fn enough_corpus(adjudication: &CalibrationAdjudication) -> bool {
+    adjudication
+        .corpus()
+        .iter()
+        .filter(|corpus| corpus.is_non_trivial())
+        .count()
+        >= MIN_NON_TRIVIAL_CORPUS
+}
+
+fn every_corpus_has_enough_adjudication(
+    adjudication: &CalibrationAdjudication,
+    entries: &[CalibrationAdjudicationEntry],
+    safe_action_candidates: &[SafeActionCandidate<'_>],
+) -> bool {
+    if adjudication.corpus().is_empty() {
+        return false;
+    }
+    let counts = adjudicated_counts_by_corpus(entries, safe_action_candidates);
+    let corpus_total = adjudication.corpus().len();
+    let min_adjudicated = adjudication
+        .min_adjudicated_per_corpus()
+        .unwrap_or(DEFAULT_MIN_ADJUDICATED_PER_CORPUS);
+    adjudication.corpus().iter().all(|corpus| {
+        let Some(name) = corpus.name() else {
+            return false;
+        };
+        let count = counts.get(name).copied().unwrap_or(0);
+        if count >= min_adjudicated {
+            return true;
+        }
+        adjudication
+            .candidate_counts()
+            .expected_review_visible_for_corpus(name, corpus_total)
+            .is_some_and(|expected| expected < min_adjudicated && count >= expected)
+    })
+}
+
+fn corpus_has_unknown_fp_denominator(
+    adjudication: Option<&CalibrationAdjudication>,
+    entries: &[CalibrationAdjudicationEntry],
+    safe_action_candidates: &[SafeActionCandidate<'_>],
+) -> bool {
+    let Some(adjudication) = adjudication else {
+        return false;
+    };
+    let denominators = review_visible_denominators_by_corpus(entries, safe_action_candidates);
+    let corpus_total = adjudication.corpus().len();
+    adjudication.corpus().iter().any(|corpus| {
+        let Some(name) = corpus.name() else {
+            return false;
+        };
+        adjudication
+            .candidate_counts()
+            .expected_review_visible_for_corpus(name, corpus_total)
+            .is_some_and(|expected| {
+                expected > 0 && denominators.get(name).copied().unwrap_or(0) == 0
+            })
+    })
+}
+
+fn adjudicated_counts_by_corpus<'a>(
+    entries: &'a [CalibrationAdjudicationEntry],
+    safe_action_candidates: &[SafeActionCandidate<'_>],
+) -> BTreeMap<&'a str, usize> {
+    let mut counts = BTreeMap::new();
+    for entry in entries
+        .iter()
+        .filter(|entry| adjudication_matches_candidate(entry, safe_action_candidates))
+    {
+        let Some(corpus_name) = entry.corpus_name.as_deref() else {
+            continue;
+        };
+        *counts.entry(corpus_name).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn review_visible_denominators_by_corpus<'a>(
+    entries: &'a [CalibrationAdjudicationEntry],
+    safe_action_candidates: &[SafeActionCandidate<'_>],
+) -> BTreeMap<&'a str, usize> {
+    let mut counts = BTreeMap::new();
+    for entry in entries.iter().filter(|entry| {
+        matches!(
+            entry.tier,
+            Some(ActionPolicyTier::SafeFix | ActionPolicyTier::ReviewFix)
+        ) && matches!(
+            entry.verdict,
+            CalibrationVerdict::TrueDead | CalibrationVerdict::FalsePositive
+        ) && adjudication_matches_candidate(entry, safe_action_candidates)
+    }) {
+        let Some(corpus_name) = entry.corpus_name.as_deref() else {
+            continue;
+        };
+        *counts.entry(corpus_name).or_insert(0) += 1;
+    }
+    counts
 }
 
 fn matched_adjudication_entries(
