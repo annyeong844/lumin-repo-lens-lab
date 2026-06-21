@@ -1,7 +1,7 @@
 use crate::locations::LineIndex;
 use crate::protocol::{
     Claim, ParseError, PathClassification, Severity, Signal, SignalKind, SignalMuteReason,
-    SignalVisibility,
+    SignalVisibilityState,
 };
 use ra_ap_syntax::TextRange;
 
@@ -10,15 +10,15 @@ pub(crate) fn review_signal(kind: SignalKind, line_index: &LineIndex, range: Tex
         kind,
         severity: Severity::Review,
         claim: Claim::SyntaxOnly,
-        visibility: SignalVisibility::Review,
-        mute_reason: None,
+        visibility: SignalVisibilityState::Review,
         location: location_for_range(line_index, range),
     }
 }
 
 pub(crate) fn mute_signal(signal: &mut Signal, reason: SignalMuteReason) {
-    signal.visibility = SignalVisibility::Muted;
-    signal.mute_reason = Some(reason);
+    signal.visibility = SignalVisibilityState::Muted {
+        mute_reason: reason,
+    };
 }
 
 pub(crate) fn apply_signal_policy(signals: &mut [Signal], classifications: &[PathClassification]) {

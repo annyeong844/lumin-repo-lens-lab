@@ -40,12 +40,12 @@ impl ProductSyntaxFileSummary {
             review_signals: file
                 .signals
                 .iter()
-                .filter(|signal| signal.visibility == SignalVisibility::Review)
+                .filter(|signal| signal.visibility.visibility() == SignalVisibility::Review)
                 .count(),
             muted_signals: file
                 .signals
                 .iter()
-                .filter(|signal| signal.visibility == SignalVisibility::Muted)
+                .filter(|signal| signal.visibility.visibility() == SignalVisibility::Muted)
                 .count(),
             review_opaque_surfaces: opaque_surface_counts.review(),
             muted_opaque_surfaces: opaque_surface_counts.muted(),

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lumin_rust_source_health::protocol::{
-    HealthResponse, Severity, Signal, SignalKind, SignalMuteReason, SignalVisibility,
+    HealthResponse, Severity, Signal, SignalKind, SignalMuteReason, SignalVisibilityState,
 };
 use serde::Serialize;
 
@@ -14,8 +14,8 @@ pub(super) fn partition_by_visibility(signals: &[Signal]) -> (Vec<&Signal>, Vec<
     let mut muted_signals = Vec::new();
     for signal in signals {
         match signal.visibility {
-            SignalVisibility::Review => review_signals.push(signal),
-            SignalVisibility::Muted => muted_signals.push(signal),
+            SignalVisibilityState::Review => review_signals.push(signal),
+            SignalVisibilityState::Muted { .. } => muted_signals.push(signal),
         }
     }
     (review_signals, muted_signals)
@@ -38,7 +38,7 @@ pub(super) fn signals_for_product(signals: &[&Signal], limit: usize) -> Vec<Prod
         .map(|signal| ProductSignalExample {
             kind: signal.kind,
             severity: signal.severity,
-            mute_reason: signal.mute_reason,
+            mute_reason: signal.visibility.mute_reason(),
             location: ProductLocation::from(&signal.location),
         })
         .collect()
@@ -74,9 +74,12 @@ pub(super) fn signal_summary(
     let mut muted_by_reason: BTreeMap<SignalMuteReason, usize> = BTreeMap::new();
     for signal in review_signals.iter().chain(muted_signals.iter()) {
         *by_kind.entry(signal.kind).or_insert(0usize) += 1;
-        if let Some(reason) = signal.mute_reason {
-            *muted_by_reason.entry(reason).or_insert(0usize) += 1;
-        }
+    }
+    for signal in muted_signals {
+        let SignalVisibilityState::Muted { mute_reason } = signal.visibility else {
+            continue;
+        };
+        *muted_by_reason.entry(mute_reason).or_insert(0usize) += 1;
     }
 
     SignalSummary {
@@ -106,7 +109,7 @@ pub(crate) fn syntax_review_signal_examples(
         .flat_map(|(path, file)| {
             file.signals
                 .iter()
-                .filter(|signal| signal.visibility == SignalVisibility::Review)
+                .filter(|signal| signal.visibility == SignalVisibilityState::Review)
                 .map(|signal| SyntaxReviewSignalExample {
                     file: path,
                     kind: signal.kind,

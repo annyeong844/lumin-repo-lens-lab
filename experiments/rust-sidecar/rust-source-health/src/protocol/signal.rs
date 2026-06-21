@@ -8,9 +8,8 @@ pub struct Signal {
     pub kind: SignalKind,
     pub severity: Severity,
     pub claim: Claim,
-    pub visibility: SignalVisibility,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mute_reason: Option<SignalMuteReason>,
+    #[serde(flatten)]
+    pub visibility: SignalVisibilityState,
     pub location: Location,
 }
 
@@ -45,6 +44,32 @@ pub enum Claim {
 pub enum SignalVisibility {
     Review,
     Muted,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(tag = "visibility", rename_all = "kebab-case")]
+pub enum SignalVisibilityState {
+    Review,
+    Muted {
+        #[serde(rename = "muteReason")]
+        mute_reason: SignalMuteReason,
+    },
+}
+
+impl SignalVisibilityState {
+    pub fn visibility(self) -> SignalVisibility {
+        match self {
+            Self::Review => SignalVisibility::Review,
+            Self::Muted { .. } => SignalVisibility::Muted,
+        }
+    }
+
+    pub fn mute_reason(self) -> Option<SignalMuteReason> {
+        match self {
+            Self::Review => None,
+            Self::Muted { mute_reason } => Some(mute_reason),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]

@@ -27,7 +27,9 @@ pub use parser::{ParserEdition, ParserEditionPolicy, ParserEditionSource, Parser
 pub use path::{PathClassification, PathMeta};
 pub use request::{HealthRequest, ParserRequest, PathPolicy, RequestFile, RuntimeRequest};
 pub use response::HealthResponse;
-pub use signal::{Claim, Severity, Signal, SignalKind, SignalMuteReason, SignalVisibility};
+pub use signal::{
+    Claim, Severity, Signal, SignalKind, SignalMuteReason, SignalVisibility, SignalVisibilityState,
+};
 pub use summary::Summary;
 
 pub const SCHEMA_VERSION: u32 = 1;

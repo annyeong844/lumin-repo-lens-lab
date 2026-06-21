@@ -1,4 +1,4 @@
-use crate::protocol::{AstOpaqueSurfaceVisibility, FileHealth, SignalVisibility, Summary};
+use crate::protocol::{AstOpaqueSurfaceVisibility, FileHealth, SignalVisibilityState, Summary};
 use std::collections::BTreeMap;
 
 pub(crate) fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
@@ -42,21 +42,22 @@ pub(crate) fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
             *summary.signals_by_kind.entry(signal.kind).or_insert(0) += 1;
             *summary
                 .signals_by_visibility
-                .entry(signal.visibility)
+                .entry(signal.visibility.visibility())
                 .or_insert(0) += 1;
             match signal.visibility {
-                SignalVisibility::Review => {
+                SignalVisibilityState::Review => {
                     summary.review_signals += 1;
                     *summary
                         .review_signals_by_kind
                         .entry(signal.kind)
                         .or_insert(0) += 1;
                 }
-                SignalVisibility::Muted => {
+                SignalVisibilityState::Muted { mute_reason } => {
                     summary.muted_signals += 1;
-                    if let Some(reason) = signal.mute_reason {
-                        *summary.muted_signals_by_reason.entry(reason).or_insert(0) += 1;
-                    }
+                    *summary
+                        .muted_signals_by_reason
+                        .entry(mute_reason)
+                        .or_insert(0) += 1;
                 }
             }
         }
