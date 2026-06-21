@@ -12,6 +12,14 @@ use crate::environment::TARGET_DIRECTORY_ENV_KEYS;
 use super::output::CommandOutput;
 
 static TEMP_OUTPUT_COUNTER: AtomicU64 = AtomicU64::new(0);
+const COMPACT_TARGET_ENV: &[(&str, &str)] = &[
+    ("CARGO_INCREMENTAL", "0"),
+    ("CARGO_BUILD_INCREMENTAL", "false"),
+    ("CARGO_PROFILE_DEV_DEBUG", "0"),
+    ("CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG", "0"),
+    ("CARGO_PROFILE_TEST_DEBUG", "0"),
+    ("CARGO_PROFILE_TEST_BUILD_OVERRIDE_DEBUG", "0"),
+];
 
 pub(crate) fn run_command(
     command: &str,
@@ -34,6 +42,7 @@ pub(crate) fn run_command(
     }
     if let Some(cargo_target_dir) = cargo_target_dir {
         child_command.env("CARGO_TARGET_DIR", cargo_target_dir);
+        apply_compact_target_env(&mut child_command);
     }
     let child_result = child_command.spawn();
     let mut child = match child_result {
@@ -127,8 +136,64 @@ impl TempOutputCapture {
     }
 }
 
+fn apply_compact_target_env(command: &mut Command) {
+    for (key, value) in COMPACT_TARGET_ENV {
+        command.env(key, value);
+    }
+}
+
 impl Drop for TempOutputCapture {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_command;
+    use anyhow::Result;
+    use tempfile::TempDir;
+
+    #[test]
+    fn owned_cargo_target_dir_disables_debug_symbols_and_incremental_builds() -> Result<()> {
+        let temp = TempDir::new()?;
+        let (command, args) = environment_dump_command();
+
+        let output = run_command(&command, &args, temp.path(), 10_000, Some(temp.path()))?;
+
+        assert_eq!(output.status, Some(0));
+        assert_env_line(&output.stdout, "CARGO_INCREMENTAL", "0");
+        assert_env_line(&output.stdout, "CARGO_BUILD_INCREMENTAL", "false");
+        assert_env_line(&output.stdout, "CARGO_PROFILE_DEV_DEBUG", "0");
+        assert_env_line(
+            &output.stdout,
+            "CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG",
+            "0",
+        );
+        assert_env_line(&output.stdout, "CARGO_PROFILE_TEST_DEBUG", "0");
+        assert_env_line(
+            &output.stdout,
+            "CARGO_PROFILE_TEST_BUILD_OVERRIDE_DEBUG",
+            "0",
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn environment_dump_command() -> (String, Vec<String>) {
+        ("cmd".to_string(), vec!["/C".to_string(), "set".to_string()])
+    }
+
+    #[cfg(not(windows))]
+    fn environment_dump_command() -> (String, Vec<String>) {
+        ("env".to_string(), Vec::new())
+    }
+
+    fn assert_env_line(stdout: &str, key: &str, value: &str) {
+        let expected = format!("{key}={value}");
+        assert!(
+            stdout.lines().any(|line| line == expected),
+            "missing environment line {expected:?} in:\n{stdout}"
+        );
     }
 }
