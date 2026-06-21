@@ -49,6 +49,16 @@ pub(super) fn assert_oracle_bridge_projection(artifact: &Value) -> Result<()> {
         artifact["oracleBridge"]["policy"]["calibration"]["requiredEvidence"][2],
         "readiness-gate-from-real-corpus"
     );
+    let readiness_policy = &artifact["oracleBridge"]["policy"]["calibration"]["readinessPolicy"];
+    assert_eq!(
+        readiness_policy["source"],
+        "_lib/p6-measurement.mjs::computeReadiness"
+    );
+    assert_eq!(readiness_policy["safeFixFpRedThreshold"], 0.05);
+    assert_eq!(readiness_policy["reviewVisibleFpRedThreshold"], 0.25);
+    assert_eq!(readiness_policy["reviewVisibleFpGreenThreshold"], 0.1);
+    assert_eq!(readiness_policy["minNonTrivialCorpus"], 2);
+    assert_eq!(readiness_policy["defaultMinAdjudicatedPerCorpus"], 50);
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibration"]["jsTsPrecedent"]["measurementArtifact"],
         "p6-measurement.json"
@@ -56,6 +66,10 @@ pub(super) fn assert_oracle_bridge_projection(artifact: &Value) -> Result<()> {
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibration"]["jsTsPrecedent"]["measurementOwner"],
         "_lib/p6-measurement.mjs"
+    );
+    assert_eq!(
+        artifact["oracleBridge"]["policy"]["calibration"]["jsTsPrecedent"]["readinessGateOwner"],
+        "_lib/p6-measurement.mjs::computeReadiness"
     );
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibration"]["jsTsPrecedent"]

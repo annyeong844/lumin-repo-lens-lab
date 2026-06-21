@@ -74,25 +74,6 @@ fn multi_edit_machine_applicable_warning_promotes_single_safe_action() -> Result
 }
 
 #[test]
-fn targeted_package_checks_preserve_completed_package_safe_action_after_later_timeout() -> Result<()>
-{
-    let env = RealCargoEnv::workspace_with_fast_warning_and_slow_build_script()?;
-    let artifact = env.run_targeted_with_timeout(
-        vec![
-            "a_fast/src/lib.rs".to_string(),
-            "z_slow/src/lib.rs".to_string(),
-        ],
-        2,
-        3_000,
-    )?;
-
-    assert_eq!(artifact["oraclePlan"]["status"], "timeout");
-    assert_eq!(artifact["oraclePlan"]["selectedPackageCount"], 2);
-    assert_eq!(artifact["coverage"][0]["streamParseStatus"], "timeout");
-    assert_rule_backed_safe_action_with_edits(&artifact, "unused_parens", &["", " "])
-}
-
-#[test]
 fn warning_lint_is_rule_backed_without_blocking_verified_error_clean() -> Result<()> {
     let env = RealCargoEnv::single_package(
         "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",

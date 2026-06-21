@@ -20,8 +20,7 @@ use sha2::{Digest, Sha256};
 mod cli;
 
 pub use cli::{
-    parse_enum, parse_min_usize, parse_nonzero_usize, parse_u64, take_path, take_string, CliAction,
-    CliResult,
+    parse_enum, parse_min_usize, parse_nonzero_usize, take_path, take_string, CliAction, CliResult,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

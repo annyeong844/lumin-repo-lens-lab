@@ -55,6 +55,7 @@ pub struct PrimarySpanLocation {
 #[cfg(test)]
 mod tests {
     use super::{PrimarySpan, PrimarySpanClass};
+    use anyhow::{anyhow, Result};
 
     fn primary_span(file_name: &str, primary_span_class: PrimarySpanClass) -> PrimarySpan {
         PrimarySpan {
@@ -67,6 +68,50 @@ mod tests {
             expansion: None,
             primary_span_class,
         }
+    }
+
+    #[test]
+    fn serializes_public_contract_as_camel_case() -> Result<()> {
+        let span = PrimarySpan {
+            file_name: Some("src/lib.rs".to_string()),
+            line_start: Some(2),
+            line_end: Some(3),
+            column_start: Some(4),
+            column_end: Some(5),
+            has_expansion: false,
+            expansion: None,
+            primary_span_class: PrimarySpanClass::UserCode,
+        };
+
+        let value = serde_json::to_value(span)?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| anyhow!("primary span serializes to object"))?;
+
+        assert_eq!(value["fileName"], "src/lib.rs");
+        assert_eq!(value["lineStart"], 2);
+        assert_eq!(value["lineEnd"], 3);
+        assert_eq!(value["columnStart"], 4);
+        assert_eq!(value["columnEnd"], 5);
+        assert_eq!(value["hasExpansion"], false);
+        assert_eq!(value["expansion"], serde_json::Value::Null);
+        assert_eq!(value["primarySpanClass"], "user-code");
+
+        for forbidden_key in [
+            "file_name",
+            "line_start",
+            "line_end",
+            "column_start",
+            "column_end",
+            "has_expansion",
+            "primary_span_class",
+        ] {
+            assert!(
+                !object.contains_key(forbidden_key),
+                "primary span leaked snake_case key {forbidden_key}"
+            );
+        }
+        Ok(())
     }
 
     #[test]

@@ -6,7 +6,7 @@ use lumin_rust_cargo_oracle::protocol::{
 };
 
 use super::{
-    evidence::TaintEvidence, ActionTier, DegradedReason, OracleConfidence, SafeActionCandidate,
+    evidence::TaintEvidence, ActionTier, CleanupCandidate, DegradedReason, OracleConfidence,
 };
 
 pub(super) struct FindingActionSummary {
@@ -150,29 +150,33 @@ pub(super) fn finding_action_summary(records: &[FindingActionRecord<'_>]) -> Fin
     summary
 }
 
-pub(super) fn safe_action_candidates<'a>(
+pub(super) fn cleanup_candidates<'a>(
     records: &[FindingActionRecord<'a>],
-) -> Vec<SafeActionCandidate<'a>> {
+) -> Vec<CleanupCandidate<'a>> {
     records
         .iter()
-        .filter(|record| record.action.has_safe_action)
-        .filter_map(safe_action_candidate)
+        .filter(|record| {
+            record.action.has_safe_action
+                || !record.action.action_blockers.is_empty()
+                || record.action.is_review
+        })
+        .filter_map(cleanup_candidate)
         .collect()
 }
 
-fn safe_action_candidate<'a>(record: &FindingActionRecord<'a>) -> Option<SafeActionCandidate<'a>> {
+fn cleanup_candidate<'a>(record: &FindingActionRecord<'a>) -> Option<CleanupCandidate<'a>> {
     let finding = record.finding;
-    let action = finding.safe_action.as_ref()?;
-    let edit = action.edits.first();
+    let action = finding.safe_action.as_ref();
+    let edit = action.and_then(|action| action.edits.first());
     let file = edit
         .map(|edit| edit.file_name.as_str())
         .or_else(|| finding.span.as_ref()?.file_name.as_deref())?;
     let line_start = edit
         .map(|edit| edit.line_start)
         .or_else(|| finding.span.as_ref().and_then(|span| span.line_start));
-    Some(SafeActionCandidate::new(
+    Some(CleanupCandidate::new(
         file,
-        Some(action.proof.diagnostic_code.as_str()),
+        action.map(|action| action.proof.diagnostic_code.as_str()),
         line_start,
     ))
 }

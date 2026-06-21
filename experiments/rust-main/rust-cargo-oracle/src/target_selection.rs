@@ -19,7 +19,6 @@ pub(crate) fn target_package_selection(
     metadata: Option<&CargoMetadata>,
     target_paths: &[String],
     package_name: Option<&str>,
-    targeted_package_cap: usize,
 ) -> TargetPackageSelection {
     let mut normalized_target_paths = target_paths
         .iter()
@@ -51,11 +50,7 @@ pub(crate) fn target_package_selection(
     }
 
     let candidate_package_names = ranked_package_names(metadata, &paths_by_package);
-    let package_names = candidate_package_names
-        .iter()
-        .take(targeted_package_cap)
-        .cloned()
-        .collect::<Vec<_>>();
+    let package_names = candidate_package_names.clone();
     let packages = packages_by_name_or_id(Some(metadata), &package_names);
     TargetPackageSelection {
         target_paths: normalized_target_paths,

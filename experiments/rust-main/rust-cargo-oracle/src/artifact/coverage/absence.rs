@@ -89,7 +89,7 @@ fn absence_unavailable_reasons(input: &CoverageInput<'_>) -> Vec<CoverageUnavail
         StreamParseStatus::NoJsonEvents => {
             reasons.push(CoverageUnavailableReason::CargoJsonStreamContainedNoEvents);
         }
-        StreamParseStatus::Timeout | StreamParseStatus::InvalidJson => {
+        StreamParseStatus::InvalidJson => {
             reasons.push(CoverageUnavailableReason::CargoJsonStreamDidNotParseCompletely);
         }
     }
@@ -104,6 +104,11 @@ fn absence_unavailable_reasons(input: &CoverageInput<'_>) -> Vec<CoverageUnavail
             Some(true) => {}
             Some(false) => reasons.push(CoverageUnavailableReason::BuildFinishedSuccessWasFalse),
             None => reasons.push(CoverageUnavailableReason::BuildFinishedSuccessWasNotTrue),
+        }
+    }
+    if let Some(status) = input.check_output.status {
+        if status != 0 {
+            reasons.push(CoverageUnavailableReason::CargoCheckExitedNonZero(status));
         }
     }
     if input.diagnostics.iter().any(|diagnostic| {

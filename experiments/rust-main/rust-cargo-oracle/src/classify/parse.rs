@@ -3,7 +3,7 @@ use crate::protocol::StreamParseStatus;
 
 use super::model::ParsedJsonl;
 
-pub(crate) fn parse_cargo_jsonl(stdout: &str, timed_out: bool) -> ParsedJsonl {
+pub(crate) fn parse_cargo_jsonl(stdout: &str) -> ParsedJsonl {
     let mut messages = CargoJsonStream::empty();
     let mut invalid_json_line_count = 0;
     for line in stdout.lines().filter(|line| !line.trim().is_empty()) {
@@ -13,9 +13,7 @@ pub(crate) fn parse_cargo_jsonl(stdout: &str, timed_out: bool) -> ParsedJsonl {
         }
     }
 
-    let stream_parse_status = if timed_out {
-        StreamParseStatus::Timeout
-    } else if messages.is_empty() && invalid_json_line_count == 0 {
+    let stream_parse_status = if messages.is_empty() && invalid_json_line_count == 0 {
         StreamParseStatus::NoJsonEvents
     } else if invalid_json_line_count == 0 {
         StreamParseStatus::Complete
@@ -38,21 +36,8 @@ mod tests {
     use super::{parse_cargo_jsonl, skipped_cargo_jsonl};
 
     #[test]
-    fn timeout_preserves_already_emitted_json_messages() {
-        let parsed = parse_cargo_jsonl(
-            r#"{"reason":"compiler-message","message":{"level":"error","code":null,"spans":[]}}"#,
-            true,
-        );
-
-        assert_eq!(parsed.stream_parse_status(), StreamParseStatus::Timeout);
-        assert_eq!(parsed.invalid_json_line_count(), 0);
-        assert_eq!(parsed.message_count(), 1);
-        assert!(parsed.contains_reason(CargoJsonReason::CompilerMessage));
-    }
-
-    #[test]
     fn empty_stream_is_no_json_events() {
-        let parsed = parse_cargo_jsonl("", false);
+        let parsed = parse_cargo_jsonl("");
 
         assert_eq!(
             parsed.stream_parse_status(),
@@ -64,10 +49,8 @@ mod tests {
 
     #[test]
     fn invalid_json_lines_make_stream_incomplete_without_dropping_valid_events() {
-        let parsed = parse_cargo_jsonl(
-            "not-json\n{\"reason\":\"build-finished\",\"success\":true}\n",
-            false,
-        );
+        let parsed =
+            parse_cargo_jsonl("not-json\n{\"reason\":\"build-finished\",\"success\":true}\n");
 
         assert_eq!(parsed.stream_parse_status(), StreamParseStatus::InvalidJson);
         assert_eq!(parsed.invalid_json_line_count(), 1);

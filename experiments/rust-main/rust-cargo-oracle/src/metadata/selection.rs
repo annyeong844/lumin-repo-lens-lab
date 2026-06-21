@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::{CargoMetadata, CargoPackage};
@@ -80,14 +80,14 @@ pub(crate) fn packages_by_name_or_id(
     let Some(metadata) = metadata else {
         return Vec::new();
     };
-    let requested = package_names
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    metadata
+    let by_name_or_id = metadata
         .packages
         .iter()
-        .filter(|pkg| requested.contains(pkg.name.as_str()) || requested.contains(pkg.id.as_str()))
+        .flat_map(|pkg| [(pkg.name.as_str(), pkg), (pkg.id.as_str(), pkg)])
+        .collect::<BTreeMap<_, _>>();
+    package_names
+        .iter()
+        .filter_map(|name| by_name_or_id.get(name.as_str()).copied())
         .cloned()
         .collect()
 }

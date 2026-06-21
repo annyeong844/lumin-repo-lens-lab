@@ -5,13 +5,10 @@ use crate::parallel::{build_pool, RuntimeConfig};
 use crate::protocol::{
     HealthRequest, HealthResponse, InputMeta, ParserMeta, PolicyMeta, ResponseMeta, RuntimeMeta,
     SidecarMeta, SkippedFile, SourceHealthLimit, SourceHealthMode, SourceHealthProducer,
-    Thresholds, PARSER_EDITION, PARSER_EDITION_POLICY, PARSER_EDITION_SOURCE, PARSER_KIND,
-    PARSER_VERSION, POLICY_VERSION, SCHEMA_VERSION, SIGNAL_POLICY_ID, SIGNAL_POLICY_VERSION,
+    PARSER_EDITION, PARSER_EDITION_POLICY, PARSER_EDITION_SOURCE, PARSER_KIND, PARSER_VERSION,
+    POLICY_VERSION, SCHEMA_VERSION, SIGNAL_POLICY_ID, SIGNAL_POLICY_VERSION,
 };
 use crate::summary::summarize;
-
-const MAX_FUNCTION_LINES: usize = 80;
-const MAX_IMPL_LINES: usize = 200;
 
 pub struct FinalMeta {
     pub generated: String,
@@ -24,13 +21,9 @@ pub fn analyze_request(
     skipped_files: Vec<SkippedFile>,
     final_meta: Option<FinalMeta>,
 ) -> Result<HealthResponse> {
-    let thresholds = Thresholds {
-        max_function_lines: MAX_FUNCTION_LINES,
-        max_impl_lines: MAX_IMPL_LINES,
-    };
     let runtime_config = RuntimeConfig::try_from(request.runtime)?;
     let pool = build_pool(runtime_config)?;
-    let files = pool.install(|| analyze_files(&request.files, &thresholds, &request.parser))?;
+    let files = pool.install(|| analyze_files(&request.files, &request.parser))?;
     let mut summary = summarize(&files);
     summary.skipped_files = skipped_files.len();
     let (generated, sidecar, input) = final_meta
@@ -50,7 +43,6 @@ pub fn analyze_request(
             },
             policy: PolicyMeta {
                 version: POLICY_VERSION.to_string(),
-                thresholds,
                 signal_policy: crate::protocol::SignalPolicyMeta {
                     id: SIGNAL_POLICY_ID.to_string(),
                     version: SIGNAL_POLICY_VERSION.to_string(),

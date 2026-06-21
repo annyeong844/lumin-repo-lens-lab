@@ -39,12 +39,6 @@ pub fn parse_min_usize(value: &str, flag: &str, minimum: usize) -> CliResult<usi
     Ok(parsed)
 }
 
-pub fn parse_u64(value: &str, flag: &str) -> CliResult<u64> {
-    value
-        .parse::<u64>()
-        .map_err(|_| invalid_numeric_value(flag, value))
-}
-
 pub fn parse_enum<T>(value: &str, flag: &str) -> CliResult<T>
 where
     T: FromStr,
@@ -70,9 +64,7 @@ fn invalid_numeric_value(flag: &str, value: &str) -> UsageError {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_min_usize, parse_nonzero_usize, parse_u64, take_path, take_string, UsageError,
-    };
+    use super::{parse_min_usize, parse_nonzero_usize, take_path, take_string, UsageError};
     use std::path::PathBuf;
 
     #[test]
@@ -132,15 +124,6 @@ mod tests {
             Err(UsageError::new(
                 "--worker-stack-bytes must be at least 1024"
             ))
-        );
-    }
-
-    #[test]
-    fn parse_u64_keeps_cli_usage_messages() {
-        assert_eq!(parse_u64("60000", "--timeout-ms"), Ok(60_000));
-        assert_eq!(
-            parse_u64("soon", "--timeout-ms"),
-            Err(UsageError::new("invalid --timeout-ms value: soon"))
         );
     }
 }

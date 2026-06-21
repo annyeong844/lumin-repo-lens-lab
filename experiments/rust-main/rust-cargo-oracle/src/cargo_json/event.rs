@@ -33,10 +33,30 @@ impl<'a> CargoJsonMessages<'a> {
     }
 
     pub(crate) fn build_finished(self) -> Option<CargoBuildFinished> {
-        self.records
+        let mut saw_event = false;
+        let mut saw_unknown = false;
+        for success in self
+            .records
             .iter()
             .map(CargoJsonEvent::new)
-            .find_map(CargoBuildFinished::from_event)
+            .filter_map(|event| event.record.build_finished_success())
+        {
+            saw_event = true;
+            match success {
+                Some(true) => {}
+                Some(false) => return Some(CargoBuildFinished { success }),
+                None => saw_unknown = true,
+            }
+        }
+        if !saw_event {
+            None
+        } else if saw_unknown {
+            Some(CargoBuildFinished { success: None })
+        } else {
+            Some(CargoBuildFinished {
+                success: Some(true),
+            })
+        }
     }
 
     #[cfg(test)]
@@ -81,13 +101,6 @@ pub(crate) struct CargoBuildFinished {
 }
 
 impl CargoBuildFinished {
-    fn from_event(event: CargoJsonEvent<'_>) -> Option<Self> {
-        event
-            .record
-            .build_finished_success()
-            .map(|success| Self { success })
-    }
-
     pub(crate) fn success(self) -> Option<bool> {
         self.success
     }

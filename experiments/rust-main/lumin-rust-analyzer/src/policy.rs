@@ -27,10 +27,10 @@ pub(crate) use syntax::{
     SyntaxReviewSignalExample,
 };
 pub(crate) use types::{
-    normalize_candidate_file, ActionTier, CalibrationStatus, CoverageRunStatus, DegradedReason,
-    FileParseStatus, OracleBridgeStatus, OracleConfidence, ProductCacheReuseSummaryProjection,
-    ProductCoverageUnavailableReason, ProductPrimarySpanProjection,
-    ProductSemanticCleanSummaryProjection, RawLaneOmitted, SafeActionCandidate,
+    normalize_candidate_file, ActionTier, CalibrationStatus, CleanupCandidate, CoverageRunStatus,
+    DegradedReason, FileParseStatus, OracleBridgeStatus, OracleConfidence,
+    ProductCacheReuseSummaryProjection, ProductCoverageUnavailableReason,
+    ProductPrimarySpanProjection, ProductSemanticCleanSummaryProjection, RawLaneOmitted,
     ACTION_SAMPLE_LIMIT, AST_SAMPLE_LIMIT, DEFINITION_SAMPLE_LIMIT, FILE_AST_SAMPLE_LIMIT,
     FILE_SIGNAL_SAMPLE_LIMIT, ORACLE_SCOPE_SAMPLE_LIMIT, PARSE_ERROR_SAMPLE_LIMIT, POLICY_VERSION,
     SIGNAL_SAMPLE_LIMIT, SKIPPED_FILE_SAMPLE_LIMIT, SYNTAX_CONFIDENCE_TIER, USE_TREE_SAMPLE_LIMIT,

@@ -47,7 +47,6 @@ pub(super) struct ProductArtifactInput {
     pub(super) semantic_mode: CargoCheckMode,
     pub(super) cargo_target_dir_mode: CargoTargetDirMode,
     pub(super) cargo_target_dir: String,
-    pub(super) targeted_package_cap: usize,
 }
 
 #[derive(Debug, Serialize)]

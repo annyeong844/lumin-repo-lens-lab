@@ -2,12 +2,10 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use lumin_rust_cargo_oracle::{
-    CargoCheckMode, CargoTargetDirMode, DEFAULT_TARGETED_CARGO_CHECK_PACKAGES,
-};
+use lumin_rust_cargo_oracle::{CargoCheckMode, CargoTargetDirMode};
 use lumin_rust_common::{
-    find_repo_root_with_fallback, parse_enum, parse_min_usize, parse_nonzero_usize, parse_u64,
-    take_path, take_string, usage_error, CliAction,
+    find_repo_root_with_fallback, parse_enum, parse_min_usize, parse_nonzero_usize, take_path,
+    take_string, usage_error, CliAction,
 };
 use lumin_rust_source_health::protocol::DEFAULT_WORKER_STACK_BYTES;
 
@@ -17,7 +15,6 @@ pub(crate) struct Options {
     pub(crate) output: Option<PathBuf>,
     pub(crate) source_commit: String,
     pub(crate) cargo_bin: String,
-    pub(crate) timeout_ms: u64,
     pub(crate) features: Option<String>,
     pub(crate) package_name: Option<String>,
     pub(crate) repo_root: PathBuf,
@@ -25,7 +22,6 @@ pub(crate) struct Options {
     pub(crate) worker_stack_bytes: usize,
     pub(crate) semantic_mode: CargoCheckMode,
     pub(crate) cargo_target_dir_mode: CargoTargetDirMode,
-    pub(crate) targeted_package_cap: usize,
     pub(crate) calibration_adjudication: Option<PathBuf>,
 }
 
@@ -34,7 +30,6 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
     let mut output: Option<PathBuf> = None;
     let mut source_commit: Option<String> = None;
     let mut cargo_bin = "cargo".to_string();
-    let mut timeout_ms = 60_000_u64;
     let mut features: Option<String> = None;
     let mut package_name: Option<String> = None;
     let mut repo_root: Option<PathBuf> = None;
@@ -42,7 +37,6 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
     let mut worker_stack_bytes = DEFAULT_WORKER_STACK_BYTES;
     let mut semantic_mode = CargoCheckMode::MetadataOnly;
     let mut cargo_target_dir_mode = CargoTargetDirMode::IsolatedTemp;
-    let mut targeted_package_cap = DEFAULT_TARGETED_CARGO_CHECK_PACKAGES;
     let mut calibration_adjudication: Option<PathBuf> = None;
 
     let mut args = env::args().skip(1);
@@ -54,10 +48,6 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
                 source_commit = Some(take_string(&mut args, "--source-commit")?)
             }
             "--cargo-bin" => cargo_bin = take_string(&mut args, "--cargo-bin")?,
-            "--timeout-ms" => {
-                let value = take_string(&mut args, "--timeout-ms")?;
-                timeout_ms = parse_u64(&value, "--timeout-ms")?;
-            }
             "--features" => features = Some(take_string(&mut args, "--features")?),
             "--package" => package_name = Some(take_string(&mut args, "--package")?),
             "--repo-root" => repo_root = Some(take_path(&mut args, "--repo-root")?),
@@ -74,10 +64,6 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
             }
             "--cargo-check" => semantic_mode = CargoCheckMode::CargoCheck,
             "--targeted-cargo-check" => semantic_mode = CargoCheckMode::TargetedCargoCheck,
-            "--targeted-package-cap" => {
-                let value = take_string(&mut args, "--targeted-package-cap")?;
-                targeted_package_cap = parse_nonzero_usize(&value, "--targeted-package-cap")?;
-            }
             "--threads" => {
                 let value = take_string(&mut args, "--threads")?;
                 thread_count = Some(parse_nonzero_usize(&value, "--threads")?);
@@ -107,7 +93,6 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
         output: Some(output),
         source_commit: source_commit.ok_or_else(|| usage_error("--source-commit is required"))?,
         cargo_bin,
-        timeout_ms,
         features,
         package_name,
         repo_root,
@@ -115,7 +100,6 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
         worker_stack_bytes,
         semantic_mode,
         cargo_target_dir_mode,
-        targeted_package_cap,
         calibration_adjudication,
     }))
 }
@@ -127,6 +111,6 @@ fn default_repo_root(root: &Path) -> PathBuf {
 
 fn print_usage() {
     eprintln!(
-        "Usage: lumin-rust-analyzer --root <path> --source-commit <sha> [--output <path>] [--cargo-bin <path>] [--timeout-ms <ms>] [--features <csv>] [--package <name>] [--repo-root <path>] [--semantic-mode metadata-only|cargo-check|targeted-cargo-check] [--cargo-target-dir-mode isolated-temp|reusable-temp] [--targeted-package-cap <n>] [--calibration-adjudication <path>] [--cargo-check] [--targeted-cargo-check] [--threads <n>] [--worker-stack-bytes <bytes>]"
+        "Usage: lumin-rust-analyzer --root <path> --source-commit <sha> [--output <path>] [--cargo-bin <path>] [--features <csv>] [--package <name>] [--repo-root <path>] [--semantic-mode metadata-only|cargo-check|targeted-cargo-check] [--cargo-target-dir-mode isolated-temp|reusable-temp] [--calibration-adjudication <path>] [--cargo-check] [--targeted-cargo-check] [--threads <n>] [--worker-stack-bytes <bytes>]"
     );
 }

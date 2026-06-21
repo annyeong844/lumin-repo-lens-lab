@@ -3,7 +3,6 @@ use lumin_rust_source_health::protocol::{
     PolicyMeta as SyntaxPolicyMeta, ResponseMeta as SyntaxMeta, RuntimeMeta as SyntaxRuntimeMeta,
     SidecarMeta as SyntaxSidecarMeta, SignalPolicyMeta as SyntaxSignalPolicyMeta, SkippedFile,
     SourceHealthLimit, SourceHealthMode, SourceHealthProducer, Summary as SyntaxSummary,
-    Thresholds as SyntaxThresholds,
 };
 use serde::Serialize;
 
@@ -142,7 +141,6 @@ impl<'a> SyntaxPhaseParserBrief<'a> {
 #[serde(rename_all = "camelCase")]
 struct SyntaxPhasePolicyBrief<'a> {
     version: &'a str,
-    thresholds: SyntaxThresholds,
     signal_policy: SyntaxPhaseSignalPolicyBrief<'a>,
 }
 
@@ -150,7 +148,6 @@ impl<'a> SyntaxPhasePolicyBrief<'a> {
     fn from_meta(meta: &'a SyntaxPolicyMeta) -> Self {
         Self {
             version: meta.version.as_str(),
-            thresholds: meta.thresholds,
             signal_policy: SyntaxPhaseSignalPolicyBrief::from_meta(&meta.signal_policy),
         }
     }

@@ -3,7 +3,6 @@ pub(crate) struct CommandOutput {
     pub(crate) status: Option<i32>,
     pub(crate) stdout: String,
     pub(crate) stderr: String,
-    pub(crate) timed_out: bool,
     pub(crate) elapsed_ms: u128,
     pub(crate) skip_reason: Option<CommandSkipReason>,
 }
@@ -18,7 +17,6 @@ pub(crate) fn skipped_command_output() -> CommandOutput {
         status: None,
         stdout: String::new(),
         stderr: String::new(),
-        timed_out: false,
         elapsed_ms: 0,
         skip_reason: None,
     }
@@ -29,7 +27,6 @@ pub(crate) fn skipped_command_output_with_reason(reason: CommandSkipReason) -> C
         status: None,
         stdout: String::new(),
         stderr: String::new(),
-        timed_out: false,
         elapsed_ms: 0,
         skip_reason: Some(reason),
     }
@@ -45,7 +42,6 @@ pub(crate) fn combined_command_output(outputs: Vec<CommandOutput>) -> CommandOut
         combined.status = combined_status(combined.status, output.status);
         append_text(&mut combined.stdout, &output.stdout);
         append_text(&mut combined.stderr, &output.stderr);
-        combined.timed_out |= output.timed_out;
         combined.elapsed_ms += output.elapsed_ms;
         if combined.skip_reason.is_none() {
             combined.skip_reason = output.skip_reason;
@@ -88,7 +84,6 @@ mod tests {
         assert_eq!(output.elapsed_ms, 0);
         assert_eq!(output.stdout, "");
         assert_eq!(output.stderr, "");
-        assert!(!output.timed_out);
         assert_eq!(output.skip_reason, None);
     }
 
@@ -105,21 +100,19 @@ mod tests {
     }
 
     #[test]
-    fn combined_command_output_preserves_completed_stdout_after_later_timeout() {
+    fn combined_command_output_preserves_completed_stdout_after_later_failure() {
         let output = combined_command_output(vec![
             CommandOutput {
                 status: Some(0),
                 stdout: "fast-json\n".to_string(),
                 stderr: String::new(),
-                timed_out: false,
                 elapsed_ms: 20,
                 skip_reason: None,
             },
             CommandOutput {
                 status: Some(1),
                 stdout: String::new(),
-                stderr: "slow-timeout".to_string(),
-                timed_out: true,
+                stderr: "later failure".to_string(),
                 elapsed_ms: 1000,
                 skip_reason: None,
             },
@@ -127,8 +120,7 @@ mod tests {
 
         assert_eq!(output.status, Some(1));
         assert_eq!(output.stdout, "fast-json\n");
-        assert_eq!(output.stderr, "slow-timeout");
-        assert!(output.timed_out);
+        assert_eq!(output.stderr, "later failure");
         assert_eq!(output.elapsed_ms, 1020);
     }
 
@@ -139,7 +131,6 @@ mod tests {
                 status: Some(101),
                 stdout: String::new(),
                 stderr: String::new(),
-                timed_out: false,
                 elapsed_ms: 1,
                 skip_reason: None,
             },
@@ -147,7 +138,6 @@ mod tests {
                 status: Some(1),
                 stdout: String::new(),
                 stderr: String::new(),
-                timed_out: false,
                 elapsed_ms: 1,
                 skip_reason: None,
             },

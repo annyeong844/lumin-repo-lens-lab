@@ -1,5 +1,5 @@
 use crate::locations::LineIndex;
-use crate::protocol::{AstDefinitionKind, SignalKind, Thresholds};
+use crate::protocol::{AstDefinitionKind, SignalKind};
 use ra_ap_syntax::{ast, AstNode, SyntaxNode};
 
 use super::FileSyntax;
@@ -9,12 +9,7 @@ use crate::analyzer::facts::{
 use crate::analyzer::location::line_span;
 use crate::analyzer::signal_policy::contextual_review_signal;
 
-pub(super) fn collect_function(
-    node: &SyntaxNode,
-    line_index: &LineIndex,
-    thresholds: &Thresholds,
-    syntax: &mut FileSyntax,
-) {
+pub(super) fn collect_function(node: &SyntaxNode, line_index: &LineIndex, syntax: &mut FileSyntax) {
     syntax.facts.items += 1;
     syntax.facts.functions += 1;
     if function_is_unsafe(node) {
@@ -22,13 +17,6 @@ pub(super) fn collect_function(
     }
     let lines = line_span(line_index, node.text_range());
     syntax.facts.max_function_lines = syntax.facts.max_function_lines.max(lines);
-    if lines > thresholds.max_function_lines {
-        syntax.signals.push(contextual_review_signal(
-            SignalKind::OversizedFunction,
-            line_index,
-            node,
-        ));
-    }
     collect_definition(
         &mut syntax.ast.definitions,
         AstDefinitionKind::Function,
@@ -64,21 +52,8 @@ pub(super) fn collect_trait(node: &SyntaxNode, line_index: &LineIndex, syntax: &
     );
 }
 
-pub(super) fn collect_impl(
-    node: &SyntaxNode,
-    line_index: &LineIndex,
-    thresholds: &Thresholds,
-    syntax: &mut FileSyntax,
-) {
+pub(super) fn collect_impl(syntax: &mut FileSyntax) {
     syntax.facts.items += 1;
-    let lines = line_span(line_index, node.text_range());
-    if lines > thresholds.max_impl_lines {
-        syntax.signals.push(contextual_review_signal(
-            SignalKind::OversizedImpl,
-            line_index,
-            node,
-        ));
-    }
 }
 
 pub(super) fn collect_module(node: &SyntaxNode, line_index: &LineIndex, syntax: &mut FileSyntax) {

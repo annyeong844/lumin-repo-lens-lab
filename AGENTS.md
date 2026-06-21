@@ -18,3 +18,12 @@
 - Create importable code before tests import it; a test whose only value is proving a file, function, or module exists is not useful.
 - Good failures are behavioral: the scanner missed an import, the bridge reported the wrong mismatch, the collector appended evidence it should have refused.
 - Bad failures are scaffolding trivia: a file is absent, a helper is not exported, or a placeholder module has not been created yet.
+
+## Rust Migration Discipline
+
+- Rust migration work must start from checked TS/JS behavior or a documented Rust-only necessity.
+- Do not add timeouts, caps, thresholds, muting/safe/review policy, fixtures, or policy constants just to make CI pass.
+- Do not cap Rust analysis by elapsed wall time. Large repositories must complete, degrade with artifact-visible evidence, or hard-stop on a real contract failure.
+- Every Rust-only behavior must explain why TS/JS does not need it and why Rust does.
+- Document Rust-only guards in canonical docs before code, and make any omitted scope visible in the product artifact.
+- Prefer deleting unsupported Rust-only paths over leaving dead code. Keep future hooks only when a concrete product path will connect to them.

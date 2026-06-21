@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use lumin_rust_cargo_oracle::protocol::{ActionBlockerReason, ClaimKind};
 
 use super::{ActionTierSummary, EvidenceTierSummary};
-use crate::policy::{semantic_examples, DegradedReason, SafeActionCandidate};
+use crate::policy::{semantic_examples, CleanupCandidate, DegradedReason};
 
 pub(crate) struct ActionPolicy<'a> {
     pub(super) syntax_evidence: SyntaxEvidenceCounts,
@@ -16,7 +16,7 @@ pub(crate) struct ActionPolicy<'a> {
     pub(super) semantic_degraded_by_reason: BTreeMap<DegradedReason, usize>,
     pub(super) semantic_degraded_examples: Vec<semantic_examples::DegradedExample<'a>>,
     pub(super) semantic_safe_action_examples: Vec<semantic_examples::SafeActionExample<'a>>,
-    pub(super) semantic_safe_action_candidates: Vec<SafeActionCandidate<'a>>,
+    pub(super) semantic_cleanup_candidates: Vec<CleanupCandidate<'a>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -189,7 +189,7 @@ impl ActionPolicy<'_> {
         self.syntax_evidence.muted()
     }
 
-    pub(crate) fn semantic_safe_action_candidates(&self) -> &[SafeActionCandidate<'_>] {
-        &self.semantic_safe_action_candidates
+    pub(crate) fn semantic_cleanup_candidates(&self) -> &[CleanupCandidate<'_>] {
+        &self.semantic_cleanup_candidates
     }
 }

@@ -1,12 +1,11 @@
 use anyhow::Result;
 use std::path::Path;
-use std::time::Instant;
 
 use crate::classify::{parse_cargo_jsonl, skipped_cargo_jsonl, ParsedJsonl};
 use crate::command::{
     cargo_check_args, cargo_check_args_for_packages, combined_command_output, run_cargo_check,
-    run_cargo_check_for_packages_with_timeout, skipped_command_output,
-    skipped_command_output_with_reason, CommandOutput, CommandSkipReason,
+    run_cargo_check_for_packages, skipped_command_output, skipped_command_output_with_reason,
+    CommandOutput, CommandSkipReason,
 };
 use crate::metadata::{selected_packages, CargoMetadata, CargoPackage};
 use crate::options::OracleOptions;
@@ -31,7 +30,7 @@ pub(super) fn run_cargo_check_phase(
     let parsed = if run.output.status.is_none() {
         skipped_cargo_jsonl()
     } else {
-        parse_cargo_jsonl(&run.output.stdout, run.output.timed_out)
+        parse_cargo_jsonl(&run.output.stdout)
     };
 
     Ok(CargoCheckPhase {
@@ -99,26 +98,11 @@ fn run_targeted_cargo_checks(
 ) -> Result<CargoCheckRun> {
     let mut outputs = Vec::with_capacity(target_selection.package_names.len());
     let mut selected_packages = Vec::with_capacity(target_selection.package_names.len());
-    let started = Instant::now();
     for package in &target_selection.packages {
-        let Some(timeout_ms) = remaining_timeout_ms(started, options.timeout_ms) else {
-            outputs.push(targeted_budget_timeout_output(package.name.as_str()));
-            break;
-        };
         let package_names = std::slice::from_ref(&package.name);
-        let output = run_cargo_check_for_packages_with_timeout(
-            root,
-            options,
-            package_names,
-            cargo_target_dir,
-            timeout_ms,
-        )?;
-        let timed_out = output.timed_out;
+        let output = run_cargo_check_for_packages(root, options, package_names, cargo_target_dir)?;
         outputs.push(output);
         selected_packages.push(package.clone());
-        if timed_out {
-            break;
-        }
     }
     let package_names = selected_packages
         .iter()
@@ -129,26 +113,4 @@ fn run_targeted_cargo_checks(
         selected_packages,
         output: combined_command_output(outputs),
     })
-}
-
-fn remaining_timeout_ms(started: Instant, timeout_ms: u64) -> Option<u64> {
-    let timeout = u128::from(timeout_ms);
-    let elapsed = started.elapsed().as_millis();
-    let remaining = timeout.saturating_sub(elapsed);
-    if remaining == 0 {
-        None
-    } else {
-        Some(remaining.min(u128::from(u64::MAX)) as u64)
-    }
-}
-
-fn targeted_budget_timeout_output(package_name: &str) -> CommandOutput {
-    CommandOutput {
-        status: Some(1),
-        stdout: String::new(),
-        stderr: format!("targeted cargo check timed out before package {package_name}"),
-        timed_out: true,
-        elapsed_ms: 0,
-        skip_reason: None,
-    }
 }

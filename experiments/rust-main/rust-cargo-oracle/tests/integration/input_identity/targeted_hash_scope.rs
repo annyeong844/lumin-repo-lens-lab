@@ -51,28 +51,3 @@ fn targeted_analysis_input_hash_uses_normalized_target_path_set() -> Result<()> 
     assert_eq!(first, second);
     Ok(())
 }
-
-#[test]
-fn targeted_analysis_input_hash_tracks_package_cap() -> Result<()> {
-    let env = RealCargoEnv::workspace_with_selected_local_dependency_and_unselected_member()?;
-    let target_paths = vec![
-        "app/src/lib.rs".to_string(),
-        "local_dep/src/lib.rs".to_string(),
-    ];
-    let cap_one = env.run_targeted_with_cap(target_paths.clone(), 1)?;
-    let cap_two = env.run_targeted_with_cap(target_paths, 2)?;
-
-    assert_eq!(cap_one["oraclePlan"]["targetedPackageCap"], 1);
-    assert_eq!(cap_two["oraclePlan"]["targetedPackageCap"], 2);
-    assert_eq!(cap_one["oraclePlan"]["selectedPackageCount"], 1);
-    assert_eq!(cap_two["oraclePlan"]["selectedPackageCount"], 2);
-
-    let cap_one_hash = cap_one["meta"]["analysisInputSetHash"]
-        .as_str()
-        .context("cap one analysisInputSetHash")?;
-    let cap_two_hash = cap_two["meta"]["analysisInputSetHash"]
-        .as_str()
-        .context("cap two analysisInputSetHash")?;
-    assert_ne!(cap_one_hash, cap_two_hash);
-    Ok(())
-}

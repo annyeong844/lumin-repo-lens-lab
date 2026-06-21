@@ -139,3 +139,33 @@ fn compiler_message_preserves_future_target_kind_without_string_drift() -> Resul
     );
     Ok(())
 }
+
+#[test]
+fn build_finished_aggregates_later_failure_after_earlier_success() -> Result<()> {
+    let mut stream = CargoJsonStream::empty();
+    stream.push_json_line(r#"{"reason":"build-finished","success":true}"#)?;
+    stream.push_json_line(r#"{"reason":"build-finished","success":false}"#)?;
+
+    let build_finished = stream
+        .as_messages()
+        .build_finished()
+        .context("build-finished aggregate")?;
+
+    assert_eq!(build_finished.success(), Some(false));
+    Ok(())
+}
+
+#[test]
+fn build_finished_aggregates_unknown_success_as_not_true() -> Result<()> {
+    let mut stream = CargoJsonStream::empty();
+    stream.push_json_line(r#"{"reason":"build-finished","success":true}"#)?;
+    stream.push_json_line(r#"{"reason":"build-finished"}"#)?;
+
+    let build_finished = stream
+        .as_messages()
+        .build_finished()
+        .context("build-finished aggregate")?;
+
+    assert_eq!(build_finished.success(), None);
+    Ok(())
+}

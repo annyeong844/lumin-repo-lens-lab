@@ -95,61 +95,51 @@ fn reusable_temp_target_mode_uses_owned_temp_cache_without_repo_target_dir() -> 
 }
 
 #[test]
-fn targeted_cargo_check_stops_after_first_package_timeout() -> Result<()> {
-    let env = RealCargoEnv::targeted_timeout_workspace()?;
-    let artifact = env.run_targeted_with_timeout(
-        vec![
-            "aaa-slow/src/lib.rs".to_string(),
-            "bbb-error/src/lib.rs".to_string(),
-        ],
-        2,
-        1_500,
-    )?;
+fn targeted_cargo_check_orders_independent_small_package_before_local_dependency() -> Result<()> {
+    let env = RealCargoEnv::targeted_local_dependency_ranking_workspace()?;
+    let artifact = env.run_targeted(vec![
+        "a-dep/src/lib.rs".to_string(),
+        "b-plain/src/lib.rs".to_string(),
+    ])?;
 
-    assert_eq!(artifact["oraclePlan"]["status"], "timeout");
-    assert_eq!(artifact["oraclePlan"]["targetedPackageCap"], 2);
-    assert_eq!(artifact["oraclePlan"]["selectedPackageCount"], 1);
-    assert_eq!(artifact["oraclePlan"]["selectedTargetPathCount"], 1);
-    assert_eq!(artifact["oraclePlan"]["omittedTargetPathCount"], 1);
+    assert_eq!(artifact["oraclePlan"]["status"], "ran");
+    assert_eq!(artifact["oraclePlan"]["selectedPackageCount"], 2);
+    assert_eq!(artifact["oraclePlan"]["selectedTargetPathCount"], 2);
+    assert_eq!(artifact["oraclePlan"]["omittedTargetPathCount"], 0);
     assert_eq!(
         artifact["oraclePlan"]["selectedPackages"][0]["packageName"],
-        "aaa-slow"
+        "b-plain"
     );
-    assert_eq!(artifact["oraclePlan"]["omittedPackageCount"], 1);
-
-    let stream = coverage(&artifact, "cov.cargo-check.cargo-event-stream")?;
-    assert_eq!(stream["streamParseStatus"], "timeout");
-    let command_args = stream["commandArgs"].as_array().context("commandArgs")?;
-    assert!(command_args.iter().any(|arg| arg == "--package"));
-    assert!(command_args.iter().any(|arg| arg == "aaa-slow"));
-    assert!(!command_args.iter().any(|arg| arg == "bbb-error"));
-    assert!(artifact["findings"]
+    assert!(artifact["oraclePlan"]["omittedPackageExamples"]
         .as_array()
-        .context("findings")?
+        .context("omitted package examples")?
         .is_empty());
     Ok(())
 }
 
 #[test]
-fn targeted_cargo_check_prefers_independent_small_package_before_local_dependency() -> Result<()> {
-    let env = RealCargoEnv::targeted_local_dependency_ranking_workspace()?;
-    let artifact = env.run_targeted_with_cap(
-        vec![
-            "a-dep/src/lib.rs".to_string(),
-            "b-plain/src/lib.rs".to_string(),
-        ],
-        1,
-    )?;
+fn targeted_later_nonzero_exit_does_not_mark_combined_stream_clean() -> Result<()> {
+    let env = RealCargoEnv::targeted_success_then_build_script_failure_workspace()?;
+    let artifact = env.run_targeted(vec![
+        "a-clean/src/lib.rs".to_string(),
+        "b-build-fails/src/lib.rs".to_string(),
+    ])?;
 
     assert_eq!(artifact["oraclePlan"]["status"], "ran");
-    assert_eq!(artifact["oraclePlan"]["targetedPackageCap"], 1);
-    assert_eq!(artifact["oraclePlan"]["selectedPackageCount"], 1);
-    assert_eq!(artifact["oraclePlan"]["selectedTargetPathCount"], 1);
-    assert_eq!(artifact["oraclePlan"]["omittedTargetPathCount"], 1);
+    assert_eq!(artifact["oraclePlan"]["selectedPackageCount"], 2);
     assert_eq!(
         artifact["oraclePlan"]["selectedPackages"][0]["packageName"],
-        "b-plain"
+        "a-clean"
     );
-    assert_eq!(artifact["oraclePlan"]["omittedPackageExamples"][0], "a-dep");
+
+    let absence = coverage(&artifact, "cov.cargo-check.absence-clean")?;
+    assert_eq!(absence["status"], "unavailable");
+    assert!(!absence
+        .as_object()
+        .context("absence-clean coverage object")?
+        .contains_key("clean"));
+    assert!(absence["reason"]
+        .as_str()
+        .is_some_and(|reason| reason.contains("cargo check exited with status")));
     Ok(())
 }

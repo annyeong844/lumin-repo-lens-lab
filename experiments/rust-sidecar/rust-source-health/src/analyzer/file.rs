@@ -1,5 +1,5 @@
 use crate::locations::LineIndex;
-use crate::protocol::{FileHealth, ParseStatus, PathMeta, RequestFile, Thresholds};
+use crate::protocol::{FileHealth, ParseStatus, PathMeta, RequestFile};
 use crate::signals::{apply_signal_policy, syntax_parse_error};
 use anyhow::Result;
 use ra_ap_syntax::{AstNode, Edition, SourceFile};
@@ -7,18 +7,14 @@ use ra_ap_syntax::{AstNode, Edition, SourceFile};
 use super::path::classify_path;
 use super::syntax::collect_file_syntax;
 
-pub(super) fn analyze_file(
-    file: &RequestFile,
-    thresholds: &Thresholds,
-    edition: Edition,
-) -> Result<(String, FileHealth)> {
+pub(super) fn analyze_file(file: &RequestFile, edition: Edition) -> Result<(String, FileHealth)> {
     let parse = SourceFile::parse(&file.text, edition);
     let source_file = parse.tree();
     let root = source_file.syntax();
     let line_index = LineIndex::new(&file.text);
 
     let classifications = classify_path(&file.path);
-    let mut syntax = collect_file_syntax(root, &line_index, thresholds, &classifications);
+    let mut syntax = collect_file_syntax(root, &line_index, &classifications);
 
     let mut errors = parse
         .errors()

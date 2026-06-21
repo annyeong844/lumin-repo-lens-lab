@@ -24,7 +24,6 @@ pub enum FindingSourceVersion {
 #[serde(rename_all = "kebab-case")]
 pub enum OraclePlanStatus {
     NotRun,
-    Timeout,
     Ran,
 }
 

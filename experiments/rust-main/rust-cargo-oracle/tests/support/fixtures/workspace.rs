@@ -100,36 +100,4 @@ impl RealCargoEnv {
         )?;
         Self::from_root(temp, root)
     }
-
-    pub fn workspace_with_fast_warning_and_slow_build_script() -> Result<Self> {
-        let temp = TempDir::new()?;
-        let root = temp.path().join("workspace");
-        fs::create_dir_all(root.join("a_fast").join("src"))?;
-        fs::create_dir_all(root.join("z_slow").join("src"))?;
-        fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"a_fast\", \"z_slow\"]\nresolver = \"2\"\n",
-        )?;
-        fs::write(
-            root.join("a_fast").join("Cargo.toml"),
-            "[package]\nname = \"a_fast\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
-        )?;
-        fs::write(
-            root.join("a_fast").join("src").join("lib.rs"),
-            "pub fn app(flag: bool) -> i32 { if (flag) { 1 } else { 2 } }\n",
-        )?;
-        fs::write(
-            root.join("z_slow").join("Cargo.toml"),
-            "[package]\nname = \"z_slow\"\nversion = \"0.1.0\"\nedition = \"2021\"\nbuild = \"build.rs\"\n",
-        )?;
-        fs::write(
-            root.join("z_slow").join("src").join("lib.rs"),
-            "pub fn slow() {}\n",
-        )?;
-        fs::write(
-            root.join("z_slow").join("build.rs"),
-            "fn main() { std::thread::sleep(std::time::Duration::from_secs(30)); }\n",
-        )?;
-        Self::from_root(temp, root)
-    }
 }
