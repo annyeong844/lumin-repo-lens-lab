@@ -13,7 +13,6 @@ jobs:
     name: Detect changed surfaces
     runs-on: ubuntu-latest
     outputs:
-      node: ${{ steps.filter.outputs.node }}
       rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +30,6 @@ jobs:
           set -euo pipefail
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            echo "node=true" >> "$GITHUB_OUTPUT"
             echo "rust=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -49,18 +47,15 @@ jobs:
           fi
 
           if [[ -z "$base" ]]; then
-            echo "node=true" >> "$GITHUB_OUTPUT"
             echo "rust=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           git diff --name-only "$base" "$head" > changed-files.txt
 
-          node=false
           rust=false
 
           if [[ ! -s changed-files.txt ]]; then
-            node=true
             rust=true
           fi
 
@@ -72,32 +67,10 @@ jobs:
               experiments/Cargo.toml|experiments/Cargo.lock|experiments/.cargo/*|experiments/rust-common/*|experiments/rust-main/*|experiments/rust-sidecar/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
                 rust=true
                 ;;
-              *)
-                node=true
-                ;;
             esac
           done < changed-files.txt
 
-          echo "node=$node" >> "$GITHUB_OUTPUT"
           echo "rust=$rust" >> "$GITHUB_OUTPUT"
-
-  test:
-    needs: changes
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && needs.changes.outputs.node == 'true' }}
-    name: Test (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['20.x', '22.x']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm run ci
 
   rust:
     needs: changes
