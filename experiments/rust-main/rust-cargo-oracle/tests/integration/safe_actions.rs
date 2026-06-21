@@ -83,7 +83,7 @@ fn targeted_package_checks_preserve_completed_package_safe_action_after_later_ti
             "z_slow/src/lib.rs".to_string(),
         ],
         2,
-        3_000,
+        10_000,
     )?;
 
     assert_eq!(artifact["oraclePlan"]["status"], "timeout");

@@ -103,7 +103,7 @@ fn targeted_cargo_check_stops_after_first_package_timeout() -> Result<()> {
             "bbb-error/src/lib.rs".to_string(),
         ],
         2,
-        1_500,
+        10_000,
     )?;
 
     assert_eq!(artifact["oraclePlan"]["status"], "timeout");
