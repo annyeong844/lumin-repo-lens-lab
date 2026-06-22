@@ -9,7 +9,7 @@ use toml::Value as TomlValue;
 
 use super::super::intent::NormalizedIntent;
 
-const DEPENDENCY_EXAMPLE_LIMIT: usize = 5;
+pub(in crate::prewrite) const DEPENDENCY_EXAMPLE_LIMIT: usize = 5;
 pub(in crate::prewrite) const DEPENDENCY_WATCH_FOR_THRESHOLD: usize = 10;
 const DEPENDENCY_SECTIONS: &[&str] = &["dependencies", "dev-dependencies", "build-dependencies"];
 const LOCAL_RUST_PATH_ROOTS: &[&str] = &["crate", "self", "super", "std", "core", "alloc"];

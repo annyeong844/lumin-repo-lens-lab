@@ -13,9 +13,11 @@ use super::{
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::operation::{service_operation_info, OperationInfo};
 
-const SERVICE_OPERATION_POLICY_ID: &str = "prewrite-service-operation-sibling-cue";
-const SERVICE_OPERATION_POLICY_VERSION: &str = "prewrite-service-operation-sibling-cue-v1";
-const SERVICE_OPERATION_POLICY_MAX_RESULTS: usize = 5;
+pub(in crate::prewrite) const SERVICE_OPERATION_POLICY_ID: &str =
+    "prewrite-service-operation-sibling-cue";
+pub(in crate::prewrite) const SERVICE_OPERATION_POLICY_VERSION: &str =
+    "prewrite-service-operation-sibling-cue-v1";
+pub(in crate::prewrite) const SERVICE_OPERATION_POLICY_MAX_RESULTS: usize = 5;
 
 pub(super) fn service_operation_sibling_policy(
     intent_name: &str,

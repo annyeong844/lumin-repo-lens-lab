@@ -5,10 +5,10 @@ use super::{CandidateRecord, NearNameHint, SuppressedNearNameHint, SuppressionRe
 use crate::prewrite::index::{Candidate, CandidateLane, MatchedField};
 use crate::prewrite::tokens::{common_tokens, has_only_weak_common_tokens};
 
-const NEAR_NAME_MAX_LENGTH_DELTA: usize = 2;
-const NEAR_NAME_SHARED_PREFIX_MIN: usize = 4;
-const NEAR_NAME_MAX_DISTANCE: usize = 2;
-const NEAR_NAME_MAX_RESULTS: usize = 5;
+pub(in crate::prewrite) const NEAR_NAME_MAX_LENGTH_DELTA: usize = 2;
+pub(in crate::prewrite) const NEAR_NAME_SHARED_PREFIX_MIN: usize = 4;
+pub(in crate::prewrite) const NEAR_NAME_MAX_DISTANCE: usize = 2;
+pub(in crate::prewrite) const NEAR_NAME_MAX_RESULTS: usize = 5;
 
 pub(super) fn near_name_candidates(
     intent_name: &str,

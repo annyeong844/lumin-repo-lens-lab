@@ -263,6 +263,14 @@ same checked rule is represented as an `AGENT_REVIEW_CUE` on the dependency
 candidate. `sample-only` and `unavailable` counts must never produce a
 dependency hub cue.
 
+Rust pre-write policy constants that mirror the JS/TS pre-write lanes must be
+artifact-visible under `meta.lookupPolicy`. This includes the checked JS/TS
+source files and the caps/thresholds for near-name hints, semantic hints,
+service-operation sibling review, local-operation sibling review, file
+domain-cluster cues, and dependency hub cues. These fields are provenance for
+existing advisory policy. They are not repository-size caps, time limits, or
+permission to skip analysis.
+
 Cargo/rustc semantic checks are a Rust-only necessity: JS/TS lanes do not
 produce Cargo `target/` build products, but Rust oracle runs do. Rust must not
 write into the analyzed repository's `target/` directory by default. The

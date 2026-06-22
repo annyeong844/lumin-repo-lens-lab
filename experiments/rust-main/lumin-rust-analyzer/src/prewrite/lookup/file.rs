@@ -9,6 +9,9 @@ use serde::Serialize;
 
 use super::super::intent::NormalizedIntent;
 use domain_cluster::{find_domain_cluster, DomainCluster};
+pub(in crate::prewrite) use domain_cluster::{
+    DOMAIN_CLUSTER_MAX_EXAMPLES, DOMAIN_CLUSTER_MIN_MATCHES, DOMAIN_CLUSTER_MIN_PREFIX_LEN,
+};
 
 mod domain_cluster;
 

@@ -12,9 +12,10 @@ use super::ServiceOperationFamily;
 use crate::prewrite::index::LocalOperationCandidate;
 use crate::prewrite::operation::service_operation_info;
 
-const LOCAL_OPERATION_POLICY_ID: &str = "prewrite-local-operation-sibling";
-const LOCAL_OPERATION_POLICY_VERSION: &str = "prewrite-local-operation-sibling-v1";
-const LOCAL_OPERATION_POLICY_MAX_RESULTS: usize = 5;
+pub(in crate::prewrite) const LOCAL_OPERATION_POLICY_ID: &str = "prewrite-local-operation-sibling";
+pub(in crate::prewrite) const LOCAL_OPERATION_POLICY_VERSION: &str =
+    "prewrite-local-operation-sibling-v1";
+pub(in crate::prewrite) const LOCAL_OPERATION_POLICY_MAX_RESULTS: usize = 5;
 const INTENT_OWNER_FILE_MISSING: &str = "intent-owner-file-missing";
 
 pub(super) fn local_operation_sibling_policy(

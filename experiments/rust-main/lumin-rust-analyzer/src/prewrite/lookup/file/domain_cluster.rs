@@ -4,9 +4,9 @@ use lumin_rust_source_health::protocol::HealthResponse;
 use serde::Serialize;
 
 // Mirrors _lib/pre-write-lookup-file.mjs domain cluster policy.
-const DOMAIN_CLUSTER_MIN_MATCHES: usize = 2;
-const DOMAIN_CLUSTER_MAX_EXAMPLES: usize = 8;
-const DOMAIN_CLUSTER_MIN_PREFIX_LEN: usize = 4;
+pub(in crate::prewrite) const DOMAIN_CLUSTER_MIN_MATCHES: usize = 2;
+pub(in crate::prewrite) const DOMAIN_CLUSTER_MAX_EXAMPLES: usize = 8;
+pub(in crate::prewrite) const DOMAIN_CLUSTER_MIN_PREFIX_LEN: usize = 4;
 const GENERIC_DOMAIN_PREFIXES: &[&str] = &[
     "index", "main", "test", "tests", "spec", "helper", "helpers", "utils", "util", "types", "type",
 ];

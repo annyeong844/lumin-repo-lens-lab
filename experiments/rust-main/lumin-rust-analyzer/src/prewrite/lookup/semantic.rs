@@ -4,8 +4,8 @@ use crate::prewrite::index::{Candidate, CandidateLane};
 use crate::prewrite::intent::NameDeclaration;
 use crate::prewrite::tokens::{is_weak_common_token, unique_tokens};
 
-const SEMANTIC_HINT_MAX_RESULTS: usize = 5;
-const SEMANTIC_HINT_MIN_SCORE: usize = 2;
+pub(in crate::prewrite) const SEMANTIC_HINT_MAX_RESULTS: usize = 5;
+pub(in crate::prewrite) const SEMANTIC_HINT_MIN_SCORE: usize = 2;
 
 pub(super) fn semantic_hint_candidates(
     intent_name: &str,
