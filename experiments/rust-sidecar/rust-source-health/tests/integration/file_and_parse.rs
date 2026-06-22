@@ -29,10 +29,20 @@ pub fn build() {
 }
 
 pub(crate) struct Maybe;
+
+impl Maybe {
+    pub fn normalize(&self) -> usize {
+        1
+    }
+
+    pub(crate) fn make() -> Self {
+        Maybe
+    }
+}
 "#;
     let value = analyze_file("src/lib.rs", source);
 
-    assert_ast_summary_counts(&value, 2, 3, 1, 1, 0, 1);
+    assert_ast_summary_counts(&value, 4, 1, 2, 3, 1, 1, 0, 1);
     assert_core_ast_fact_projection(&value, "src/lib.rs");
 }
 

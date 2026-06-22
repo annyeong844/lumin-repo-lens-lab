@@ -11,9 +11,10 @@ mod signal;
 mod summary;
 
 pub use ast::{
-    AstCfgGate, AstDefinition, AstDefinitionKind, AstFacts, AstMacroCall, AstMethodCall,
-    AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface, AstOpaqueSurfaceKind,
-    AstOpaqueSurfaceVisibility, AstOpaqueVisibility, AstPathRef, AstUseTree, AstVisibility,
+    AstCfgGate, AstDefinition, AstDefinitionKind, AstFacts, AstImplBlock, AstImplMethod,
+    AstMacroCall, AstMethodCall, AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface,
+    AstOpaqueSurfaceKind, AstOpaqueSurfaceVisibility, AstOpaqueVisibility, AstPathRef, AstUseTree,
+    AstVisibility,
 };
 pub use file::{Facts, FileHealth};
 pub use location::Location;
@@ -32,7 +33,7 @@ pub use signal::{
 pub use summary::Summary;
 
 pub const SCHEMA_VERSION: u32 = 1;
-pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v2";
+pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v3";
 pub const PARSER_KIND: ParserKind = ParserKind::RaApSyntax;
 pub const PARSER_VERSION: &str = "0.0.337";
 pub const PARSER_EDITION: ParserEdition = ParserEdition::Edition2021;

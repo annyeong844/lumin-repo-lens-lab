@@ -7,6 +7,7 @@ use super::Location;
 #[serde(rename_all = "camelCase")]
 pub struct AstFacts {
     pub definitions: Vec<AstDefinition>,
+    pub impls: Vec<AstImplBlock>,
     pub use_trees: Vec<AstUseTree>,
     pub path_refs: Vec<AstPathRef>,
     pub method_call_counts: BTreeMap<String, usize>,
@@ -46,6 +47,25 @@ pub enum AstVisibility {
     Restricted,
     Private,
     Unknown,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AstImplBlock {
+    pub target: String,
+    #[serde(rename = "trait", skip_serializing_if = "Option::is_none")]
+    pub trait_path: Option<String>,
+    pub methods: Vec<AstImplMethod>,
+    pub location: Location,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AstImplMethod {
+    pub name: String,
+    pub visibility: AstVisibility,
+    pub has_receiver: bool,
+    pub location: Location,
 }
 
 #[derive(Debug, Clone, Serialize)]

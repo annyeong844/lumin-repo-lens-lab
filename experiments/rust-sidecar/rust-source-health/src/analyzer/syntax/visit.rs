@@ -15,7 +15,7 @@ pub(super) fn collect_syntax_node(
         SyntaxKind::STRUCT => items::collect_struct(node, line_index, syntax),
         SyntaxKind::ENUM => items::collect_enum(node, line_index, syntax),
         SyntaxKind::TRAIT => items::collect_trait(node, line_index, syntax),
-        SyntaxKind::IMPL => items::collect_impl(syntax),
+        SyntaxKind::IMPL => items::collect_impl(node, line_index, syntax),
         SyntaxKind::MODULE => items::collect_module(node, line_index, syntax),
         SyntaxKind::CONST => items::collect_const(node, line_index, syntax),
         SyntaxKind::STATIC => items::collect_static(node, line_index, syntax),

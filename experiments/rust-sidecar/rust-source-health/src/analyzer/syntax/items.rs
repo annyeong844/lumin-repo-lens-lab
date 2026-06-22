@@ -1,11 +1,16 @@
 use crate::locations::LineIndex;
-use crate::protocol::{AstDefinitionKind, SignalKind};
-use ra_ap_syntax::{ast, AstNode, SyntaxNode};
+use crate::protocol::{AstDefinitionKind, AstImplBlock, AstImplMethod, SignalKind};
+use ra_ap_syntax::{
+    ast::{self, HasName, HasVisibility},
+    AstNode, SyntaxNode,
+};
 
 use super::FileSyntax;
 use crate::analyzer::facts::{
-    collect_definition, counted_item_cast, function_is_unsafe, is_unsafe_block_expr,
+    collect_definition, counted_item_cast, function_is_unsafe, is_unsafe_block_expr, syntax_text,
+    visibility_for,
 };
+use crate::analyzer::location::ast_location;
 use crate::analyzer::location::line_span;
 use crate::analyzer::signal_policy::contextual_review_signal;
 
@@ -52,8 +57,48 @@ pub(super) fn collect_trait(node: &SyntaxNode, line_index: &LineIndex, syntax: &
     );
 }
 
-pub(super) fn collect_impl(syntax: &mut FileSyntax) {
+pub(super) fn collect_impl(node: &SyntaxNode, line_index: &LineIndex, syntax: &mut FileSyntax) {
     syntax.facts.items += 1;
+    let Some(impl_block) = ast::Impl::cast(node.clone()) else {
+        return;
+    };
+    let Some(target) = impl_block.self_ty() else {
+        return;
+    };
+    syntax.ast.impls.push(AstImplBlock {
+        target: syntax_text(target.syntax()),
+        trait_path: impl_block
+            .trait_()
+            .map(|trait_path| syntax_text(trait_path.syntax())),
+        methods: impl_methods(&impl_block, line_index),
+        location: ast_location(line_index, impl_block.syntax().text_range()),
+    });
+}
+
+fn impl_methods(impl_block: &ast::Impl, line_index: &LineIndex) -> Vec<AstImplMethod> {
+    let Some(items) = impl_block.assoc_item_list() else {
+        return Vec::new();
+    };
+    items
+        .assoc_items()
+        .filter_map(|item| match item {
+            ast::AssocItem::Fn(function) => {
+                let name = function.name()?;
+                Some(AstImplMethod {
+                    name: name.text().to_string(),
+                    visibility: visibility_for(function.visibility()),
+                    has_receiver: function
+                        .param_list()
+                        .and_then(|params| params.self_param())
+                        .is_some(),
+                    location: ast_location(line_index, function.syntax().text_range()),
+                })
+            }
+            ast::AssocItem::Const(_)
+            | ast::AssocItem::MacroCall(_)
+            | ast::AssocItem::TypeAlias(_) => None,
+        })
+        .collect()
 }
 
 pub(super) fn collect_module(node: &SyntaxNode, line_index: &LineIndex, syntax: &mut FileSyntax) {

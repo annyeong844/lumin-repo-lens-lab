@@ -9,6 +9,14 @@ pub fn assert_core_ast_fact_projection(artifact: &Value, path: &str) {
     assert_eq!(ast["definitions"][0]["visibility"], "public");
     assert_eq!(ast["definitions"][1]["kind"], "struct");
     assert_eq!(ast["definitions"][1]["visibility"], "crate");
+    assert_eq!(ast["impls"][0]["target"], "Maybe");
+    assert!(ast["impls"][0].get("trait").is_none());
+    assert_eq!(ast["impls"][0]["methods"][0]["name"], "normalize");
+    assert_eq!(ast["impls"][0]["methods"][0]["visibility"], "public");
+    assert_eq!(ast["impls"][0]["methods"][0]["hasReceiver"], true);
+    assert_eq!(ast["impls"][0]["methods"][1]["name"], "make");
+    assert_eq!(ast["impls"][0]["methods"][1]["visibility"], "crate");
+    assert_eq!(ast["impls"][0]["methods"][1]["hasReceiver"], false);
     assert_eq!(ast["useTrees"][0]["visibility"], "public");
     assert_eq!(ast["useTrees"][2]["glob"], true);
     assert_eq!(ast["pathRefs"][0]["path"], "crate::factory::make");

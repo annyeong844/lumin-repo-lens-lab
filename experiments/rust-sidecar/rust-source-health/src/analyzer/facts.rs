@@ -69,6 +69,21 @@ pub(super) fn sort_ast_facts(facts: &mut AstFacts) {
             .then(left.kind.cmp(&right.kind))
             .then(left.name.cmp(&right.name))
     });
+    for impl_block in &mut facts.impls {
+        impl_block.methods.sort_by(|left, right| {
+            left.location
+                .byte_start
+                .cmp(&right.location.byte_start)
+                .then(left.name.cmp(&right.name))
+        });
+    }
+    facts.impls.sort_by(|left, right| {
+        left.location
+            .byte_start
+            .cmp(&right.location.byte_start)
+            .then(left.target.cmp(&right.target))
+            .then(left.trait_path.cmp(&right.trait_path))
+    });
     facts.use_trees.sort_by(|left, right| {
         left.location
             .byte_start

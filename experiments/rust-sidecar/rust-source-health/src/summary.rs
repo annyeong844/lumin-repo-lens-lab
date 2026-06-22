@@ -17,6 +17,13 @@ pub(crate) fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
         summary.unsafe_functions += file.facts.unsafe_functions;
         summary.signals += file.signals.len();
         summary.definitions += file.ast.definitions.len();
+        summary.impl_blocks += file.ast.impls.len();
+        summary.impl_methods += file
+            .ast
+            .impls
+            .iter()
+            .map(|impl_block| impl_block.methods.len())
+            .sum::<usize>();
         summary.use_trees += file.ast.use_trees.len();
         summary.path_refs += file.ast.path_refs.len();
         summary.method_call_sites += file.ast.method_call_counts.values().sum::<usize>();

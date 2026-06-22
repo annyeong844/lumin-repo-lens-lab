@@ -5,6 +5,8 @@ use crate::artifact::summary_count;
 pub fn assert_ast_summary_counts(
     artifact: &Value,
     definitions: u64,
+    impl_blocks: u64,
+    impl_methods: u64,
     use_trees: u64,
     path_refs: u64,
     method_call_sites: u64,
@@ -12,6 +14,8 @@ pub fn assert_ast_summary_counts(
     macro_calls: u64,
 ) {
     assert_eq!(summary_count(artifact, "definitions"), definitions);
+    assert_eq!(summary_count(artifact, "implBlocks"), impl_blocks);
+    assert_eq!(summary_count(artifact, "implMethods"), impl_methods);
     assert_eq!(summary_count(artifact, "useTrees"), use_trees);
     assert_eq!(summary_count(artifact, "pathRefs"), path_refs);
     assert_eq!(

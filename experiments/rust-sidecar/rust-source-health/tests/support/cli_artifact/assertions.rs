@@ -23,7 +23,15 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     assert!(artifact["files"]["src/lib.rs"]["ast"].is_null());
     assert_eq!(
         artifact["files"]["src/lib.rs"]["astSummary"]["definitions"],
+        4
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["astSummary"]["implBlocks"],
         1
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["astSummary"]["implMethods"],
+        2
     );
     assert_eq!(
         artifact["files"]["src/lib.rs"]["astSummary"]["methodCallSites"],
@@ -44,9 +52,18 @@ pub fn assert_full_cli_artifact(output_path: &Path) -> Result<()> {
     let artifact: Value = serde_json::from_slice(&fs::read(output_path)?)?;
     assert!(artifact["artifactProfile"].is_null());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["definitions"].is_array());
+    assert!(artifact["files"]["src/lib.rs"]["ast"]["impls"].is_array());
     assert_eq!(
         artifact["files"]["src/lib.rs"]["ast"]["definitions"][0]["kind"],
         "function"
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["ast"]["impls"][0]["target"],
+        "Runner"
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["ast"]["impls"][0]["methods"][0]["name"],
+        "run"
     );
     assert!(artifact["files"]["src/lib.rs"]["astSummary"].is_null());
     Ok(())

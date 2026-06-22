@@ -3,7 +3,7 @@
 > **Role:** canonical naming, shape, helper, and module contract for the Rust source health track.
 > **Owner:** this file.
 > **Status:** M6 spine addition.
-> **Last updated:** 2026-06-17
+> **Last updated:** 2026-06-22
 
 ---
 
@@ -133,6 +133,10 @@ Canonical JSON fields:
 
 - `ast.definitions[]`: named Rust item definitions with `kind`, `name`,
   `visibility`, and `location`.
+- `ast.impls[]`: Rust `impl` block observations with `target`, optional
+  `trait`, method owner evidence, and `location`. This is the Rust analogue of
+  the JS/TS `classMethodIndex`: impl methods are visible as owner evidence
+  without pretending AST-only analysis has type or trait-solving certainty.
 - `ast.useTrees[]`: `use` tree observations with raw tree text, optional path,
   glob status, visibility, and `location`.
 - `ast.pathRefs[]`: qualified expression-position path references with raw path
@@ -245,6 +249,8 @@ Final artifacts must satisfy these counts:
 - `summary.unsafeBlocks === sum(files[*].facts.unsafeBlocks)`
 - `summary.unsafeFunctions === sum(files[*].facts.unsafeFunctions)`
 - `summary.definitions === sum(files[*].ast.definitions.length)`
+- `summary.implBlocks === sum(files[*].ast.impls.length)`
+- `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`
 - `summary.useTrees === sum(files[*].ast.useTrees.length)`
 - `summary.pathRefs === sum(files[*].ast.pathRefs.length)`
 - `summary.methodCallSites === sum(files[*].ast.methodCallCounts values)`
