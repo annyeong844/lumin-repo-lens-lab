@@ -1,35 +1,29 @@
-use std::collections::BTreeMap;
+mod benchmark;
+mod matching;
+mod policy;
+mod stats;
 
-use crate::calibration::{
-    CalibrationAdjudication, CalibrationAdjudicationEntry, CalibrationVerdict,
-};
-use crate::policy::{normalize_candidate_file, ActionPolicyTier, CleanupCandidate};
+use crate::calibration::CalibrationAdjudication;
+use crate::policy::{ActionPolicyTier, CleanupCandidate};
 
 use super::super::projection::{
-    OracleBridgeCalibrationAdjudicationStats, OracleBridgeCalibrationCandidateCounts,
-    OracleBridgeCalibrationGate, OracleBridgeCalibrationPrecedentRef,
+    OracleBridgeCalibrationCandidateCounts, OracleBridgeCalibrationGate,
     OracleBridgeCalibrationReadiness, OracleBridgeCalibrationReadinessPolicy,
     OracleBridgeCalibrationReason, OracleBridgeCalibrationReasonCode,
     OracleBridgeCalibrationSeverity,
 };
 
-// Mirrors _lib/p6-measurement.mjs::computeReadiness. Change the JS/TS owner first.
-const SAFE_FIX_FP_RED_THRESHOLD: f64 = 0.05;
-const REVIEW_VISIBLE_FP_RED_THRESHOLD: f64 = 0.25;
-const REVIEW_VISIBLE_FP_GREEN_THRESHOLD: f64 = 0.10;
-const MIN_NON_TRIVIAL_CORPUS: usize = 2;
-const DEFAULT_MIN_ADJUDICATED_PER_CORPUS: usize = 50;
-const UNKNOWN_CORPUS_NAME: &str = "(unknown)";
+use self::benchmark::{
+    corpus_has_unknown_fp_denominator, enough_corpus, every_corpus_has_enough_adjudication,
+};
+use self::matching::{adjudication_is_in_scope, matched_adjudication_entries};
+use self::policy::{
+    REVIEW_VISIBLE_FP_GREEN_THRESHOLD, REVIEW_VISIBLE_FP_RED_THRESHOLD, SAFE_FIX_FP_RED_THRESHOLD,
+};
+use self::stats::summarize_adjudication;
 
 pub(super) fn readiness_policy() -> OracleBridgeCalibrationReadinessPolicy {
-    OracleBridgeCalibrationReadinessPolicy {
-        source: OracleBridgeCalibrationPrecedentRef::ReadinessGateOwner,
-        safe_fix_fp_red_threshold: SAFE_FIX_FP_RED_THRESHOLD,
-        review_visible_fp_red_threshold: REVIEW_VISIBLE_FP_RED_THRESHOLD,
-        review_visible_fp_green_threshold: REVIEW_VISIBLE_FP_GREEN_THRESHOLD,
-        min_non_trivial_corpus: MIN_NON_TRIVIAL_CORPUS,
-        default_min_adjudicated_per_corpus: DEFAULT_MIN_ADJUDICATED_PER_CORPUS,
-    }
+    self::policy::readiness_policy()
 }
 
 pub(super) fn readiness(
@@ -220,162 +214,4 @@ pub(super) fn readiness(
         safe_fix,
         review_visible_cleanup,
     }
-}
-
-fn enough_corpus(adjudication: &CalibrationAdjudication) -> bool {
-    adjudication
-        .corpus()
-        .iter()
-        .filter(|corpus| corpus.is_non_trivial())
-        .count()
-        >= MIN_NON_TRIVIAL_CORPUS
-}
-
-fn every_corpus_has_enough_adjudication(
-    adjudication: &CalibrationAdjudication,
-    entries: &[CalibrationAdjudicationEntry],
-) -> bool {
-    if adjudication.corpus().is_empty() {
-        return false;
-    }
-    let counts = adjudicated_counts_by_corpus(entries);
-    let corpus_total = adjudication.corpus().len();
-    let min_adjudicated = adjudication
-        .min_adjudicated_per_corpus()
-        .unwrap_or(DEFAULT_MIN_ADJUDICATED_PER_CORPUS);
-    adjudication.corpus().iter().all(|corpus| {
-        let count = corpus
-            .name()
-            .and_then(|name| counts.get(name).copied())
-            .unwrap_or(0);
-        if count >= min_adjudicated {
-            return true;
-        }
-        adjudication
-            .candidate_counts()
-            .expected_review_visible_for_optional_corpus(corpus.name(), corpus_total)
-            .is_some_and(|expected| expected < min_adjudicated && count >= expected)
-    })
-}
-
-fn corpus_has_unknown_fp_denominator(
-    adjudication: Option<&CalibrationAdjudication>,
-    entries: &[CalibrationAdjudicationEntry],
-) -> bool {
-    let Some(adjudication) = adjudication else {
-        return false;
-    };
-    let denominators = review_visible_denominators_by_corpus(entries);
-    let corpus_total = adjudication.corpus().len();
-    adjudication.corpus().iter().any(|corpus| {
-        let denominator = corpus
-            .name()
-            .and_then(|name| denominators.get(name).copied())
-            .unwrap_or(0);
-        adjudication
-            .candidate_counts()
-            .expected_review_visible_for_optional_corpus(corpus.name(), corpus_total)
-            .is_some_and(|expected| expected > 0 && denominator == 0)
-    })
-}
-
-fn adjudicated_counts_by_corpus(entries: &[CalibrationAdjudicationEntry]) -> BTreeMap<&str, usize> {
-    let mut counts = BTreeMap::new();
-    for entry in entries {
-        let corpus_name = entry_corpus_name(entry);
-        *counts.entry(corpus_name).or_insert(0) += 1;
-    }
-    counts
-}
-
-fn review_visible_denominators_by_corpus(
-    entries: &[CalibrationAdjudicationEntry],
-) -> BTreeMap<&str, usize> {
-    let mut counts = BTreeMap::new();
-    for entry in entries.iter().filter(|entry| {
-        matches!(
-            entry.tier,
-            Some(ActionPolicyTier::SafeFix | ActionPolicyTier::ReviewFix)
-        ) && matches!(
-            entry.verdict,
-            CalibrationVerdict::TrueDead | CalibrationVerdict::FalsePositive
-        )
-    }) {
-        let corpus_name = entry_corpus_name(entry);
-        *counts.entry(corpus_name).or_insert(0) += 1;
-    }
-    counts
-}
-
-fn entry_corpus_name(entry: &CalibrationAdjudicationEntry) -> &str {
-    entry.corpus_name.as_deref().unwrap_or(UNKNOWN_CORPUS_NAME)
-}
-
-fn matched_adjudication_entries(
-    entries: &[CalibrationAdjudicationEntry],
-    cleanup_candidates: &[CleanupCandidate<'_>],
-    has_readiness_evidence: bool,
-) -> usize {
-    entries
-        .iter()
-        .filter(|entry| {
-            matches!(
-                entry.tier,
-                Some(ActionPolicyTier::SafeFix | ActionPolicyTier::ReviewFix)
-            ) && adjudication_is_in_scope(entry, cleanup_candidates, has_readiness_evidence)
-        })
-        .count()
-}
-
-fn adjudication_is_in_scope(
-    entry: &CalibrationAdjudicationEntry,
-    cleanup_candidates: &[CleanupCandidate<'_>],
-    has_readiness_evidence: bool,
-) -> bool {
-    has_readiness_evidence || adjudication_matches_candidate(entry, cleanup_candidates)
-}
-
-fn adjudication_matches_candidate(
-    entry: &CalibrationAdjudicationEntry,
-    cleanup_candidates: &[CleanupCandidate<'_>],
-) -> bool {
-    entry.file.as_ref().is_some_and(|file| {
-        let file = normalize_candidate_file(file);
-        cleanup_candidates.iter().any(|candidate| {
-            candidate.file.as_ref() == file.as_ref()
-                && entry
-                    .diagnostic_code
-                    .as_ref()
-                    .is_none_or(|code| candidate.diagnostic_code == Some(code.as_str()))
-                && entry
-                    .line_start
-                    .is_none_or(|line_start| candidate.line_start == Some(line_start))
-        })
-    })
-}
-
-fn summarize_adjudication(
-    entries: &[CalibrationAdjudicationEntry],
-    include: impl Fn(&CalibrationAdjudicationEntry) -> bool,
-) -> OracleBridgeCalibrationAdjudicationStats {
-    let mut stats = OracleBridgeCalibrationAdjudicationStats {
-        false_positives: 0,
-        true_dead: 0,
-        inconclusive: 0,
-        not_applicable: 0,
-        fp_rate: None,
-    };
-    for entry in entries.iter().filter(|entry| include(entry)) {
-        match entry.verdict {
-            CalibrationVerdict::TrueDead => stats.true_dead += 1,
-            CalibrationVerdict::FalsePositive => stats.false_positives += 1,
-            CalibrationVerdict::NotApplicable => stats.not_applicable += 1,
-            CalibrationVerdict::Inconclusive => stats.inconclusive += 1,
-        }
-    }
-    let denominator = stats.true_dead + stats.false_positives;
-    if denominator > 0 {
-        stats.fp_rate = Some(stats.false_positives as f64 / denominator as f64);
-    }
-    stats
 }
