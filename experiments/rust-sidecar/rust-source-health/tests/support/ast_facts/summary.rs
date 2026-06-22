@@ -4,6 +4,7 @@ use crate::artifact::summary_count;
 
 pub struct AstSummaryCounts {
     pub definitions: u64,
+    pub shape_hashes: u64,
     pub impl_blocks: u64,
     pub impl_methods: u64,
     pub use_trees: u64,
@@ -15,6 +16,10 @@ pub struct AstSummaryCounts {
 
 pub fn assert_ast_summary_counts(artifact: &Value, expected: AstSummaryCounts) {
     assert_eq!(summary_count(artifact, "definitions"), expected.definitions);
+    assert_eq!(
+        summary_count(artifact, "shapeHashes"),
+        expected.shape_hashes
+    );
     assert_eq!(summary_count(artifact, "implBlocks"), expected.impl_blocks);
     assert_eq!(
         summary_count(artifact, "implMethods"),

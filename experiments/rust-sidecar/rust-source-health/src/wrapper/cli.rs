@@ -200,6 +200,7 @@ impl<'a> CompactFileHealth<'a> {
 #[serde(rename_all = "camelCase")]
 struct CompactAstSummary<'a> {
     definitions: usize,
+    shape_hashes: usize,
     impl_blocks: usize,
     impl_methods: usize,
     use_trees: usize,
@@ -241,6 +242,7 @@ impl<'a> CompactAstSummary<'a> {
 
         Self {
             definitions: ast.definitions.len(),
+            shape_hashes: ast.shape_hashes.len(),
             impl_blocks: ast.impls.len(),
             impl_methods: ast
                 .impls

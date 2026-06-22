@@ -69,6 +69,22 @@ pub(super) fn sort_ast_facts(facts: &mut AstFacts) {
             .then(left.kind.cmp(&right.kind))
             .then(left.name.cmp(&right.name))
     });
+    for shape in &mut facts.shape_hashes {
+        shape.fields.sort_by(|left, right| {
+            left.name
+                .cmp(&right.name)
+                .then(left.kind.cmp(&right.kind))
+                .then(left.type_text.cmp(&right.type_text))
+                .then(left.visibility.cmp(&right.visibility))
+        });
+    }
+    facts.shape_hashes.sort_by(|left, right| {
+        left.location
+            .byte_start
+            .cmp(&right.location.byte_start)
+            .then(left.name.cmp(&right.name))
+            .then(left.hash.cmp(&right.hash))
+    });
     for impl_block in &mut facts.impls {
         impl_block.methods.sort_by(|left, right| {
             left.location

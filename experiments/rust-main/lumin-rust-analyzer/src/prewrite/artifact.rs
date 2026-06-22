@@ -98,11 +98,15 @@ impl PreWriteArtifact {
             if &lookup.shape != intent_shape {
                 bail!("blocked-artifact-contract: shape lookup drifted from normalized intent");
             }
-            if !lookup.is_unavailable() {
-                bail!("blocked-artifact-contract: unsupported Rust shape lane emitted a match");
+            if !lookup.is_unavailable() && !lookup.is_shape_match() {
+                bail!("blocked-artifact-contract: shape lookup emitted an invalid result");
             }
         }
-        let unavailable_lookup_count = self.shape_lookups.len()
+        let unavailable_lookup_count = self
+            .shape_lookups
+            .iter()
+            .filter(|lookup| lookup.is_unavailable())
+            .count()
             + self
                 .inline_pattern_lookups
                 .iter()
@@ -237,7 +241,7 @@ impl IntentLaneCoverage {
     fn from_intent(intent: &NormalizedIntent) -> Self {
         Self {
             names: LaneStatus::Ran,
-            shapes: unsupported_if_requested(!intent.shapes.is_empty()),
+            shapes: ran_if_requested(!intent.shapes.is_empty()),
             files: ran_if_requested(!intent.files.is_empty()),
             dependencies: ran_if_requested(!intent.dependencies.is_empty()),
             inline_patterns: unsupported_if_requested(intent.has_refactor_sources()),
@@ -247,7 +251,7 @@ impl IntentLaneCoverage {
 
     fn validate(&self, intent: &NormalizedIntent) -> Result<()> {
         if self.names != LaneStatus::Ran
-            || self.shapes != unsupported_if_requested(!intent.shapes.is_empty())
+            || self.shapes != ran_if_requested(!intent.shapes.is_empty())
             || self.files != ran_if_requested(!intent.files.is_empty())
             || self.dependencies != ran_if_requested(!intent.dependencies.is_empty())
             || self.inline_patterns != unsupported_if_requested(intent.has_refactor_sources())
@@ -282,7 +286,7 @@ pub(super) fn build(
 ) -> Result<PreWriteArtifact> {
     let index = CandidateIndex::from_health(syntax);
     let lookups = lookup::lookup_names(&loaded.intent, &index, syntax);
-    let shape_lookups = lookup::lookup_shapes(&loaded.intent);
+    let shape_lookups = lookup::lookup_shapes(&loaded.intent, syntax);
     let inline_pattern_lookups = lookup::lookup_inline_patterns(&loaded.intent);
     let mut unavailable_evidence = lookup::unavailable_evidence_from_shape_lookups(&shape_lookups);
     unavailable_evidence.extend(lookup::unavailable_evidence_from_inline_pattern_lookups(

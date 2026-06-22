@@ -30,7 +30,10 @@ pub fn build() {
     custom_macro!();
 }
 
-pub(crate) struct Maybe;
+pub(crate) struct Maybe {
+    pub id: usize,
+    label: usize,
+}
 
 impl Maybe {
     pub fn normalize(&self) -> usize {
@@ -38,7 +41,10 @@ impl Maybe {
     }
 
     pub(crate) fn make() -> Self {
-        Maybe
+        Maybe {
+            id: 1,
+            label: 0,
+        }
     }
 }
 "#;
@@ -48,6 +54,7 @@ impl Maybe {
         &value,
         AstSummaryCounts {
             definitions: 4,
+            shape_hashes: 1,
             impl_blocks: 1,
             impl_methods: 2,
             use_trees: 3,
@@ -58,6 +65,49 @@ impl Maybe {
         },
     );
     assert_core_ast_fact_projection(&value, "src/lib.rs");
+}
+
+#[test]
+fn shape_hashes_are_exact_for_record_structs_without_claiming_unsupported_shapes() -> Result<()> {
+    let source = r#"
+pub struct First {
+    z: u8,
+    pub a: usize,
+}
+
+pub struct Second {
+    pub a: usize,
+    z: u8,
+}
+
+pub struct Tuple(pub usize);
+pub struct Unit;
+pub struct Generic<T> {
+    value: T,
+}
+pub type Alias = First;
+"#;
+    let value = analyze_file("src/lib.rs", source);
+    let shapes = value["files"]["src/lib.rs"]["ast"]["shapeHashes"]
+        .as_array()
+        .context("shape hashes")?;
+
+    assert_eq!(value["summary"]["shapeHashes"], 2);
+    assert_eq!(shapes.len(), 2);
+    assert_eq!(shapes[0]["name"], "First");
+    assert_eq!(shapes[1]["name"], "Second");
+    assert_eq!(shapes[0]["hash"], shapes[1]["hash"]);
+    assert_eq!(shapes[0]["fields"][0]["name"], "a");
+    assert_eq!(shapes[0]["fields"][0]["visibility"], "public");
+    assert_eq!(shapes[0]["fields"][1]["name"], "z");
+    assert_eq!(shapes[0]["fields"][1]["visibility"], "private");
+    assert!(shapes.iter().all(|shape| {
+        !matches!(
+            shape["name"].as_str(),
+            Some("Tuple" | "Unit" | "Generic" | "Alias")
+        )
+    }));
+    Ok(())
 }
 
 #[test]

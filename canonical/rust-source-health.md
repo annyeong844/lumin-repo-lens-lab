@@ -114,6 +114,7 @@ forbidden unless this canonical file is amended with a migration reason.
 | AST fact range conversion | `ast_location(line_index, range)` | `src/analyzer.rs` |
 | file syntax collection | `collect_file_syntax(...)` | `src/analyzer/syntax.rs` |
 | single-pass syntax node dispatch | `collect_syntax_node(...)` | `src/analyzer/syntax/visit.rs` |
+| Rust record shape hash extraction | `collect_struct_shape_hash(...)` | `src/analyzer/syntax/items.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
 | unsafe block syntax check | `is_unsafe_block_expr(node)` | `src/analyzer.rs` |
@@ -133,6 +134,12 @@ Canonical JSON fields:
 
 - `ast.definitions[]`: named Rust item definitions with `kind`, `name`,
   `visibility`, and `location`.
+- `ast.shapeHashes[]`: exact Rust AST shape-hash facts for supported
+  non-generic named-field structs. The normalized form is Rust-owned and
+  includes record field names, field visibility, and compacted Rust type text.
+  Tuple structs, unit structs, generic structs, type aliases, and field-name-only
+  intents remain unsupported until a checker-grade or explicitly documented
+  producer exists.
 - `ast.impls[]`: Rust `impl` block observations with `target`, optional
   `trait`, method owner evidence, and `location`. This is the Rust analogue of
   the JS/TS `classMethodIndex`: impl methods are visible as owner evidence
@@ -209,15 +216,17 @@ The file lane does not evaluate boundary rules because Rust pre-write intent
 does not carry planned `from -> to` edges. It must emit `NOT_EVALUATED`, matching
 the JS/TS P1-2 behavior.
 
-Rust shape intent lookup follows the JS/TS P4 discipline for unsupported
-evidence: it must not infer structural equality from loose field names and must
-not add fuzzy shape matching. Until a Rust-owned shape-index equivalent exists,
-non-empty shape intents emit `coverage.shapes = "unsupported"`,
-`shapeLookups[]` rows with `result = "UNAVAILABLE"`, and
-`unavailableEvidence[]` rows on the `shape-hash` lane. Fields-only intents cite
-the JS/TS rule that field names alone are not structural equality evidence;
-exact hashes or `typeLiteral` entries cite the missing Rust shape lookup lane.
-No SAFE or review cue may be emitted from this unsupported shape lane.
+Rust shape intent lookup follows the JS/TS P4 discipline: it must not infer
+structural equality from loose field names and must not add fuzzy shape
+matching. Non-empty shape intents emit `coverage.shapes = "ran"` because Rust
+source health now owns a narrow exact-hash shape producer. A `shape.hash`
+matching `HealthResponse::files[*].ast.shapeHashes[].hash` returns
+`SHAPE_MATCH`. Fields-only intents remain `UNAVAILABLE` because field names
+alone are not structural equality evidence. `typeLiteral` without an exact hash
+remains `UNAVAILABLE`; Rust must not parse TS/JS type literals in this lane.
+An unmatched exact hash is also `UNAVAILABLE` for now, not `NOT_OBSERVED`,
+because the Rust producer does not yet make complete absence claims for every
+Rust shape form. No SAFE or review cue may be emitted from this shape lane.
 
 Rust dependency intent lookup is the Rust analogue of the JS/TS
 `pre-write-lookup-dep.mjs` lane:
@@ -356,6 +365,7 @@ Final artifacts must satisfy these counts:
 - `summary.unsafeBlocks === sum(files[*].facts.unsafeBlocks)`
 - `summary.unsafeFunctions === sum(files[*].facts.unsafeFunctions)`
 - `summary.definitions === sum(files[*].ast.definitions.length)`
+- `summary.shapeHashes === sum(files[*].ast.shapeHashes.length)`
 - `summary.implBlocks === sum(files[*].ast.impls.length)`
 - `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`
 - `summary.useTrees === sum(files[*].ast.useTrees.length)`

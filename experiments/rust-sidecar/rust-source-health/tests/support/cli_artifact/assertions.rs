@@ -18,12 +18,17 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     );
     assert_eq!(artifact["summary"]["files"], 1);
     assert_eq!(artifact["summary"]["skippedFiles"], 1);
+    assert_eq!(artifact["summary"]["shapeHashes"], 0);
     assert_eq!(artifact["summary"]["signalsByKind"]["unwrap-call"], 1);
     assert!(artifact["files"]["src/lib.rs"].is_object());
     assert!(artifact["files"]["src/lib.rs"]["ast"].is_null());
     assert_eq!(
         artifact["files"]["src/lib.rs"]["astSummary"]["definitions"],
         4
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["astSummary"]["shapeHashes"],
+        0
     );
     assert_eq!(
         artifact["files"]["src/lib.rs"]["astSummary"]["implBlocks"],

@@ -1,4 +1,7 @@
 use anyhow::{Context, Result};
+use lumin_rust_source_health::{
+    analyze_root, protocol::DEFAULT_WORKER_STACK_BYTES, RustSourceHealthOptions,
+};
 
 use crate::support::prewrite::PreWriteRepo;
 use crate::support::scenarios::single_package::analyze_metadata_only_single_package;
@@ -19,7 +22,7 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
 
     assert_eq!(artifact["intent"]["taskId"], "TASK-42");
     assert_eq!(artifact["coverage"]["names"], "ran");
-    assert_eq!(artifact["coverage"]["shapes"], "unsupported");
+    assert_eq!(artifact["coverage"]["shapes"], "ran");
     assert_eq!(artifact["coverage"]["files"], "ran");
     assert_eq!(artifact["coverage"]["dependencies"], "not-requested");
     assert_eq!(artifact["coverage"]["plannedTypeEscapes"], "ran");
@@ -48,7 +51,7 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
         .iter()
         .any(|citation| citation
             .as_str()
-            .is_some_and(|text| text.contains("Rust pre-write shape lookup is unsupported"))));
+            .is_some_and(|text| text.contains("does not yet make complete absence claims"))));
 
     let unavailable = artifact["unavailableEvidence"]
         .as_array()
@@ -58,7 +61,7 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
         entry["evidenceLane"] == "shape-hash"
             && entry["status"] == "UNAVAILABLE"
             && entry["reason"] == "lookup-unavailable"
-            && entry["artifact"] == "shape-index.json"
+            && entry["artifact"] == "rust-source-health"
     }));
     assert!(artifact["cueCards"]
         .as_array()
@@ -95,6 +98,87 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
             .len(),
         2
     );
+    Ok(())
+}
+
+#[test]
+fn prewrite_shape_hash_matches_rust_source_health_record_struct() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes(
+        "src/lib.rs",
+        br#"pub struct Event {
+    pub id: u64,
+    name: String,
+}
+
+pub struct EventMirror {
+    name: String,
+    pub id: u64,
+}
+"#,
+    )?;
+    let health = analyze_root(RustSourceHealthOptions {
+        root: repo.root_path().to_path_buf(),
+        source_commit: "test-source-commit".to_string(),
+        thread_count: None,
+        worker_stack_bytes: DEFAULT_WORKER_STACK_BYTES,
+    })?;
+    let shape_hash = health
+        .files
+        .get("src/lib.rs")
+        .context("source-health file")?
+        .ast
+        .shape_hashes
+        .iter()
+        .find(|fact| fact.name == "Event")
+        .context("Event shape hash")?
+        .hash
+        .clone();
+    let artifact = repo.run_json(&format!(
+        r#"{{
+  "names": [],
+  "shapes": [{{"hash": "{shape_hash}"}}],
+  "files": [],
+  "dependencies": [],
+  "plannedTypeEscapes": []
+}}"#
+    ))?;
+
+    assert_eq!(artifact["coverage"]["shapes"], "ran");
+    let shape_lookup = &artifact["shapeLookups"][0];
+    assert_eq!(shape_lookup["result"], "SHAPE_MATCH");
+    assert_eq!(shape_lookup["shapeHash"], shape_hash);
+    assert_eq!(shape_lookup["shapeHashSource"], "hash");
+    let matches = shape_lookup["matches"]
+        .as_array()
+        .context("shape matches")?;
+    assert_eq!(matches.len(), 2);
+    assert_eq!(matches[0]["identity"], "src/lib.rs::Event");
+    assert_eq!(matches[0]["ownerFile"], "src/lib.rs");
+    assert_eq!(matches[0]["name"], "Event");
+    assert_eq!(matches[0]["shapeKind"], "record-struct");
+    assert_eq!(matches[0]["fields"][0]["name"], "id");
+    assert_eq!(matches[0]["fields"][0]["type"], "u64");
+    assert_eq!(matches[0]["fields"][0]["visibility"], "public");
+    assert_eq!(matches[0]["fields"][1]["name"], "name");
+    assert_eq!(matches[0]["fields"][1]["type"], "String");
+    assert_eq!(matches[0]["fields"][1]["visibility"], "private");
+    assert_eq!(matches[1]["identity"], "src/lib.rs::EventMirror");
+    assert_eq!(matches[1]["hash"], shape_hash);
+    assert!(artifact["unavailableEvidence"]
+        .as_array()
+        .context("unavailable evidence")?
+        .iter()
+        .all(|entry| entry["evidenceLane"] != "shape-hash"));
+    assert!(artifact["cueCards"]
+        .as_array()
+        .context("cue cards")?
+        .iter()
+        .all(|card| card["cues"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .all(|cue| cue["evidenceLane"] != "shape-hash")));
     Ok(())
 }
 
