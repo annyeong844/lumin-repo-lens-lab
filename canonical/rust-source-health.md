@@ -254,6 +254,22 @@ same checked rule is represented as an `AGENT_REVIEW_CUE` on the dependency
 candidate. `sample-only` and `unavailable` counts must never produce a
 dependency hub cue.
 
+Rust inline extraction intent support is the Rust analogue of the JS/TS
+`pre-write-lookup-inline-patterns.mjs` lane:
+
+- `intent.refactorSources[]` is accepted as optional explicit extraction
+  source evidence and follows the JS/TS input contract: `file` must be a safe
+  POSIX repository-relative path, `lines[]` must contain positive integers when
+  present, and `why` must be non-empty when present.
+- Rust does not currently produce `inline-patterns.json`. When
+  `refactorSources` is non-empty, the pre-write artifact must make that omitted
+  scope visible as `coverage.inlinePatterns = "unsupported"`,
+  `inlinePatternLookups[]` with `result = "UNAVAILABLE"`, and
+  `unavailableEvidence[]` on the `inline-extraction` lane.
+- Missing Rust inline-pattern support must not create `cueCards[]` or
+  `suppressedCues[]`. Review cues for repeated inline statement patterns require
+  a future Rust-owned inline-pattern producer or an explicit artifact bridge.
+
 ## 8. Do Not Invent These Again
 
 These names are banned unless this file is amended with a reason:

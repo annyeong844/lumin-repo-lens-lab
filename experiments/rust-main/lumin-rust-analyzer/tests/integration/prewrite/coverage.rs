@@ -123,3 +123,68 @@ fn prewrite_output_is_deterministic_and_does_not_change_legacy_artifact_shape() 
     assert!(legacy.get("lookups").is_none());
     Ok(())
 }
+
+#[test]
+fn prewrite_refactor_sources_report_inline_pattern_unavailable_without_cues() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    let artifact = repo.run_json(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": [],
+  "dependencies": [],
+  "plannedTypeEscapes": [],
+  "refactorSources": [
+    {
+      "file": "src/lib.rs",
+      "lines": [3, 4],
+      "why": "extract repeated inline handling"
+    }
+  ]
+}"#,
+    )?;
+
+    assert_eq!(artifact["coverage"]["inlinePatterns"], "unsupported");
+    assert_eq!(
+        artifact["intent"]["refactorSources"][0]["file"],
+        "src/lib.rs"
+    );
+    assert_eq!(
+        artifact["intent"]["refactorSources"][0]["lines"],
+        serde_json::json!([3, 4])
+    );
+
+    let inline_lookups = artifact["inlinePatternLookups"]
+        .as_array()
+        .context("inline pattern lookups")?;
+    assert_eq!(inline_lookups.len(), 1);
+    assert_eq!(inline_lookups[0]["kind"], "inline-pattern");
+    assert_eq!(inline_lookups[0]["result"], "UNAVAILABLE");
+    assert_eq!(inline_lookups[0]["reason"], "missing-artifact");
+    assert_eq!(inline_lookups[0]["artifact"], "inline-patterns.json");
+
+    let unavailable = artifact["unavailableEvidence"]
+        .as_array()
+        .context("unavailable evidence")?;
+    assert!(unavailable.iter().any(|entry| {
+        entry["evidenceLane"] == "inline-extraction"
+            && entry["status"] == "UNAVAILABLE"
+            && entry["reason"] == "missing-artifact"
+            && entry["artifact"] == "inline-patterns.json"
+    }));
+    assert!(artifact["cueCards"]
+        .as_array()
+        .context("cue cards")?
+        .iter()
+        .all(|card| card["cues"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .all(|cue| cue["evidenceLane"] != "inline-extraction")));
+    assert!(artifact["suppressedCues"]
+        .as_array()
+        .context("suppressed cues")?
+        .iter()
+        .all(|cue| cue["evidenceLane"] != "inline-extraction"));
+    Ok(())
+}

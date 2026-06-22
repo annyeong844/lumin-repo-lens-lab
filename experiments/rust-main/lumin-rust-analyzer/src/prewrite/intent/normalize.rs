@@ -4,7 +4,7 @@ use lumin_rust_common::usage_error;
 use super::input::{DependencyInput, NameInput, Present, RawIntent, ShapeIntentInput};
 use super::model::{
     DependencyDeclaration, IntentKey, IntentWarning, LoadedIntent, NameDeclaration,
-    NormalizedIntent, PlannedTypeEscape, ShapeIntent,
+    NormalizedIntent, PlannedTypeEscape, RefactorSource, ShapeIntent,
 };
 
 pub(super) fn normalize(raw: RawIntent) -> Result<LoadedIntent> {
@@ -23,6 +23,7 @@ pub(super) fn normalize(raw: RawIntent) -> Result<LoadedIntent> {
     let shapes = normalize_shapes(shapes)?;
     validate_non_empty_strings(&files, "files")?;
     let (dependencies, dependency_declarations) = normalize_dependencies(dependencies)?;
+    let refactor_sources = normalize_refactor_sources(raw.refactor_sources)?;
     validate_planned_type_escapes(&planned_type_escapes)?;
     let task_id = raw.task_id.0;
     if task_id.as_deref() == Some("") {
@@ -39,6 +40,7 @@ pub(super) fn normalize(raw: RawIntent) -> Result<LoadedIntent> {
             files,
             dependencies,
             dependency_declarations,
+            refactor_sources,
             planned_type_escapes,
             task_id,
         },
@@ -185,6 +187,51 @@ fn validate_planned_type_escapes(entries: &[PlannedTypeEscape]) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+fn normalize_refactor_sources(
+    entries: Present<Vec<RefactorSource>>,
+) -> Result<Option<Vec<RefactorSource>>> {
+    let Some(entries) = entries.0 else {
+        return Ok(None);
+    };
+    for (index, entry) in entries.iter().enumerate() {
+        if is_unsafe_repo_relative_path(&entry.file) {
+            return Err(usage_error(format!(
+                "refactorSources[{index}].file must be a repository-relative path"
+            )));
+        }
+        if let Some(lines) = &entry.lines {
+            if lines.is_empty() {
+                return Err(usage_error(format!(
+                    "refactorSources[{index}].lines must be a non-empty array of positive integers when present"
+                )));
+            }
+            for (line_index, line) in lines.iter().enumerate() {
+                if *line == 0 {
+                    return Err(usage_error(format!(
+                        "refactorSources[{index}].lines[{line_index}] must be a positive integer"
+                    )));
+                }
+            }
+        }
+        validate_optional_string(
+            entry.why.as_deref(),
+            &format!("refactorSources[{index}].why"),
+        )?;
+    }
+    Ok(Some(entries))
+}
+
+fn is_unsafe_repo_relative_path(value: &str) -> bool {
+    if value.is_empty() || value.contains('\\') || value.starts_with('/') {
+        return true;
+    }
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return true;
+    }
+    value.split('/').any(|part| part.is_empty() || part == "..")
 }
 
 fn validate_non_empty_strings(values: &[String], path: &str) -> Result<()> {
