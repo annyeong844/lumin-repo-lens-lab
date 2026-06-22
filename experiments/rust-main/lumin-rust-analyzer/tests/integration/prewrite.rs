@@ -2,6 +2,8 @@
 mod coverage;
 #[path = "prewrite/cues.rs"]
 mod cues;
+#[path = "prewrite/dependencies.rs"]
+mod dependencies;
 #[path = "prewrite/errors.rs"]
 mod errors;
 #[path = "prewrite/files.rs"]

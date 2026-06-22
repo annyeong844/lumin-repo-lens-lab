@@ -3,6 +3,7 @@ use lumin_rust_source_health::protocol::HealthResponse;
 use super::index::{CandidateIndex, CandidateLane};
 use super::intent::{NameDeclaration, NormalizedIntent};
 
+mod dependency;
 mod file;
 mod local;
 mod model;
@@ -13,6 +14,7 @@ mod shape;
 mod taint;
 
 pub(super) use super::operation::ServiceOperationFamily;
+pub(super) use dependency::{lookup_dependencies, DependencyLookup};
 pub(super) use file::{lookup_files, FileLookup, FileLookupResult};
 use model::LookupResult;
 pub(super) use model::{
