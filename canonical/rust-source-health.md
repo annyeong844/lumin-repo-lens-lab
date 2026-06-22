@@ -273,6 +273,11 @@ write into the analyzed repository's `target/` directory by default. The
 - `ownedTempTargetDir = true` for `isolated-temp` and `reusable-temp`.
 - `incrementalDisabled = true` and `debugSymbolsDisabled = true` when the
   oracle applies its compact Cargo profile environment.
+- `staleCleanupOwnedTempTargetDirs = true` when the oracle removes only its own
+  temp target directories from the OS temp directory.
+- `staleIsolatedTargetDirMaxAgeSeconds` and
+  `staleReusableTargetDirMaxAgeSeconds` are retention metadata for owned temp
+  target cleanup. They are not analysis time limits.
 
 These fields are transparency evidence only. They are not timeouts, analysis
 caps, or permission to skip large repositories.

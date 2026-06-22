@@ -73,9 +73,15 @@ pub struct CargoTargetDirPolicy {
     pub owned_temp_target_dir: bool,
     pub incremental_disabled: bool,
     pub debug_symbols_disabled: bool,
+    pub stale_cleanup_owned_temp_target_dirs: bool,
+    pub stale_isolated_target_dir_max_age_seconds: u64,
+    pub stale_reusable_target_dir_max_age_seconds: u64,
 }
 
 impl CargoTargetDirPolicy {
+    pub(crate) const STALE_ISOLATED_TARGET_DIR_MAX_AGE_SECONDS: u64 = 24 * 60 * 60;
+    pub(crate) const STALE_REUSABLE_TARGET_DIR_MAX_AGE_SECONDS: u64 = 7 * 24 * 60 * 60;
+
     pub(crate) fn from_mode(mode: CargoTargetDirMode) -> Self {
         match mode {
             CargoTargetDirMode::IsolatedTemp | CargoTargetDirMode::ReusableTemp => Self {
@@ -83,6 +89,11 @@ impl CargoTargetDirPolicy {
                 owned_temp_target_dir: true,
                 incremental_disabled: true,
                 debug_symbols_disabled: true,
+                stale_cleanup_owned_temp_target_dirs: true,
+                stale_isolated_target_dir_max_age_seconds:
+                    Self::STALE_ISOLATED_TARGET_DIR_MAX_AGE_SECONDS,
+                stale_reusable_target_dir_max_age_seconds:
+                    Self::STALE_REUSABLE_TARGET_DIR_MAX_AGE_SECONDS,
             },
         }
     }

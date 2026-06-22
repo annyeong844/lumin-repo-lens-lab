@@ -25,6 +25,18 @@ pub(super) fn assert_metadata_and_policy(artifact: &Value) -> Result<()> {
         artifact["meta"]["input"]["cargoTargetDirPolicy"]["debugSymbolsDisabled"],
         true
     );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["staleCleanupOwnedTempTargetDirs"],
+        true
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["staleIsolatedTargetDirMaxAgeSeconds"],
+        86_400
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["staleReusableTargetDirMaxAgeSeconds"],
+        604_800
+    );
     let cargo_target_dir = artifact["meta"]["input"]["cargoTargetDir"]
         .as_str()
         .unwrap_or_default();

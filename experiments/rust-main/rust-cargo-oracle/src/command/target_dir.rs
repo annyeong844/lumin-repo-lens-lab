@@ -7,12 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::protocol::CargoTargetDirMode;
+use crate::protocol::{CargoTargetDirMode, CargoTargetDirPolicy};
 
 const ISOLATED_TARGET_DIR_PREFIX: &str = "lumin-rust-cargo-oracle-target";
 const REUSABLE_TARGET_DIR_PREFIX: &str = "lumin-rust-cargo-oracle-reusable-target";
-const STALE_ISOLATED_TARGET_DIR_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
-const STALE_REUSABLE_TARGET_DIR_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 static TARGET_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) struct CargoTargetDir {
@@ -98,13 +96,13 @@ fn cleanup_stale_owned_target_dirs(temp_dir: &Path, now: SystemTime) {
         temp_dir,
         ISOLATED_TARGET_DIR_PREFIX,
         now,
-        STALE_ISOLATED_TARGET_DIR_MAX_AGE,
+        stale_isolated_target_dir_max_age(),
     );
     cleanup_stale_target_dirs(
         temp_dir,
         REUSABLE_TARGET_DIR_PREFIX,
         now,
-        STALE_REUSABLE_TARGET_DIR_MAX_AGE,
+        stale_reusable_target_dir_max_age(),
     );
 }
 
@@ -158,11 +156,19 @@ fn reusable_target_dir_name(root: &Path, cargo_bin: &str, rustc_bin: &str) -> St
     format!("{REUSABLE_TARGET_DIR_PREFIX}-{}", &suffix[..16])
 }
 
+fn stale_isolated_target_dir_max_age() -> Duration {
+    Duration::from_secs(CargoTargetDirPolicy::STALE_ISOLATED_TARGET_DIR_MAX_AGE_SECONDS)
+}
+
+fn stale_reusable_target_dir_max_age() -> Duration {
+    Duration::from_secs(CargoTargetDirPolicy::STALE_REUSABLE_TARGET_DIR_MAX_AGE_SECONDS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_stale_owned_target_dirs, reusable_target_dir_name, ISOLATED_TARGET_DIR_PREFIX,
-        REUSABLE_TARGET_DIR_PREFIX, STALE_REUSABLE_TARGET_DIR_MAX_AGE,
+        cleanup_stale_owned_target_dirs, reusable_target_dir_name,
+        stale_reusable_target_dir_max_age, ISOLATED_TARGET_DIR_PREFIX, REUSABLE_TARGET_DIR_PREFIX,
     };
     use anyhow::Result;
     use std::fs;
@@ -184,7 +190,8 @@ mod tests {
         fs::create_dir(&old_reusable)?;
         fs::create_dir(&other)?;
 
-        let future = SystemTime::now() + STALE_REUSABLE_TARGET_DIR_MAX_AGE + Duration::from_secs(1);
+        let future =
+            SystemTime::now() + stale_reusable_target_dir_max_age() + Duration::from_secs(1);
         cleanup_stale_owned_target_dirs(temp.path(), future);
 
         assert!(!old_owned.exists());
