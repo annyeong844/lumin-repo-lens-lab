@@ -8,4 +8,4 @@ mod summary;
 #[allow(unused_imports)]
 pub use projection::assert_core_ast_fact_projection;
 #[allow(unused_imports)]
-pub use summary::assert_ast_summary_counts;
+pub use summary::{assert_ast_summary_counts, AstSummaryCounts};

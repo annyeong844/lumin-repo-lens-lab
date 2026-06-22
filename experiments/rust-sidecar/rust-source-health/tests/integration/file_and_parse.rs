@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 
 use crate::artifact::{analyze_file, file, request, run_sidecar, stdout_json};
-use crate::ast_facts::{assert_ast_summary_counts, assert_core_ast_fact_projection};
+use crate::ast_facts::{
+    assert_ast_summary_counts, assert_core_ast_fact_projection, AstSummaryCounts,
+};
 
 #[test]
 fn emits_files_in_deterministic_path_order() -> Result<()> {
@@ -42,7 +44,19 @@ impl Maybe {
 "#;
     let value = analyze_file("src/lib.rs", source);
 
-    assert_ast_summary_counts(&value, 4, 1, 2, 3, 1, 1, 0, 1);
+    assert_ast_summary_counts(
+        &value,
+        AstSummaryCounts {
+            definitions: 4,
+            impl_blocks: 1,
+            impl_methods: 2,
+            use_trees: 3,
+            path_refs: 1,
+            method_call_sites: 1,
+            method_calls: 0,
+            macro_calls: 1,
+        },
+    );
     assert_core_ast_fact_projection(&value, "src/lib.rs");
 }
 
