@@ -60,7 +60,7 @@ fn unified_cli_uses_safe_fix_adjudication_for_calibration_readiness() -> Result<
 #[test]
 fn unified_cli_uses_review_fix_adjudication_for_calibration_readiness() -> Result<()> {
     let artifact = analyze_cargo_check_single_package_with_adjudication(
-        "pub fn demo() { panic!(\"{}\") }\n",
+        "macro_rules! make_unused { () => { let value = 1; }; }\npub fn demo() { make_unused!(); }\n",
         r#"{
   "entries": [
     {
@@ -68,6 +68,8 @@ fn unified_cli_uses_review_fix_adjudication_for_calibration_readiness() -> Resul
       "tier": "REVIEW_FIX",
       "verdict": "true_dead",
       "file": "src/lib.rs",
+      "diagnosticCode": "unused_variables",
+      "lineStart": 1,
       "symbol": "demo"
     }
   ]
@@ -76,11 +78,19 @@ fn unified_cli_uses_review_fix_adjudication_for_calibration_readiness() -> Resul
 
     let readiness = &artifact["oracleBridge"]["policy"]["calibration"]["readiness"];
     assert_eq!(artifact["summary"]["semanticSafeActions"], 0);
-    assert_eq!(artifact["summary"]["semanticReviewFindings"], 1);
+    assert_eq!(artifact["summary"]["semanticReviewFindings"], 0);
+    assert_eq!(
+        artifact["actionPolicy"]["semanticActionBlockers"]["findings"],
+        1
+    );
     assert_eq!(
         artifact["oracleBridge"]["policy"]["calibration"]["candidateCounts"]
             ["reviewVisibleCleanup"],
         1
+    );
+    assert_eq!(
+        artifact["semanticFindings"][0]["diagnosticCode"],
+        "unused_variables"
     );
     assert_eq!(readiness["reviewVisibleCleanup"]["trueDead"], 1);
     assert_eq!(readiness["reviewVisibleCleanup"]["falsePositives"], 0);

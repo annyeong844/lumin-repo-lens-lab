@@ -74,6 +74,7 @@ pub(crate) fn product_semantic_finding<'a>(
         projection: ProductSemanticFindingProjection {
             oracle_id: finding.oracle_id,
             confidence: ProductFindingConfidenceProjection::from_confidence(&finding.confidence),
+            diagnostic_code: finding.diagnostic_code.as_deref(),
             message: finding.message.as_deref(),
             span: finding
                 .span
@@ -112,6 +113,8 @@ pub(crate) struct ProductSemanticFinding<'a> {
 pub(crate) struct ProductSemanticFindingProjection<'a> {
     oracle_id: OracleId,
     confidence: ProductFindingConfidenceProjection<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostic_code: Option<&'a str>,
     message: Option<&'a str>,
     span: Option<ProductPrimarySpanProjection<'a>>,
     primary_span_count: usize,

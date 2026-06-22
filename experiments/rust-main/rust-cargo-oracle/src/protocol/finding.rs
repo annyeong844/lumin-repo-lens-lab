@@ -14,6 +14,8 @@ pub struct Finding {
     pub confidence: FindingConfidence,
     pub confidence_tier: ConfidenceTier,
     pub claim_kind: ClaimKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostic_code: Option<String>,
     pub message: Option<String>,
     pub span: Option<PrimarySpan>,
     pub primary_spans: Vec<PrimarySpan>,

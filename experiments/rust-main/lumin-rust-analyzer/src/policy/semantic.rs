@@ -174,11 +174,10 @@ fn cleanup_candidate<'a>(record: &FindingActionRecord<'a>) -> Option<CleanupCand
     let line_start = edit
         .map(|edit| edit.line_start)
         .or_else(|| finding.span.as_ref().and_then(|span| span.line_start));
-    Some(CleanupCandidate::new(
-        file,
-        action.map(|action| action.proof.diagnostic_code.as_str()),
-        line_start,
-    ))
+    let diagnostic_code = action
+        .map(|action| action.proof.diagnostic_code.as_str())
+        .or(finding.diagnostic_code.as_deref());
+    Some(CleanupCandidate::new(file, diagnostic_code, line_start))
 }
 
 pub(super) fn degraded_by_reason(
