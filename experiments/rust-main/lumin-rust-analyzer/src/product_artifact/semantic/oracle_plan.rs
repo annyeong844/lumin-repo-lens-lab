@@ -1,5 +1,6 @@
 use lumin_rust_cargo_oracle::protocol::{
-    CargoCheckMode, OraclePlan, OraclePlanReason, OraclePlanSelectedPackage, OraclePlanStatus,
+    CargoCheckMode, OraclePlan, OraclePlanReason, OraclePlanSampleLimits,
+    OraclePlanSelectedPackage, OraclePlanStatus,
 };
 use serde::Serialize;
 
@@ -18,6 +19,7 @@ pub(in crate::product_artifact) struct ProductOraclePlanProjection<'a> {
     mode: CargoCheckMode,
     status: OraclePlanStatus,
     reason: OraclePlanReason,
+    sample_limits: ProductOraclePlanSampleLimits,
     target_path_count: usize,
     target_path_examples: &'a [String],
     selected_target_path_count: usize,
@@ -38,6 +40,7 @@ impl<'a> ProductOraclePlanProjection<'a> {
             mode: plan.mode,
             status: plan.status,
             reason: plan.reason,
+            sample_limits: ProductOraclePlanSampleLimits::from_plan(plan.sample_limits),
             target_path_count: plan.target_path_count,
             target_path_examples: &plan.target_path_examples,
             selected_target_path_count: plan.selected_target_path_count,
@@ -57,6 +60,29 @@ impl<'a> ProductOraclePlanProjection<'a> {
                 .unmatched_target_paths
                 .len()
                 .min(ORACLE_SCOPE_SAMPLE_LIMIT)],
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductOraclePlanSampleLimits {
+    target_path_examples: usize,
+    selected_package_examples: usize,
+    omitted_package_examples: usize,
+    unmatched_target_path_examples: usize,
+    selected_package_target_path_examples: usize,
+}
+
+impl ProductOraclePlanSampleLimits {
+    fn from_plan(plan_limits: OraclePlanSampleLimits) -> Self {
+        Self {
+            target_path_examples: plan_limits.target_path_examples,
+            selected_package_examples: ORACLE_SCOPE_SAMPLE_LIMIT,
+            omitted_package_examples: plan_limits.omitted_package_examples,
+            unmatched_target_path_examples: ORACLE_SCOPE_SAMPLE_LIMIT,
+            selected_package_target_path_examples: plan_limits
+                .selected_package_target_path_examples,
         }
     }
 }

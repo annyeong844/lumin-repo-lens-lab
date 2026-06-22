@@ -131,6 +131,18 @@ fn targeted_cargo_check_orders_independent_small_package_before_local_dependency
     ])?;
 
     assert_eq!(artifact["oraclePlan"]["status"], "ran");
+    assert_eq!(
+        artifact["oraclePlan"]["sampleLimits"]["targetPathExamples"],
+        10
+    );
+    assert_eq!(
+        artifact["oraclePlan"]["sampleLimits"]["omittedPackageExamples"],
+        5
+    );
+    assert_eq!(
+        artifact["oraclePlan"]["sampleLimits"]["selectedPackageTargetPathExamples"],
+        5
+    );
     assert_eq!(artifact["oraclePlan"]["selectedPackageCount"], 2);
     assert_eq!(artifact["oraclePlan"]["selectedTargetPathCount"], 2);
     assert_eq!(artifact["oraclePlan"]["omittedTargetPathCount"], 0);

@@ -8,6 +8,26 @@ pub(super) fn assert_uncapped_run(artifact: &Value) -> Result<()> {
         "review-syntax-evidence-package-scope"
     );
     assert_eq!(artifact["oraclePlan"]["targetPathCount"], 18);
+    assert_eq!(
+        artifact["oraclePlan"]["sampleLimits"]["targetPathExamples"],
+        10
+    );
+    assert_eq!(
+        artifact["oraclePlan"]["sampleLimits"]["selectedPackageExamples"],
+        3
+    );
+    assert_eq!(
+        artifact["oraclePlan"]["sampleLimits"]["omittedPackageExamples"],
+        5
+    );
+    assert_eq!(
+        artifact["oraclePlan"]["sampleLimits"]["unmatchedTargetPathExamples"],
+        3
+    );
+    assert_eq!(
+        artifact["oraclePlan"]["sampleLimits"]["selectedPackageTargetPathExamples"],
+        5
+    );
     assert_eq!(artifact["oraclePlan"]["selectedTargetPathCount"], 18);
     assert_eq!(artifact["oraclePlan"]["omittedTargetPathCount"], 0);
     assert_eq!(artifact["oraclePlan"]["candidatePackageCount"], 17);

@@ -1,10 +1,15 @@
 use crate::command::CommandOutput;
 use crate::metadata::CargoPackage;
 use crate::protocol::{
-    CargoCheckMode, OraclePlan, OraclePlanReason, OraclePlanSelectedPackage, OraclePlanStatus,
+    CargoCheckMode, OraclePlan, OraclePlanReason, OraclePlanSampleLimits,
+    OraclePlanSelectedPackage, OraclePlanStatus,
 };
 use crate::target_selection::TargetPackageSelection;
 use std::collections::BTreeSet;
+
+pub(crate) const ORACLE_PLAN_TARGET_PATH_EXAMPLE_LIMIT: usize = 10;
+pub(crate) const ORACLE_PLAN_OMITTED_PACKAGE_EXAMPLE_LIMIT: usize = 5;
+pub(crate) const ORACLE_PLAN_SELECTED_PACKAGE_TARGET_PATH_EXAMPLE_LIMIT: usize = 5;
 
 pub(crate) fn oracle_plan(
     mode: CargoCheckMode,
@@ -39,7 +44,10 @@ pub(crate) fn oracle_plan(
                 manifest_path: pkg.manifest_path.clone(),
                 reason,
                 target_path_count: target_paths.len(),
-                target_path_examples: target_paths.into_iter().take(5).collect(),
+                target_path_examples: target_paths
+                    .into_iter()
+                    .take(ORACLE_PLAN_SELECTED_PACKAGE_TARGET_PATH_EXAMPLE_LIMIT)
+                    .collect(),
             }
         })
         .collect::<Vec<_>>();
@@ -47,7 +55,7 @@ pub(crate) fn oracle_plan(
         .candidate_package_names
         .iter()
         .skip(selected.len())
-        .take(5)
+        .take(ORACLE_PLAN_OMITTED_PACKAGE_EXAMPLE_LIMIT)
         .cloned()
         .collect::<Vec<_>>();
     let selected_package_names = selected
@@ -72,11 +80,17 @@ pub(crate) fn oracle_plan(
         mode,
         status,
         reason,
+        sample_limits: OraclePlanSampleLimits {
+            target_path_examples: ORACLE_PLAN_TARGET_PATH_EXAMPLE_LIMIT,
+            omitted_package_examples: ORACLE_PLAN_OMITTED_PACKAGE_EXAMPLE_LIMIT,
+            selected_package_target_path_examples:
+                ORACLE_PLAN_SELECTED_PACKAGE_TARGET_PATH_EXAMPLE_LIMIT,
+        },
         target_path_count: target_selection.target_paths.len(),
         target_path_examples: target_selection
             .target_paths
             .iter()
-            .take(10)
+            .take(ORACLE_PLAN_TARGET_PATH_EXAMPLE_LIMIT)
             .cloned()
             .collect(),
         selected_target_path_count,

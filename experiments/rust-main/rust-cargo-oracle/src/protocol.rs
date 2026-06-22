@@ -20,7 +20,7 @@ pub use diagnostic::{
 pub use finding::{
     Finding, FindingConfidence, FindingSource, SafeAction, SafeActionEdit, SafeActionProof,
 };
-pub use oracle_plan::{OraclePlan, OraclePlanSelectedPackage};
+pub use oracle_plan::{OraclePlan, OraclePlanSampleLimits, OraclePlanSelectedPackage};
 pub use scope::{OracleScope, OracleScopeFeatureSelection, OracleScopeTarget};
 pub use span::{PrimarySpan, PrimarySpanExpansion, PrimarySpanLocation};
 pub use summary::{CacheReuseSummary, SemanticCleanSummary, Summary};

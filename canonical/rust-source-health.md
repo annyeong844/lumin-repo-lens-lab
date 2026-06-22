@@ -307,6 +307,11 @@ write into the analyzed repository's `target/` directory by default. The
 These fields are transparency evidence only. They are not timeouts, analysis
 caps, or permission to skip large repositories.
 
+Rust oracle plan example arrays are compact artifact projections, not analysis
+limits. When `oraclePlan` caps target-path, omitted-package, selected-package,
+or unmatched-path examples, the artifact must preserve the full counts and
+publish the example caps under `oraclePlan.sampleLimits`.
+
 Rust planned type escape intent support follows the JS/TS pre-write Step 2
 contract:
 

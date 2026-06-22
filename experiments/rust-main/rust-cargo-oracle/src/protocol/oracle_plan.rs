@@ -2,6 +2,14 @@ use serde::Serialize;
 
 use super::{CargoCheckMode, OraclePlanReason, OraclePlanStatus};
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OraclePlanSampleLimits {
+    pub target_path_examples: usize,
+    pub omitted_package_examples: usize,
+    pub selected_package_target_path_examples: usize,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OraclePlan {
@@ -9,6 +17,7 @@ pub struct OraclePlan {
     pub mode: CargoCheckMode,
     pub status: OraclePlanStatus,
     pub reason: OraclePlanReason,
+    pub sample_limits: OraclePlanSampleLimits,
     pub target_path_count: usize,
     pub target_path_examples: Vec<String>,
     pub selected_target_path_count: usize,
