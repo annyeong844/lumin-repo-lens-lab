@@ -43,6 +43,10 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
         1
     );
     assert_eq!(
+        artifact["files"]["src/lib.rs"]["astSummary"]["reviewOpaqueSurfaceSampleLimit"],
+        10
+    );
+    assert_eq!(
         artifact["files"]["src/lib.rs"]["signals"][0]["kind"],
         "unwrap-call"
     );

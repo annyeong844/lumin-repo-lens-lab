@@ -213,6 +213,7 @@ struct CompactAstSummary<'a> {
     review_opaque_surfaces: usize,
     muted_opaque_surfaces: usize,
     muted_opaque_surfaces_by_reason: BTreeMap<AstOpaqueMuteReason, usize>,
+    review_opaque_surface_sample_limit: usize,
     review_opaque_surface_examples: Vec<&'a AstOpaqueSurface>,
 }
 
@@ -259,6 +260,7 @@ impl<'a> CompactAstSummary<'a> {
             review_opaque_surfaces,
             muted_opaque_surfaces,
             muted_opaque_surfaces_by_reason,
+            review_opaque_surface_sample_limit: REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT,
             review_opaque_surface_examples,
         }
     }

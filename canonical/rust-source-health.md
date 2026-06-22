@@ -459,7 +459,10 @@ stdin compatibility mode emits no skipped-file evidence.
 - The standalone Rust source health CLI follows the same size discipline:
   `--artifact-profile compact` is the default and emits `astSummary` per file
   plus capped `reviewOpaqueSurfaceExamples`; `--artifact-profile full` preserves
-  the raw compatibility shape with full `files[*].ast` arrays.
+  the raw compatibility shape with full `files[*].ast` arrays. The compact
+  `astSummary` must publish `reviewOpaqueSurfaceSampleLimit` beside the capped
+  example array so the artifact shows that truncation is a projection choice,
+  not an analysis cap.
 - Output `files` keys are sorted by path.
 - `signals` are sorted by `location.byteStart`, then `kind`.
 - `parse.errors` are sorted by `location.byteStart`, then `message`.
