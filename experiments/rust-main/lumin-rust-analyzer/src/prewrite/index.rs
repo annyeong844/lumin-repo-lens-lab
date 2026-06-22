@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use lumin_rust_source_health::protocol::{
     AstDefinitionKind, AstVisibility, HealthResponse, Location, PathClassification, PathMeta,
 };
@@ -81,7 +83,7 @@ impl<'a> CandidateIndex<'a> {
                 .iter()
                 .flat_map(|impl_block| impl_block.methods.iter())
                 .map(|method| (method.location.byte_start, method.location.byte_end))
-                .collect::<Vec<_>>();
+                .collect::<BTreeSet<_>>();
 
             candidates.extend(
                 health
