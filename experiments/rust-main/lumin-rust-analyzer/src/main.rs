@@ -14,18 +14,26 @@ mod calibration;
 mod cli;
 mod oracle_targeting;
 mod policy;
+mod prewrite;
 mod product_artifact;
 mod product_files;
 mod product_summary;
 
 fn main() {
     match cli::parse_args() {
-        Ok(CliAction::Run(options)) => match run_unified_analyzer(options) {
+        Ok(CliAction::Run(command)) => match run_command(command) {
             Ok(result) => print_run_result(result),
             Err(error) => exit_with_error(error),
         },
         Ok(CliAction::Help) => {}
         Err(error) => exit_with_error(error),
+    }
+}
+
+fn run_command(command: cli::Command) -> Result<RunResult> {
+    match command {
+        cli::Command::Analyze(options) => run_unified_analyzer(options),
+        cli::Command::PreWrite(options) => run_pre_write(options),
     }
 }
 
@@ -98,6 +106,26 @@ fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
             artifact
                 .to_pretty_string()
                 .context("failed to serialize rust analyzer artifact")?,
+        )
+    } else {
+        None
+    };
+
+    Ok(RunResult { output, stdout })
+}
+
+fn run_pre_write(options: cli::PreWriteOptions) -> Result<RunResult> {
+    let artifact = prewrite::run(&options)?;
+    let output = options.output;
+    if let Some(output) = &output {
+        atomic_write_json(output, &artifact)
+            .with_context(|| format!("failed to write {}", output.display()))?;
+    }
+    let stdout = if output.is_none() {
+        Some(
+            artifact
+                .to_pretty_string()
+                .context("failed to serialize rust pre-write artifact")?,
         )
     } else {
         None

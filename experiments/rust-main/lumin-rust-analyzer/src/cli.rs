@@ -25,7 +25,32 @@ pub(crate) struct Options {
     pub(crate) calibration_adjudication: Option<PathBuf>,
 }
 
-pub(crate) fn parse_args() -> Result<CliAction<Options>> {
+#[derive(Debug)]
+pub(crate) enum Command {
+    Analyze(Options),
+    PreWrite(PreWriteOptions),
+}
+
+#[derive(Debug)]
+pub(crate) struct PreWriteOptions {
+    pub(crate) root: PathBuf,
+    pub(crate) output: Option<PathBuf>,
+    pub(crate) source_commit: String,
+    pub(crate) intent: PathBuf,
+    pub(crate) thread_count: Option<usize>,
+    pub(crate) worker_stack_bytes: usize,
+}
+
+pub(crate) fn parse_args() -> Result<CliAction<Command>> {
+    let mut args = env::args().skip(1);
+    match args.next() {
+        Some(command) if command == "pre-write" => parse_pre_write_args(args),
+        Some(first) => parse_analyze_args(std::iter::once(first).chain(args)),
+        None => parse_analyze_args(std::iter::empty()),
+    }
+}
+
+fn parse_analyze_args(mut args: impl Iterator<Item = String>) -> Result<CliAction<Command>> {
     let mut root: Option<PathBuf> = None;
     let mut output: Option<PathBuf> = None;
     let mut source_commit: Option<String> = None;
@@ -39,7 +64,6 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
     let mut cargo_target_dir_mode = CargoTargetDirMode::IsolatedTemp;
     let mut calibration_adjudication: Option<PathBuf> = None;
 
-    let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--root" => root = Some(take_path(&mut args, "--root")?),
@@ -74,7 +98,7 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
                     parse_min_usize(&value, "--worker-stack-bytes", DEFAULT_WORKER_STACK_BYTES)?;
             }
             "--help" | "-h" => {
-                print_usage();
+                print_analyze_usage();
                 return Ok(CliAction::Help);
             }
             unknown => return Err(usage_error(format!("unknown argument: {unknown}"))),
@@ -88,7 +112,7 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
         None => default_repo_root(&root),
     };
 
-    Ok(CliAction::Run(Options {
+    Ok(CliAction::Run(Command::Analyze(Options {
         root,
         output: Some(output),
         source_commit: source_commit.ok_or_else(|| usage_error("--source-commit is required"))?,
@@ -101,7 +125,54 @@ pub(crate) fn parse_args() -> Result<CliAction<Options>> {
         semantic_mode,
         cargo_target_dir_mode,
         calibration_adjudication,
-    }))
+    })))
+}
+
+fn parse_pre_write_args(mut args: impl Iterator<Item = String>) -> Result<CliAction<Command>> {
+    let mut root: Option<PathBuf> = None;
+    let mut output: Option<PathBuf> = None;
+    let mut source_commit: Option<String> = None;
+    let mut intent: Option<PathBuf> = None;
+    let mut thread_count: Option<usize> = None;
+    let mut worker_stack_bytes = DEFAULT_WORKER_STACK_BYTES;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--root" => root = Some(take_path(&mut args, "--root")?),
+            "--output" => output = Some(take_path(&mut args, "--output")?),
+            "--source-commit" | "--sidecar-source-commit" => {
+                source_commit = Some(take_string(&mut args, "--source-commit")?)
+            }
+            "--intent" => intent = Some(take_path(&mut args, "--intent")?),
+            "--threads" => {
+                let value = take_string(&mut args, "--threads")?;
+                thread_count = Some(parse_nonzero_usize(&value, "--threads")?);
+            }
+            "--worker-stack-bytes" => {
+                let value = take_string(&mut args, "--worker-stack-bytes")?;
+                worker_stack_bytes =
+                    parse_min_usize(&value, "--worker-stack-bytes", DEFAULT_WORKER_STACK_BYTES)?;
+            }
+            "--help" | "-h" => {
+                print_pre_write_usage();
+                return Ok(CliAction::Help);
+            }
+            unknown => {
+                return Err(usage_error(format!(
+                    "unknown pre-write argument: {unknown}"
+                )))
+            }
+        }
+    }
+
+    Ok(CliAction::Run(Command::PreWrite(PreWriteOptions {
+        root: root.unwrap_or(env::current_dir().context("failed to read current directory")?),
+        output,
+        source_commit: source_commit.ok_or_else(|| usage_error("--source-commit is required"))?,
+        intent: intent.ok_or_else(|| usage_error("--intent is required"))?,
+        thread_count,
+        worker_stack_bytes,
+    })))
 }
 
 fn default_repo_root(root: &Path) -> PathBuf {
@@ -109,8 +180,14 @@ fn default_repo_root(root: &Path) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn print_usage() {
+fn print_analyze_usage() {
     eprintln!(
         "Usage: lumin-rust-analyzer --root <path> --source-commit <sha> [--output <path>] [--cargo-bin <path>] [--features <csv>] [--package <name>] [--repo-root <path>] [--semantic-mode metadata-only|cargo-check|targeted-cargo-check] [--cargo-target-dir-mode isolated-temp|reusable-temp] [--calibration-adjudication <path>] [--cargo-check] [--targeted-cargo-check] [--threads <n>] [--worker-stack-bytes <bytes>]"
+    );
+}
+
+fn print_pre_write_usage() {
+    eprintln!(
+        "Usage: lumin-rust-analyzer pre-write --root <path> --source-commit <sha> --intent <path> [--output <path>] [--threads <n>] [--worker-stack-bytes <bytes>]"
     );
 }
