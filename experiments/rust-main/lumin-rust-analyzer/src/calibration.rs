@@ -155,6 +155,13 @@ pub(crate) struct CalibrationCandidateCounts {
 }
 
 impl CalibrationCandidateCounts {
+    fn unavailable() -> Self {
+        Self {
+            available: Some(false),
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn is_available(&self) -> bool {
         self.available == Some(true)
     }
