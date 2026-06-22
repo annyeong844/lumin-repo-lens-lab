@@ -42,6 +42,12 @@ pub fn run_malformed_candidate_counts_fields() -> Result<InvalidCalibrationAdjud
     )
 }
 
+pub fn run_present_but_invalid_candidate_counts() -> Result<InvalidCalibrationAdjudicationRun> {
+    run_invalid_calibration_adjudication_with_payload(
+        r#"{"candidateCounts":{"available":null,"safeFix":"1","reviewVisibleCleanup":"1","degraded":[],"muted":{},"byCorpus":{"cal":{"reviewVisibleCleanup":"1"}}},"entries":[{"tier":"SAFE_FIX","verdict":"true_dead","file":"src/lib.rs"}]}"#,
+    )
+}
+
 pub fn run_malformed_calibration_container_fields() -> Result<InvalidCalibrationAdjudicationRun> {
     run_invalid_calibration_adjudication_with_payload(
         r#"{"candidateCounts":"unavailable","corpus":"not-an-array","schemaRoundTrip":{"attempted":"yes","knownSchemaDriftBugs":"known"},"entries":{"tier":"SAFE_FIX","verdict":"true_dead"}}"#,

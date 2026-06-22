@@ -202,10 +202,14 @@ where
 {
     Ok(
         match Option::<CalibrationCandidateCountsInput>::deserialize(deserializer)? {
-            Some(CalibrationCandidateCountsInput::Counts(counts)) => counts,
-            Some(CalibrationCandidateCountsInput::Other(_)) | None => {
-                CalibrationCandidateCounts::default()
+            Some(CalibrationCandidateCountsInput::Counts(counts))
+                if counts.has_readiness_evidence() =>
+            {
+                counts
             }
+            Some(CalibrationCandidateCountsInput::Counts(_))
+            | Some(CalibrationCandidateCountsInput::Other(_))
+            | None => CalibrationCandidateCounts::unavailable(),
         },
     )
 }
