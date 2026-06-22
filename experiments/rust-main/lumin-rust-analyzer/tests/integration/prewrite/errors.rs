@@ -26,6 +26,21 @@ fn prewrite_malformed_intent_hard_stops_before_writing_artifact() -> Result<()> 
             r#"{"extra":true,"names":[],"shapes":[],"files":[],"dependencies":[],"plannedTypeEscapes":[]}"#,
             "unknown field",
         ),
+        (
+            "refactor-source-parent-traversal",
+            r#"{"names":[],"shapes":[],"files":[],"dependencies":[],"plannedTypeEscapes":[],"refactorSources":[{"file":"../src/lib.rs"}]}"#,
+            "refactorSources[0].file must be a repository-relative path",
+        ),
+        (
+            "refactor-source-windows-path",
+            r#"{"names":[],"shapes":[],"files":[],"dependencies":[],"plannedTypeEscapes":[],"refactorSources":[{"file":"src\\lib.rs"}]}"#,
+            "refactorSources[0].file must be a repository-relative path",
+        ),
+        (
+            "refactor-source-zero-line",
+            r#"{"names":[],"shapes":[],"files":[],"dependencies":[],"plannedTypeEscapes":[],"refactorSources":[{"file":"src/lib.rs","lines":[0]}]}"#,
+            "refactorSources[0].lines[0] must be a positive integer",
+        ),
     ];
 
     for (label, intent, expected_error) in cases {

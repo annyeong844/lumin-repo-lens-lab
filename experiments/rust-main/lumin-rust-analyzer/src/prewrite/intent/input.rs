@@ -1,6 +1,6 @@
 use serde::{Deserialize, Deserializer};
 
-use super::model::{DependencyDeclaration, NameDeclaration, PlannedTypeEscape};
+use super::model::{DependencyDeclaration, NameDeclaration, PlannedTypeEscape, RefactorSource};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -15,6 +15,8 @@ pub(super) struct RawIntent {
     pub(super) dependencies: Present<Vec<DependencyInput>>,
     #[serde(default)]
     pub(super) planned_type_escapes: Present<Vec<PlannedTypeEscape>>,
+    #[serde(default)]
+    pub(super) refactor_sources: Present<Vec<RefactorSource>>,
     #[serde(default)]
     pub(super) task_id: Present<String>,
 }

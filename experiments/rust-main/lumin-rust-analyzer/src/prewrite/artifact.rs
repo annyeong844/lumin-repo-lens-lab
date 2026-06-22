@@ -13,7 +13,8 @@ use super::cues::{
 use super::index::CandidateIndex;
 use super::intent::{IntentWarning, LoadedIntent, NormalizedIntent};
 use super::lookup::{
-    self, DependencyLookup, FileLookup, NameLookup, ShapeLookup, UnavailableEvidence,
+    self, DependencyLookup, FileLookup, InlinePatternLookup, NameLookup, ShapeLookup,
+    UnavailableEvidence,
 };
 use super::tokens::{TOKENIZER_VERSION, TOKEN_POLICY_VERSION, WEAK_COMMON_TOKENS};
 
@@ -32,6 +33,7 @@ pub(crate) struct PreWriteArtifact {
     shape_lookups: Vec<ShapeLookup>,
     file_lookups: Vec<FileLookup>,
     dependency_lookups: Vec<DependencyLookup>,
+    inline_pattern_lookups: Vec<InlinePatternLookup>,
     cue_cards: Vec<CueCard>,
     suppressed_cues: Vec<SuppressedCue>,
     unavailable_evidence: Vec<UnavailableEvidence>,
@@ -100,8 +102,16 @@ impl PreWriteArtifact {
                 bail!("blocked-artifact-contract: unsupported Rust shape lane emitted a match");
             }
         }
-        if self.unavailable_evidence.len() != self.shape_lookups.len() {
-            bail!("blocked-artifact-contract: unavailable evidence drifted from shape lookups");
+        let unavailable_lookup_count = self.shape_lookups.len()
+            + self
+                .inline_pattern_lookups
+                .iter()
+                .filter(|lookup| lookup.is_unavailable())
+                .count();
+        if self.unavailable_evidence.len() != unavailable_lookup_count {
+            bail!(
+                "blocked-artifact-contract: unavailable evidence drifted from unavailable lookups"
+            );
         }
         for lookup in &self.file_lookups {
             if !intent_has_file(&self.intent, &lookup.intent_file) {
@@ -125,6 +135,19 @@ impl PreWriteArtifact {
                 bail!(
                     "blocked-artifact-contract: dependency lookup {} drifted from normalized intent",
                     lookup.dep_name
+                );
+            }
+        }
+        let expected_inline_lookups = usize::from(self.intent.has_refactor_sources());
+        if self.inline_pattern_lookups.len() != expected_inline_lookups {
+            bail!(
+                "blocked-artifact-contract: inline-pattern lookup count drifted from refactorSources"
+            );
+        }
+        for lookup in &self.inline_pattern_lookups {
+            if !lookup.is_unavailable() {
+                bail!(
+                    "blocked-artifact-contract: unsupported Rust inline-pattern lane emitted a match"
                 );
             }
         }
@@ -206,6 +229,7 @@ struct IntentLaneCoverage {
     shapes: LaneStatus,
     files: LaneStatus,
     dependencies: LaneStatus,
+    inline_patterns: LaneStatus,
     planned_type_escapes: LaneStatus,
 }
 
@@ -216,6 +240,7 @@ impl IntentLaneCoverage {
             shapes: unsupported_if_requested(!intent.shapes.is_empty()),
             files: ran_if_requested(!intent.files.is_empty()),
             dependencies: ran_if_requested(!intent.dependencies.is_empty()),
+            inline_patterns: unsupported_if_requested(intent.has_refactor_sources()),
             planned_type_escapes: unsupported_if_requested(!intent.planned_type_escapes.is_empty()),
         }
     }
@@ -225,6 +250,7 @@ impl IntentLaneCoverage {
             || self.shapes != unsupported_if_requested(!intent.shapes.is_empty())
             || self.files != ran_if_requested(!intent.files.is_empty())
             || self.dependencies != ran_if_requested(!intent.dependencies.is_empty())
+            || self.inline_patterns != unsupported_if_requested(intent.has_refactor_sources())
             || self.planned_type_escapes
                 != unsupported_if_requested(!intent.planned_type_escapes.is_empty())
         {
@@ -258,7 +284,11 @@ pub(super) fn build(
     let index = CandidateIndex::from_health(syntax);
     let lookups = lookup::lookup_names(&loaded.intent, &index, syntax);
     let shape_lookups = lookup::lookup_shapes(&loaded.intent);
-    let unavailable_evidence = lookup::unavailable_evidence_from_shape_lookups(&shape_lookups);
+    let inline_pattern_lookups = lookup::lookup_inline_patterns(&loaded.intent);
+    let mut unavailable_evidence = lookup::unavailable_evidence_from_shape_lookups(&shape_lookups);
+    unavailable_evidence.extend(lookup::unavailable_evidence_from_inline_pattern_lookups(
+        &inline_pattern_lookups,
+    ));
     let file_lookups = lookup::lookup_files(&loaded.intent, syntax, root);
     let dependency_lookups = lookup::lookup_dependencies(&loaded.intent, syntax, root)?;
     let CueProjection {
@@ -277,6 +307,7 @@ pub(super) fn build(
         shape_lookups,
         file_lookups,
         dependency_lookups,
+        inline_pattern_lookups,
         cue_cards,
         suppressed_cues,
         unavailable_evidence,

@@ -5,6 +5,7 @@ use super::intent::{NameDeclaration, NormalizedIntent};
 
 mod dependency;
 mod file;
+mod inline_pattern;
 mod local;
 mod model;
 mod near;
@@ -18,6 +19,9 @@ pub(super) use dependency::{
     lookup_dependencies, DependencyLookup, DependencyLookupResult, DEPENDENCY_WATCH_FOR_THRESHOLD,
 };
 pub(super) use file::{lookup_files, FileLookup, FileLookupResult};
+pub(super) use inline_pattern::{
+    lookup_inline_patterns, unavailable_evidence_from_inline_pattern_lookups, InlinePatternLookup,
+};
 use model::LookupResult;
 pub(super) use model::{
     CandidateRecord, LocalOperationMuteReason, LocalOperationPolicyEntry, Locality, NameLookup,

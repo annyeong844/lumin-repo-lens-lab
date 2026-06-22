@@ -59,6 +59,16 @@ pub(in crate::prewrite) struct PlannedTypeEscape {
     alternative_considered: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(in crate::prewrite) struct RefactorSource {
+    pub(in crate::prewrite) file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite) lines: Option<Vec<u64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite) why: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub(in crate::prewrite) enum EscapeKind {
     #[serde(rename = "explicit-any")]
@@ -96,6 +106,8 @@ pub(in crate::prewrite) struct NormalizedIntent {
     pub(in crate::prewrite) dependencies: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(in crate::prewrite) dependency_declarations: Vec<DependencyDeclaration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite) refactor_sources: Option<Vec<RefactorSource>>,
     pub(in crate::prewrite) planned_type_escapes: Vec<PlannedTypeEscape>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite) task_id: Option<String>,
@@ -106,6 +118,14 @@ impl NormalizedIntent {
         self.name_declarations
             .iter()
             .find(|declaration| declaration.name == name)
+    }
+
+    pub(in crate::prewrite) fn refactor_sources(&self) -> &[RefactorSource] {
+        self.refactor_sources.as_deref().unwrap_or(&[])
+    }
+
+    pub(in crate::prewrite) fn has_refactor_sources(&self) -> bool {
+        !self.refactor_sources().is_empty()
     }
 }
 
