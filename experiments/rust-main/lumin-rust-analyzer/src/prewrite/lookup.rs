@@ -9,6 +9,7 @@ mod model;
 mod near;
 mod semantic;
 mod service;
+mod shape;
 mod taint;
 
 pub(super) use super::operation::ServiceOperationFamily;
@@ -18,6 +19,9 @@ pub(super) use model::{
     CandidateRecord, LocalOperationMuteReason, LocalOperationPolicyEntry, Locality, NameLookup,
     NearNameHint, PolicySupportingReason, SemanticHint, ServiceOperationMuteReason,
     ServiceOperationPolicyEntry, SuppressedNearNameHint, SuppressedSemanticHint, SuppressionReason,
+};
+pub(super) use shape::{
+    lookup_shapes, unavailable_evidence_from_shape_lookups, ShapeLookup, UnavailableEvidence,
 };
 
 pub(super) fn lookup_names(

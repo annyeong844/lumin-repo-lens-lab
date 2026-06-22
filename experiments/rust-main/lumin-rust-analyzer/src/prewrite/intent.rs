@@ -8,7 +8,9 @@ mod input;
 mod model;
 mod normalize;
 
-pub(super) use model::{IntentWarning, LoadedIntent, NameDeclaration, NormalizedIntent};
+pub(super) use model::{
+    IntentWarning, LoadedIntent, NameDeclaration, NormalizedIntent, ShapeIntent,
+};
 
 pub(super) fn load(path: &Path) -> Result<LoadedIntent> {
     let bytes = fs::read(path).map_err(|error| {

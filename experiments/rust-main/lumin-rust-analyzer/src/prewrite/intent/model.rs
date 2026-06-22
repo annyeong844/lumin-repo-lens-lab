@@ -25,7 +25,7 @@ impl NameDeclaration {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::prewrite) struct ShapeIntent {
     pub(in crate::prewrite) fields: Vec<String>,

@@ -209,6 +209,16 @@ The file lane does not evaluate boundary rules because Rust pre-write intent
 does not carry planned `from -> to` edges. It must emit `NOT_EVALUATED`, matching
 the JS/TS P1-2 behavior.
 
+Rust shape intent lookup follows the JS/TS P4 discipline for unsupported
+evidence: it must not infer structural equality from loose field names and must
+not add fuzzy shape matching. Until a Rust-owned shape-index equivalent exists,
+non-empty shape intents emit `coverage.shapes = "unsupported"`,
+`shapeLookups[]` rows with `result = "UNAVAILABLE"`, and
+`unavailableEvidence[]` rows on the `shape-hash` lane. Fields-only intents cite
+the JS/TS rule that field names alone are not structural equality evidence;
+exact hashes or `typeLiteral` entries cite the missing Rust shape lookup lane.
+No SAFE or review cue may be emitted from this unsupported shape lane.
+
 ## 8. Do Not Invent These Again
 
 These names are banned unless this file is amended with a reason:

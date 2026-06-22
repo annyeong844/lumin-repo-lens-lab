@@ -40,8 +40,8 @@ pub(super) fn local_operation_sibling_policy(
         .iter()
         .filter(|candidate| candidate.file == owner_file.as_str())
     {
-        let candidate_domains = candidate
-            .domain_tokens
+        let candidate_domain_tokens = service_operation_info(candidate.name).domain_tokens;
+        let candidate_domains = candidate_domain_tokens
             .iter()
             .cloned()
             .collect::<BTreeSet<_>>();
@@ -66,6 +66,7 @@ pub(super) fn local_operation_sibling_policy(
         };
         let entry = LocalOperationPolicyEntry::from_candidate(
             candidate,
+            candidate_domain_tokens,
             shared_domain_tokens,
             supporting_reasons,
             reason,
