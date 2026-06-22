@@ -263,6 +263,20 @@ same checked rule is represented as an `AGENT_REVIEW_CUE` on the dependency
 candidate. `sample-only` and `unavailable` counts must never produce a
 dependency hub cue.
 
+Cargo/rustc semantic checks are a Rust-only necessity: JS/TS lanes do not
+produce Cargo `target/` build products, but Rust oracle runs do. Rust must not
+write into the analyzed repository's `target/` directory by default. The
+`rust-cargo-oracle` semantic artifact must make this visible under
+`meta.input.cargoTargetDirPolicy`:
+
+- `repoTargetDirUsed = false` for owned temp target modes.
+- `ownedTempTargetDir = true` for `isolated-temp` and `reusable-temp`.
+- `incrementalDisabled = true` and `debugSymbolsDisabled = true` when the
+  oracle applies its compact Cargo profile environment.
+
+These fields are transparency evidence only. They are not timeouts, analysis
+caps, or permission to skip large repositories.
+
 Rust planned type escape intent support follows the JS/TS pre-write Step 2
 contract:
 

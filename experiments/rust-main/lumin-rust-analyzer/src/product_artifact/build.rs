@@ -87,6 +87,7 @@ pub(crate) fn unified_artifact<'a>(
                 cargo_bin: options.cargo_bin.clone(),
                 semantic_mode: options.semantic_mode,
                 cargo_target_dir_mode: options.cargo_target_dir_mode,
+                cargo_target_dir_policy: semantic_phase.meta.input.cargo_target_dir_policy.clone(),
                 cargo_target_dir: semantic_phase.meta.input.cargo_target_dir.clone(),
             },
             output: options

@@ -143,6 +143,22 @@ fn cli_default_cargo_target_dir_mode_is_isolated_temp_without_repo_target() -> R
         artifact["meta"]["input"]["cargoTargetDirMode"],
         "isolated-temp"
     );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["repoTargetDirUsed"],
+        false
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["ownedTempTargetDir"],
+        true
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["incrementalDisabled"],
+        true
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["debugSymbolsDisabled"],
+        true
+    );
     let target_dir = PathBuf::from(
         artifact["meta"]["input"]["cargoTargetDir"]
             .as_str()

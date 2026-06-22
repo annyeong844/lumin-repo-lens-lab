@@ -9,7 +9,8 @@ mod summary;
 mod vocabulary;
 
 pub use artifact::{
-    ArtifactMeta, BlockingTarget, CacheReuse, InputMeta, SemanticHealthArtifact, ToolchainMeta,
+    ArtifactMeta, BlockingTarget, CacheReuse, CargoTargetDirPolicy, InputMeta,
+    SemanticHealthArtifact, ToolchainMeta,
 };
 pub use coverage::{CoverageEntry, ABSENCE_CLEAN_COVERAGE_ID, EVENT_STREAM_COVERAGE_ID};
 pub use diagnostic::{

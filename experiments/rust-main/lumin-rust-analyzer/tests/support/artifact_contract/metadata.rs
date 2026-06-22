@@ -9,6 +9,22 @@ pub(super) fn assert_metadata_and_policy(artifact: &Value) -> Result<()> {
         artifact["meta"]["input"]["cargoTargetDirMode"],
         "isolated-temp"
     );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["repoTargetDirUsed"],
+        false
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["ownedTempTargetDir"],
+        true
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["incrementalDisabled"],
+        true
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["debugSymbolsDisabled"],
+        true
+    );
     let cargo_target_dir = artifact["meta"]["input"]["cargoTargetDir"]
         .as_str()
         .unwrap_or_default();

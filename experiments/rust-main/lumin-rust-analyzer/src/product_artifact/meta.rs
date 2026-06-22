@@ -1,3 +1,4 @@
+use lumin_rust_cargo_oracle::protocol::CargoTargetDirPolicy;
 use lumin_rust_cargo_oracle::{CargoCheckMode, CargoTargetDirMode};
 use serde::Serialize;
 
@@ -46,6 +47,7 @@ pub(super) struct ProductArtifactInput {
     pub(super) cargo_bin: String,
     pub(super) semantic_mode: CargoCheckMode,
     pub(super) cargo_target_dir_mode: CargoTargetDirMode,
+    pub(super) cargo_target_dir_policy: CargoTargetDirPolicy,
     pub(super) cargo_target_dir: String,
 }
 

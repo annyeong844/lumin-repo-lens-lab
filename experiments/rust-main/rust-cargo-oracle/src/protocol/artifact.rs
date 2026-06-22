@@ -60,9 +60,30 @@ pub struct InputMeta {
     pub features: Option<String>,
     pub cargo_check_mode: CargoCheckMode,
     pub cargo_target_dir_mode: CargoTargetDirMode,
+    pub cargo_target_dir_policy: CargoTargetDirPolicy,
     pub cargo_target_dir: String,
     pub cargo_bin: String,
     pub cargo_args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CargoTargetDirPolicy {
+    pub repo_target_dir_used: bool,
+    pub owned_temp_target_dir: bool,
+    pub incremental_disabled: bool,
+    pub debug_symbols_disabled: bool,
+}
+
+impl CargoTargetDirPolicy {
+    pub(crate) fn owned_temp_compact() -> Self {
+        Self {
+            repo_target_dir_used: false,
+            owned_temp_target_dir: true,
+            incremental_disabled: true,
+            debug_symbols_disabled: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
