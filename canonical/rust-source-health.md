@@ -176,6 +176,19 @@ standalone opaque expansion surfaces; the owning derive macro remains the
 review or muted surface. Non-test `cfg` gates remain `review` because AST-only
 analysis cannot know which branch is live.
 
+### 7.2 Rust Pre-Write Consumer
+
+`lumin-rust-analyzer pre-write` may consume
+`HealthResponse::files[*].ast` in memory to answer declared Rust name intents.
+The analyzer owns intent, lookup, cue, and advisory policy.
+`rust-source-health` remains the owner of raw AST extraction and path
+classification.
+
+The normal unified artifact must not embed a repository-wide definition or
+impl-method index. The pre-write consumer builds a borrowed view and serializes
+only matched advisory evidence. Impl methods remain separate owner evidence
+and must not be promoted into definition-lane SAFE cues.
+
 ## 8. Do Not Invent These Again
 
 These names are banned unless this file is amended with a reason:

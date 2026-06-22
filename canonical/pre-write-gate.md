@@ -91,6 +91,21 @@ Claude may:
 
 The gate is advisory; Claude retains authorial authority.
 
+### Rust Name-Lane Migration
+
+`lumin-rust-analyzer pre-write` is the Rust execution surface for the name
+lane. It runs `rust-source-health` only. It does not run Cargo metadata or
+Cargo check because the current cargo/rustc oracle can verify diagnostics and
+clean build scope but cannot prove that an unreferenced repository name is
+absent.
+
+The Rust command accepts the five-key intent transport. Missing arrays default
+with warnings and malformed present fields hard-stop. Until later migration
+slices land, non-empty shape, file, dependency, and planned-type-escape lanes
+remain visible with `unsupported` coverage. `taskId` is the only typed transport
+extension. Unknown extra fields hard-stop instead of reopening a dynamic
+`Value` map at the Rust boundary.
+
 ## 4. Minimum script subset for fresh audit
 
 When `<output>/` lacks recent artifacts, run only what the intent items require:
