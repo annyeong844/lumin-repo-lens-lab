@@ -103,6 +103,20 @@ fn prewrite_file_lane_reports_domain_cluster_watch_cues_like_js_ts() -> Result<(
         example_files(user_service),
         vec!["src/user_loader.rs", "src/user_store.rs"]
     );
+    let user_service_cue = cue_card(&artifact, "src/user_service.rs::__file__")?;
+    assert_eq!(user_service_cue["renderTier"], "AGENT_REVIEW_CUE");
+    let domain_cue = user_service_cue["cues"]
+        .as_array()
+        .context("file domain cluster cues")?
+        .iter()
+        .find(|cue| cue["evidenceLane"] == "file-domain-cluster")
+        .context("file domain cluster cue")?;
+    assert_eq!(domain_cue["cueTier"], "AGENT_REVIEW_CUE");
+    assert_eq!(domain_cue["claim"], "related Rust file domain cluster");
+    assert_eq!(
+        domain_cue["evidence"][0]["matchedField"],
+        "fileLookups[].domainCluster"
+    );
 
     let artifact_loader = domain_cluster(file_lookup(&artifact, "src/artifact_loader.rs")?)?;
     assert_eq!(artifact_loader["kind"], "DOMAIN_CLUSTER_DETECTED");
@@ -128,6 +142,7 @@ fn prewrite_file_lane_reports_domain_cluster_watch_cues_like_js_ts() -> Result<(
     let unrelated = file_lookup(&artifact, "src/other_new.rs")?;
     assert_eq!(unrelated["result"], "NEW_FILE");
     assert_eq!(unrelated["domainCluster"], Value::Null);
+    assert!(cue_card(&artifact, "src/other_new.rs::__file__").is_err());
     Ok(())
 }
 
@@ -147,6 +162,15 @@ fn domain_cluster(lookup: &Value) -> Result<&Value> {
     } else {
         anyhow::bail!("domainCluster missing for {}", lookup["intentFile"]);
     }
+}
+
+fn cue_card<'a>(artifact: &'a Value, identity: &str) -> Result<&'a Value> {
+    artifact["cueCards"]
+        .as_array()
+        .context("cueCards array")?
+        .iter()
+        .find(|card| card["candidate"]["identity"] == identity)
+        .with_context(|| format!("cue card {identity}"))
 }
 
 fn example_files(cluster: &Value) -> Vec<&str> {

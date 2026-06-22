@@ -25,6 +25,12 @@ pub(in crate::prewrite) struct FileLookup {
     citations: Vec<String>,
 }
 
+impl FileLookup {
+    pub(in crate::prewrite) fn has_domain_cluster(&self) -> bool {
+        self.domain_cluster.is_some()
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 enum FileLookupKind {
     #[serde(rename = "file")]

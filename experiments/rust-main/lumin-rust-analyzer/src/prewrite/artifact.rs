@@ -214,7 +214,7 @@ pub(super) fn build(loaded: LoadedIntent, syntax: &HealthResponse) -> Result<Pre
     let CueProjection {
         cue_cards,
         suppressed_cues,
-    } = cues::project(&lookups);
+    } = cues::project(&lookups, &file_lookups);
     let coverage = IntentLaneCoverage::from_intent(&loaded.intent);
     let artifact = PreWriteArtifact {
         schema_version: SCHEMA_VERSION,

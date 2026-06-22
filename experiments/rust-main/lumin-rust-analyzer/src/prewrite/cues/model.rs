@@ -25,6 +25,7 @@ pub(in crate::prewrite) enum EvidenceLane {
     ImplMethodName,
     NearName,
     IntentToken,
+    FileDomainCluster,
     ServiceOperationSibling,
     LocalOperationSibling,
 }
@@ -58,6 +59,8 @@ pub(in crate::prewrite::cues) enum CueClaim {
     NearRustImplMethodName,
     SupportedIntentTokenOverlap,
     RustImplMethodIntentTokenOverlap,
+    #[serde(rename = "related Rust file domain cluster")]
+    RelatedRustFileDomainCluster,
     #[serde(rename = "related service operation sibling")]
     RelatedServiceOperationSibling,
     #[serde(rename = "related local service operation")]
@@ -70,6 +73,8 @@ pub(in crate::prewrite) enum CueMatchedField {
     DefIndex,
     #[serde(rename = "implMethodIndex")]
     ImplMethodIndex,
+    #[serde(rename = "fileLookups[].domainCluster")]
+    FileDomainCluster,
     #[serde(rename = "preWriteLocalOperationIndex")]
     PreWriteLocalOperationIndex,
     #[serde(rename = "lookups[].serviceOperationSiblingPolicy.promoted")]

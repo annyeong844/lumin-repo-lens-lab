@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
-    CandidateRecord, LocalOperationPolicyEntry, NameLookup, ServiceOperationPolicyEntry,
-    SuppressedNearNameHint, SuppressedSemanticHint,
+    CandidateRecord, FileLookup, LocalOperationPolicyEntry, NameLookup,
+    ServiceOperationPolicyEntry, SuppressedNearNameHint, SuppressedSemanticHint,
 };
 use crate::prewrite::tokens::TOKEN_POLICY_VERSION;
 
@@ -13,7 +13,10 @@ use super::model::{
     SuppressedCue,
 };
 
-pub(in crate::prewrite) fn project(lookups: &[NameLookup]) -> CueProjection {
+pub(in crate::prewrite) fn project(
+    lookups: &[NameLookup],
+    file_lookups: &[FileLookup],
+) -> CueProjection {
     let mut cards = BTreeMap::<String, CueCardBuilder>::new();
     let mut suppressed = Vec::new();
     for lookup in lookups {
@@ -46,6 +49,7 @@ pub(in crate::prewrite) fn project(lookups: &[NameLookup]) -> CueProjection {
         add_service_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
         add_local_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
     }
+    add_file_domain_cluster_cues(file_lookups, &mut cards);
 
     let mut cue_cards = cards
         .into_values()
@@ -108,6 +112,68 @@ fn add_active_cue(
     }
 
     add_cue_for_candidate(cards, CueCandidate::from(candidate), cue);
+}
+
+fn add_file_domain_cluster_cues(
+    file_lookups: &[FileLookup],
+    cards: &mut BTreeMap<String, CueCardBuilder>,
+) {
+    for lookup in file_lookups
+        .iter()
+        .filter(|lookup| lookup.has_domain_cluster())
+    {
+        let identity = file_candidate_identity(&lookup.intent_file);
+        add_cue_for_candidate(
+            cards,
+            CueCandidate {
+                owner_file: lookup.intent_file.clone(),
+                name: file_candidate_name(&lookup.intent_file),
+                identity: identity.clone(),
+            },
+            file_domain_cluster_cue(identity),
+        );
+    }
+}
+
+fn file_domain_cluster_cue(identity: String) -> Cue {
+    Cue {
+        cue_tier: CueTier::AgentReview,
+        safe_meaning: None,
+        not_safe_for: Vec::new(),
+        evidence_lane: EvidenceLane::FileDomainCluster,
+        claim: CueClaim::RelatedRustFileDomainCluster,
+        confidence: CueConfidence::HeuristicReview,
+        evidence: vec![CueEvidence {
+            artifact: "pre-write-advisory.json",
+            matched_field: CueMatchedField::FileDomainCluster,
+            matched_field_source: None,
+            algorithm_version: None,
+            candidate_identity: identity,
+            distance: None,
+            tokens: Vec::new(),
+            policy_id: None,
+            policy_version: None,
+            operation_family: None,
+            shared_domain_tokens: Vec::new(),
+            locality: None,
+            supporting_reasons: Vec::new(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
+        }],
+    }
+}
+
+fn file_candidate_identity(intent_file: &str) -> String {
+    format!("{intent_file}::__file__")
+}
+
+fn file_candidate_name(intent_file: &str) -> String {
+    let basename = intent_file
+        .rsplit_once('/')
+        .map(|(_, basename)| basename)
+        .unwrap_or(intent_file);
+    basename.strip_suffix(".rs").unwrap_or(basename).to_string()
 }
 
 fn add_cue_for_candidate(
