@@ -12,7 +12,9 @@ use super::cues::{
 };
 use super::index::CandidateIndex;
 use super::intent::{IntentWarning, LoadedIntent, NormalizedIntent};
-use super::lookup::{self, FileLookup, NameLookup, ShapeLookup, UnavailableEvidence};
+use super::lookup::{
+    self, DependencyLookup, FileLookup, NameLookup, ShapeLookup, UnavailableEvidence,
+};
 use super::tokens::{TOKENIZER_VERSION, TOKEN_POLICY_VERSION, WEAK_COMMON_TOKENS};
 
 const SCHEMA_VERSION: &str = "rust-pre-write.v1";
@@ -29,6 +31,7 @@ pub(crate) struct PreWriteArtifact {
     lookups: Vec<NameLookup>,
     shape_lookups: Vec<ShapeLookup>,
     file_lookups: Vec<FileLookup>,
+    dependency_lookups: Vec<DependencyLookup>,
     cue_cards: Vec<CueCard>,
     suppressed_cues: Vec<SuppressedCue>,
     unavailable_evidence: Vec<UnavailableEvidence>,
@@ -105,6 +108,23 @@ impl PreWriteArtifact {
                 bail!(
                     "blocked-artifact-contract: lookup file {} is absent from normalized intent",
                     lookup.intent_file
+                );
+            }
+        }
+        if self.dependency_lookups.len() != self.intent.dependencies.len() {
+            bail!(
+                "blocked-artifact-contract: dependency lookup count drifted from normalized intent"
+            );
+        }
+        for (lookup, dependency) in self
+            .dependency_lookups
+            .iter()
+            .zip(&self.intent.dependencies)
+        {
+            if &lookup.dep_name != dependency {
+                bail!(
+                    "blocked-artifact-contract: dependency lookup {} drifted from normalized intent",
+                    lookup.dep_name
                 );
             }
         }
@@ -195,7 +215,7 @@ impl IntentLaneCoverage {
             names: LaneStatus::Ran,
             shapes: unsupported_if_requested(!intent.shapes.is_empty()),
             files: ran_if_requested(!intent.files.is_empty()),
-            dependencies: unsupported_if_requested(!intent.dependencies.is_empty()),
+            dependencies: ran_if_requested(!intent.dependencies.is_empty()),
             planned_type_escapes: unsupported_if_requested(!intent.planned_type_escapes.is_empty()),
         }
     }
@@ -204,7 +224,7 @@ impl IntentLaneCoverage {
         if self.names != LaneStatus::Ran
             || self.shapes != unsupported_if_requested(!intent.shapes.is_empty())
             || self.files != ran_if_requested(!intent.files.is_empty())
-            || self.dependencies != unsupported_if_requested(!intent.dependencies.is_empty())
+            || self.dependencies != ran_if_requested(!intent.dependencies.is_empty())
             || self.planned_type_escapes
                 != unsupported_if_requested(!intent.planned_type_escapes.is_empty())
         {
@@ -240,6 +260,7 @@ pub(super) fn build(
     let shape_lookups = lookup::lookup_shapes(&loaded.intent);
     let unavailable_evidence = lookup::unavailable_evidence_from_shape_lookups(&shape_lookups);
     let file_lookups = lookup::lookup_files(&loaded.intent, syntax, root);
+    let dependency_lookups = lookup::lookup_dependencies(&loaded.intent, syntax, root)?;
     let CueProjection {
         cue_cards,
         suppressed_cues,
@@ -255,6 +276,7 @@ pub(super) fn build(
         lookups,
         shape_lookups,
         file_lookups,
+        dependency_lookups,
         cue_cards,
         suppressed_cues,
         unavailable_evidence,

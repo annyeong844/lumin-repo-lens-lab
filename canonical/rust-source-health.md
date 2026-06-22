@@ -219,6 +219,34 @@ the JS/TS rule that field names alone are not structural equality evidence;
 exact hashes or `typeLiteral` entries cite the missing Rust shape lookup lane.
 No SAFE or review cue may be emitted from this unsupported shape lane.
 
+Rust dependency intent lookup is the Rust analogue of the JS/TS
+`pre-write-lookup-dep.mjs` lane:
+
+- `Cargo.toml` replaces `package.json` as the declaration source.
+- `[dependencies]`, `[dev-dependencies]`, and `[build-dependencies]` replace
+  `dependencies`, `devDependencies`, and `peerDependencies`.
+- `HealthResponse::files[*].ast.useTrees`, `pathRefs`, and `macroCalls`
+  replace `symbols.json.dependencyImportConsumers` as the static import graph.
+- declared dependency plus one or more observed Rust path consumers is
+  `DEPENDENCY_AVAILABLE`;
+- declared dependency plus zero observed consumers is
+  `DEPENDENCY_AVAILABLE_NO_OBSERVED_IMPORTS` only when the Rust syntax scan is
+  complete enough to make a grounded zero-consumer statement;
+- declared dependency with parse errors or skipped files is
+  `DEPENDENCY_AVAILABLE_IMPORT_GRAPH_UNAVAILABLE`, never zero observed;
+- undeclared dependency is `NEW_PACKAGE`.
+
+The Rust-only normalization from Cargo package key to code path crate root is
+required because Cargo packages may use hyphens while Rust paths use
+underscores, for example `tracing-subscriber` is imported as
+`tracing_subscriber`. This is a language/package-model translation, not a new
+policy. As in JS/TS, declared-with-zero-consumers must not be described as
+unused or cleanup because static imports do not cover build scripts, examples,
+cfg-gated code, generated code, runtime plugins, or external cargo commands.
+When dependency intents are requested, a missing or malformed root
+`Cargo.toml` is a hard-stop because Rust cannot produce a grounded declaration
+lookup without its manifest source.
+
 ## 8. Do Not Invent These Again
 
 These names are banned unless this file is amended with a reason:
