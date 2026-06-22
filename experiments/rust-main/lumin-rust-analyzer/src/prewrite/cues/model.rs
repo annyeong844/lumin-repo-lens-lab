@@ -3,8 +3,8 @@ use serde::Serialize;
 
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
-    CandidateRecord, LocalOperationMuteReason, LocalOperationPolicyEntry, Locality,
-    PolicySupportingReason, ServiceOperationFamily, ServiceOperationMuteReason,
+    CandidateRecord, FileLookupResult, LocalOperationMuteReason, LocalOperationPolicyEntry,
+    Locality, PolicySupportingReason, ServiceOperationFamily, ServiceOperationMuteReason,
     ServiceOperationPolicyEntry, SuppressionReason,
 };
 
@@ -108,6 +108,10 @@ pub(in crate::prewrite) struct CueEvidence {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) algorithm_version: Option<&'static str>,
     pub(in crate::prewrite::cues) candidate_identity: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) file_lookup_result: Option<FileLookupResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) distance: Option<usize>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

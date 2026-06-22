@@ -12,7 +12,7 @@ mod service;
 mod taint;
 
 pub(super) use super::operation::ServiceOperationFamily;
-pub(super) use file::{lookup_files, FileLookup};
+pub(super) use file::{lookup_files, FileLookup, FileLookupResult};
 use model::LookupResult;
 pub(super) use model::{
     CandidateRecord, LocalOperationMuteReason, LocalOperationPolicyEntry, Locality, NameLookup,

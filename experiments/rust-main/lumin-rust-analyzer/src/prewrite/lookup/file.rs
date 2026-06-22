@@ -36,6 +36,10 @@ impl FileLookup {
     pub(in crate::prewrite) fn exists(&self) -> bool {
         matches!(self.result, FileLookupResult::Exists)
     }
+
+    pub(in crate::prewrite) fn result(&self) -> FileLookupResult {
+        self.result
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -45,7 +49,7 @@ enum FileLookupKind {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-enum FileLookupResult {
+pub(in crate::prewrite) enum FileLookupResult {
     #[serde(rename = "FILE_EXISTS")]
     Exists,
     #[serde(rename = "NEW_FILE")]
