@@ -5,6 +5,9 @@ use lumin_rust_source_health::protocol::{
 use serde::Serialize;
 
 use super::super::intent::NormalizedIntent;
+use domain_cluster::{find_domain_cluster, DomainCluster};
+
+mod domain_cluster;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,7 +21,7 @@ pub(in crate::prewrite) struct FileLookup {
     submodule: Option<String>,
     boundary: FileBoundary,
     tags: Vec<&'static str>,
-    domain_cluster: Option<()>,
+    domain_cluster: Option<DomainCluster>,
     citations: Vec<String>,
 }
 
@@ -73,6 +76,12 @@ fn lookup_file(intent_file: &str, syntax: &HealthResponse) -> FileLookup {
     let mut citations = Vec::new();
     let mut tags = Vec::new();
     let mut result = FileLookupResult::Unknown;
+    let path_is_safe = is_safe_relative_posix_path(&normalized);
+    let path_is_excluded = is_excluded_by_source_health_path_policy(&normalized);
+    let path_is_rust = normalized.ends_with(".rs");
+    let domain_cluster = (path_is_safe && !path_is_excluded && path_is_rust)
+        .then(|| find_domain_cluster(&normalized, syntax))
+        .flatten();
 
     if let Some(file) = syntax.files.get(&normalized) {
         result = FileLookupResult::Exists;
@@ -87,15 +96,15 @@ fn lookup_file(intent_file: &str, syntax: &HealthResponse) -> FileLookup {
             skipped.path,
             skipped_reason(skipped.reason)
         ));
-    } else if !is_safe_relative_posix_path(&normalized) {
+    } else if !path_is_safe {
         citations.push(format!(
             "[확인 불가, reason: '{normalized}' is not a safe repo-relative POSIX path]"
         ));
-    } else if is_excluded_by_source_health_path_policy(&normalized) {
+    } else if path_is_excluded {
         citations.push(format!(
             "[확인 불가, reason: '{normalized}' is outside rust-source-health path policy (target/vendor excluded)]"
         ));
-    } else if !normalized.ends_with(".rs") {
+    } else if !path_is_rust {
         citations.push(format!(
             "[확인 불가, reason: rust-source-health enumerates Rust .rs files only; '{normalized}' is outside this lane]"
         ));
@@ -124,7 +133,7 @@ fn lookup_file(intent_file: &str, syntax: &HealthResponse) -> FileLookup {
             rule: None,
         },
         tags,
-        domain_cluster: None,
+        domain_cluster,
         citations,
     }
 }

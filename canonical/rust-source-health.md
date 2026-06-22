@@ -198,6 +198,13 @@ Rust file intent lookup is the Rust analogue of the JS/TS pre-write file lane:
 - skipped files, non-Rust paths, excluded `target` / `vendor` paths, and unsafe
   path text are `FILE_STATUS_UNKNOWN`.
 
+For safe repo-relative `.rs` intents, the file lane may emit the JS/TS
+`domainCluster` watch cue from same-directory `HealthResponse::files` siblings.
+The Rust cue follows the JS/TS token policy for domain prefixes, domain-token
+matches, minimum match counts, and capped examples. Rust source health does not
+currently expose file LOC in this lane, so `domainCluster.totalLoc` and example
+`loc` values remain `null` rather than inventing a line-count claim.
+
 The file lane does not evaluate boundary rules because Rust pre-write intent
 does not carry planned `from -> to` edges. It must emit `NOT_EVALUATED`, matching
 the JS/TS P1-2 behavior.
