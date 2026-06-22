@@ -1,4 +1,4 @@
-#[path = "cli_usage/calibration_adjudication.rs"]
+#[path = "cli_usage/calibration_adjudication/mod.rs"]
 mod calibration_adjudication;
 #[path = "cli_usage/option_errors.rs"]
 mod option_errors;
