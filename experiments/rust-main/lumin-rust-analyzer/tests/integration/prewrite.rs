@@ -4,3 +4,5 @@ mod coverage;
 mod cues;
 #[path = "prewrite/errors.rs"]
 mod errors;
+#[path = "prewrite/local_operations.rs"]
+mod local_operations;

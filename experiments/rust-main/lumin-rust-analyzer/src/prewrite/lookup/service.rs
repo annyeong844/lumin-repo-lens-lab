@@ -2,13 +2,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use lumin_rust_source_health::protocol::AstDefinitionKind;
 
-use super::model::{ServiceOperationSiblingPolicy, ServiceSignatureSupport, ServiceSuppressedLane};
+use super::model::{
+    PolicySupportingReason, ServiceOperationSiblingPolicy, ServiceSignatureSupport,
+    ServiceSuppressedLane,
+};
 use super::{
     CandidateRecord, Locality, ServiceOperationFamily, ServiceOperationMuteReason,
     ServiceOperationPolicyEntry, SuppressedNearNameHint, SuppressedSemanticHint, SuppressionReason,
 };
 use crate::prewrite::index::MatchedField;
-use crate::prewrite::tokens::unique_tokens;
+use crate::prewrite::operation::{service_operation_info, OperationInfo};
 
 const SERVICE_OPERATION_POLICY_ID: &str = "prewrite-service-operation-sibling-cue";
 const SERVICE_OPERATION_POLICY_VERSION: &str = "prewrite-service-operation-sibling-cue-v1";
@@ -99,9 +102,9 @@ fn empty_policy() -> ServiceOperationSiblingPolicy {
 
 fn service_mute_reason(
     candidate: &MergedServiceCandidate,
-    intent_operation: &ServiceOperationInfo,
+    intent_operation: &OperationInfo,
     intent_domains: &BTreeSet<String>,
-    candidate_operation: &ServiceOperationInfo,
+    candidate_operation: &OperationInfo,
     shared_domain_tokens: &[String],
 ) -> Option<ServiceOperationMuteReason> {
     let has_promotable_suppression = candidate.supporting_reasons.iter().any(|reason| {
@@ -120,7 +123,7 @@ fn service_mute_reason(
         Some(ServiceOperationMuteReason::InsufficientMetadata)
     } else if candidate.record.policy_excluded {
         Some(ServiceOperationMuteReason::PolicyExcluded)
-    } else if candidate.record.matched_field != MatchedField::DefIndex {
+    } else if candidate.record.matched_field != MatchedField::Def {
         Some(ServiceOperationMuteReason::SurfaceKindUnsupported)
     } else if is_non_callable_service_definition(candidate.record.definition_kind) {
         Some(ServiceOperationMuteReason::NonCallableDefinition)
@@ -290,59 +293,14 @@ impl MergedServiceCandidate {
             reason,
             operation_family,
             shared_domain_tokens,
-            supporting_reasons: self.supporting_reasons,
+            supporting_reasons: self
+                .supporting_reasons
+                .into_iter()
+                .map(PolicySupportingReason::from)
+                .collect(),
             locality: self.locality,
             signature_support: ServiceSignatureSupport::unavailable(),
             suppressed_lanes: self.suppressed_lanes,
         }
     }
-}
-
-#[derive(Debug)]
-struct ServiceOperationInfo {
-    operation_family: Option<ServiceOperationFamily>,
-    domain_tokens: Vec<String>,
-}
-
-fn service_operation_info(name: &str) -> ServiceOperationInfo {
-    let tokens = unique_tokens(&[name]);
-    let verb = tokens.first().map(String::as_str);
-    let operation_family = verb.and_then(operation_family_for_verb);
-    let domain_tokens = tokens
-        .iter()
-        .filter(|token| Some(token.as_str()) != verb && operation_family_for_verb(token).is_none())
-        .filter_map(|token| normalize_domain_token(token))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    ServiceOperationInfo {
-        operation_family,
-        domain_tokens,
-    }
-}
-
-fn operation_family_for_verb(verb: &str) -> Option<ServiceOperationFamily> {
-    match verb {
-        "fetch" | "find" | "get" | "list" | "load" | "lookup" | "query" | "read" | "resolve"
-        | "retrieve" | "search" => Some(ServiceOperationFamily::ReadQuery),
-        "add" | "create" => Some(ServiceOperationFamily::MutationCreate),
-        "delete" | "destroy" | "remove" => Some(ServiceOperationFamily::MutationDelete),
-        "dispatch" | "emit" | "send" => Some(ServiceOperationFamily::MutationSend),
-        "patch" | "set" | "update" => Some(ServiceOperationFamily::MutationUpdate),
-        "save" | "upsert" | "write" => Some(ServiceOperationFamily::MutationSave),
-        _ => None,
-    }
-}
-
-fn normalize_domain_token(token: &str) -> Option<String> {
-    if token.is_empty() {
-        return None;
-    }
-    if token.len() > 3 && token.ends_with("ies") {
-        return Some(format!("{}y", &token[..token.len() - 3]));
-    }
-    if token.len() > 3 && token.ends_with('s') && !token.ends_with("ss") && !token.ends_with("us") {
-        return Some(token[..token.len() - 1].to_string());
-    }
-    Some(token.to_string())
 }

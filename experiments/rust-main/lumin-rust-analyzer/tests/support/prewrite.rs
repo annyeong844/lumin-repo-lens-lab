@@ -11,6 +11,18 @@ const LIB_RS: &str = r#"pub fn load_task() {}
 
 pub fn fetch_user() {}
 
+pub fn create_repository() {
+    fn get_world() {}
+    fn list_library_docs() {}
+    fn delete_world() {}
+    fn normalize_input() {}
+
+    get_world();
+    list_library_docs();
+    delete_world();
+    normalize_input();
+}
+
 pub struct EventDispatcher;
 
 impl EventDispatcher {

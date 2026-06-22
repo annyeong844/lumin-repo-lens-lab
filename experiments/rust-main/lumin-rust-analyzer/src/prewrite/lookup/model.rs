@@ -5,7 +5,8 @@ use lumin_rust_source_health::protocol::{
 };
 use serde::Serialize;
 
-use crate::prewrite::index::{Candidate, MatchedField};
+use crate::prewrite::index::{Candidate, LocalOperationCandidate, MatchedField};
+use crate::prewrite::operation::ServiceOperationFamily;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 pub(in crate::prewrite) enum LookupResult {
@@ -122,24 +123,25 @@ pub(in crate::prewrite) enum SuppressionReason {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(in crate::prewrite) enum ServiceOperationFamily {
-    ReadQuery,
-    MutationCreate,
-    MutationDelete,
-    MutationSend,
-    MutationUpdate,
-    MutationSave,
+pub(in crate::prewrite) enum PolicySupportingReason {
+    DomainTokenOverlap,
+    NearLengthDeltaExceeded,
+    NearPrefixMismatch,
+    NearDistanceExceeded,
+    SingleNonWeakTokenOnly,
+    InsufficientNonWeakSupport,
+    LocalOperationSameFileDomainOverlap,
 }
 
-impl ServiceOperationFamily {
-    pub(in crate::prewrite) fn as_str(self) -> &'static str {
-        match self {
-            Self::ReadQuery => "read-query",
-            Self::MutationCreate => "mutation-create",
-            Self::MutationDelete => "mutation-delete",
-            Self::MutationSend => "mutation-send",
-            Self::MutationUpdate => "mutation-update",
-            Self::MutationSave => "mutation-save",
+impl From<SuppressionReason> for PolicySupportingReason {
+    fn from(reason: SuppressionReason) -> Self {
+        match reason {
+            SuppressionReason::DomainTokenOverlap => Self::DomainTokenOverlap,
+            SuppressionReason::NearLengthDeltaExceeded => Self::NearLengthDeltaExceeded,
+            SuppressionReason::NearPrefixMismatch => Self::NearPrefixMismatch,
+            SuppressionReason::NearDistanceExceeded => Self::NearDistanceExceeded,
+            SuppressionReason::SingleNonWeakTokenOnly => Self::SingleNonWeakTokenOnly,
+            SuppressionReason::InsufficientNonWeakSupport => Self::InsufficientNonWeakSupport,
         }
     }
 }
@@ -165,6 +167,26 @@ pub(in crate::prewrite) enum ServiceOperationMuteReason {
     #[serde(rename = "service-sibling-operation-family-mismatch")]
     OperationFamilyMismatch,
     #[serde(rename = "service-sibling-family-not-promotable")]
+    FamilyNotPromotable,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+pub(in crate::prewrite) enum LocalOperationMuteReason {
+    #[serde(rename = "local-operation-insufficient-metadata")]
+    InsufficientMetadata,
+    #[serde(rename = "local-operation-surface-kind-unsupported")]
+    SurfaceKindUnsupported,
+    #[serde(rename = "local-operation-policy-excluded")]
+    PolicyExcluded,
+    #[serde(rename = "local-operation-locality-mismatch")]
+    LocalityMismatch,
+    #[serde(rename = "local-operation-unknown-operation")]
+    UnknownOperation,
+    #[serde(rename = "local-operation-domain-mismatch")]
+    DomainMismatch,
+    #[serde(rename = "local-operation-family-mismatch")]
+    FamilyMismatch,
+    #[serde(rename = "local-operation-family-not-promotable")]
     FamilyNotPromotable,
 }
 
@@ -205,7 +227,7 @@ pub(in crate::prewrite) struct ServiceOperationPolicyEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite) operation_family: Option<ServiceOperationFamily>,
     pub(in crate::prewrite) shared_domain_tokens: Vec<String>,
-    pub(in crate::prewrite) supporting_reasons: Vec<SuppressionReason>,
+    pub(in crate::prewrite) supporting_reasons: Vec<PolicySupportingReason>,
     pub(in crate::prewrite) locality: Locality,
     pub(in crate::prewrite) signature_support: ServiceSignatureSupport,
     pub(in crate::prewrite) suppressed_lanes: Vec<ServiceSuppressedLane>,
@@ -221,6 +243,82 @@ pub(in crate::prewrite) struct ServiceOperationSiblingPolicy {
     pub(in crate::prewrite) muted_candidate_count: usize,
     pub(in crate::prewrite) promoted: Vec<ServiceOperationPolicyEntry>,
     pub(in crate::prewrite) muted: Vec<ServiceOperationPolicyEntry>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(in crate::prewrite) enum LocalOperationPolicyStatus {
+    Complete,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::prewrite) struct LocalOperationPolicyEntry {
+    pub(in crate::prewrite) identity: String,
+    pub(in crate::prewrite) name: String,
+    pub(in crate::prewrite) owner_file: String,
+    pub(in crate::prewrite) matched_field: MatchedField,
+    pub(in crate::prewrite) surface_kind: &'static str,
+    pub(in crate::prewrite) operation_family: ServiceOperationFamily,
+    pub(in crate::prewrite) shared_domain_tokens: Vec<String>,
+    pub(in crate::prewrite) locality: Locality,
+    pub(in crate::prewrite) eligible_for_dead_export_ranking: bool,
+    pub(in crate::prewrite) eligible_for_safe_fix: bool,
+    pub(in crate::prewrite) signature_support: ServiceSignatureSupport,
+    pub(in crate::prewrite) supporting_reasons: Vec<PolicySupportingReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite) reason: Option<LocalOperationMuteReason>,
+    pub(in crate::prewrite) container_name: String,
+    pub(in crate::prewrite) container_kind: &'static str,
+    pub(in crate::prewrite) line: usize,
+    pub(in crate::prewrite) container_line: usize,
+    pub(in crate::prewrite) domain_tokens: Vec<String>,
+}
+
+impl LocalOperationPolicyEntry {
+    pub(in crate::prewrite) fn from_candidate(
+        candidate: &LocalOperationCandidate<'_>,
+        shared_domain_tokens: Vec<String>,
+        supporting_reasons: Vec<PolicySupportingReason>,
+        reason: Option<LocalOperationMuteReason>,
+        locality: Locality,
+    ) -> Self {
+        Self {
+            identity: candidate.identity(),
+            name: candidate.name.to_string(),
+            owner_file: candidate.file.to_string(),
+            matched_field: MatchedField::PreWriteLocalOperation,
+            surface_kind: "nested-local-operation",
+            operation_family: candidate.operation_family,
+            shared_domain_tokens,
+            locality,
+            eligible_for_dead_export_ranking: false,
+            eligible_for_safe_fix: false,
+            signature_support: ServiceSignatureSupport::unavailable(),
+            supporting_reasons,
+            reason,
+            container_name: candidate.container_name.to_string(),
+            container_kind: candidate.container_kind,
+            line: candidate.location.line,
+            container_line: candidate.container_location.line,
+            domain_tokens: candidate.domain_tokens.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::prewrite) struct LocalOperationSiblingPolicy {
+    pub(in crate::prewrite) policy_id: &'static str,
+    pub(in crate::prewrite) policy_version: &'static str,
+    pub(in crate::prewrite) status: LocalOperationPolicyStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite) reason: Option<&'static str>,
+    pub(in crate::prewrite) evaluated_candidate_count: usize,
+    pub(in crate::prewrite) promoted_candidate_count: usize,
+    pub(in crate::prewrite) muted_candidate_count: usize,
+    pub(in crate::prewrite) promoted: Vec<LocalOperationPolicyEntry>,
+    pub(in crate::prewrite) muted: Vec<LocalOperationPolicyEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -277,6 +375,7 @@ pub(in crate::prewrite) struct NameLookup {
     pub(in crate::prewrite) suppressed_semantic_hints: Vec<SuppressedSemanticHint>,
     pub(in crate::prewrite) suppressed_semantic_hint_count: usize,
     pub(in crate::prewrite) service_operation_sibling_policy: ServiceOperationSiblingPolicy,
+    pub(in crate::prewrite) local_operation_sibling_policy: LocalOperationSiblingPolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite) tainted_by: Option<TaintSummary>,
     pub(in crate::prewrite) citations: Vec<String>,

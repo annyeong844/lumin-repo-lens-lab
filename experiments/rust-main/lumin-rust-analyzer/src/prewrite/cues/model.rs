@@ -3,7 +3,8 @@ use serde::Serialize;
 
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
-    CandidateRecord, Locality, ServiceOperationFamily, ServiceOperationMuteReason,
+    CandidateRecord, LocalOperationMuteReason, LocalOperationPolicyEntry, Locality,
+    PolicySupportingReason, ServiceOperationFamily, ServiceOperationMuteReason,
     ServiceOperationPolicyEntry, SuppressionReason,
 };
 
@@ -25,6 +26,7 @@ pub(in crate::prewrite) enum EvidenceLane {
     NearName,
     IntentToken,
     ServiceOperationSibling,
+    LocalOperationSibling,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -58,6 +60,8 @@ pub(in crate::prewrite::cues) enum CueClaim {
     RustImplMethodIntentTokenOverlap,
     #[serde(rename = "related service operation sibling")]
     RelatedServiceOperationSibling,
+    #[serde(rename = "related local service operation")]
+    RelatedLocalServiceOperation,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -66,15 +70,20 @@ pub(in crate::prewrite) enum CueMatchedField {
     DefIndex,
     #[serde(rename = "implMethodIndex")]
     ImplMethodIndex,
+    #[serde(rename = "preWriteLocalOperationIndex")]
+    PreWriteLocalOperationIndex,
     #[serde(rename = "lookups[].serviceOperationSiblingPolicy.promoted")]
     ServiceOperationSiblingPolicyPromoted,
+    #[serde(rename = "lookups[].localOperationSiblingPolicy.promoted")]
+    LocalOperationSiblingPolicyPromoted,
 }
 
 impl From<MatchedField> for CueMatchedField {
     fn from(field: MatchedField) -> Self {
         match field {
-            MatchedField::DefIndex => Self::DefIndex,
-            MatchedField::ImplMethodIndex => Self::ImplMethodIndex,
+            MatchedField::Def => Self::DefIndex,
+            MatchedField::ImplMethod => Self::ImplMethodIndex,
+            MatchedField::PreWriteLocalOperation => Self::PreWriteLocalOperationIndex,
         }
     }
 }
@@ -84,6 +93,8 @@ impl From<MatchedField> for CueMatchedField {
 pub(in crate::prewrite) struct CueEvidence {
     pub(in crate::prewrite::cues) artifact: &'static str,
     pub(in crate::prewrite) matched_field: CueMatchedField,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite) matched_field_source: Option<MatchedField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) algorithm_version: Option<&'static str>,
     pub(in crate::prewrite::cues) candidate_identity: String,
@@ -102,7 +113,13 @@ pub(in crate::prewrite) struct CueEvidence {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) locality: Option<Locality>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(in crate::prewrite::cues) supporting_reasons: Vec<SuppressionReason>,
+    pub(in crate::prewrite::cues) supporting_reasons: Vec<PolicySupportingReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) surface_kind: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) container_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) container_kind: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -147,6 +164,16 @@ impl From<&ServiceOperationPolicyEntry> for CueCandidate {
     }
 }
 
+impl From<&LocalOperationPolicyEntry> for CueCandidate {
+    fn from(candidate: &LocalOperationPolicyEntry) -> Self {
+        Self {
+            identity: candidate.identity.clone(),
+            owner_file: candidate.owner_file.clone(),
+            name: candidate.name.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::prewrite) struct CueCard {
@@ -176,6 +203,14 @@ pub(in crate::prewrite) enum MutedReason {
     ServiceSiblingDomainMismatch,
     ServiceSiblingOperationFamilyMismatch,
     ServiceSiblingFamilyNotPromotable,
+    LocalOperationInsufficientMetadata,
+    LocalOperationSurfaceKindUnsupported,
+    LocalOperationPolicyExcluded,
+    LocalOperationLocalityMismatch,
+    LocalOperationUnknownOperation,
+    LocalOperationDomainMismatch,
+    LocalOperationFamilyMismatch,
+    LocalOperationFamilyNotPromotable,
 }
 
 impl From<SuppressionReason> for MutedReason {
@@ -220,6 +255,27 @@ impl From<ServiceOperationMuteReason> for MutedReason {
     }
 }
 
+impl From<LocalOperationMuteReason> for MutedReason {
+    fn from(reason: LocalOperationMuteReason) -> Self {
+        match reason {
+            LocalOperationMuteReason::InsufficientMetadata => {
+                Self::LocalOperationInsufficientMetadata
+            }
+            LocalOperationMuteReason::SurfaceKindUnsupported => {
+                Self::LocalOperationSurfaceKindUnsupported
+            }
+            LocalOperationMuteReason::PolicyExcluded => Self::LocalOperationPolicyExcluded,
+            LocalOperationMuteReason::LocalityMismatch => Self::LocalOperationLocalityMismatch,
+            LocalOperationMuteReason::UnknownOperation => Self::LocalOperationUnknownOperation,
+            LocalOperationMuteReason::DomainMismatch => Self::LocalOperationDomainMismatch,
+            LocalOperationMuteReason::FamilyMismatch => Self::LocalOperationFamilyMismatch,
+            LocalOperationMuteReason::FamilyNotPromotable => {
+                Self::LocalOperationFamilyNotPromotable
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::prewrite) struct SuppressedCue {
@@ -249,9 +305,15 @@ pub(in crate::prewrite) struct SuppressedCue {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(in crate::prewrite::cues) shared_domain_tokens: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(in crate::prewrite::cues) supporting_reasons: Vec<SuppressionReason>,
+    pub(in crate::prewrite::cues) supporting_reasons: Vec<PolicySupportingReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) locality: Option<Locality>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) surface_kind: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) container_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) container_kind: Option<&'static str>,
 }
 
 pub(in crate::prewrite) struct CueProjection {

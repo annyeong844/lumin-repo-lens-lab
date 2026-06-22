@@ -3,6 +3,7 @@ mod cues;
 mod index;
 mod intent;
 mod lookup;
+mod operation;
 mod tokens;
 
 use anyhow::Result;

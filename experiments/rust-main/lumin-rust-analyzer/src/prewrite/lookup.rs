@@ -3,17 +3,19 @@ use lumin_rust_source_health::protocol::HealthResponse;
 use super::index::{CandidateIndex, CandidateLane};
 use super::intent::{NameDeclaration, NormalizedIntent};
 
+mod local;
 mod model;
 mod near;
 mod semantic;
 mod service;
 mod taint;
 
+pub(super) use super::operation::ServiceOperationFamily;
 use model::LookupResult;
 pub(super) use model::{
-    CandidateRecord, Locality, NameLookup, NearNameHint, SemanticHint, ServiceOperationFamily,
-    ServiceOperationMuteReason, ServiceOperationPolicyEntry, SuppressedNearNameHint,
-    SuppressedSemanticHint, SuppressionReason,
+    CandidateRecord, LocalOperationMuteReason, LocalOperationPolicyEntry, Locality, NameLookup,
+    NearNameHint, PolicySupportingReason, SemanticHint, ServiceOperationMuteReason,
+    ServiceOperationPolicyEntry, SuppressedNearNameHint, SuppressedSemanticHint, SuppressionReason,
 };
 
 pub(super) fn lookup_names(
@@ -70,6 +72,8 @@ fn lookup_name(
         &suppressed_near_names,
         &suppressed_semantic_hints,
     );
+    let local_operation_sibling_policy =
+        local::local_operation_sibling_policy(intent_name, owner_file, &index.local_operations);
 
     let mut citations = identities
         .iter()
@@ -110,6 +114,7 @@ fn lookup_name(
         suppressed_semantic_hints,
         suppressed_semantic_hint_count,
         service_operation_sibling_policy,
+        local_operation_sibling_policy,
         tainted_by: (result == LookupResult::NotObserved)
             .then(|| taint::taint_summary(syntax))
             .flatten(),

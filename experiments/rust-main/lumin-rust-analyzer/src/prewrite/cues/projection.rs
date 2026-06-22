@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
-    CandidateRecord, NameLookup, ServiceOperationPolicyEntry, SuppressedNearNameHint,
-    SuppressedSemanticHint,
+    CandidateRecord, LocalOperationPolicyEntry, NameLookup, ServiceOperationPolicyEntry,
+    SuppressedNearNameHint, SuppressedSemanticHint,
 };
 use crate::prewrite::tokens::TOKEN_POLICY_VERSION;
 
@@ -44,6 +44,7 @@ pub(in crate::prewrite) fn project(lookups: &[NameLookup]) -> CueProjection {
                 .map(suppressed_semantic_cue),
         );
         add_service_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
+        add_local_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
     }
 
     let mut cue_cards = cards
@@ -99,6 +100,9 @@ fn add_active_cue(
             shared_domain_tokens: Vec::new(),
             supporting_reasons: Vec::new(),
             locality: None,
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
         });
         return;
     }
@@ -139,6 +143,7 @@ fn safe_cue(candidate: &CandidateRecord) -> Cue {
         evidence: vec![CueEvidence {
             artifact: "rust-source-health",
             matched_field: candidate.matched_field.into(),
+            matched_field_source: None,
             algorithm_version: Some("exact-symbol.v1"),
             candidate_identity: candidate.identity.clone(),
             distance: None,
@@ -149,12 +154,15 @@ fn safe_cue(candidate: &CandidateRecord) -> Cue {
             shared_domain_tokens: Vec::new(),
             locality: None,
             supporting_reasons: Vec::new(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
         }],
     }
 }
 
 fn near_name_cue(candidate: &CandidateRecord, distance: usize) -> Cue {
-    let impl_method = candidate.matched_field == MatchedField::ImplMethodIndex;
+    let impl_method = candidate.matched_field == MatchedField::ImplMethod;
     Cue {
         cue_tier: CueTier::AgentReview,
         safe_meaning: None,
@@ -173,6 +181,7 @@ fn near_name_cue(candidate: &CandidateRecord, distance: usize) -> Cue {
         evidence: vec![CueEvidence {
             artifact: "rust-source-health",
             matched_field: candidate.matched_field.into(),
+            matched_field_source: None,
             algorithm_version: Some("near-name.v1"),
             candidate_identity: candidate.identity.clone(),
             distance: Some(distance),
@@ -183,12 +192,15 @@ fn near_name_cue(candidate: &CandidateRecord, distance: usize) -> Cue {
             shared_domain_tokens: Vec::new(),
             locality: None,
             supporting_reasons: Vec::new(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
         }],
     }
 }
 
 fn semantic_hint_cue(candidate: &CandidateRecord, tokens: &[String]) -> Cue {
-    let impl_method = candidate.matched_field == MatchedField::ImplMethodIndex;
+    let impl_method = candidate.matched_field == MatchedField::ImplMethod;
     Cue {
         cue_tier: CueTier::AgentReview,
         safe_meaning: None,
@@ -207,6 +219,7 @@ fn semantic_hint_cue(candidate: &CandidateRecord, tokens: &[String]) -> Cue {
         evidence: vec![CueEvidence {
             artifact: "rust-source-health",
             matched_field: candidate.matched_field.into(),
+            matched_field_source: None,
             algorithm_version: Some(TOKEN_POLICY_VERSION),
             candidate_identity: candidate.identity.clone(),
             distance: None,
@@ -217,6 +230,9 @@ fn semantic_hint_cue(candidate: &CandidateRecord, tokens: &[String]) -> Cue {
             shared_domain_tokens: Vec::new(),
             locality: None,
             supporting_reasons: Vec::new(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
         }],
     }
 }
@@ -228,7 +244,7 @@ fn add_service_operation_sibling_policy(
 ) {
     let policy = &lookup.service_operation_sibling_policy;
     for entry in &policy.promoted {
-        if entry.matched_field == MatchedField::ImplMethodIndex {
+        if entry.matched_field == MatchedField::ImplMethod {
             suppressed.push(service_operation_muted_cue(
                 policy.policy_id,
                 policy.policy_version,
@@ -275,6 +291,7 @@ fn service_operation_cue(
         evidence: vec![CueEvidence {
             artifact: "pre-write-advisory.json",
             matched_field: CueMatchedField::ServiceOperationSiblingPolicyPromoted,
+            matched_field_source: None,
             algorithm_version: None,
             candidate_identity: entry.identity.clone(),
             distance: None,
@@ -285,6 +302,9 @@ fn service_operation_cue(
             shared_domain_tokens: entry.shared_domain_tokens.clone(),
             locality: Some(entry.locality),
             supporting_reasons: entry.supporting_reasons.clone(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
         }],
     }
 }
@@ -315,6 +335,100 @@ fn service_operation_muted_cue(
         shared_domain_tokens: entry.shared_domain_tokens.clone(),
         supporting_reasons: entry.supporting_reasons.clone(),
         locality: Some(entry.locality),
+        surface_kind: None,
+        container_name: None,
+        container_kind: None,
+    }
+}
+
+fn add_local_operation_sibling_policy(
+    lookup: &NameLookup,
+    cards: &mut BTreeMap<String, CueCardBuilder>,
+    suppressed: &mut Vec<SuppressedCue>,
+) {
+    let policy = &lookup.local_operation_sibling_policy;
+    for entry in &policy.promoted {
+        add_cue_for_candidate(
+            cards,
+            CueCandidate::from(entry),
+            local_operation_cue(policy.policy_id, policy.policy_version, entry),
+        );
+    }
+    suppressed.extend(policy.muted.iter().map(|entry| {
+        local_operation_muted_cue(
+            policy.policy_id,
+            policy.policy_version,
+            policy.evaluated_candidate_count,
+            entry,
+            entry
+                .reason
+                .map(MutedReason::from)
+                .unwrap_or(MutedReason::LocalOperationInsufficientMetadata),
+        )
+    }));
+}
+
+fn local_operation_cue(
+    policy_id: &'static str,
+    policy_version: &'static str,
+    entry: &LocalOperationPolicyEntry,
+) -> Cue {
+    Cue {
+        cue_tier: CueTier::AgentReview,
+        safe_meaning: None,
+        not_safe_for: Vec::new(),
+        evidence_lane: EvidenceLane::LocalOperationSibling,
+        claim: CueClaim::RelatedLocalServiceOperation,
+        confidence: CueConfidence::HeuristicReview,
+        evidence: vec![CueEvidence {
+            artifact: "pre-write-advisory.json",
+            matched_field: CueMatchedField::LocalOperationSiblingPolicyPromoted,
+            matched_field_source: Some(entry.matched_field),
+            algorithm_version: None,
+            candidate_identity: entry.identity.clone(),
+            distance: None,
+            tokens: Vec::new(),
+            policy_id: Some(policy_id),
+            policy_version: Some(policy_version),
+            operation_family: Some(entry.operation_family),
+            shared_domain_tokens: entry.shared_domain_tokens.clone(),
+            locality: Some(entry.locality),
+            supporting_reasons: entry.supporting_reasons.clone(),
+            surface_kind: Some(entry.surface_kind),
+            container_name: Some(entry.container_name.clone()),
+            container_kind: Some(entry.container_kind),
+        }],
+    }
+}
+
+fn local_operation_muted_cue(
+    policy_id: &'static str,
+    policy_version: &'static str,
+    candidate_count: usize,
+    entry: &LocalOperationPolicyEntry,
+    reason: MutedReason,
+) -> SuppressedCue {
+    SuppressedCue {
+        cue_tier: CueTier::Muted,
+        original_cue_tier: None,
+        evidence_lane: EvidenceLane::LocalOperationSibling,
+        reason,
+        candidate: CueCandidate::from(entry),
+        path_classifications: Vec::new(),
+        tokens: Vec::new(),
+        distance: None,
+        score: None,
+        candidate_count,
+        policy_id: Some(policy_id),
+        policy_version: Some(policy_version),
+        matched_field: Some(entry.matched_field),
+        operation_family: Some(entry.operation_family),
+        shared_domain_tokens: entry.shared_domain_tokens.clone(),
+        supporting_reasons: entry.supporting_reasons.clone(),
+        locality: Some(entry.locality),
+        surface_kind: Some(entry.surface_kind),
+        container_name: Some(entry.container_name.clone()),
+        container_kind: Some(entry.container_kind),
     }
 }
 
@@ -337,6 +451,9 @@ fn suppressed_near_cue(hint: &SuppressedNearNameHint) -> SuppressedCue {
         shared_domain_tokens: Vec::new(),
         supporting_reasons: Vec::new(),
         locality: None,
+        surface_kind: None,
+        container_name: None,
+        container_kind: None,
     }
 }
 
@@ -359,6 +476,9 @@ fn suppressed_semantic_cue(hint: &SuppressedSemanticHint) -> SuppressedCue {
         shared_domain_tokens: Vec::new(),
         supporting_reasons: Vec::new(),
         locality: None,
+        surface_kind: None,
+        container_name: None,
+        container_kind: None,
     }
 }
 

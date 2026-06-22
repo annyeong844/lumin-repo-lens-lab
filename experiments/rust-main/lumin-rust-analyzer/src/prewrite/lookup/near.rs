@@ -126,8 +126,9 @@ pub(super) fn near_name_candidates(
 
 fn lane_rank(field: MatchedField) -> usize {
     match field {
-        MatchedField::ImplMethodIndex => 0,
-        MatchedField::DefIndex => 1,
+        MatchedField::ImplMethod => 0,
+        MatchedField::Def => 1,
+        MatchedField::PreWriteLocalOperation => 2,
     }
 }
 

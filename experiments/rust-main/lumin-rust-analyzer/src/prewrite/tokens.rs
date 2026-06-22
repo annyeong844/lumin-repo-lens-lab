@@ -6,9 +6,16 @@ pub(super) const WEAK_COMMON_TOKENS: [&str; 15] = [
 ];
 
 pub(super) fn unique_tokens(parts: &[&str]) -> Vec<String> {
+    unique_prewrite_tokens(parts)
+        .into_iter()
+        .filter(|token| token.len() >= 2 && !is_semantic_stop_token(token))
+        .collect()
+}
+
+pub(super) fn unique_prewrite_tokens(parts: &[&str]) -> Vec<String> {
     let mut tokens = Vec::new();
     for part in parts {
-        for token in semantic_tokens(part) {
+        for token in tokenize(part) {
             if !tokens.contains(&token) {
                 tokens.push(token);
             }
@@ -32,13 +39,6 @@ pub(super) fn has_only_weak_common_tokens(left: &str, right: &str) -> bool {
 
 pub(super) fn is_weak_common_token(token: &str) -> bool {
     WEAK_COMMON_TOKENS.contains(&token.to_ascii_lowercase().as_str())
-}
-
-fn semantic_tokens(value: &str) -> Vec<String> {
-    tokenize(value)
-        .into_iter()
-        .filter(|token| token.len() >= 2 && !is_semantic_stop_token(token))
-        .collect()
 }
 
 fn tokenize(value: &str) -> Vec<String> {
