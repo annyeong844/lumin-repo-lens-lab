@@ -118,9 +118,13 @@ fn prewrite_meta_exposes_js_ts_lookup_policy_constants() -> Result<()> {
     assert_eq!(
         policy["jsTsPrecedent"],
         serde_json::json!([
+            "_lib/pre-write-intent.mjs",
+            "_lib/pre-write-cue-tiers.mjs",
             "_lib/pre-write-lookup-name.mjs",
             "_lib/pre-write-lookup-file.mjs",
-            "_lib/pre-write-lookup-dep.mjs"
+            "_lib/pre-write-lookup-shape.mjs",
+            "_lib/pre-write-lookup-dep.mjs",
+            "_lib/pre-write-lookup-inline-patterns.mjs"
         ])
     );
     assert_eq!(policy["nearName"]["maxLengthDelta"], 2);

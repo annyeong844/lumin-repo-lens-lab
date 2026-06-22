@@ -20,9 +20,13 @@ use super::tokens::{TOKENIZER_VERSION, TOKEN_POLICY_VERSION, WEAK_COMMON_TOKENS}
 
 const SCHEMA_VERSION: &str = "rust-pre-write.v1";
 const LOOKUP_POLICY_JS_TS_PRECEDENT: &[&str] = &[
+    "_lib/pre-write-intent.mjs",
+    "_lib/pre-write-cue-tiers.mjs",
     "_lib/pre-write-lookup-name.mjs",
     "_lib/pre-write-lookup-file.mjs",
+    "_lib/pre-write-lookup-shape.mjs",
     "_lib/pre-write-lookup-dep.mjs",
+    "_lib/pre-write-lookup-inline-patterns.mjs",
 ];
 
 #[derive(Debug, Serialize)]

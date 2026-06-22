@@ -271,6 +271,14 @@ domain-cluster cues, and dependency hub cues. These fields are provenance for
 existing advisory policy. They are not repository-size caps, time limits, or
 permission to skip analysis.
 
+`meta.lookupPolicy.jsTsPrecedent` must include the JS/TS intent, cue tier, and
+lookup owners that Rust pre-write has translated or intentionally exposes as
+unsupported evidence: `_lib/pre-write-intent.mjs`,
+`_lib/pre-write-cue-tiers.mjs`, `_lib/pre-write-lookup-name.mjs`,
+`_lib/pre-write-lookup-file.mjs`, `_lib/pre-write-lookup-shape.mjs`,
+`_lib/pre-write-lookup-dep.mjs`, and
+`_lib/pre-write-lookup-inline-patterns.mjs`.
+
 Cargo/rustc semantic checks are a Rust-only necessity: JS/TS lanes do not
 produce Cargo `target/` build products, but Rust oracle runs do. Rust must not
 write into the analyzed repository's `target/` directory by default. The
