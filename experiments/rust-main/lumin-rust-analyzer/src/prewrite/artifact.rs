@@ -241,7 +241,7 @@ impl IntentLaneCoverage {
             files: ran_if_requested(!intent.files.is_empty()),
             dependencies: ran_if_requested(!intent.dependencies.is_empty()),
             inline_patterns: unsupported_if_requested(intent.has_refactor_sources()),
-            planned_type_escapes: unsupported_if_requested(!intent.planned_type_escapes.is_empty()),
+            planned_type_escapes: LaneStatus::Ran,
         }
     }
 
@@ -251,8 +251,7 @@ impl IntentLaneCoverage {
             || self.files != ran_if_requested(!intent.files.is_empty())
             || self.dependencies != ran_if_requested(!intent.dependencies.is_empty())
             || self.inline_patterns != unsupported_if_requested(intent.has_refactor_sources())
-            || self.planned_type_escapes
-                != unsupported_if_requested(!intent.planned_type_escapes.is_empty())
+            || self.planned_type_escapes != LaneStatus::Ran
         {
             bail!("blocked-artifact-contract: intent lane coverage drifted from normalized input");
         }
