@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
     CandidateRecord, DependencyLookup, FileLookup, LocalOperationPolicyEntry, NameLookup,
-    ServiceOperationPolicyEntry, SuppressedNearNameHint, SuppressedSemanticHint,
-    DEPENDENCY_WATCH_FOR_THRESHOLD,
+    ServiceOperationPolicyEntry, ShapeLookup, ShapeMatch, SuppressedNearNameHint,
+    SuppressedSemanticHint, DEPENDENCY_WATCH_FOR_THRESHOLD,
 };
 use crate::prewrite::tokens::TOKEN_POLICY_VERSION;
 
@@ -16,6 +16,7 @@ use super::model::{
 
 pub(in crate::prewrite) fn project(
     lookups: &[NameLookup],
+    shape_lookups: &[ShapeLookup],
     file_lookups: &[FileLookup],
     dependency_lookups: &[DependencyLookup],
 ) -> CueProjection {
@@ -51,6 +52,7 @@ pub(in crate::prewrite) fn project(
         add_service_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
         add_local_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
     }
+    add_shape_hash_cues(shape_lookups, &mut cards);
     add_file_exact_cues(file_lookups, &mut cards);
     add_file_domain_cluster_cues(file_lookups, &mut cards);
     add_dependency_hub_cues(dependency_lookups, &mut cards);
@@ -163,6 +165,66 @@ fn add_dependency_hub_cues(
     }
 }
 
+fn add_shape_hash_cues(
+    shape_lookups: &[ShapeLookup],
+    cards: &mut BTreeMap<String, CueCardBuilder>,
+) {
+    for lookup in shape_lookups
+        .iter()
+        .filter(|lookup| lookup.is_shape_match())
+    {
+        let Some(shape_hash) = lookup.shape_hash() else {
+            continue;
+        };
+        for candidate in lookup.matches() {
+            add_cue_for_candidate(
+                cards,
+                CueCandidate::from(candidate),
+                shape_hash_cue(candidate, shape_hash),
+            );
+        }
+    }
+}
+
+fn shape_hash_cue(candidate: &ShapeMatch, shape_hash: &str) -> Cue {
+    Cue {
+        cue_tier: CueTier::Safe,
+        safe_meaning: Some(SafeMeaning::ClaimOnly),
+        not_safe_for: vec![
+            NotSafeFor::SemanticEquivalence,
+            NotSafeFor::AutoReuse,
+            NotSafeFor::AutoFix,
+        ],
+        evidence_lane: EvidenceLane::ShapeHash,
+        claim: CueClaim::SameNormalizedTypeShape,
+        confidence: CueConfidence::Grounded,
+        evidence: vec![CueEvidence {
+            artifact: "rust-source-health",
+            matched_field: CueMatchedField::RustSourceHealthShapeHash,
+            matched_field_source: None,
+            algorithm_version: Some("shape-hash.normalized.v1"),
+            hash: Some(shape_hash.to_string()),
+            candidate_identity: candidate.identity.clone(),
+            file: Some(candidate.owner_file.clone()),
+            file_lookup_result: None,
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
+            distance: None,
+            tokens: Vec::new(),
+            policy_id: None,
+            policy_version: None,
+            operation_family: None,
+            shared_domain_tokens: Vec::new(),
+            locality: None,
+            supporting_reasons: Vec::new(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
+        }],
+    }
+}
+
 fn file_exact_cue(identity: String, lookup: &FileLookup) -> Cue {
     Cue {
         cue_tier: CueTier::Safe,
@@ -180,6 +242,7 @@ fn file_exact_cue(identity: String, lookup: &FileLookup) -> Cue {
             matched_field: CueMatchedField::RustSourceHealthFiles,
             matched_field_source: None,
             algorithm_version: Some("exact-file.v1"),
+            hash: None,
             candidate_identity: identity,
             file: Some(lookup.intent_file.clone()),
             file_lookup_result: Some(lookup.result()),
@@ -214,6 +277,7 @@ fn file_domain_cluster_cue(identity: String, lookup: &FileLookup) -> Cue {
             matched_field: CueMatchedField::FileDomainCluster,
             matched_field_source: None,
             algorithm_version: None,
+            hash: None,
             candidate_identity: identity,
             file: Some(lookup.intent_file.clone()),
             file_lookup_result: Some(lookup.result()),
@@ -248,6 +312,7 @@ fn dependency_hub_cue(identity: String, lookup: &DependencyLookup) -> Cue {
             matched_field: CueMatchedField::DependencyExistingImports,
             matched_field_source: None,
             algorithm_version: None,
+            hash: None,
             candidate_identity: identity,
             file: None,
             file_lookup_result: None,
@@ -328,6 +393,7 @@ fn safe_cue(candidate: &CandidateRecord) -> Cue {
             matched_field: candidate.matched_field.into(),
             matched_field_source: None,
             algorithm_version: Some("exact-symbol.v1"),
+            hash: None,
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
@@ -371,6 +437,7 @@ fn near_name_cue(candidate: &CandidateRecord, distance: usize) -> Cue {
             matched_field: candidate.matched_field.into(),
             matched_field_source: None,
             algorithm_version: Some("near-name.v1"),
+            hash: None,
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
@@ -414,6 +481,7 @@ fn semantic_hint_cue(candidate: &CandidateRecord, tokens: &[String]) -> Cue {
             matched_field: candidate.matched_field.into(),
             matched_field_source: None,
             algorithm_version: Some(TOKEN_POLICY_VERSION),
+            hash: None,
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
@@ -491,6 +559,7 @@ fn service_operation_cue(
             matched_field: CueMatchedField::ServiceOperationSiblingPolicyPromoted,
             matched_field_source: None,
             algorithm_version: None,
+            hash: None,
             candidate_identity: entry.identity.clone(),
             file: None,
             file_lookup_result: None,
@@ -588,6 +657,7 @@ fn local_operation_cue(
             matched_field: CueMatchedField::LocalOperationSiblingPolicyPromoted,
             matched_field_source: Some(entry.matched_field),
             algorithm_version: None,
+            hash: None,
             candidate_identity: entry.identity.clone(),
             file: None,
             file_lookup_result: None,

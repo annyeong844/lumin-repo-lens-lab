@@ -226,7 +226,12 @@ alone are not structural equality evidence. `typeLiteral` without an exact hash
 remains `UNAVAILABLE`; Rust must not parse TS/JS type literals in this lane.
 An unmatched exact hash is also `UNAVAILABLE` for now, not `NOT_OBSERVED`,
 because the Rust producer does not yet make complete absence claims for every
-Rust shape form. No SAFE or review cue may be emitted from this shape lane.
+Rust shape form. A positive exact-hash `SHAPE_MATCH` may emit the JS/TS
+`shape-hash` `SAFE_CUE` as claim-only evidence with `notSafeFor` preserving that
+it is not semantic equivalence, auto-reuse, or auto-fix proof. No review cue,
+absence cue, fuzzy cue, field-only cue, or `typeLiteral` cue may be emitted from
+this shape lane until a checker-grade or explicitly documented Rust producer
+owns that evidence.
 
 Rust dependency intent lookup is the Rust analogue of the JS/TS
 `pre-write-lookup-dep.mjs` lane:

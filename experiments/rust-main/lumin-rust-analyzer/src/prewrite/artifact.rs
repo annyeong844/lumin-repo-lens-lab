@@ -63,6 +63,12 @@ impl PreWriteArtifact {
                             if cue.evidence.iter().all(|evidence| {
                                 evidence.matched_field == CueMatchedField::RustSourceHealthFiles
                             }) => {}
+                        EvidenceLane::ShapeHash
+                            if cue.evidence.iter().all(|evidence| {
+                                evidence.matched_field
+                                    == CueMatchedField::RustSourceHealthShapeHash
+                                    && evidence.hash.is_some()
+                            }) => {}
                         _ => bail!(
                             "blocked-artifact-contract: SAFE cue {} is not exact source-health evidence",
                             card.candidate.identity
@@ -396,7 +402,7 @@ pub(super) fn build(
     let CueProjection {
         cue_cards,
         suppressed_cues,
-    } = cues::project(&lookups, &file_lookups, &dependency_lookups);
+    } = cues::project(&lookups, &shape_lookups, &file_lookups, &dependency_lookups);
     let coverage = IntentLaneCoverage::from_intent(&loaded.intent);
     let artifact = PreWriteArtifact {
         schema_version: SCHEMA_VERSION,

@@ -43,6 +43,14 @@ impl ShapeLookup {
     pub(in crate::prewrite) fn is_shape_match(&self) -> bool {
         self.result == ShapeLookupResult::ShapeMatch && !self.matches.is_empty()
     }
+
+    pub(in crate::prewrite) fn shape_hash(&self) -> Option<&str> {
+        self.shape_hash.as_deref()
+    }
+
+    pub(in crate::prewrite) fn matches(&self) -> &[ShapeMatch] {
+        &self.matches
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -67,11 +75,11 @@ enum ShapeHashSource {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ShapeMatch {
-    identity: String,
-    owner_file: String,
-    name: String,
-    hash: String,
+pub(in crate::prewrite) struct ShapeMatch {
+    pub(in crate::prewrite) identity: String,
+    pub(in crate::prewrite) owner_file: String,
+    pub(in crate::prewrite) name: String,
+    pub(in crate::prewrite) hash: String,
     shape_kind: AstShapeKind,
     fields: Vec<AstShapeField>,
     visibility: lumin_rust_source_health::protocol::AstVisibility,

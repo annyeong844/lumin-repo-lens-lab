@@ -236,15 +236,41 @@ pub struct EventMirror {
         .context("unavailable evidence")?
         .iter()
         .all(|entry| entry["evidenceLane"] != "shape-hash"));
-    assert!(artifact["cueCards"]
-        .as_array()
-        .context("cue cards")?
+    let cue_cards = artifact["cueCards"].as_array().context("cue cards")?;
+    let event_card = cue_cards
         .iter()
-        .all(|card| card["cues"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .all(|cue| cue["evidenceLane"] != "shape-hash")));
+        .find(|card| card["candidate"]["identity"] == "src/lib.rs::Event")
+        .context("Event shape cue card")?;
+    assert_eq!(event_card["renderTier"], "SAFE_CUE");
+    let event_shape_cue = event_card["cues"]
+        .as_array()
+        .context("Event cues")?
+        .iter()
+        .find(|cue| cue["evidenceLane"] == "shape-hash")
+        .context("Event shape-hash cue")?;
+    assert_eq!(event_shape_cue["cueTier"], "SAFE_CUE");
+    assert_eq!(event_shape_cue["safeMeaning"], "claim-only");
+    assert_eq!(event_shape_cue["claim"], "same normalized type shape");
+    assert_eq!(
+        event_shape_cue["notSafeFor"],
+        serde_json::json!(["semantic-equivalence", "auto-reuse", "auto-fix"])
+    );
+    assert_eq!(
+        event_shape_cue["evidence"][0]["artifact"],
+        "rust-source-health"
+    );
+    assert_eq!(
+        event_shape_cue["evidence"][0]["matchedField"],
+        "files[].ast.shapeHashes[].hash"
+    );
+    assert_eq!(
+        event_shape_cue["evidence"][0]["algorithmVersion"],
+        "shape-hash.normalized.v1"
+    );
+    assert_eq!(event_shape_cue["evidence"][0]["hash"], shape_hash);
+    assert!(cue_cards
+        .iter()
+        .any(|card| card["candidate"]["identity"] == "src/lib.rs::EventMirror"));
     Ok(())
 }
 

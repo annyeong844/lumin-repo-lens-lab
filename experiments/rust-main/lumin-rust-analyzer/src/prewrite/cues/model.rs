@@ -5,7 +5,7 @@ use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
     CandidateRecord, DependencyLookupResult, FileLookupResult, LocalOperationMuteReason,
     LocalOperationPolicyEntry, Locality, PolicySupportingReason, ServiceOperationFamily,
-    ServiceOperationMuteReason, ServiceOperationPolicyEntry, SuppressionReason,
+    ServiceOperationMuteReason, ServiceOperationPolicyEntry, ShapeMatch, SuppressionReason,
 };
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
@@ -30,6 +30,7 @@ pub(in crate::prewrite) enum EvidenceLane {
     DependencyHub,
     ServiceOperationSibling,
     LocalOperationSibling,
+    ShapeHash,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -71,6 +72,8 @@ pub(in crate::prewrite::cues) enum CueClaim {
     RelatedServiceOperationSibling,
     #[serde(rename = "related local service operation")]
     RelatedLocalServiceOperation,
+    #[serde(rename = "same normalized type shape")]
+    SameNormalizedTypeShape,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -91,6 +94,8 @@ pub(in crate::prewrite) enum CueMatchedField {
     ServiceOperationSiblingPolicyPromoted,
     #[serde(rename = "lookups[].localOperationSiblingPolicy.promoted")]
     LocalOperationSiblingPolicyPromoted,
+    #[serde(rename = "files[].ast.shapeHashes[].hash")]
+    RustSourceHealthShapeHash,
 }
 
 impl From<MatchedField> for CueMatchedField {
@@ -112,6 +117,8 @@ pub(in crate::prewrite) struct CueEvidence {
     pub(in crate::prewrite) matched_field_source: Option<MatchedField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) algorithm_version: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite) hash: Option<String>,
     pub(in crate::prewrite::cues) candidate_identity: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) file: Option<String>,
@@ -191,6 +198,16 @@ impl From<&ServiceOperationPolicyEntry> for CueCandidate {
 
 impl From<&LocalOperationPolicyEntry> for CueCandidate {
     fn from(candidate: &LocalOperationPolicyEntry) -> Self {
+        Self {
+            identity: candidate.identity.clone(),
+            owner_file: candidate.owner_file.clone(),
+            name: candidate.name.clone(),
+        }
+    }
+}
+
+impl From<&ShapeMatch> for CueCandidate {
+    fn from(candidate: &ShapeMatch) -> Self {
         Self {
             identity: candidate.identity.clone(),
             owner_file: candidate.owner_file.clone(),
