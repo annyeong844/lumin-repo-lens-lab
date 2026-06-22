@@ -41,6 +41,16 @@ fn prewrite_malformed_intent_hard_stops_before_writing_artifact() -> Result<()> 
             r#"{"names":[],"shapes":[],"files":[],"dependencies":[],"plannedTypeEscapes":[],"refactorSources":[{"file":"src/lib.rs","lines":[0]}]}"#,
             "refactorSources[0].lines[0] must be a positive integer",
         ),
+        (
+            "planned-type-escape-empty-reason",
+            r#"{"names":[],"shapes":[],"files":[],"dependencies":[],"plannedTypeEscapes":[{"escapeKind":"as-any","locationHint":"src/lib.rs","reason":""}]}"#,
+            "plannedTypeEscapes[0].reason must be a non-empty string",
+        ),
+        (
+            "planned-type-escape-invalid-kind",
+            r#"{"names":[],"shapes":[],"files":[],"dependencies":[],"plannedTypeEscapes":[{"escapeKind":"any","locationHint":"src/lib.rs","reason":"test"}]}"#,
+            "unknown variant",
+        ),
     ];
 
     for (label, intent, expected_error) in cases {

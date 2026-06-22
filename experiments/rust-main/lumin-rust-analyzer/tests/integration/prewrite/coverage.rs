@@ -22,7 +22,7 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
     assert_eq!(artifact["coverage"]["shapes"], "unsupported");
     assert_eq!(artifact["coverage"]["files"], "ran");
     assert_eq!(artifact["coverage"]["dependencies"], "not-requested");
-    assert_eq!(artifact["coverage"]["plannedTypeEscapes"], "not-requested");
+    assert_eq!(artifact["coverage"]["plannedTypeEscapes"], "ran");
     assert_eq!(artifact["lookups"][0]["result"], "NOT_OBSERVED");
     let shape_lookups = artifact["shapeLookups"]
         .as_array()
@@ -95,6 +95,53 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
             .len(),
         2
     );
+    Ok(())
+}
+
+#[test]
+fn prewrite_planned_type_escapes_are_ran_and_preserved_like_js_ts() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    let artifact = repo.run_json(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": [],
+  "dependencies": [],
+  "plannedTypeEscapes": [
+    {
+      "escapeKind": "as-unknown-as-T",
+      "locationHint": "src/vendor/wrapper.rs::adapt_response",
+      "codeShape": "response as unknown as ThirdPartyShape",
+      "reason": "upstream SDK lacks type exports",
+      "alternativeConsidered": "unknown plus decoder"
+    },
+    {
+      "escapeKind": "ts-expect-error",
+      "locationHint": "unknown",
+      "reason": "mirrors JS/TS migration declaration shape"
+    }
+  ]
+}"#,
+    )?;
+
+    assert_eq!(artifact["coverage"]["plannedTypeEscapes"], "ran");
+    let escapes = artifact["intent"]["plannedTypeEscapes"]
+        .as_array()
+        .context("planned type escapes")?;
+    assert_eq!(escapes.len(), 2);
+    assert_eq!(escapes[0]["escapeKind"], "as-unknown-as-T");
+    assert_eq!(
+        escapes[0]["codeShape"],
+        "response as unknown as ThirdPartyShape"
+    );
+    assert_eq!(escapes[0]["alternativeConsidered"], "unknown plus decoder");
+    assert_eq!(escapes[1]["escapeKind"], "ts-expect-error");
+    assert_eq!(escapes[1]["locationHint"], "unknown");
+    assert!(artifact["unavailableEvidence"]
+        .as_array()
+        .context("unavailable evidence")?
+        .iter()
+        .all(|entry| entry["evidenceLane"] != "planned-type-escapes"));
     Ok(())
 }
 

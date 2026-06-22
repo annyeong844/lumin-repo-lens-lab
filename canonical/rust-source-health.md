@@ -254,6 +254,19 @@ same checked rule is represented as an `AGENT_REVIEW_CUE` on the dependency
 candidate. `sample-only` and `unavailable` counts must never produce a
 dependency hub cue.
 
+Rust planned type escape intent support follows the JS/TS pre-write Step 2
+contract:
+
+- `intent.plannedTypeEscapes[]` is a user-declared plan, not an analysis lookup.
+  Rust pre-write validates and preserves the declaration and reports
+  `coverage.plannedTypeEscapes = "ran"` even when the list is empty.
+- Rust must not invent a TS `any` equivalent or emit unavailable evidence for
+  this lane. Post-write type-escape extraction is TS/JS-specific; Rust safety
+  and opacity evidence belongs to the Rust syntax/oracle lanes.
+- The normalized declaration order and optional `codeShape` /
+  `alternativeConsidered` fields must remain stable so a downstream post-write
+  phase can compare declared intent with observed language-specific evidence.
+
 Rust inline extraction intent support is the Rust analogue of the JS/TS
 `pre-write-lookup-inline-patterns.mjs` lane:
 
