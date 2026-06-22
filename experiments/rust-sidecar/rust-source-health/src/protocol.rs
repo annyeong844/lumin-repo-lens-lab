@@ -32,14 +32,14 @@ pub use signal::{
 pub use summary::Summary;
 
 pub const SCHEMA_VERSION: u32 = 1;
-pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v1";
+pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v2";
 pub const PARSER_KIND: ParserKind = ParserKind::RaApSyntax;
 pub const PARSER_VERSION: &str = "0.0.337";
 pub const PARSER_EDITION: ParserEdition = ParserEdition::Edition2021;
 pub const PARSER_EDITION_POLICY: ParserEditionPolicy = ParserEditionPolicy::Fixed;
 pub const PARSER_EDITION_SOURCE: ParserEditionSource = ParserEditionSource::M6PolicyDefault;
 pub const SIGNAL_POLICY_ID: &str = "rust-source-health-signal-policy";
-pub const SIGNAL_POLICY_VERSION: &str = "rust-source-health-signal-policy.v1";
+pub const SIGNAL_POLICY_VERSION: &str = "rust-source-health-signal-policy.v2";
 pub const DEFAULT_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 pub const DEFAULT_INCLUDE: &[&str] = &["**/*.rs"];
 pub const DEFAULT_EXCLUDE: &[&str] = &["**/target/**", "**/vendor/**"];
