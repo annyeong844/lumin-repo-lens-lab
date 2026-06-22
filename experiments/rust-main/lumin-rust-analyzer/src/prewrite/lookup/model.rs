@@ -278,6 +278,7 @@ pub(in crate::prewrite) struct LocalOperationPolicyEntry {
 impl LocalOperationPolicyEntry {
     pub(in crate::prewrite) fn from_candidate(
         candidate: &LocalOperationCandidate<'_>,
+        domain_tokens: Vec<String>,
         shared_domain_tokens: Vec<String>,
         supporting_reasons: Vec<PolicySupportingReason>,
         reason: Option<LocalOperationMuteReason>,
@@ -301,7 +302,7 @@ impl LocalOperationPolicyEntry {
             container_kind: candidate.container_kind,
             line: candidate.location.line,
             container_line: candidate.container_location.line,
-            domain_tokens: candidate.domain_tokens.clone(),
+            domain_tokens,
         }
     }
 }

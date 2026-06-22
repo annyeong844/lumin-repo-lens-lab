@@ -12,7 +12,7 @@ use super::cues::{
 };
 use super::index::CandidateIndex;
 use super::intent::{IntentWarning, LoadedIntent, NormalizedIntent};
-use super::lookup::{self, FileLookup, NameLookup};
+use super::lookup::{self, FileLookup, NameLookup, ShapeLookup, UnavailableEvidence};
 use super::tokens::{TOKENIZER_VERSION, TOKEN_POLICY_VERSION, WEAK_COMMON_TOKENS};
 
 const SCHEMA_VERSION: &str = "rust-pre-write.v1";
@@ -27,9 +27,11 @@ pub(crate) struct PreWriteArtifact {
     intent_warnings: Vec<IntentWarning>,
     coverage: IntentLaneCoverage,
     lookups: Vec<NameLookup>,
+    shape_lookups: Vec<ShapeLookup>,
     file_lookups: Vec<FileLookup>,
     cue_cards: Vec<CueCard>,
     suppressed_cues: Vec<SuppressedCue>,
+    unavailable_evidence: Vec<UnavailableEvidence>,
 }
 
 impl PreWriteArtifact {
@@ -83,6 +85,20 @@ impl PreWriteArtifact {
                     lookup.intent_name
                 );
             }
+        }
+        if self.shape_lookups.len() != self.intent.shapes.len() {
+            bail!("blocked-artifact-contract: shape lookup count drifted from normalized intent");
+        }
+        for (lookup, intent_shape) in self.shape_lookups.iter().zip(&self.intent.shapes) {
+            if &lookup.shape != intent_shape {
+                bail!("blocked-artifact-contract: shape lookup drifted from normalized intent");
+            }
+            if !lookup.is_unavailable() {
+                bail!("blocked-artifact-contract: unsupported Rust shape lane emitted a match");
+            }
+        }
+        if self.unavailable_evidence.len() != self.shape_lookups.len() {
+            bail!("blocked-artifact-contract: unavailable evidence drifted from shape lookups");
         }
         for lookup in &self.file_lookups {
             if !intent_has_file(&self.intent, &lookup.intent_file) {
@@ -221,6 +237,8 @@ pub(super) fn build(
 ) -> Result<PreWriteArtifact> {
     let index = CandidateIndex::from_health(syntax);
     let lookups = lookup::lookup_names(&loaded.intent, &index, syntax);
+    let shape_lookups = lookup::lookup_shapes(&loaded.intent);
+    let unavailable_evidence = lookup::unavailable_evidence_from_shape_lookups(&shape_lookups);
     let file_lookups = lookup::lookup_files(&loaded.intent, syntax, root);
     let CueProjection {
         cue_cards,
@@ -235,9 +253,11 @@ pub(super) fn build(
         intent_warnings: loaded.warnings,
         coverage,
         lookups,
+        shape_lookups,
         file_lookups,
         cue_cards,
         suppressed_cues,
+        unavailable_evidence,
     };
     artifact.validate_contract()?;
     Ok(artifact)
