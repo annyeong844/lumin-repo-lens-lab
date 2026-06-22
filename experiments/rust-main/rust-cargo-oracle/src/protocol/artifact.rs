@@ -76,12 +76,14 @@ pub struct CargoTargetDirPolicy {
 }
 
 impl CargoTargetDirPolicy {
-    pub(crate) fn owned_temp_compact() -> Self {
-        Self {
-            repo_target_dir_used: false,
-            owned_temp_target_dir: true,
-            incremental_disabled: true,
-            debug_symbols_disabled: true,
+    pub(crate) fn from_mode(mode: CargoTargetDirMode) -> Self {
+        match mode {
+            CargoTargetDirMode::IsolatedTemp | CargoTargetDirMode::ReusableTemp => Self {
+                repo_target_dir_used: false,
+                owned_temp_target_dir: true,
+                incremental_disabled: true,
+                debug_symbols_disabled: true,
+            },
         }
     }
 }

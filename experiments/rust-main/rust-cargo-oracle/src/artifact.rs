@@ -127,7 +127,9 @@ pub(crate) fn build_artifact(input: BuildArtifactInput<'_>) -> Result<SemanticHe
                 features: input.features.map(str::to_string),
                 cargo_check_mode: input.cargo_check_mode,
                 cargo_target_dir_mode: input.cargo_target_dir_mode,
-                cargo_target_dir_policy: CargoTargetDirPolicy::owned_temp_compact(),
+                cargo_target_dir_policy: CargoTargetDirPolicy::from_mode(
+                    input.cargo_target_dir_mode,
+                ),
                 cargo_target_dir: input.cargo_target_dir.display().to_string(),
                 cargo_bin: input.cargo_bin.to_string(),
                 cargo_args: input.cargo_args.to_vec(),

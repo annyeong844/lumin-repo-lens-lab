@@ -80,6 +80,22 @@ fn reusable_temp_target_mode_uses_owned_temp_cache_without_repo_target_dir() -> 
         artifact["meta"]["input"]["cargoTargetDirMode"],
         "reusable-temp"
     );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["repoTargetDirUsed"],
+        false
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["ownedTempTargetDir"],
+        true
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["incrementalDisabled"],
+        true
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoTargetDirPolicy"]["debugSymbolsDisabled"],
+        true
+    );
     assert!(!env.path_exists("target"));
     let target_dir = PathBuf::from(
         artifact["meta"]["input"]["cargoTargetDir"]
