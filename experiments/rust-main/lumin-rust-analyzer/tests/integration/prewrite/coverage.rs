@@ -4,7 +4,7 @@ use crate::support::prewrite::PreWriteRepo;
 use crate::support::scenarios::single_package::analyze_metadata_only_single_package;
 
 #[test]
-fn prewrite_not_observed_keeps_opaque_taint_and_unsupported_lanes_visible() -> Result<()> {
+fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()> {
     let repo = PreWriteRepo::new()?;
     let artifact = repo.run_json(
         r#"{
@@ -18,10 +18,16 @@ fn prewrite_not_observed_keeps_opaque_taint_and_unsupported_lanes_visible() -> R
     assert_eq!(artifact["intent"]["taskId"], "TASK-42");
     assert_eq!(artifact["coverage"]["names"], "ran");
     assert_eq!(artifact["coverage"]["shapes"], "unsupported");
-    assert_eq!(artifact["coverage"]["files"], "unsupported");
+    assert_eq!(artifact["coverage"]["files"], "ran");
     assert_eq!(artifact["coverage"]["dependencies"], "not-requested");
     assert_eq!(artifact["coverage"]["plannedTypeEscapes"], "not-requested");
     assert_eq!(artifact["lookups"][0]["result"], "NOT_OBSERVED");
+    assert_eq!(artifact["fileLookups"][0]["intentFile"], "src/new.rs");
+    assert_eq!(artifact["fileLookups"][0]["result"], "NEW_FILE");
+    assert_eq!(
+        artifact["fileLookups"][0]["boundary"]["status"],
+        "NOT_EVALUATED"
+    );
     assert!(
         artifact["lookups"][0]["taintedBy"]["reviewOpaqueSurfaces"]
             .as_u64()

@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use lumin_rust_common::posix_path_text;
 use lumin_rust_source_health::protocol::{
     HealthResponse, ParserMeta, PolicyMeta, RuntimeMeta, SidecarMeta,
 };
@@ -9,7 +10,7 @@ use super::cues::{
 };
 use super::index::CandidateIndex;
 use super::intent::{IntentWarning, LoadedIntent, NormalizedIntent};
-use super::lookup::{self, NameLookup};
+use super::lookup::{self, FileLookup, NameLookup};
 use super::tokens::{TOKENIZER_VERSION, TOKEN_POLICY_VERSION, WEAK_COMMON_TOKENS};
 
 const SCHEMA_VERSION: &str = "rust-pre-write.v1";
@@ -24,6 +25,7 @@ pub(crate) struct PreWriteArtifact {
     intent_warnings: Vec<IntentWarning>,
     coverage: IntentLaneCoverage,
     lookups: Vec<NameLookup>,
+    file_lookups: Vec<FileLookup>,
     cue_cards: Vec<CueCard>,
     suppressed_cues: Vec<SuppressedCue>,
 }
@@ -72,6 +74,14 @@ impl PreWriteArtifact {
                 bail!(
                     "blocked-artifact-contract: lookup name {} is absent from normalized intent",
                     lookup.intent_name
+                );
+            }
+        }
+        for lookup in &self.file_lookups {
+            if !intent_has_file(&self.intent, &lookup.intent_file) {
+                bail!(
+                    "blocked-artifact-contract: lookup file {} is absent from normalized intent",
+                    lookup.intent_file
                 );
             }
         }
@@ -161,7 +171,7 @@ impl IntentLaneCoverage {
         Self {
             names: LaneStatus::Ran,
             shapes: unsupported_if_requested(!intent.shapes.is_empty()),
-            files: unsupported_if_requested(!intent.files.is_empty()),
+            files: ran_if_requested(!intent.files.is_empty()),
             dependencies: unsupported_if_requested(!intent.dependencies.is_empty()),
             planned_type_escapes: unsupported_if_requested(!intent.planned_type_escapes.is_empty()),
         }
@@ -170,7 +180,7 @@ impl IntentLaneCoverage {
     fn validate(&self, intent: &NormalizedIntent) -> Result<()> {
         if self.names != LaneStatus::Ran
             || self.shapes != unsupported_if_requested(!intent.shapes.is_empty())
-            || self.files != unsupported_if_requested(!intent.files.is_empty())
+            || self.files != ran_if_requested(!intent.files.is_empty())
             || self.dependencies != unsupported_if_requested(!intent.dependencies.is_empty())
             || self.planned_type_escapes
                 != unsupported_if_requested(!intent.planned_type_escapes.is_empty())
@@ -178,6 +188,14 @@ impl IntentLaneCoverage {
             bail!("blocked-artifact-contract: intent lane coverage drifted from normalized input");
         }
         Ok(())
+    }
+}
+
+fn ran_if_requested(requested: bool) -> LaneStatus {
+    if requested {
+        LaneStatus::Ran
+    } else {
+        LaneStatus::NotRequested
     }
 }
 
@@ -192,6 +210,7 @@ fn unsupported_if_requested(requested: bool) -> LaneStatus {
 pub(super) fn build(loaded: LoadedIntent, syntax: &HealthResponse) -> Result<PreWriteArtifact> {
     let index = CandidateIndex::from_health(syntax);
     let lookups = lookup::lookup_names(&loaded.intent, &index, syntax);
+    let file_lookups = lookup::lookup_files(&loaded.intent, syntax);
     let CueProjection {
         cue_cards,
         suppressed_cues,
@@ -205,9 +224,17 @@ pub(super) fn build(loaded: LoadedIntent, syntax: &HealthResponse) -> Result<Pre
         intent_warnings: loaded.warnings,
         coverage,
         lookups,
+        file_lookups,
         cue_cards,
         suppressed_cues,
     };
     artifact.validate_contract()?;
     Ok(artifact)
+}
+
+fn intent_has_file(intent: &NormalizedIntent, lookup_file: &str) -> bool {
+    intent
+        .files
+        .iter()
+        .any(|file| posix_path_text(file) == lookup_file)
 }

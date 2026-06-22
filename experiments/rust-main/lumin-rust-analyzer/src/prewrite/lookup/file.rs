@@ -1,0 +1,166 @@
+use lumin_rust_common::{posix_path_has_segment, posix_path_text};
+use lumin_rust_source_health::protocol::{
+    HealthResponse, PathClassification, SkippedFile, SkippedFileReason,
+};
+use serde::Serialize;
+
+use super::super::intent::NormalizedIntent;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::prewrite) struct FileLookup {
+    kind: FileLookupKind,
+    pub(in crate::prewrite) intent_file: String,
+    result: FileLookupResult,
+    loc: Option<usize>,
+    inbound_fan_in: Option<usize>,
+    inbound_fan_in_confidence: FanInConfidence,
+    submodule: Option<String>,
+    boundary: FileBoundary,
+    tags: Vec<&'static str>,
+    domain_cluster: Option<()>,
+    citations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum FileLookupKind {
+    #[serde(rename = "file")]
+    File,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum FileLookupResult {
+    #[serde(rename = "FILE_EXISTS")]
+    Exists,
+    #[serde(rename = "NEW_FILE")]
+    New,
+    #[serde(rename = "FILE_STATUS_UNKNOWN")]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FanInConfidence {
+    Unavailable,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileBoundary {
+    status: BoundaryStatus,
+    rule: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum BoundaryStatus {
+    #[serde(rename = "NOT_EVALUATED")]
+    NotEvaluated,
+}
+
+pub(in crate::prewrite) fn lookup_files(
+    intent: &NormalizedIntent,
+    syntax: &HealthResponse,
+) -> Vec<FileLookup> {
+    intent
+        .files
+        .iter()
+        .map(|file| lookup_file(file, syntax))
+        .collect()
+}
+
+fn lookup_file(intent_file: &str, syntax: &HealthResponse) -> FileLookup {
+    let normalized = posix_path_text(intent_file).into_owned();
+    let mut citations = Vec::new();
+    let mut tags = Vec::new();
+    let mut result = FileLookupResult::Unknown;
+
+    if let Some(file) = syntax.files.get(&normalized) {
+        result = FileLookupResult::Exists;
+        tags = tags_from_classifications(&file.path.classifications);
+        citations.push(format!(
+            "[grounded, rust-source-health.files['{normalized}'] present; parse.ok = {}]",
+            file.parse.ok
+        ));
+    } else if let Some(skipped) = skipped_file(&normalized, syntax) {
+        citations.push(format!(
+            "[확인 불가, reason: rust-source-health.skippedFiles contains '{}' with reason '{}'; file exists but Rust syntax evidence is unavailable]",
+            skipped.path,
+            skipped_reason(skipped.reason)
+        ));
+    } else if !is_safe_relative_posix_path(&normalized) {
+        citations.push(format!(
+            "[확인 불가, reason: '{normalized}' is not a safe repo-relative POSIX path]"
+        ));
+    } else if is_excluded_by_source_health_path_policy(&normalized) {
+        citations.push(format!(
+            "[확인 불가, reason: '{normalized}' is outside rust-source-health path policy (target/vendor excluded)]"
+        ));
+    } else if !normalized.ends_with(".rs") {
+        citations.push(format!(
+            "[확인 불가, reason: rust-source-health enumerates Rust .rs files only; '{normalized}' is outside this lane]"
+        ));
+    } else {
+        result = FileLookupResult::New;
+        citations.push(format!(
+            "[grounded, rust-source-health.files does not contain '{normalized}'; rust-source-health wrapper completed Rust .rs file enumeration under its path policy]"
+        ));
+    }
+
+    citations.push(
+        "[확인 불가, reason: Rust pre-write file intent carries no planned from->to edge; boundary rules are not evaluated]"
+            .to_string(),
+    );
+
+    FileLookup {
+        kind: FileLookupKind::File,
+        intent_file: normalized,
+        result,
+        loc: None,
+        inbound_fan_in: None,
+        inbound_fan_in_confidence: FanInConfidence::Unavailable,
+        submodule: None,
+        boundary: FileBoundary {
+            status: BoundaryStatus::NotEvaluated,
+            rule: None,
+        },
+        tags,
+        domain_cluster: None,
+        citations,
+    }
+}
+
+fn skipped_file<'a>(path: &str, syntax: &'a HealthResponse) -> Option<&'a SkippedFile> {
+    syntax
+        .skipped_files
+        .iter()
+        .find(|skipped| skipped.path == path)
+}
+
+fn tags_from_classifications(classifications: &[PathClassification]) -> Vec<&'static str> {
+    if classifications.contains(&PathClassification::Test) {
+        vec!["test-only"]
+    } else {
+        Vec::new()
+    }
+}
+
+fn skipped_reason(reason: SkippedFileReason) -> &'static str {
+    match reason {
+        SkippedFileReason::InvalidUtf8 => "invalid-utf8",
+    }
+}
+
+fn is_excluded_by_source_health_path_policy(path: &str) -> bool {
+    posix_path_has_segment(path, "target") || posix_path_has_segment(path, "vendor")
+}
+
+fn is_safe_relative_posix_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path.starts_with('\\')
+        && !path.contains('\\')
+        && !path.contains(':')
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+}

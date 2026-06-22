@@ -3,7 +3,7 @@
 > **Role:** canonical naming, shape, helper, and module contract for the Rust source health track.
 > **Owner:** this file.
 > **Status:** M6 spine addition.
-> **Last updated:** 2026-06-22
+> **Last updated:** 2026-06-23
 
 ---
 
@@ -179,8 +179,9 @@ analysis cannot know which branch is live.
 ### 7.2 Rust Pre-Write Consumer
 
 `lumin-rust-analyzer pre-write` may consume
-`HealthResponse::files[*].ast` in memory to answer declared Rust name intents.
-The analyzer owns intent, lookup, cue, and advisory policy.
+`HealthResponse::files[*].ast` in memory to answer declared Rust name intents,
+and `HealthResponse::files` / `skippedFiles` to answer declared Rust file
+intents. The analyzer owns intent, lookup, cue, and advisory policy.
 `rust-source-health` remains the owner of raw AST extraction and path
 classification.
 
@@ -188,6 +189,18 @@ The normal unified artifact must not embed a repository-wide definition or
 impl-method index. The pre-write consumer builds a borrowed view and serializes
 only matched advisory evidence. Impl methods remain separate owner evidence
 and must not be promoted into definition-lane SAFE cues.
+
+Rust file intent lookup is the Rust analogue of the JS/TS pre-write file lane:
+
+- a requested path present in `HealthResponse::files` is `FILE_EXISTS`;
+- a safe repo-relative `.rs` path absent from `HealthResponse::files` and
+  `skippedFiles`, under the source-health path policy, is `NEW_FILE`;
+- skipped files, non-Rust paths, excluded `target` / `vendor` paths, and unsafe
+  path text are `FILE_STATUS_UNKNOWN`.
+
+The file lane does not evaluate boundary rules because Rust pre-write intent
+does not carry planned `from -> to` edges. It must emit `NOT_EVALUATED`, matching
+the JS/TS P1-2 behavior.
 
 ## 8. Do Not Invent These Again
 

@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::process::Output;
 
 use anyhow::{Context, Result};
@@ -91,6 +92,15 @@ impl PreWriteRepo {
             .arg(self.output_path())
             .output()
             .context("run rust pre-write analyzer")
+    }
+
+    pub fn write_bytes(&self, relative_path: impl AsRef<Path>, bytes: &[u8]) -> Result<()> {
+        let path = self.temp.path().join(relative_path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, bytes)?;
+        Ok(())
     }
 
     pub fn output_exists(&self) -> bool {

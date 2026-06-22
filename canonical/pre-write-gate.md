@@ -3,7 +3,7 @@
 > **Role:** protocol for P1's pre-write mode. When Claude is about to write new code, this mode finds what already exists and surfaces it before the write happens.
 > **Owner:** this file.
 > **Status:** spine v1 + P4 shape-index amendment.
-> **Last updated:** 2026-04-23
+> **Last updated:** 2026-06-23
 
 ---
 
@@ -91,18 +91,29 @@ Claude may:
 
 The gate is advisory; Claude retains authorial authority.
 
-### Rust Name-Lane Migration
+### Rust Name/File-Lane Migration
 
-`lumin-rust-analyzer pre-write` is the Rust execution surface for the name
-lane. It runs `rust-source-health` only. It does not run Cargo metadata or
+`lumin-rust-analyzer pre-write` is the Rust execution surface for the name and
+file lanes. It runs `rust-source-health` only. It does not run Cargo metadata or
 Cargo check because the current cargo/rustc oracle can verify diagnostics and
 clean build scope but cannot prove that an unreferenced repository name is
 absent.
 
+The Rust file lane follows the JS/TS P1-2 file lookup semantics with
+Rust-owned evidence:
+
+- `rust-source-health.files[path]` present -> `FILE_EXISTS`;
+- safe repo-relative `.rs` path absent from `files` and `skippedFiles`, under
+  the source-health path policy -> `NEW_FILE`;
+- skipped files, non-Rust paths, excluded `target` / `vendor` paths, and unsafe
+  path text -> `FILE_STATUS_UNKNOWN`;
+- boundary status is always `NOT_EVALUATED` because Rust pre-write intent does
+  not carry planned `from -> to` edges.
+
 The Rust command accepts the five-key intent transport. Missing arrays default
 with warnings and malformed present fields hard-stop. Until later migration
-slices land, non-empty shape, file, dependency, and planned-type-escape lanes
-remain visible with `unsupported` coverage. `taskId` is the only typed transport
+slices land, non-empty shape, dependency, and planned-type-escape lanes remain
+visible with `unsupported` coverage. `taskId` is the only typed transport
 extension. Unknown extra fields hard-stop instead of reopening a dynamic
 `Value` map at the Rust boundary.
 
