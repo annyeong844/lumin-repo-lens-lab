@@ -48,6 +48,7 @@ pub(super) fn findings_from_diagnostics(
                 },
                 confidence_tier: tier,
                 claim_kind,
+                diagnostic_code: diagnostic.code_value.clone(),
                 message: diagnostic.message.clone(),
                 span: PrimarySpan::representative(&diagnostic.primary_spans).cloned(),
                 primary_spans: diagnostic.primary_spans.clone(),
