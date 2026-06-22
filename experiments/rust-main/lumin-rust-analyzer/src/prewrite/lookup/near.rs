@@ -1,10 +1,8 @@
 use std::cmp::Ordering;
 
-use super::{
-    locality, CandidateRecord, MatchedField, NearNameHint, SuppressedNearNameHint,
-    SuppressionReason,
-};
-use crate::prewrite::index::{Candidate, CandidateLane};
+use super::taint::locality;
+use super::{CandidateRecord, NearNameHint, SuppressedNearNameHint, SuppressionReason};
+use crate::prewrite::index::{Candidate, CandidateLane, MatchedField};
 use crate::prewrite::tokens::{common_tokens, has_only_weak_common_tokens};
 
 const NEAR_NAME_MAX_LENGTH_DELTA: usize = 2;

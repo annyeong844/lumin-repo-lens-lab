@@ -1,4 +1,5 @@
-use super::{locality, CandidateRecord, SemanticHint, SuppressedSemanticHint, SuppressionReason};
+use super::taint::locality;
+use super::{CandidateRecord, SemanticHint, SuppressedSemanticHint, SuppressionReason};
 use crate::prewrite::index::{Candidate, CandidateLane};
 use crate::prewrite::intent::NameDeclaration;
 use crate::prewrite::tokens::{is_weak_common_token, unique_tokens};
