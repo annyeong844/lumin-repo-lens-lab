@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use lumin_rust_common::{posix_path_has_segment, posix_path_text};
 use lumin_rust_source_health::protocol::{
     HealthResponse, PathClassification, SkippedFile, SkippedFileReason,
@@ -28,6 +31,10 @@ pub(in crate::prewrite) struct FileLookup {
 impl FileLookup {
     pub(in crate::prewrite) fn has_domain_cluster(&self) -> bool {
         self.domain_cluster.is_some()
+    }
+
+    pub(in crate::prewrite) fn exists(&self) -> bool {
+        matches!(self.result, FileLookupResult::Exists)
     }
 }
 
@@ -69,15 +76,16 @@ enum BoundaryStatus {
 pub(in crate::prewrite) fn lookup_files(
     intent: &NormalizedIntent,
     syntax: &HealthResponse,
+    root: &Path,
 ) -> Vec<FileLookup> {
     intent
         .files
         .iter()
-        .map(|file| lookup_file(file, syntax))
+        .map(|file| lookup_file(file, syntax, root))
         .collect()
 }
 
-fn lookup_file(intent_file: &str, syntax: &HealthResponse) -> FileLookup {
+fn lookup_file(intent_file: &str, syntax: &HealthResponse, root: &Path) -> FileLookup {
     let normalized = posix_path_text(intent_file).into_owned();
     let mut citations = Vec::new();
     let mut tags = Vec::new();
@@ -113,6 +121,10 @@ fn lookup_file(intent_file: &str, syntax: &HealthResponse) -> FileLookup {
     } else if !path_is_rust {
         citations.push(format!(
             "[확인 불가, reason: rust-source-health enumerates Rust .rs files only; '{normalized}' is outside this lane]"
+        ));
+    } else if let Some(symlink_path) = first_symlink_component(root, &normalized) {
+        citations.push(format!(
+            "[확인 불가, reason: '{symlink_path}' is a symlink; rust-source-health path policy does not follow symlinked files or directories]"
         ));
     } else {
         result = FileLookupResult::New;
@@ -178,4 +190,20 @@ fn is_safe_relative_posix_path(path: &str) -> bool {
         && path
             .split('/')
             .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+}
+
+fn first_symlink_component(root: &Path, path: &str) -> Option<String> {
+    let mut cursor = PathBuf::from(root);
+    let mut relative = Vec::new();
+    for segment in path.split('/') {
+        cursor.push(segment);
+        relative.push(segment);
+        let Ok(metadata) = fs::symlink_metadata(&cursor) else {
+            return None;
+        };
+        if metadata.file_type().is_symlink() {
+            return Some(relative.join("/"));
+        }
+    }
+    None
 }

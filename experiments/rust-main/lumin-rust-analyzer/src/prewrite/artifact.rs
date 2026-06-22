@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{bail, Result};
 use lumin_rust_common::posix_path_text;
 use lumin_rust_source_health::protocol::{
@@ -34,17 +36,22 @@ impl PreWriteArtifact {
     pub(crate) fn validate_contract(&self) -> Result<()> {
         for card in &self.cue_cards {
             for cue in &card.cues {
-                if cue.cue_tier == CueTier::Safe
-                    && (cue.evidence_lane != EvidenceLane::ExactSymbol
-                        || cue
-                            .evidence
-                            .iter()
-                            .any(|evidence| evidence.matched_field != CueMatchedField::DefIndex))
-                {
-                    bail!(
-                        "blocked-artifact-contract: SAFE cue {} is not exact definition evidence",
-                        card.candidate.identity
-                    );
+                if cue.cue_tier == CueTier::Safe {
+                    match cue.evidence_lane {
+                        EvidenceLane::ExactSymbol
+                            if cue
+                                .evidence
+                                .iter()
+                                .all(|evidence| evidence.matched_field == CueMatchedField::DefIndex) => {}
+                        EvidenceLane::ExactFile
+                            if cue.evidence.iter().all(|evidence| {
+                                evidence.matched_field == CueMatchedField::RustSourceHealthFiles
+                            }) => {}
+                        _ => bail!(
+                            "blocked-artifact-contract: SAFE cue {} is not exact source-health evidence",
+                            card.candidate.identity
+                        ),
+                    }
                 }
                 if cue.evidence.iter().any(|evidence| {
                     evidence.matched_field == CueMatchedField::ImplMethodIndex
@@ -207,10 +214,14 @@ fn unsupported_if_requested(requested: bool) -> LaneStatus {
     }
 }
 
-pub(super) fn build(loaded: LoadedIntent, syntax: &HealthResponse) -> Result<PreWriteArtifact> {
+pub(super) fn build(
+    loaded: LoadedIntent,
+    syntax: &HealthResponse,
+    root: &Path,
+) -> Result<PreWriteArtifact> {
     let index = CandidateIndex::from_health(syntax);
     let lookups = lookup::lookup_names(&loaded.intent, &index, syntax);
-    let file_lookups = lookup::lookup_files(&loaded.intent, syntax);
+    let file_lookups = lookup::lookup_files(&loaded.intent, syntax, root);
     let CueProjection {
         cue_cards,
         suppressed_cues,

@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use lumin_rust_common::posix_path_text;
 use lumin_rust_source_health::protocol::PathClassification;
 
 use super::model::{
@@ -24,6 +25,7 @@ pub(super) fn local_operation_sibling_policy(
     let Some(owner_file) = owner_file else {
         return empty_policy(Some(INTENT_OWNER_FILE_MISSING));
     };
+    let owner_file = posix_path_text(owner_file).into_owned();
 
     let intent_operation = service_operation_info(intent_name);
     let intent_domains = intent_operation
@@ -36,7 +38,7 @@ pub(super) fn local_operation_sibling_policy(
 
     for candidate in local_operations
         .iter()
-        .filter(|candidate| candidate.file == owner_file)
+        .filter(|candidate| candidate.file == owner_file.as_str())
     {
         let candidate_domains = candidate
             .domain_tokens
@@ -49,7 +51,7 @@ pub(super) fn local_operation_sibling_policy(
             .filter(|token| candidate_domains.contains(*token))
             .cloned()
             .collect::<Vec<_>>();
-        let locality = locality_for(owner_file, candidate.file);
+        let locality = locality_for(&owner_file, candidate.file);
         let reason = local_mute_reason(
             candidate,
             intent_operation.operation_family,

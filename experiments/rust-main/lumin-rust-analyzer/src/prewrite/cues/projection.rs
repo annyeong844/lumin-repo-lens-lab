@@ -49,6 +49,7 @@ pub(in crate::prewrite) fn project(
         add_service_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
         add_local_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
     }
+    add_file_exact_cues(file_lookups, &mut cards);
     add_file_domain_cluster_cues(file_lookups, &mut cards);
 
     let mut cue_cards = cards
@@ -114,6 +115,17 @@ fn add_active_cue(
     add_cue_for_candidate(cards, CueCandidate::from(candidate), cue);
 }
 
+fn add_file_exact_cues(file_lookups: &[FileLookup], cards: &mut BTreeMap<String, CueCardBuilder>) {
+    for lookup in file_lookups.iter().filter(|lookup| lookup.exists()) {
+        let identity = file_candidate_identity(&lookup.intent_file);
+        add_cue_for_candidate(
+            cards,
+            file_candidate(&lookup.intent_file),
+            file_exact_cue(identity),
+        );
+    }
+}
+
 fn add_file_domain_cluster_cues(
     file_lookups: &[FileLookup],
     cards: &mut BTreeMap<String, CueCardBuilder>,
@@ -125,13 +137,42 @@ fn add_file_domain_cluster_cues(
         let identity = file_candidate_identity(&lookup.intent_file);
         add_cue_for_candidate(
             cards,
-            CueCandidate {
-                owner_file: lookup.intent_file.clone(),
-                name: file_candidate_name(&lookup.intent_file),
-                identity: identity.clone(),
-            },
+            file_candidate(&lookup.intent_file),
             file_domain_cluster_cue(identity),
         );
+    }
+}
+
+fn file_exact_cue(identity: String) -> Cue {
+    Cue {
+        cue_tier: CueTier::Safe,
+        safe_meaning: Some(SafeMeaning::ClaimOnly),
+        not_safe_for: vec![
+            NotSafeFor::SemanticEquivalence,
+            NotSafeFor::AutoReuse,
+            NotSafeFor::AutoFix,
+        ],
+        evidence_lane: EvidenceLane::ExactFile,
+        claim: CueClaim::ExactFileExists,
+        confidence: CueConfidence::Grounded,
+        evidence: vec![CueEvidence {
+            artifact: "rust-source-health",
+            matched_field: CueMatchedField::RustSourceHealthFiles,
+            matched_field_source: None,
+            algorithm_version: Some("exact-file.v1"),
+            candidate_identity: identity,
+            distance: None,
+            tokens: Vec::new(),
+            policy_id: None,
+            policy_version: None,
+            operation_family: None,
+            shared_domain_tokens: Vec::new(),
+            locality: None,
+            supporting_reasons: Vec::new(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
+        }],
     }
 }
 
@@ -168,12 +209,12 @@ fn file_candidate_identity(intent_file: &str) -> String {
     format!("{intent_file}::__file__")
 }
 
-fn file_candidate_name(intent_file: &str) -> String {
-    let basename = intent_file
-        .rsplit_once('/')
-        .map(|(_, basename)| basename)
-        .unwrap_or(intent_file);
-    basename.strip_suffix(".rs").unwrap_or(basename).to_string()
+fn file_candidate(intent_file: &str) -> CueCandidate {
+    CueCandidate {
+        owner_file: intent_file.to_string(),
+        name: "__file__".to_string(),
+        identity: file_candidate_identity(intent_file),
+    }
 }
 
 fn add_cue_for_candidate(

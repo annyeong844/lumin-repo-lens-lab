@@ -1,3 +1,6 @@
+use std::io::ErrorKind;
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use serde_json::Value;
 
@@ -30,6 +33,32 @@ fn prewrite_file_lane_reports_existing_new_and_unavailable_rust_files() -> Resul
     assert_eq!(existing["boundary"]["status"], "NOT_EVALUATED");
     assert!(citations(existing)
         .any(|citation| { citation.contains("rust-source-health.files['src/lib.rs'] present") }));
+    let existing_card = cue_card(&artifact, "src/lib.rs::__file__")?;
+    assert_eq!(existing_card["renderTier"], "SAFE_CUE");
+    assert_eq!(existing_card["candidate"]["name"], "__file__");
+    let exact_file_cue = existing_card["cues"]
+        .as_array()
+        .context("existing file cues")?
+        .iter()
+        .find(|cue| cue["evidenceLane"] == "exact-file")
+        .context("exact file cue")?;
+    assert_eq!(exact_file_cue["cueTier"], "SAFE_CUE");
+    assert_eq!(exact_file_cue["safeMeaning"], "claim-only");
+    assert_eq!(exact_file_cue["claim"], "exact file exists");
+    assert_eq!(exact_file_cue["confidence"], "grounded");
+    assert_eq!(
+        exact_file_cue["notSafeFor"],
+        serde_json::json!(["semantic-equivalence", "auto-reuse", "auto-fix"])
+    );
+    assert_eq!(
+        exact_file_cue["evidence"][0]["artifact"],
+        "rust-source-health"
+    );
+    assert_eq!(exact_file_cue["evidence"][0]["matchedField"], "files");
+    assert_eq!(
+        exact_file_cue["evidence"][0]["algorithmVersion"],
+        "exact-file.v1"
+    );
 
     let new_file = file_lookup(&artifact, "src/new_module.rs")?;
     assert_eq!(new_file["result"], "NEW_FILE");
@@ -48,6 +77,34 @@ fn prewrite_file_lane_reports_existing_new_and_unavailable_rust_files() -> Resul
     let non_rust = file_lookup(&artifact, "README.md")?;
     assert_eq!(non_rust["result"], "FILE_STATUS_UNKNOWN");
     assert!(citations(non_rust).any(|citation| citation.contains("Rust .rs files only")));
+    assert!(cue_card(&artifact, "src/new_module.rs::__file__").is_err());
+    Ok(())
+}
+
+#[test]
+fn prewrite_file_lane_keeps_symlinked_rust_paths_unknown() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes("src/real.rs", b"pub fn real() {}\n")?;
+    let target = repo.root_path().join("src").join("real.rs");
+    let link = repo.root_path().join("src").join("linked.rs");
+    if !create_file_symlink(&target, &link)? {
+        return Ok(());
+    }
+
+    let artifact = repo.run_json(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": ["src/linked.rs"],
+  "dependencies": [],
+  "plannedTypeEscapes": []
+}"#,
+    )?;
+
+    let linked = file_lookup(&artifact, "src/linked.rs")?;
+    assert_eq!(linked["result"], "FILE_STATUS_UNKNOWN");
+    assert!(citations(linked).any(|citation| citation.contains("is a symlink")));
+    assert!(cue_card(&artifact, "src/linked.rs::__file__").is_err());
     Ok(())
 }
 
@@ -188,4 +245,29 @@ fn citations(lookup: &Value) -> impl Iterator<Item = &str> {
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
+}
+
+fn create_file_symlink(target: &Path, link: &Path) -> Result<bool> {
+    match create_file_symlink_inner(target, link) {
+        Ok(()) => Ok(true),
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::PermissionDenied | ErrorKind::Unsupported
+            ) || error.raw_os_error() == Some(1314) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error).context("create symlinked Rust file fixture"),
+    }
+}
+
+#[cfg(unix)]
+fn create_file_symlink_inner(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_file_symlink_inner(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(target, link)
 }

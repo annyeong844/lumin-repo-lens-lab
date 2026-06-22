@@ -75,7 +75,9 @@ pub(in crate::prewrite) fn local_operation_info(name: &str) -> Option<OperationI
             !READ_QUERY_VERBS.contains(&token.as_str())
                 && !LOCAL_OPERATION_MUTATION_VERBS.contains(&token.as_str())
         })
-        .cloned()
+        .filter_map(|token| normalize_domain_token(token))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect::<Vec<_>>();
     if domain_tokens.is_empty() {
         return None;

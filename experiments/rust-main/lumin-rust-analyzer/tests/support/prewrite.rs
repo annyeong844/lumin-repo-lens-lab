@@ -107,6 +107,10 @@ impl PreWriteRepo {
         self.output_path().is_file()
     }
 
+    pub fn root_path(&self) -> &Path {
+        self.temp.path()
+    }
+
     fn intent_path(&self) -> std::path::PathBuf {
         self.temp.path().join("intent.json")
     }

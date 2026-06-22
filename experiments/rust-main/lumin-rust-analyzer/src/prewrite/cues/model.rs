@@ -22,6 +22,7 @@ pub(in crate::prewrite) enum CueTier {
 #[serde(rename_all = "kebab-case")]
 pub(in crate::prewrite) enum EvidenceLane {
     ExactSymbol,
+    ExactFile,
     ImplMethodName,
     NearName,
     IntentToken,
@@ -55,6 +56,8 @@ pub(in crate::prewrite::cues) enum NotSafeFor {
 #[serde(rename_all = "kebab-case")]
 pub(in crate::prewrite::cues) enum CueClaim {
     ExactRustDefinitionExists,
+    #[serde(rename = "exact file exists")]
+    ExactFileExists,
     NearRustDefinitionName,
     NearRustImplMethodName,
     SupportedIntentTokenOverlap,
@@ -73,6 +76,8 @@ pub(in crate::prewrite) enum CueMatchedField {
     DefIndex,
     #[serde(rename = "implMethodIndex")]
     ImplMethodIndex,
+    #[serde(rename = "files")]
+    RustSourceHealthFiles,
     #[serde(rename = "fileLookups[].domainCluster")]
     FileDomainCluster,
     #[serde(rename = "preWriteLocalOperationIndex")]
