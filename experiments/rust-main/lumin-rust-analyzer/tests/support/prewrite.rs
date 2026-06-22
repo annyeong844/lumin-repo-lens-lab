@@ -9,10 +9,13 @@ use crate::support::command::unified_analyzer_command;
 
 const LIB_RS: &str = r#"pub fn load_task() {}
 
+pub fn fetch_user() {}
+
 pub struct EventDispatcher;
 
 impl EventDispatcher {
     pub fn handle_delete(&self) {}
+    pub fn fetch_user(&self) {}
 }
 
 macro_rules! generated_handlers {

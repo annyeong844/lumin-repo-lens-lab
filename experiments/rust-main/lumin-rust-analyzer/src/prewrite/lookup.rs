@@ -6,11 +6,13 @@ use super::intent::{NameDeclaration, NormalizedIntent};
 mod model;
 mod near;
 mod semantic;
+mod service;
 mod taint;
 
 use model::LookupResult;
 pub(super) use model::{
-    CandidateRecord, NameLookup, NearNameHint, SemanticHint, SuppressedNearNameHint,
+    CandidateRecord, Locality, NameLookup, NearNameHint, SemanticHint, ServiceOperationFamily,
+    ServiceOperationMuteReason, ServiceOperationPolicyEntry, SuppressedNearNameHint,
     SuppressedSemanticHint, SuppressionReason,
 };
 
@@ -63,6 +65,11 @@ fn lookup_name(
                 0,
             )
         };
+    let service_operation_sibling_policy = service::service_operation_sibling_policy(
+        intent_name,
+        &suppressed_near_names,
+        &suppressed_semantic_hints,
+    );
 
     let mut citations = identities
         .iter()
@@ -102,6 +109,7 @@ fn lookup_name(
         suppressed_near_name_count,
         suppressed_semantic_hints,
         suppressed_semantic_hint_count,
+        service_operation_sibling_policy,
         tainted_by: (result == LookupResult::NotObserved)
             .then(|| taint::taint_summary(syntax))
             .flatten(),

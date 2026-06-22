@@ -4,8 +4,10 @@ use lumin_rust_source_health::protocol::{
 };
 use serde::Serialize;
 
-use super::cues::{self, CueCard, CueProjection, CueTier, EvidenceLane, SuppressedCue};
-use super::index::{CandidateIndex, MatchedField};
+use super::cues::{
+    self, CueCard, CueMatchedField, CueProjection, CueTier, EvidenceLane, SuppressedCue,
+};
+use super::index::CandidateIndex;
 use super::intent::{IntentWarning, LoadedIntent, NormalizedIntent};
 use super::lookup::{self, NameLookup};
 use super::tokens::{TOKENIZER_VERSION, TOKEN_POLICY_VERSION, WEAK_COMMON_TOKENS};
@@ -35,7 +37,7 @@ impl PreWriteArtifact {
                         || cue
                             .evidence
                             .iter()
-                            .any(|evidence| evidence.matched_field != MatchedField::DefIndex))
+                            .any(|evidence| evidence.matched_field != CueMatchedField::DefIndex))
                 {
                     bail!(
                         "blocked-artifact-contract: SAFE cue {} is not exact definition evidence",
@@ -43,7 +45,7 @@ impl PreWriteArtifact {
                     );
                 }
                 if cue.evidence.iter().any(|evidence| {
-                    evidence.matched_field == MatchedField::ImplMethodIndex
+                    evidence.matched_field == CueMatchedField::ImplMethodIndex
                         && cue.cue_tier == CueTier::Safe
                 }) {
                     bail!(
