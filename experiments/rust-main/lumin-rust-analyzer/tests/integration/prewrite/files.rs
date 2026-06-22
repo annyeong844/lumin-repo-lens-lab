@@ -59,6 +59,11 @@ fn prewrite_file_lane_reports_existing_new_and_unavailable_rust_files() -> Resul
         exact_file_cue["evidence"][0]["algorithmVersion"],
         "exact-file.v1"
     );
+    assert_eq!(exact_file_cue["evidence"][0]["file"], "src/lib.rs");
+    assert_eq!(
+        exact_file_cue["evidence"][0]["fileLookupResult"],
+        "FILE_EXISTS"
+    );
 
     let new_file = file_lookup(&artifact, "src/new_module.rs")?;
     assert_eq!(new_file["result"], "NEW_FILE");
@@ -174,6 +179,8 @@ fn prewrite_file_lane_reports_domain_cluster_watch_cues_like_js_ts() -> Result<(
         domain_cue["evidence"][0]["matchedField"],
         "fileLookups[].domainCluster"
     );
+    assert_eq!(domain_cue["evidence"][0]["file"], "src/user_service.rs");
+    assert_eq!(domain_cue["evidence"][0]["fileLookupResult"], "NEW_FILE");
 
     let artifact_loader = domain_cluster(file_lookup(&artifact, "src/artifact_loader.rs")?)?;
     assert_eq!(artifact_loader["kind"], "DOMAIN_CLUSTER_DETECTED");

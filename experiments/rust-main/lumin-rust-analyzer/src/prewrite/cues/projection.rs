@@ -121,7 +121,7 @@ fn add_file_exact_cues(file_lookups: &[FileLookup], cards: &mut BTreeMap<String,
         add_cue_for_candidate(
             cards,
             file_candidate(&lookup.intent_file),
-            file_exact_cue(identity),
+            file_exact_cue(identity, lookup),
         );
     }
 }
@@ -138,12 +138,12 @@ fn add_file_domain_cluster_cues(
         add_cue_for_candidate(
             cards,
             file_candidate(&lookup.intent_file),
-            file_domain_cluster_cue(identity),
+            file_domain_cluster_cue(identity, lookup),
         );
     }
 }
 
-fn file_exact_cue(identity: String) -> Cue {
+fn file_exact_cue(identity: String, lookup: &FileLookup) -> Cue {
     Cue {
         cue_tier: CueTier::Safe,
         safe_meaning: Some(SafeMeaning::ClaimOnly),
@@ -161,6 +161,8 @@ fn file_exact_cue(identity: String) -> Cue {
             matched_field_source: None,
             algorithm_version: Some("exact-file.v1"),
             candidate_identity: identity,
+            file: Some(lookup.intent_file.clone()),
+            file_lookup_result: Some(lookup.result()),
             distance: None,
             tokens: Vec::new(),
             policy_id: None,
@@ -176,7 +178,7 @@ fn file_exact_cue(identity: String) -> Cue {
     }
 }
 
-fn file_domain_cluster_cue(identity: String) -> Cue {
+fn file_domain_cluster_cue(identity: String, lookup: &FileLookup) -> Cue {
     Cue {
         cue_tier: CueTier::AgentReview,
         safe_meaning: None,
@@ -190,6 +192,8 @@ fn file_domain_cluster_cue(identity: String) -> Cue {
             matched_field_source: None,
             algorithm_version: None,
             candidate_identity: identity,
+            file: Some(lookup.intent_file.clone()),
+            file_lookup_result: Some(lookup.result()),
             distance: None,
             tokens: Vec::new(),
             policy_id: None,
@@ -253,6 +257,8 @@ fn safe_cue(candidate: &CandidateRecord) -> Cue {
             matched_field_source: None,
             algorithm_version: Some("exact-symbol.v1"),
             candidate_identity: candidate.identity.clone(),
+            file: None,
+            file_lookup_result: None,
             distance: None,
             tokens: Vec::new(),
             policy_id: None,
@@ -291,6 +297,8 @@ fn near_name_cue(candidate: &CandidateRecord, distance: usize) -> Cue {
             matched_field_source: None,
             algorithm_version: Some("near-name.v1"),
             candidate_identity: candidate.identity.clone(),
+            file: None,
+            file_lookup_result: None,
             distance: Some(distance),
             tokens: Vec::new(),
             policy_id: None,
@@ -329,6 +337,8 @@ fn semantic_hint_cue(candidate: &CandidateRecord, tokens: &[String]) -> Cue {
             matched_field_source: None,
             algorithm_version: Some(TOKEN_POLICY_VERSION),
             candidate_identity: candidate.identity.clone(),
+            file: None,
+            file_lookup_result: None,
             distance: None,
             tokens: tokens.to_vec(),
             policy_id: None,
@@ -401,6 +411,8 @@ fn service_operation_cue(
             matched_field_source: None,
             algorithm_version: None,
             candidate_identity: entry.identity.clone(),
+            file: None,
+            file_lookup_result: None,
             distance: None,
             tokens: Vec::new(),
             policy_id: Some(policy_id),
@@ -493,6 +505,8 @@ fn local_operation_cue(
             matched_field_source: Some(entry.matched_field),
             algorithm_version: None,
             candidate_identity: entry.identity.clone(),
+            file: None,
+            file_lookup_result: None,
             distance: None,
             tokens: Vec::new(),
             policy_id: Some(policy_id),
