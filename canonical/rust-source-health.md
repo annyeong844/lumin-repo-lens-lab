@@ -202,6 +202,10 @@ Rust file intent lookup is the Rust analogue of the JS/TS pre-write file lane:
 - a requested path present in `HealthResponse::files` is `FILE_EXISTS`;
 - a safe repo-relative `.rs` path absent from `HealthResponse::files` and
   `skippedFiles`, under the source-health path policy, is `NEW_FILE`;
+- a path whose existing filesystem component is a symlink is
+  `FILE_STATUS_UNKNOWN`, even if it is absent from `HealthResponse::files` and
+  `skippedFiles`, because M6 source health does not follow symlinked files or
+  directories;
 - skipped files, non-Rust paths, excluded `target` / `vendor` paths, and unsafe
   path text are `FILE_STATUS_UNKNOWN`.
 
