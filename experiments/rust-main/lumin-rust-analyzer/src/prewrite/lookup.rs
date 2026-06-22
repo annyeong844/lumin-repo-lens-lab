@@ -52,6 +52,14 @@ pub(super) struct CandidateRecord {
 
 impl CandidateRecord {
     fn from_candidate(candidate: Candidate<'_>) -> Self {
+        let path_classifications = candidate.classifications();
+        let policy_excluded = candidate.path.suppressed
+            || path_classifications.iter().any(|classification| {
+                matches!(
+                    classification,
+                    PathClassification::Test | PathClassification::Generated
+                )
+            });
         Self {
             identity: candidate.identity(),
             owner_file: candidate.file.to_string(),
@@ -66,8 +74,8 @@ impl CandidateRecord {
             visibility: candidate.visibility,
             line: candidate.location.line,
             column: candidate.location.column,
-            policy_excluded: candidate.path.suppressed,
-            path_classifications: candidate.classifications(),
+            policy_excluded,
+            path_classifications,
         }
     }
 }
