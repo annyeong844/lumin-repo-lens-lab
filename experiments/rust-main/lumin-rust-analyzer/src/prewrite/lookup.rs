@@ -14,7 +14,9 @@ mod shape;
 mod taint;
 
 pub(super) use super::operation::ServiceOperationFamily;
-pub(super) use dependency::{lookup_dependencies, DependencyLookup};
+pub(super) use dependency::{
+    lookup_dependencies, DependencyLookup, DependencyLookupResult, DEPENDENCY_WATCH_FOR_THRESHOLD,
+};
 pub(super) use file::{lookup_files, FileLookup, FileLookupResult};
 use model::LookupResult;
 pub(super) use model::{

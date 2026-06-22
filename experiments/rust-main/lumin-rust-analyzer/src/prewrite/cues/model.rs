@@ -3,9 +3,9 @@ use serde::Serialize;
 
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
-    CandidateRecord, FileLookupResult, LocalOperationMuteReason, LocalOperationPolicyEntry,
-    Locality, PolicySupportingReason, ServiceOperationFamily, ServiceOperationMuteReason,
-    ServiceOperationPolicyEntry, SuppressionReason,
+    CandidateRecord, DependencyLookupResult, FileLookupResult, LocalOperationMuteReason,
+    LocalOperationPolicyEntry, Locality, PolicySupportingReason, ServiceOperationFamily,
+    ServiceOperationMuteReason, ServiceOperationPolicyEntry, SuppressionReason,
 };
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
@@ -27,6 +27,7 @@ pub(in crate::prewrite) enum EvidenceLane {
     NearName,
     IntentToken,
     FileDomainCluster,
+    DependencyHub,
     ServiceOperationSibling,
     LocalOperationSibling,
 }
@@ -64,6 +65,8 @@ pub(in crate::prewrite::cues) enum CueClaim {
     RustImplMethodIntentTokenOverlap,
     #[serde(rename = "related Rust file domain cluster")]
     RelatedRustFileDomainCluster,
+    #[serde(rename = "Rust dependency hub")]
+    RustDependencyHub,
     #[serde(rename = "related service operation sibling")]
     RelatedServiceOperationSibling,
     #[serde(rename = "related local service operation")]
@@ -80,6 +83,8 @@ pub(in crate::prewrite) enum CueMatchedField {
     RustSourceHealthFiles,
     #[serde(rename = "fileLookups[].domainCluster")]
     FileDomainCluster,
+    #[serde(rename = "dependencyLookups[].existingImports")]
+    DependencyExistingImports,
     #[serde(rename = "preWriteLocalOperationIndex")]
     PreWriteLocalOperationIndex,
     #[serde(rename = "lookups[].serviceOperationSiblingPolicy.promoted")]
@@ -112,6 +117,12 @@ pub(in crate::prewrite) struct CueEvidence {
     pub(in crate::prewrite::cues) file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) file_lookup_result: Option<FileLookupResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) dependency_lookup_result: Option<DependencyLookupResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) observed_import_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) consumer_threshold: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) distance: Option<usize>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
