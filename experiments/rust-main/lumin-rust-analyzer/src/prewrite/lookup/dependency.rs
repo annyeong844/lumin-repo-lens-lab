@@ -10,6 +10,7 @@ use toml::Value as TomlValue;
 use super::super::intent::NormalizedIntent;
 
 const DEPENDENCY_EXAMPLE_LIMIT: usize = 5;
+pub(in crate::prewrite) const DEPENDENCY_WATCH_FOR_THRESHOLD: usize = 10;
 const DEPENDENCY_SECTIONS: &[&str] = &["dependencies", "dev-dependencies", "build-dependencies"];
 const LOCAL_RUST_PATH_ROOTS: &[&str] = &["crate", "self", "super", "std", "core", "alloc"];
 
@@ -22,6 +23,24 @@ pub(in crate::prewrite) struct DependencyLookup {
     result: DependencyLookupResult,
     existing_imports: ExistingImports,
     citations: Vec<String>,
+}
+
+impl DependencyLookup {
+    pub(in crate::prewrite) fn is_watch_for_eligible(&self) -> bool {
+        self.existing_imports.count_confidence == ImportCountConfidence::Grounded
+            && self
+                .existing_imports
+                .observed_import_count
+                .is_some_and(|count| count >= DEPENDENCY_WATCH_FOR_THRESHOLD)
+    }
+
+    pub(in crate::prewrite) fn observed_import_count(&self) -> Option<usize> {
+        self.existing_imports.observed_import_count
+    }
+
+    pub(in crate::prewrite) fn result(&self) -> DependencyLookupResult {
+        self.result
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -58,7 +77,7 @@ struct DependencyImportExample {
     from_spec: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum ImportCountConfidence {
     Grounded,

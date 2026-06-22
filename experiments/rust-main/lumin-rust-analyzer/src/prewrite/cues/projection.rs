@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
-    CandidateRecord, FileLookup, LocalOperationPolicyEntry, NameLookup,
+    CandidateRecord, DependencyLookup, FileLookup, LocalOperationPolicyEntry, NameLookup,
     ServiceOperationPolicyEntry, SuppressedNearNameHint, SuppressedSemanticHint,
+    DEPENDENCY_WATCH_FOR_THRESHOLD,
 };
 use crate::prewrite::tokens::TOKEN_POLICY_VERSION;
 
@@ -16,6 +17,7 @@ use super::model::{
 pub(in crate::prewrite) fn project(
     lookups: &[NameLookup],
     file_lookups: &[FileLookup],
+    dependency_lookups: &[DependencyLookup],
 ) -> CueProjection {
     let mut cards = BTreeMap::<String, CueCardBuilder>::new();
     let mut suppressed = Vec::new();
@@ -51,6 +53,7 @@ pub(in crate::prewrite) fn project(
     }
     add_file_exact_cues(file_lookups, &mut cards);
     add_file_domain_cluster_cues(file_lookups, &mut cards);
+    add_dependency_hub_cues(dependency_lookups, &mut cards);
 
     let mut cue_cards = cards
         .into_values()
@@ -143,6 +146,23 @@ fn add_file_domain_cluster_cues(
     }
 }
 
+fn add_dependency_hub_cues(
+    dependency_lookups: &[DependencyLookup],
+    cards: &mut BTreeMap<String, CueCardBuilder>,
+) {
+    for lookup in dependency_lookups
+        .iter()
+        .filter(|lookup| lookup.is_watch_for_eligible())
+    {
+        let identity = dependency_candidate_identity(&lookup.dep_name);
+        add_cue_for_candidate(
+            cards,
+            dependency_candidate(&lookup.dep_name),
+            dependency_hub_cue(identity, lookup),
+        );
+    }
+}
+
 fn file_exact_cue(identity: String, lookup: &FileLookup) -> Cue {
     Cue {
         cue_tier: CueTier::Safe,
@@ -163,6 +183,9 @@ fn file_exact_cue(identity: String, lookup: &FileLookup) -> Cue {
             candidate_identity: identity,
             file: Some(lookup.intent_file.clone()),
             file_lookup_result: Some(lookup.result()),
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
             distance: None,
             tokens: Vec::new(),
             policy_id: None,
@@ -194,6 +217,43 @@ fn file_domain_cluster_cue(identity: String, lookup: &FileLookup) -> Cue {
             candidate_identity: identity,
             file: Some(lookup.intent_file.clone()),
             file_lookup_result: Some(lookup.result()),
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
+            distance: None,
+            tokens: Vec::new(),
+            policy_id: None,
+            policy_version: None,
+            operation_family: None,
+            shared_domain_tokens: Vec::new(),
+            locality: None,
+            supporting_reasons: Vec::new(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
+        }],
+    }
+}
+
+fn dependency_hub_cue(identity: String, lookup: &DependencyLookup) -> Cue {
+    Cue {
+        cue_tier: CueTier::AgentReview,
+        safe_meaning: None,
+        not_safe_for: Vec::new(),
+        evidence_lane: EvidenceLane::DependencyHub,
+        claim: CueClaim::RustDependencyHub,
+        confidence: CueConfidence::Grounded,
+        evidence: vec![CueEvidence {
+            artifact: "pre-write-advisory.json",
+            matched_field: CueMatchedField::DependencyExistingImports,
+            matched_field_source: None,
+            algorithm_version: None,
+            candidate_identity: identity,
+            file: None,
+            file_lookup_result: None,
+            dependency_lookup_result: Some(lookup.result()),
+            observed_import_count: lookup.observed_import_count(),
+            consumer_threshold: Some(DEPENDENCY_WATCH_FOR_THRESHOLD),
             distance: None,
             tokens: Vec::new(),
             policy_id: None,
@@ -218,6 +278,18 @@ fn file_candidate(intent_file: &str) -> CueCandidate {
         owner_file: intent_file.to_string(),
         name: "__file__".to_string(),
         identity: file_candidate_identity(intent_file),
+    }
+}
+
+fn dependency_candidate_identity(dep_name: &str) -> String {
+    format!("Cargo.toml::dependency::{dep_name}")
+}
+
+fn dependency_candidate(dep_name: &str) -> CueCandidate {
+    CueCandidate {
+        owner_file: "Cargo.toml".to_string(),
+        name: dep_name.to_string(),
+        identity: dependency_candidate_identity(dep_name),
     }
 }
 
@@ -259,6 +331,9 @@ fn safe_cue(candidate: &CandidateRecord) -> Cue {
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
             distance: None,
             tokens: Vec::new(),
             policy_id: None,
@@ -299,6 +374,9 @@ fn near_name_cue(candidate: &CandidateRecord, distance: usize) -> Cue {
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
             distance: Some(distance),
             tokens: Vec::new(),
             policy_id: None,
@@ -339,6 +417,9 @@ fn semantic_hint_cue(candidate: &CandidateRecord, tokens: &[String]) -> Cue {
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
             distance: None,
             tokens: tokens.to_vec(),
             policy_id: None,
@@ -413,6 +494,9 @@ fn service_operation_cue(
             candidate_identity: entry.identity.clone(),
             file: None,
             file_lookup_result: None,
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
             distance: None,
             tokens: Vec::new(),
             policy_id: Some(policy_id),
@@ -507,6 +591,9 @@ fn local_operation_cue(
             candidate_identity: entry.identity.clone(),
             file: None,
             file_lookup_result: None,
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
             distance: None,
             tokens: Vec::new(),
             policy_id: Some(policy_id),

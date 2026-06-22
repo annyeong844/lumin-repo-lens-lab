@@ -247,6 +247,13 @@ When dependency intents are requested, a missing or malformed root
 `Cargo.toml` is a hard-stop because Rust cannot produce a grounded declaration
 lookup without its manifest source.
 
+The JS/TS renderer promotes dependency hub warnings only when
+`existingImports.countConfidence === "grounded"` and
+`observedImportCount >= 10`. Rust pre-write has no markdown renderer, so the
+same checked rule is represented as an `AGENT_REVIEW_CUE` on the dependency
+candidate. `sample-only` and `unavailable` counts must never produce a
+dependency hub cue.
+
 ## 8. Do Not Invent These Again
 
 These names are banned unless this file is amended with a reason:

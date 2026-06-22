@@ -264,7 +264,7 @@ pub(super) fn build(
     let CueProjection {
         cue_cards,
         suppressed_cues,
-    } = cues::project(&lookups, &file_lookups);
+    } = cues::project(&lookups, &file_lookups, &dependency_lookups);
     let coverage = IntentLaneCoverage::from_intent(&loaded.intent);
     let artifact = PreWriteArtifact {
         schema_version: SCHEMA_VERSION,
