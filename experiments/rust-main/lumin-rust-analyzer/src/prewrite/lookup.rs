@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use lumin_rust_source_health::protocol::{
@@ -9,16 +8,9 @@ use serde::Serialize;
 
 use super::index::{Candidate, CandidateIndex, CandidateLane, MatchedField};
 use super::intent::{NameDeclaration, NormalizedIntent};
-use super::tokens::{
-    common_tokens, has_only_weak_common_tokens, is_weak_common_token, unique_tokens,
-};
 
-const NEAR_NAME_MAX_LENGTH_DELTA: usize = 2;
-const NEAR_NAME_SHARED_PREFIX_MIN: usize = 4;
-const NEAR_NAME_MAX_DISTANCE: usize = 2;
-const NEAR_NAME_MAX_RESULTS: usize = 5;
-const SEMANTIC_HINT_MAX_RESULTS: usize = 5;
-const SEMANTIC_HINT_MIN_SCORE: usize = 2;
+mod near;
+mod semantic;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 pub(super) enum LookupResult {
@@ -225,16 +217,16 @@ fn lookup_name(
     };
     let owner_file = declaration.and_then(NameDeclaration::effective_owner_file);
     let (near_names, suppressed_near_names, suppressed_near_name_count) = if identities.is_empty() {
-        near_name_candidates(intent_name, owner_file, &index.candidates)
+        near::near_name_candidates(intent_name, owner_file, &index.candidates)
     } else {
         (Vec::new(), Vec::new(), 0)
     };
     let (intent_tokens, semantic_hints, suppressed_semantic_hints, suppressed_semantic_hint_count) =
         if identities.is_empty() {
-            semantic_hint_candidates(intent_name, declaration, &index.candidates)
+            semantic::semantic_hint_candidates(intent_name, declaration, &index.candidates)
         } else {
             (
-                query_tokens(intent_name, declaration),
+                semantic::query_tokens(intent_name, declaration),
                 Vec::new(),
                 Vec::new(),
                 0,
@@ -286,282 +278,6 @@ fn lookup_name(
     }
 }
 
-fn near_name_candidates(
-    intent_name: &str,
-    owner_file: Option<&str>,
-    candidates: &[Candidate<'_>],
-) -> (Vec<NearNameHint>, Vec<SuppressedNearNameHint>, usize) {
-    let mut hints = Vec::new();
-    let mut suppressed = Vec::new();
-    for candidate in candidates.iter().copied() {
-        if candidate.name == intent_name && candidate.lane != CandidateLane::ImplMethod {
-            continue;
-        }
-        let matched_tokens = common_tokens(intent_name, candidate.name);
-        let has_common_token_signal = !matched_tokens.is_empty();
-        let locality = locality(candidate.file, owner_file);
-        if has_only_weak_common_tokens(intent_name, candidate.name) {
-            suppressed.push(SuppressedNearNameHint {
-                candidate: CandidateRecord::from_candidate(candidate),
-                reason: SuppressionReason::DomainTokenOverlap,
-                matched_tokens,
-                distance: None,
-                length_delta: None,
-                locality,
-                candidate_count: 0,
-            });
-            continue;
-        }
-
-        let prefix = shared_prefix(candidate.name, intent_name);
-        if prefix >= NEAR_NAME_SHARED_PREFIX_MIN
-            && candidate
-                .name
-                .chars()
-                .count()
-                .abs_diff(intent_name.chars().count())
-                <= intent_name.chars().count()
-        {
-            hints.push(NearNameHint {
-                candidate: CandidateRecord::from_candidate(candidate),
-                distance: levenshtein_capped(
-                    candidate.name,
-                    intent_name,
-                    NEAR_NAME_MAX_DISTANCE * 4,
-                ),
-                matched_tokens,
-                locality,
-            });
-            continue;
-        }
-
-        let length_delta = candidate
-            .name
-            .chars()
-            .count()
-            .abs_diff(intent_name.chars().count());
-        if length_delta > NEAR_NAME_MAX_LENGTH_DELTA {
-            if has_common_token_signal || prefix >= NEAR_NAME_SHARED_PREFIX_MIN {
-                suppressed.push(SuppressedNearNameHint {
-                    candidate: CandidateRecord::from_candidate(candidate),
-                    reason: SuppressionReason::NearLengthDeltaExceeded,
-                    matched_tokens,
-                    distance: None,
-                    length_delta: Some(length_delta),
-                    locality,
-                    candidate_count: 0,
-                });
-            }
-            continue;
-        }
-
-        let distance = levenshtein_capped(candidate.name, intent_name, NEAR_NAME_MAX_DISTANCE);
-        if distance <= NEAR_NAME_MAX_DISTANCE {
-            hints.push(NearNameHint {
-                candidate: CandidateRecord::from_candidate(candidate),
-                distance,
-                matched_tokens,
-                locality,
-            });
-        } else if has_common_token_signal || prefix >= NEAR_NAME_SHARED_PREFIX_MIN {
-            suppressed.push(SuppressedNearNameHint {
-                candidate: CandidateRecord::from_candidate(candidate),
-                reason: if prefix < NEAR_NAME_SHARED_PREFIX_MIN && !has_common_token_signal {
-                    SuppressionReason::NearPrefixMismatch
-                } else {
-                    SuppressionReason::NearDistanceExceeded
-                },
-                matched_tokens,
-                distance: Some(distance),
-                length_delta: None,
-                locality,
-                candidate_count: 0,
-            });
-        }
-    }
-
-    hints.sort_by(|left, right| {
-        left.distance
-            .cmp(&right.distance)
-            .then(
-                lane_rank(left.candidate.matched_field)
-                    .cmp(&lane_rank(right.candidate.matched_field)),
-            )
-            .then(left.candidate.name.cmp(&right.candidate.name))
-            .then(left.candidate.owner_file.cmp(&right.candidate.owner_file))
-    });
-    suppressed.sort_by(suppressed_near_order);
-    let suppressed_count = suppressed.len();
-    for hint in &mut suppressed {
-        hint.candidate_count = suppressed_count;
-    }
-    hints.truncate(NEAR_NAME_MAX_RESULTS);
-    suppressed.truncate(NEAR_NAME_MAX_RESULTS);
-    (hints, suppressed, suppressed_count)
-}
-
-fn semantic_hint_candidates(
-    intent_name: &str,
-    declaration: Option<&NameDeclaration>,
-    candidates: &[Candidate<'_>],
-) -> (
-    Vec<String>,
-    Vec<SemanticHint>,
-    Vec<SuppressedSemanticHint>,
-    usize,
-) {
-    let intent_tokens = query_tokens(intent_name, declaration);
-    if intent_tokens.is_empty() {
-        return (intent_tokens, Vec::new(), Vec::new(), 0);
-    }
-    let owner_file = declaration.and_then(NameDeclaration::effective_owner_file);
-    let mut hints = Vec::new();
-    let mut suppressed = Vec::new();
-    for candidate in candidates.iter().copied() {
-        if candidate.name == intent_name && candidate.lane != CandidateLane::ImplMethod {
-            continue;
-        }
-        let candidate_name_tokens = unique_tokens(&[candidate.name]);
-        let file_stem = candidate
-            .file
-            .rsplit('/')
-            .next()
-            .unwrap_or(candidate.file)
-            .rsplit_once('.')
-            .map(|(stem, _)| stem)
-            .unwrap_or(candidate.file);
-        let owner_dir = candidate
-            .file
-            .rsplit_once('/')
-            .map(|(directory, _)| directory)
-            .unwrap_or("");
-        let candidate_support_tokens =
-            unique_tokens(&[file_stem, owner_dir, candidate.owner_name().unwrap_or("")]);
-        let mut candidate_tokens = candidate_name_tokens.clone();
-        extend_unique(&mut candidate_tokens, &candidate_support_tokens);
-        let matched_tokens = candidate_tokens
-            .iter()
-            .filter(|token| intent_tokens.contains(token))
-            .cloned()
-            .collect::<Vec<_>>();
-        if matched_tokens.is_empty() {
-            continue;
-        }
-
-        let score = matched_tokens.len();
-        let locality = locality(candidate.file, owner_file);
-        if score < SEMANTIC_HINT_MIN_SCORE {
-            suppressed.push(SuppressedSemanticHint {
-                candidate: CandidateRecord::from_candidate(candidate),
-                reason: if matched_tokens
-                    .iter()
-                    .all(|token| is_weak_common_token(token))
-                {
-                    SuppressionReason::DomainTokenOverlap
-                } else {
-                    SuppressionReason::SingleNonWeakTokenOnly
-                },
-                matched_tokens,
-                matched_name_tokens: Vec::new(),
-                matched_support_tokens: Vec::new(),
-                score,
-                locality,
-                candidate_count: 0,
-            });
-            continue;
-        }
-
-        let matched_name_tokens = candidate_name_tokens
-            .iter()
-            .filter(|token| intent_tokens.contains(token))
-            .cloned()
-            .collect::<Vec<_>>();
-        let strong_name_matches = matched_name_tokens
-            .iter()
-            .filter(|token| !is_weak_common_token(token))
-            .cloned()
-            .collect::<Vec<_>>();
-        let strong_support_matches = candidate_support_tokens
-            .iter()
-            .filter(|token| {
-                intent_tokens.contains(token)
-                    && !is_weak_common_token(token)
-                    && !strong_name_matches.contains(token)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let has_sufficient_non_weak_support = strong_name_matches.len() >= 2
-            || (strong_name_matches.len() == 1 && !strong_support_matches.is_empty());
-        if !has_sufficient_non_weak_support {
-            suppressed.push(SuppressedSemanticHint {
-                candidate: CandidateRecord::from_candidate(candidate),
-                reason: if matched_tokens
-                    .iter()
-                    .all(|token| is_weak_common_token(token))
-                {
-                    SuppressionReason::DomainTokenOverlap
-                } else {
-                    SuppressionReason::InsufficientNonWeakSupport
-                },
-                matched_tokens,
-                matched_name_tokens,
-                matched_support_tokens: strong_support_matches,
-                score,
-                locality,
-                candidate_count: 0,
-            });
-            continue;
-        }
-
-        hints.push(SemanticHint {
-            candidate: CandidateRecord::from_candidate(candidate),
-            matched_tokens,
-            matched_name_tokens,
-            matched_support_tokens: strong_support_matches,
-            score,
-            locality,
-        });
-    }
-
-    hints.sort_by(|left, right| {
-        right
-            .locality
-            .rank()
-            .cmp(&left.locality.rank())
-            .then(right.score.cmp(&left.score))
-            .then(left.candidate.name.cmp(&right.candidate.name))
-            .then(left.candidate.owner_file.cmp(&right.candidate.owner_file))
-    });
-    suppressed.sort_by(|left, right| {
-        right
-            .locality
-            .rank()
-            .cmp(&left.locality.rank())
-            .then(right.score.cmp(&left.score))
-            .then(left.candidate.name.cmp(&right.candidate.name))
-            .then(left.candidate.owner_file.cmp(&right.candidate.owner_file))
-    });
-    let suppressed_count = suppressed.len();
-    for hint in &mut suppressed {
-        hint.candidate_count = suppressed_count;
-    }
-    hints.truncate(SEMANTIC_HINT_MAX_RESULTS);
-    suppressed.truncate(SEMANTIC_HINT_MAX_RESULTS);
-    (intent_tokens, hints, suppressed, suppressed_count)
-}
-
-fn query_tokens(intent_name: &str, declaration: Option<&NameDeclaration>) -> Vec<String> {
-    unique_tokens(&[
-        intent_name,
-        declaration
-            .and_then(|value| value.kind.as_deref())
-            .unwrap_or(""),
-        declaration
-            .and_then(|value| value.why.as_deref())
-            .unwrap_or(""),
-    ])
-}
-
 fn locality(candidate_file: &str, intent_owner_file: Option<&str>) -> Locality {
     let Some(intent_owner_file) = intent_owner_file else {
         return Locality::default();
@@ -577,76 +293,6 @@ fn dirname(path: &str) -> &str {
     path.rsplit_once('/')
         .map(|(directory, _)| directory)
         .unwrap_or("")
-}
-
-fn lane_rank(field: MatchedField) -> usize {
-    match field {
-        MatchedField::ImplMethodIndex => 0,
-        MatchedField::DefIndex => 1,
-    }
-}
-
-fn suppressed_near_order(
-    left: &SuppressedNearNameHint,
-    right: &SuppressedNearNameHint,
-) -> Ordering {
-    right
-        .locality
-        .rank()
-        .cmp(&left.locality.rank())
-        .then(
-            left.distance
-                .unwrap_or(usize::MAX)
-                .cmp(&right.distance.unwrap_or(usize::MAX)),
-        )
-        .then(
-            left.length_delta
-                .unwrap_or(usize::MAX)
-                .cmp(&right.length_delta.unwrap_or(usize::MAX)),
-        )
-        .then(left.candidate.name.cmp(&right.candidate.name))
-        .then(left.candidate.owner_file.cmp(&right.candidate.owner_file))
-}
-
-fn shared_prefix(left: &str, right: &str) -> usize {
-    left.chars()
-        .zip(right.chars())
-        .take_while(|(left, right)| left == right)
-        .count()
-}
-
-fn levenshtein_capped(left: &str, right: &str, cap: usize) -> usize {
-    let left = left.chars().collect::<Vec<_>>();
-    let right = right.chars().collect::<Vec<_>>();
-    if left.len().abs_diff(right.len()) > cap {
-        return cap + 1;
-    }
-    let mut previous = (0..=right.len()).collect::<Vec<_>>();
-    let mut current = vec![0; right.len() + 1];
-    for (left_index, left_char) in left.iter().enumerate() {
-        current[0] = left_index + 1;
-        let mut row_minimum = current[0];
-        for (right_index, right_char) in right.iter().enumerate() {
-            let cost = usize::from(left_char != right_char);
-            current[right_index + 1] = (current[right_index] + 1)
-                .min(previous[right_index + 1] + 1)
-                .min(previous[right_index] + cost);
-            row_minimum = row_minimum.min(current[right_index + 1]);
-        }
-        if row_minimum > cap {
-            return cap + 1;
-        }
-        std::mem::swap(&mut previous, &mut current);
-    }
-    previous[right.len()].min(cap + 1)
-}
-
-fn extend_unique(target: &mut Vec<String>, values: &[String]) {
-    for value in values {
-        if !target.contains(value) {
-            target.push(value.clone());
-        }
-    }
 }
 
 fn taint_summary(syntax: &HealthResponse) -> Option<TaintSummary> {
