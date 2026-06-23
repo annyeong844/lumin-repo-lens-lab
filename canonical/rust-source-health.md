@@ -141,10 +141,14 @@ Canonical JSON fields:
   intents remain unsupported until a checker-grade or explicitly documented
   producer exists.
 - `ast.functionSignatures[]`: exact Rust callable signature facts for parsed
-  top-level functions and `impl` methods. The normalized form is Rust-owned and
-  includes callable kind, receiver kind/text, compacted generic params,
-  parameter type text, and return type text. It does not include the function
-  name or body, and it does not claim semantic equivalence.
+  top-level functions and `impl` methods whose call surface is fully represented
+  by the current normalized form. The normalized form is Rust-owned and includes
+  callable kind, receiver kind/text, compacted generic params, parameter type
+  text, and return type text. It does not include the function name or body, and
+  it does not claim semantic equivalence. Functions with `async`, `unsafe`, or a
+  `where` clause are not emitted until those qualifiers and bounds are
+  represented in the normalized payload; Rust must refuse the exact cue rather
+  than hash an incomplete call surface.
 - `ast.impls[]`: Rust `impl` block observations with `target`, optional
   `trait`, method owner evidence, and `location`. This is the Rust analogue of
   the JS/TS `classMethodIndex`: impl methods are visible as owner evidence

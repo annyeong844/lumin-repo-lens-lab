@@ -13,6 +13,21 @@ fn prewrite_function_signature_hash_uses_ts_js_safe_and_review_tiers() -> Result
     input.len() + limit
 }
 
+pub async fn parse_user_async(input: &str, limit: usize) -> usize {
+    input.len() + limit
+}
+
+pub unsafe fn parse_user_unsafe(input: &str, limit: usize) -> usize {
+    input.len() + limit
+}
+
+pub fn parse_user_bounded<T>(input: T, limit: usize) -> usize
+where
+    T: AsRef<str>,
+{
+    input.as_ref().len() + limit
+}
+
 fn normalize_user(input: &str, limit: usize) -> usize {
     input.len() + limit
 }
@@ -86,6 +101,22 @@ impl Parser {
         .context("public signature matches")?
         .iter()
         .any(|entry| entry["identity"] == "src/lib.rs::parse_user"));
+    for unsupported_identity in [
+        "src/lib.rs::parse_user_async",
+        "src/lib.rs::parse_user_unsafe",
+        "src/lib.rs::parse_user_bounded",
+    ] {
+        assert!(public_lookup["matches"]
+            .as_array()
+            .context("public signature matches")?
+            .iter()
+            .all(|entry| entry["identity"] != unsupported_identity));
+        assert!(artifact["cueCards"]
+            .as_array()
+            .context("cue cards")?
+            .iter()
+            .all(|card| card["candidate"]["identity"] != unsupported_identity));
+    }
 
     let public_card = card(&artifact, "src/lib.rs::parse_user")?;
     let public_cue = cue(public_card, "function-signature")?;
