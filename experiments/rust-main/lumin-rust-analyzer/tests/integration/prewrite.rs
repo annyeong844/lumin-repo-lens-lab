@@ -12,7 +12,7 @@ mod dependency_graph;
 mod dependency_workspace;
 #[path = "prewrite/dependency_workspace_globs/mod.rs"]
 mod dependency_workspace_globs;
-#[path = "prewrite/dependency_workspace_scope.rs"]
+#[path = "prewrite/dependency_workspace_scope/mod.rs"]
 mod dependency_workspace_scope;
 #[path = "prewrite/errors.rs"]
 mod errors;
