@@ -316,6 +316,19 @@ unsupported evidence: `_lib/pre-write-intent.mjs`,
 `_lib/pre-write-lookup-dep.mjs`, and
 `_lib/pre-write-lookup-inline-patterns.mjs`.
 
+Rust pre-write semantic hint helpers have canonical owners:
+
+- `lumin-rust-analyzer/src/prewrite/lookup/semantic.rs` owns the semantic hint
+  lane orchestration and the JS/TS-derived semantic hint policy constants
+  exposed under `meta.lookupPolicy.semanticHint`.
+- `lumin-rust-analyzer/src/prewrite/lookup/semantic/tokens.rs` owns semantic
+  hint query token construction, candidate support-token extraction, and token
+  match evidence for this lane. It may use the shared
+  `prewrite/tokens.rs` tokenizer, but no other module should define a second
+  semantic-token matcher for pre-write cues.
+- `lumin-rust-analyzer/src/prewrite/lookup/semantic/order.rs` owns
+  deterministic ordering for promoted and suppressed semantic hints.
+
 Cargo/rustc semantic checks are a Rust-only necessity: JS/TS lanes do not
 produce Cargo `target/` build products, but Rust oracle runs do. Rust must not
 write into the analyzed repository's `target/` directory by default. The
@@ -504,10 +517,12 @@ stdin compatibility mode emits no skipped-file evidence.
 
 ## 13. Review Gate For New Helpers
 
-Before adding any Rust source health helper:
+Before adding any Rust source health or Rust pre-write helper:
 
 1. Search this file for the intended concept.
-2. Search `experiments/rust-sidecar/` for the intended behavior.
+2. Search `experiments/rust-sidecar/` and
+   `experiments/rust-main/lumin-rust-analyzer/src/prewrite/` for the intended
+   behavior.
 3. If an owner exists, import it.
 4. If no owner exists, amend this file with the new canonical name and owner.
 5. Only then implement.
