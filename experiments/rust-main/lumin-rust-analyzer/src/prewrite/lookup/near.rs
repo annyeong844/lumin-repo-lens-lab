@@ -1,9 +1,13 @@
-use std::cmp::Ordering;
-
 use super::taint::locality;
 use super::{CandidateRecord, NearNameHint, SuppressedNearNameHint, SuppressionReason};
-use crate::prewrite::index::{Candidate, CandidateLane, MatchedField};
+use crate::prewrite::index::{Candidate, CandidateLane};
 use crate::prewrite::tokens::{common_tokens, has_only_weak_common_tokens};
+
+mod order;
+mod scoring;
+
+use order::{lane_rank, suppressed_near_order};
+use scoring::{levenshtein_capped, shared_prefix};
 
 pub(in crate::prewrite) const NEAR_NAME_MAX_LENGTH_DELTA: usize = 2;
 pub(in crate::prewrite) const NEAR_NAME_SHARED_PREFIX_MIN: usize = 4;
@@ -122,68 +126,4 @@ pub(super) fn near_name_candidates(
     hints.truncate(NEAR_NAME_MAX_RESULTS);
     suppressed.truncate(NEAR_NAME_MAX_RESULTS);
     (hints, suppressed, suppressed_count)
-}
-
-fn lane_rank(field: MatchedField) -> usize {
-    match field {
-        MatchedField::ImplMethod => 0,
-        MatchedField::Def => 1,
-        MatchedField::UseTree => 2,
-        MatchedField::PreWriteLocalOperation => 3,
-    }
-}
-
-fn suppressed_near_order(
-    left: &SuppressedNearNameHint,
-    right: &SuppressedNearNameHint,
-) -> Ordering {
-    right
-        .locality
-        .rank()
-        .cmp(&left.locality.rank())
-        .then(
-            left.distance
-                .unwrap_or(usize::MAX)
-                .cmp(&right.distance.unwrap_or(usize::MAX)),
-        )
-        .then(
-            left.length_delta
-                .unwrap_or(usize::MAX)
-                .cmp(&right.length_delta.unwrap_or(usize::MAX)),
-        )
-        .then(left.candidate.name.cmp(&right.candidate.name))
-        .then(left.candidate.owner_file.cmp(&right.candidate.owner_file))
-}
-
-fn shared_prefix(left: &str, right: &str) -> usize {
-    left.chars()
-        .zip(right.chars())
-        .take_while(|(left, right)| left == right)
-        .count()
-}
-
-fn levenshtein_capped(left: &str, right: &str, cap: usize) -> usize {
-    let left = left.chars().collect::<Vec<_>>();
-    let right = right.chars().collect::<Vec<_>>();
-    if left.len().abs_diff(right.len()) > cap {
-        return cap + 1;
-    }
-    let mut previous = (0..=right.len()).collect::<Vec<_>>();
-    let mut current = vec![0; right.len() + 1];
-    for (left_index, left_char) in left.iter().enumerate() {
-        current[0] = left_index + 1;
-        let mut row_minimum = current[0];
-        for (right_index, right_char) in right.iter().enumerate() {
-            let cost = usize::from(left_char != right_char);
-            current[right_index + 1] = (current[right_index] + 1)
-                .min(previous[right_index + 1] + 1)
-                .min(previous[right_index] + cost);
-            row_minimum = row_minimum.min(current[right_index + 1]);
-        }
-        if row_minimum > cap {
-            return cap + 1;
-        }
-        std::mem::swap(&mut previous, &mut current);
-    }
-    previous[right.len()].min(cap + 1)
 }
