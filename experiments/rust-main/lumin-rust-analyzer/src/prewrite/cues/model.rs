@@ -58,6 +58,8 @@ pub(in crate::prewrite::cues) enum NotSafeFor {
 #[serde(rename_all = "kebab-case")]
 pub(in crate::prewrite::cues) enum CueClaim {
     ExactRustDefinitionExists,
+    #[serde(rename = "exact Rust use-tree name exists")]
+    ExactRustUseTreeNameExists,
     #[serde(rename = "exact file exists")]
     ExactFileExists,
     NearRustDefinitionName,
@@ -80,6 +82,8 @@ pub(in crate::prewrite::cues) enum CueClaim {
 pub(in crate::prewrite) enum CueMatchedField {
     #[serde(rename = "defIndex")]
     DefIndex,
+    #[serde(rename = "files[].ast.useTrees[]")]
+    RustSourceHealthUseTrees,
     #[serde(rename = "implMethodIndex")]
     ImplMethodIndex,
     #[serde(rename = "files")]
@@ -102,6 +106,7 @@ impl From<MatchedField> for CueMatchedField {
     fn from(field: MatchedField) -> Self {
         match field {
             MatchedField::Def => Self::DefIndex,
+            MatchedField::UseTree => Self::RustSourceHealthUseTrees,
             MatchedField::ImplMethod => Self::ImplMethodIndex,
             MatchedField::PreWriteLocalOperation => Self::PreWriteLocalOperationIndex,
         }

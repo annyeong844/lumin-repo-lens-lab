@@ -58,7 +58,11 @@ impl PreWriteArtifact {
                             if cue
                                 .evidence
                                 .iter()
-                                .all(|evidence| evidence.matched_field == CueMatchedField::DefIndex) => {}
+                                .all(|evidence| matches!(
+                                    evidence.matched_field,
+                                    CueMatchedField::DefIndex
+                                        | CueMatchedField::RustSourceHealthUseTrees
+                                )) => {}
                         EvidenceLane::ExactFile
                             if cue.evidence.iter().all(|evidence| {
                                 evidence.matched_field == CueMatchedField::RustSourceHealthFiles

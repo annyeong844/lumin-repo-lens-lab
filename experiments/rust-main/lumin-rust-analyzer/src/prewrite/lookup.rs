@@ -72,7 +72,10 @@ fn lookup_name(
         .iter()
         .copied()
         .filter(|candidate| {
-            candidate.lane == CandidateLane::Definition && candidate.name == intent_name
+            matches!(
+                candidate.lane,
+                CandidateLane::Definition | CandidateLane::UseTree
+            ) && candidate.name == intent_name
         })
         .map(CandidateRecord::from_candidate)
         .collect::<Vec<_>>();
@@ -108,11 +111,20 @@ fn lookup_name(
 
     let mut citations = identities
         .iter()
-        .map(|identity| {
-            format!(
+        .map(|identity| match identity.matched_field {
+            super::index::MatchedField::Def => format!(
                 "[grounded, rust-source-health.files['{}'].ast.definitions contains '{}' at line {}]",
                 identity.owner_file, identity.name, identity.line
-            )
+            ),
+            super::index::MatchedField::UseTree => format!(
+                "[grounded, rust-source-health.files['{}'].ast.useTrees contains '{}' at line {}]",
+                identity.owner_file, identity.name, identity.line
+            ),
+            super::index::MatchedField::ImplMethod
+            | super::index::MatchedField::PreWriteLocalOperation => format!(
+                "[grounded, rust-source-health.files['{}'] contains '{}' at line {}]",
+                identity.owner_file, identity.name, identity.line
+            ),
         })
         .collect::<Vec<_>>();
     if !near_names.is_empty() {

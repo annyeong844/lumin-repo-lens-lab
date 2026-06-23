@@ -13,6 +13,7 @@ use super::operation::{
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub(super) enum CandidateLane {
     Definition,
+    UseTree,
     ImplMethod,
 }
 
@@ -20,6 +21,7 @@ impl CandidateLane {
     pub(super) fn matched_field(self) -> MatchedField {
         match self {
             Self::Definition => MatchedField::Def,
+            Self::UseTree => MatchedField::UseTree,
             Self::ImplMethod => MatchedField::ImplMethod,
         }
     }
@@ -29,6 +31,8 @@ impl CandidateLane {
 pub(super) enum MatchedField {
     #[serde(rename = "defIndex")]
     Def,
+    #[serde(rename = "useTreeIndex")]
+    UseTree,
     #[serde(rename = "implMethodIndex")]
     ImplMethod,
     #[serde(rename = "preWriteLocalOperationIndex")]
@@ -172,6 +176,23 @@ impl<'a> CandidateIndex<'a> {
                     }),
             );
 
+            candidates.extend(health.ast.use_trees.iter().filter_map(|use_tree| {
+                if use_tree.glob || !is_reexport_visibility(use_tree.visibility) {
+                    return None;
+                }
+                let name = use_tree.alias.as_deref().or(use_tree.name.as_deref())?;
+                Some(Candidate {
+                    lane: CandidateLane::UseTree,
+                    file,
+                    name,
+                    owner: None,
+                    definition_kind: None,
+                    visibility: use_tree.visibility,
+                    location: &use_tree.location,
+                    path: &health.path,
+                })
+            }));
+
             for impl_block in &health.ast.impls {
                 let owner = ImplOwner {
                     target: &impl_block.target,
@@ -210,6 +231,13 @@ impl<'a> CandidateIndex<'a> {
             local_operations,
         }
     }
+}
+
+fn is_reexport_visibility(visibility: AstVisibility) -> bool {
+    matches!(
+        visibility,
+        AstVisibility::Public | AstVisibility::Crate | AstVisibility::Restricted
+    )
 }
 
 fn function_definitions(health: &FileHealth) -> Vec<&AstDefinition> {

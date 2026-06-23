@@ -123,6 +123,10 @@ pub struct AstUseTree {
     pub tree: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
     pub glob: bool,
     pub visibility: AstVisibility,
     pub location: Location,

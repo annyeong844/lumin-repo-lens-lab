@@ -145,7 +145,11 @@ Canonical JSON fields:
   the JS/TS `classMethodIndex`: impl methods are visible as owner evidence
   without pretending AST-only analysis has type or trait-solving certainty.
 - `ast.useTrees[]`: `use` tree observations with raw tree text, optional path,
-  glob status, visibility, and `location`.
+  optional terminal `name`, optional `alias`, glob status, visibility, and
+  `location`. Simple public re-export aliases such as
+  `pub use crate::model::Thing as Alias` expose `name = "Thing"` and
+  `alias = "Alias"` so Rust pre-write can mirror the TS/JS exported alias
+  exact-name cue without parsing raw syntax text.
 - `ast.pathRefs[]`: qualified expression-position path references with raw path
   text, terminal name, and `location`. Local variable refs and constructor-like
   single-segment paths are not emitted as raw path facts.
@@ -196,6 +200,10 @@ The normal unified artifact must not embed a repository-wide definition or
 impl-method index. The pre-write consumer builds a borrowed view and serializes
 only matched advisory evidence. Impl methods remain separate owner evidence
 and must not be promoted into definition-lane SAFE cues.
+Public, crate, and restricted non-glob `useTrees` with a terminal name or alias
+may enter exact-name lookup as claim-only SAFE cues. This is the Rust analogue
+of TS/JS exported alias handling: it proves the Rust name is already surfaced by
+source syntax, not semantic equivalence, auto-reuse, or auto-fix safety.
 
 Rust file intent lookup is the Rust analogue of the JS/TS pre-write file lane:
 

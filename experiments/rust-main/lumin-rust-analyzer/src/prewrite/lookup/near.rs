@@ -128,7 +128,8 @@ fn lane_rank(field: MatchedField) -> usize {
     match field {
         MatchedField::ImplMethod => 0,
         MatchedField::Def => 1,
-        MatchedField::PreWriteLocalOperation => 2,
+        MatchedField::UseTree => 2,
+        MatchedField::PreWriteLocalOperation => 3,
     }
 }
 

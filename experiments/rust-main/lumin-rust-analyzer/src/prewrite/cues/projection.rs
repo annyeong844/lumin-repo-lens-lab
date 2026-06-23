@@ -386,7 +386,10 @@ fn safe_cue(candidate: &CandidateRecord) -> Cue {
             NotSafeFor::AutoFix,
         ],
         evidence_lane: EvidenceLane::ExactSymbol,
-        claim: CueClaim::ExactRustDefinitionExists,
+        claim: match candidate.matched_field {
+            MatchedField::UseTree => CueClaim::ExactRustUseTreeNameExists,
+            _ => CueClaim::ExactRustDefinitionExists,
+        },
         confidence: CueConfidence::Grounded,
         evidence: vec![CueEvidence {
             artifact: "rust-source-health",

@@ -46,15 +46,31 @@ pub(super) fn collect_use_tree_facts(
     visibility: AstVisibility,
     line_index: &LineIndex,
 ) {
+    let path = use_tree.path();
+    let use_tree_list = use_tree.use_tree_list();
+    let glob = use_tree.star_token().is_some();
+    let terminal_name = (!glob && use_tree_list.is_none())
+        .then(|| path.as_ref().map(path_terminal_name))
+        .flatten();
+    let alias = (!glob && use_tree_list.is_none())
+        .then(|| {
+            use_tree
+                .rename()
+                .and_then(|rename| rename.name())
+                .map(|name| name.text().to_string())
+        })
+        .flatten();
     use_trees.push(AstUseTree {
         tree: syntax_text(use_tree.syntax()),
-        path: use_tree.path().map(|path| syntax_text(path.syntax())),
-        glob: use_tree.star_token().is_some(),
+        path: path.as_ref().map(|path| syntax_text(path.syntax())),
+        name: terminal_name,
+        alias,
+        glob,
         visibility,
         location: ast_location(line_index, use_tree.syntax().text_range()),
     });
 
-    if let Some(list) = use_tree.use_tree_list() {
+    if let Some(list) = use_tree_list {
         for child in list.use_trees() {
             collect_use_tree_facts(use_trees, &child, visibility, line_index);
         }
