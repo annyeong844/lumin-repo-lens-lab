@@ -3,9 +3,8 @@ use std::path::Path;
 
 use crate::classify::{parse_cargo_jsonl, skipped_cargo_jsonl, ParsedJsonl};
 use crate::command::{
-    cargo_check_args, cargo_check_args_for_packages, combined_command_output, run_cargo_check,
-    run_cargo_check_for_packages, skipped_command_output, skipped_command_output_with_reason,
-    CommandOutput, CommandSkipReason,
+    cargo_check_args, cargo_check_args_for_packages, run_cargo_check, run_cargo_check_for_packages,
+    skipped_command_output, skipped_command_output_with_reason, CommandOutput, CommandSkipReason,
 };
 use crate::metadata::{selected_packages, CargoMetadata, CargoPackage};
 use crate::options::OracleOptions;
@@ -96,21 +95,18 @@ fn run_targeted_cargo_checks(
     target_selection: &TargetPackageSelection,
     cargo_target_dir: &Path,
 ) -> Result<CargoCheckRun> {
-    let mut outputs = Vec::with_capacity(target_selection.package_names.len());
-    let mut selected_packages = Vec::with_capacity(target_selection.package_names.len());
-    for package in &target_selection.packages {
-        let package_names = std::slice::from_ref(&package.name);
-        let output = run_cargo_check_for_packages(root, options, package_names, cargo_target_dir)?;
-        outputs.push(output);
-        selected_packages.push(package.clone());
-    }
-    let package_names = selected_packages
-        .iter()
-        .map(|package| package.name.clone())
-        .collect::<Vec<_>>();
+    let selected_packages = target_selection.packages.clone();
     Ok(CargoCheckRun {
-        cargo_args: cargo_check_args_for_packages(options.features.as_deref(), &package_names),
+        cargo_args: cargo_check_args_for_packages(
+            options.features.as_deref(),
+            &target_selection.package_names,
+        ),
         selected_packages,
-        output: combined_command_output(outputs),
+        output: run_cargo_check_for_packages(
+            root,
+            options,
+            &target_selection.package_names,
+            cargo_target_dir,
+        )?,
     })
 }

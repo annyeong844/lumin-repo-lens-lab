@@ -425,11 +425,16 @@ write into the analyzed repository's `target/` directory by default. The
 These fields are transparency evidence only. They are not timeouts, analysis
 caps, or permission to skip large repositories.
 
-Targeted Cargo checks may run multiple package-scoped `cargo check` commands
-inside the same workspace. Cargo can then emit the same underlying user-code
-diagnostic more than once, for example when several selected packages depend on
-the same broken workspace member. This is a Rust-only package-scope artifact,
-not a second finding. `rust-cargo-oracle` must deduplicate identical diagnostics
+Targeted Cargo checks select every package with review-visible Rust syntax
+evidence, then execute one multi-package `cargo check` invocation for the
+selected package set. This keeps Cargo command provenance honest, lets Cargo own
+the workspace scheduling, and avoids rerunning the same workspace graph once per
+selected package. This is not an analysis cap: `targetPathCount`,
+`candidatePackageCount`, and `selectedPackageCount` still describe the full
+selected scope. Cargo may still emit the same underlying user-code diagnostic
+more than once, for example when several selected packages depend on the same
+broken workspace member. This is a Rust-only package-scope artifact, not a
+second finding. `rust-cargo-oracle` must deduplicate identical diagnostics
 before projecting `diagnostics[]`, `findings[]`, safe actions, and product
 summary counts. The identity includes the diagnostic level/code/message,
 rendered first line, primary spans including ownership class, and suggestion

@@ -158,7 +158,7 @@ fn targeted_cargo_check_orders_independent_small_package_before_local_dependency
 }
 
 #[test]
-fn targeted_later_nonzero_exit_does_not_mark_combined_stream_clean() -> Result<()> {
+fn targeted_multi_package_nonzero_exit_does_not_mark_stream_clean() -> Result<()> {
     let env = RealCargoEnv::targeted_success_then_build_script_failure_workspace()?;
     let artifact = env.run_targeted(vec![
         "a-clean/src/lib.rs".to_string(),
@@ -170,6 +170,17 @@ fn targeted_later_nonzero_exit_does_not_mark_combined_stream_clean() -> Result<(
     assert_eq!(
         artifact["oraclePlan"]["selectedPackages"][0]["packageName"],
         "a-clean"
+    );
+    assert_eq!(
+        artifact["meta"]["input"]["cargoArgs"],
+        serde_json::json!([
+            "check",
+            "--message-format=json",
+            "--package",
+            "a-clean",
+            "--package",
+            "b-build-fails"
+        ])
     );
 
     let absence = coverage(&artifact, "cov.cargo-check.absence-clean")?;
