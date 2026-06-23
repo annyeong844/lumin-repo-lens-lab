@@ -1,7 +1,28 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-use super::Location;
+mod definitions;
+mod functions;
+mod impls;
+mod opaque;
+mod refs;
+mod shapes;
+
+pub use definitions::{AstDefinition, AstDefinitionKind, AstVisibility};
+pub use functions::{
+    AstCallableKind, AstFunctionOwner, AstFunctionParam, AstFunctionReceiver,
+    AstFunctionReceiverKind, AstFunctionSignature, AstFunctionSignatureKind,
+};
+pub use impls::{AstImplBlock, AstImplMethod};
+pub use opaque::{
+    AstCfgGate, AstMacroCall, AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface,
+    AstOpaqueSurfaceKind, AstOpaqueSurfaceVisibility, AstOpaqueVisibility,
+};
+pub use refs::{AstMethodCall, AstPathRef, AstUseTree};
+pub use shapes::{
+    AstShapeConfidence, AstShapeField, AstShapeFieldKind, AstShapeHash, AstShapeHashKind,
+    AstShapeKind,
+};
 
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,288 +38,4 @@ pub struct AstFacts {
     pub macro_calls: Vec<AstMacroCall>,
     pub cfg_gates: Vec<AstCfgGate>,
     pub opaque_surfaces: Vec<AstOpaqueSurface>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstDefinition {
-    pub kind: AstDefinitionKind,
-    pub name: String,
-    pub visibility: AstVisibility,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstDefinitionKind {
-    Function,
-    Struct,
-    Enum,
-    Trait,
-    Module,
-    Const,
-    Static,
-    TypeAlias,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstVisibility {
-    Public,
-    Crate,
-    Restricted,
-    Private,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstShapeHash {
-    pub kind: AstShapeHashKind,
-    pub hash: String,
-    pub name: String,
-    pub visibility: AstVisibility,
-    pub shape_kind: AstShapeKind,
-    pub normalized_version: &'static str,
-    pub confidence: AstShapeConfidence,
-    pub fields: Vec<AstShapeField>,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstShapeHashKind {
-    ShapeHash,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstShapeKind {
-    RecordStruct,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstShapeConfidence {
-    High,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstShapeField {
-    pub kind: AstShapeFieldKind,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub type_text: String,
-    pub visibility: AstVisibility,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstShapeFieldKind {
-    Property,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstFunctionSignature {
-    pub kind: AstFunctionSignatureKind,
-    pub hash: String,
-    pub name: String,
-    pub visibility: AstVisibility,
-    pub callable_kind: AstCallableKind,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub owner: Option<AstFunctionOwner>,
-    pub normalized_version: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub generics: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver: Option<AstFunctionReceiver>,
-    pub params: Vec<AstFunctionParam>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub return_type: Option<String>,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstFunctionSignatureKind {
-    FunctionSignature,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstCallableKind {
-    Function,
-    ImplMethod,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstFunctionOwner {
-    pub target: String,
-    #[serde(rename = "trait", skip_serializing_if = "Option::is_none")]
-    pub trait_path: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstFunctionReceiver {
-    pub kind: AstFunctionReceiverKind,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstFunctionReceiverKind {
-    Owned,
-    Ref,
-    MutRef,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstFunctionParam {
-    #[serde(rename = "type")]
-    pub type_text: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstImplBlock {
-    pub target: String,
-    #[serde(rename = "trait", skip_serializing_if = "Option::is_none")]
-    pub trait_path: Option<String>,
-    pub methods: Vec<AstImplMethod>,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstImplMethod {
-    pub name: String,
-    pub visibility: AstVisibility,
-    pub has_receiver: bool,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstUseTree {
-    pub tree: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub alias: Option<String>,
-    pub glob: bool,
-    pub visibility: AstVisibility,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstPathRef {
-    pub path: String,
-    pub name: String,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstMethodCall {
-    pub method: String,
-    pub receiver: String,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstMacroCall {
-    pub path: String,
-    pub name: String,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstCfgGate {
-    pub expr: String,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AstOpaqueSurface {
-    pub kind: AstOpaqueSurfaceKind,
-    pub reason: AstOpaqueReason,
-    #[serde(flatten)]
-    pub visibility: AstOpaqueSurfaceVisibility,
-    pub detail: String,
-    pub location: Location,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstOpaqueSurfaceKind {
-    MacroExpansion,
-    CfgGate,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstOpaqueReason {
-    MacroExpansionNotEvaluated,
-    CfgConditionNotEvaluated,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstOpaqueVisibility {
-    Review,
-    Muted,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(tag = "visibility", rename_all = "kebab-case")]
-pub enum AstOpaqueSurfaceVisibility {
-    Review,
-    Muted {
-        #[serde(rename = "muteReason")]
-        mute_reason: AstOpaqueMuteReason,
-    },
-}
-
-impl AstOpaqueSurfaceVisibility {
-    pub fn visibility(self) -> AstOpaqueVisibility {
-        match self {
-            Self::Review => AstOpaqueVisibility::Review,
-            Self::Muted { .. } => AstOpaqueVisibility::Muted,
-        }
-    }
-
-    pub fn mute_reason(self) -> Option<AstOpaqueMuteReason> {
-        match self {
-            Self::Review => None,
-            Self::Muted { mute_reason } => Some(mute_reason),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AstOpaqueMuteReason {
-    TestPath,
-    GeneratedPath,
-    TestAttribute,
-    CfgTest,
-    AssertionMacro,
-    CollectionMacro,
-    DataLiteralMacro,
-    FormattingMacro,
-    IoFormattingMacro,
-    LoggingMacro,
-    BuiltinDeriveMacro,
-    KnownDataDeriveMacro,
 }
