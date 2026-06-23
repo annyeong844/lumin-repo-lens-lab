@@ -175,6 +175,23 @@ async fn exercises_async_path() {
 }
 
 #[test]
+fn mutes_plural_test_module_file_opaque_surfaces() {
+    let source = r#"
+#[cfg(debug_assertions)]
+fn debug_only() {}
+
+fn helper() {
+    custom_macro!();
+}
+"#;
+    let artifact = analyze_file("src/client_tests.rs", source);
+
+    assert_opaque_visibility_count(&artifact, "src/client_tests.rs", "review", 0);
+    assert_opaque_visibility_count(&artifact, "src/client_tests.rs", "muted", 2);
+    assert_muted_opaque_reason_count(&artifact, "test-path", 2);
+}
+
+#[test]
 fn summarizes_muted_common_macro_opaque_surfaces() {
     macro_summary_contract::assert_muted_common_macro_opaque_surfaces_are_summarized();
 }

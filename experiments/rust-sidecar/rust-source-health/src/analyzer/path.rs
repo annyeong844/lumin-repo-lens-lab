@@ -17,6 +17,7 @@ fn is_test_like_path(path: &str) -> bool {
     if base == "tests.rs"
         || base == "test.rs"
         || base.ends_with("_test.rs")
+        || base.ends_with("_tests.rs")
         || base.ends_with(".test.rs")
         || base.ends_with(".spec.rs")
     {

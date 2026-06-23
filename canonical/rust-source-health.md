@@ -578,9 +578,9 @@ stdin compatibility mode emits no skipped-file evidence.
   `fixtures/`, `fixture/`, `mocks/`, `mock/`, `test-support/`,
   `test-utils/`, `runtime-tests/`, `playground(s)/`, `examples/`,
   `benches/`, any `__*__/` convention directory, and `*-fixture(s)`.
-  Rust module files `tests.rs`, `test.rs`, `*.test.rs`, `*.spec.rs`, and
-  `*_test.rs` are also test-like. Substrings are not enough: `contest.rs`
-  remains source.
+  Rust module files `tests.rs`, `test.rs`, `*.test.rs`, `*.spec.rs`,
+  `*_test.rs`, and `*_tests.rs` are also test-like. Substrings are not enough:
+  `contest.rs` remains source.
 - Rust source health also mutes signals in explicit Rust test-only AST context
   without dropping raw evidence. Signals inside a direct `#[cfg(test)]` module,
   impl, or function carry `muteReason: "cfg-test"`. Signals inside a direct

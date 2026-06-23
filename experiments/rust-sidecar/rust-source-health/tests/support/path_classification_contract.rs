@@ -34,6 +34,7 @@ pub fn assert_test_like_paths_are_classified_as_test() {
     let artifact = stdout_json(run_sidecar(request(vec![
         file("tests/integration.rs", "fn integration() {}"),
         file("src/migrate/tests.rs", "fn module_tests() {}"),
+        file("src/migrate/client_tests.rs", "fn client_tests() {}"),
         file("fixtures/sample.rs", "fn fixture() {}"),
         file("src/__mocks__/client.rs", "fn mock_client() {}"),
         file("examples/demo.rs", "fn example() {}"),
@@ -43,6 +44,7 @@ pub fn assert_test_like_paths_are_classified_as_test() {
     for path in [
         "tests/integration.rs",
         "src/migrate/tests.rs",
+        "src/migrate/client_tests.rs",
         "fixtures/sample.rs",
         "src/__mocks__/client.rs",
         "examples/demo.rs",
