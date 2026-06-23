@@ -1,5 +1,16 @@
 use std::collections::BTreeSet;
 
+pub(super) fn dependency_root(specifier: &str) -> String {
+    specifier
+        .split("::")
+        .next()
+        .unwrap_or(specifier)
+        .split('/')
+        .next()
+        .unwrap_or(specifier)
+        .to_string()
+}
+
 pub(super) fn manifest_key_candidates(root: &str) -> Vec<String> {
     dedupe_candidates([
         root.to_string(),
