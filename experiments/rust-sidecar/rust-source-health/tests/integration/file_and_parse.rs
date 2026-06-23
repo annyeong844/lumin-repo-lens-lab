@@ -69,6 +69,27 @@ impl Maybe {
 }
 
 #[test]
+fn records_type_position_path_refs_without_generic_arguments() -> Result<()> {
+    let source = r#"
+pub fn decode() -> serde1::Result<()> {
+    Ok(())
+}
+"#;
+    let value = analyze_file("src/lib.rs", source);
+    let path_refs = value["files"]["src/lib.rs"]["ast"]["pathRefs"]
+        .as_array()
+        .context("path refs")?;
+
+    assert!(path_refs
+        .iter()
+        .any(|path_ref| path_ref["path"] == "serde1::Result"));
+    assert!(path_refs
+        .iter()
+        .all(|path_ref| path_ref["path"] != "serde1::Result<()>"));
+    Ok(())
+}
+
+#[test]
 fn shape_hashes_are_exact_for_record_structs_without_claiming_unsupported_shapes() -> Result<()> {
     let source = r#"
 pub struct First {
@@ -106,6 +127,90 @@ pub type Alias = First;
         !matches!(
             shape["name"].as_str(),
             Some("Tuple" | "Unit" | "Generic" | "Alias")
+        )
+    }));
+    Ok(())
+}
+
+#[test]
+fn shape_hashes_normalize_type_punctuation_and_refuse_cfg_or_restricted_fields() -> Result<()> {
+    let source = r#"
+pub struct Compact {
+    pub borrowed: &'static str,
+    pub items: Vec<u8>,
+}
+
+pub struct Spaced {
+    pub items: Vec < u8 >,
+    pub borrowed: & 'static str,
+}
+
+pub struct Gated {
+    id: u8,
+    #[cfg(feature = "extra")]
+    extra: u8,
+}
+
+pub struct Restricted {
+    pub(super) id: u8,
+}
+"#;
+    let value = analyze_file("src/lib.rs", source);
+    let shapes = value["files"]["src/lib.rs"]["ast"]["shapeHashes"]
+        .as_array()
+        .context("shape hashes")?;
+    let compact = shapes
+        .iter()
+        .find(|shape| shape["name"] == "Compact")
+        .context("Compact shape")?;
+    let spaced = shapes
+        .iter()
+        .find(|shape| shape["name"] == "Spaced")
+        .context("Spaced shape")?;
+
+    assert_eq!(compact["hash"], spaced["hash"]);
+    assert_eq!(compact["fields"][0]["type"], "&'static str");
+    assert_eq!(spaced["fields"][0]["type"], "&'static str");
+    assert!(shapes
+        .iter()
+        .all(|shape| !matches!(shape["name"].as_str(), Some("Gated" | "Restricted"))));
+    Ok(())
+}
+
+#[test]
+fn function_signature_hashes_refuse_unrepresented_call_qualifiers_and_where_bounds() -> Result<()> {
+    let source = r#"
+pub fn plain(input: u8) -> u8 {
+    input
+}
+
+pub async fn async_plain(input: u8) -> u8 {
+    input
+}
+
+pub unsafe fn unsafe_plain(input: u8) -> u8 {
+    input
+}
+
+pub fn bounded<T>(input: T) -> T
+where
+    T: Clone,
+{
+    input
+}
+"#;
+    let value = analyze_file("src/lib.rs", source);
+    let signatures = value["files"]["src/lib.rs"]["ast"]["functionSignatures"]
+        .as_array()
+        .context("function signatures")?;
+
+    assert!(signatures
+        .iter()
+        .any(|signature| signature["name"] == "plain"));
+    assert!(signatures.iter().all(|signature| {
+        !matches!(
+            signature["name"].as_str(),
+            Some("async_plain" | "unsafe_plain" | "bounded")
         )
     }));
     Ok(())

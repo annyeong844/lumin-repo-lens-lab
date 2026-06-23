@@ -63,7 +63,7 @@ pub fn assert_core_ast_fact_projection(artifact: &Value, path: &str) {
     assert_eq!(ast["impls"][0]["methods"][1]["hasReceiver"], false);
     assert_eq!(ast["useTrees"][0]["visibility"], "public");
     assert!(ast["useTrees"][0].get("name").is_none());
-    assert_eq!(ast["useTrees"][1]["path"], "model::Thing");
+    assert_eq!(ast["useTrees"][1]["path"], "crate::model::Thing");
     assert_eq!(ast["useTrees"][1]["name"], "Thing");
     assert_eq!(ast["useTrees"][1]["alias"], "Alias");
     assert_eq!(ast["useTrees"][2]["glob"], true);

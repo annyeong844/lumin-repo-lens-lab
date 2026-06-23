@@ -102,6 +102,51 @@ pub use model::Thing as PublicThing;
 }
 
 #[test]
+fn prewrite_use_tree_names_are_exact_only_and_ignore_anonymous_renames() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes(
+        "src/lib.rs",
+        br#"pub use external::Thing as PublicThing;
+pub use hidden::Hidden as _;
+pub use external::{self};
+"#,
+    )?;
+    let artifact = repo.run_json(
+        r#"{
+  "names": ["PublicThingV2", "Hidden", "external"],
+  "shapes": [],
+  "files": [],
+  "dependencies": [],
+  "plannedTypeEscapes": []
+}"#,
+    )?;
+
+    let near_lookup = lookup(&artifact, "PublicThingV2")?;
+    assert_eq!(near_lookup["result"], "NOT_OBSERVED");
+    assert!(near_lookup["nearNames"]
+        .as_array()
+        .context("near names")?
+        .iter()
+        .all(|entry| entry["matchedField"] != "useTreeIndex"));
+    assert!(near_lookup["semanticHints"]
+        .as_array()
+        .context("semantic hints")?
+        .iter()
+        .all(|entry| entry["matchedField"] != "useTreeIndex"));
+
+    let anonymous = lookup(&artifact, "Hidden")?;
+    assert_eq!(anonymous["result"], "NOT_OBSERVED");
+
+    let self_export = lookup(&artifact, "external")?;
+    assert_eq!(self_export["result"], "EXISTS");
+    assert_eq!(self_export["identities"][0]["matchedField"], "useTreeIndex");
+    let card = card(&artifact, "src/lib.rs::external")?;
+    assert_eq!(card["renderTier"], "SAFE_CUE");
+    assert_eq!(card["cues"][0]["claim"], "exact Rust use-tree name exists");
+    Ok(())
+}
+
+#[test]
 fn prewrite_function_signature_hash_uses_ts_js_safe_and_review_tiers() -> Result<()> {
     let repo = PreWriteRepo::new()?;
     repo.write_bytes(
@@ -206,6 +251,10 @@ impl Parser {
     assert_eq!(private_cue["cueTier"], "AGENT_REVIEW_CUE");
     assert_eq!(private_cue["evidence"][0]["visibility"], "file-local");
     assert!(private_cue.get("safeMeaning").is_none());
+    assert_eq!(
+        private_cue["notSafeFor"],
+        serde_json::json!(["semantic-equivalence", "auto-reuse", "auto-fix"])
+    );
 
     let impl_lookup = shape_lookup(&artifact, &impl_hash)?;
     assert_eq!(impl_lookup["result"], "SIGNATURE_MATCH");
@@ -215,6 +264,10 @@ impl Parser {
     assert_eq!(impl_cue["cueTier"], "AGENT_REVIEW_CUE");
     assert_eq!(impl_cue["evidence"][0]["visibility"], "unknown");
     assert!(impl_cue.get("safeMeaning").is_none());
+    assert_eq!(
+        impl_cue["notSafeFor"],
+        serde_json::json!(["semantic-equivalence", "auto-reuse", "auto-fix"])
+    );
     Ok(())
 }
 

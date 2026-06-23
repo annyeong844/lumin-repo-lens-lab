@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use lumin_rust_source_health::protocol::HealthResponse;
@@ -12,14 +12,14 @@ use super::super::intent::NormalizedIntent;
 pub(in crate::prewrite) const DEPENDENCY_EXAMPLE_LIMIT: usize = 5;
 pub(in crate::prewrite) const DEPENDENCY_WATCH_FOR_THRESHOLD: usize = 10;
 const DEPENDENCY_SECTIONS: &[&str] = &["dependencies", "dev-dependencies", "build-dependencies"];
-const LOCAL_RUST_PATH_ROOTS: &[&str] = &["crate", "self", "super", "std", "core", "alloc"];
+const LOCAL_RUST_PATH_ROOTS: &[&str] = &["Self", "crate", "self", "super", "std", "core", "alloc"];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::prewrite) struct DependencyLookup {
     kind: DependencyLookupKind,
     pub(in crate::prewrite) dep_name: String,
-    declared_in: Option<&'static str>,
+    declared_in: Option<String>,
     result: DependencyLookupResult,
     existing_imports: ExistingImports,
     citations: Vec<String>,
@@ -86,11 +86,18 @@ enum ImportCountConfidence {
 }
 
 struct CargoManifest {
+    scopes: Vec<CargoManifestScope>,
+    workspace_dependencies: Option<toml::map::Map<String, TomlValue>>,
+}
+
+struct CargoManifestScope {
+    manifest_path: String,
     value: TomlValue,
 }
 
 struct CargoDependencyDeclaration {
-    section: &'static str,
+    section: String,
+    manifest_path: String,
     manifest_key: String,
     display_value: String,
 }
@@ -147,12 +154,15 @@ fn lookup_dependency(
     let mut citations = Vec::new();
     if let Some(declaration) = &declaration {
         citations.push(format!(
-            "[grounded, Cargo.toml.{}['{}'] declares {dependency} as {}]",
-            declaration.section, declaration.manifest_key, declaration.display_value
+            "[grounded, {}.{}['{}'] declares {dependency} as {}]",
+            declaration.manifest_path,
+            declaration.section,
+            declaration.manifest_key,
+            declaration.display_value
         ));
     } else {
         citations.push(format!(
-            "[grounded, root Cargo.toml does not declare '{dependency}' in dependencies/dev-dependencies/build-dependencies]"
+            "[grounded, Cargo manifest scope does not declare '{dependency}' in dependency tables]"
         ));
     }
 
@@ -163,31 +173,33 @@ fn lookup_dependency(
             "[grounded, Rust AST static import graph observed {observed_import_count} consumer(s) for '{dependency}']"
         ));
         DependencyLookupResult::Available
-    } else if graph.complete {
+    } else if graph.zero_observed_is_grounded() {
         citations.push(format!(
             "[확인 불가, scan range: Rust AST import graph only; '{dependency}' may still be consumed by build scripts, cfg-gated code, generated code, runtime plugins, examples, or external cargo commands]"
         ));
         DependencyLookupResult::AvailableNoObservedImports
     } else {
-        if let Some(reason) = &graph.partial_reason {
-            citations.push(format!(
-                "[확인 불가, reason: {reason}; zero observed Rust path consumers is not a grounded absence claim]"
-            ));
-        }
+        let reason = graph.zero_observed_unavailable_reason();
+        citations.push(format!(
+            "[확인 불가, reason: {reason}; zero observed Rust path consumers is not a grounded absence claim]"
+        ));
         DependencyLookupResult::AvailableImportGraphUnavailable
     };
 
+    let count_reason = if result == DependencyLookupResult::AvailableImportGraphUnavailable {
+        Some(graph.zero_observed_unavailable_reason())
+    } else {
+        graph.partial_reason.as_deref()
+    };
     let (observed_import_count, count_confidence, unavailable_reason) =
-        existing_import_count_fields(
-            result,
-            observed_import_count,
-            graph.partial_reason.as_deref(),
-        );
+        existing_import_count_fields(result, observed_import_count, count_reason);
 
     DependencyLookup {
         kind: DependencyLookupKind::Dependency,
         dep_name: dependency.to_string(),
-        declared_in: declaration.as_ref().map(|declaration| declaration.section),
+        declared_in: declaration
+            .as_ref()
+            .map(|declaration| declaration.section.clone()),
         result,
         existing_imports: ExistingImports {
             examples,
@@ -239,36 +251,181 @@ fn existing_import_count_fields(
 impl CargoManifest {
     fn read(root: &Path) -> Result<Self> {
         let path = root.join("Cargo.toml");
-        let content = fs::read_to_string(&path).with_context(|| {
-            format!(
-                "blocked-prewrite-dependency-manifest: failed to read {}",
-                path.display()
-            )
-        })?;
-        let value = content.parse::<TomlValue>().with_context(|| {
-            format!(
-                "blocked-prewrite-dependency-manifest: failed to parse {}",
-                path.display()
-            )
-        })?;
-        Ok(Self { value })
+        let value = parse_manifest(&path)?;
+        let workspace_dependencies = value
+            .get("workspace")
+            .and_then(|workspace| workspace.get("dependencies"))
+            .and_then(TomlValue::as_table)
+            .cloned();
+        let mut scopes = vec![CargoManifestScope {
+            manifest_path: "Cargo.toml".to_string(),
+            value: value.clone(),
+        }];
+        for member_manifest in workspace_member_manifest_paths(root, &value)? {
+            if member_manifest == path {
+                continue;
+            }
+            scopes.push(CargoManifestScope {
+                manifest_path: relative_manifest_path(root, &member_manifest),
+                value: parse_manifest(&member_manifest)?,
+            });
+        }
+        Ok(Self {
+            scopes,
+            workspace_dependencies,
+        })
     }
 
     fn find_dependency(&self, dependency_root: &str) -> Option<CargoDependencyDeclaration> {
         let candidates = manifest_key_candidates(dependency_root);
-        DEPENDENCY_SECTIONS.iter().find_map(|section| {
-            let table = self.value.get(*section)?.as_table()?;
-            candidates.iter().find_map(|candidate| {
-                table
-                    .get(candidate)
-                    .map(|value| CargoDependencyDeclaration {
+        self.scopes.iter().find_map(|scope| {
+            dependency_tables(&scope.value)
+                .into_iter()
+                .find_map(|(section, table)| {
+                    find_dependency_in_table(
+                        &scope.manifest_path,
                         section,
-                        manifest_key: candidate.clone(),
-                        display_value: manifest_dependency_value(value),
-                    })
-            })
+                        table,
+                        &candidates,
+                        self.workspace_dependencies.as_ref(),
+                    )
+                })
         })
     }
+}
+
+fn parse_manifest(path: &Path) -> Result<TomlValue> {
+    let content = fs::read_to_string(path).with_context(|| {
+        format!(
+            "blocked-prewrite-dependency-manifest: failed to read {}",
+            path.display()
+        )
+    })?;
+    content.parse::<TomlValue>().with_context(|| {
+        format!(
+            "blocked-prewrite-dependency-manifest: failed to parse {}",
+            path.display()
+        )
+    })
+}
+
+fn workspace_member_manifest_paths(root: &Path, value: &TomlValue) -> Result<Vec<PathBuf>> {
+    let Some(members) = value
+        .get("workspace")
+        .and_then(|workspace| workspace.get("members"))
+        .and_then(TomlValue::as_array)
+    else {
+        return Ok(Vec::new());
+    };
+    let mut paths = Vec::new();
+    for member in members.iter().filter_map(TomlValue::as_str) {
+        if let Some(prefix) = member.strip_suffix("/*") {
+            let parent = root.join(prefix);
+            if !parent.is_dir() {
+                continue;
+            }
+            for entry in fs::read_dir(&parent).with_context(|| {
+                format!(
+                    "blocked-prewrite-dependency-manifest: failed to read workspace member directory {}",
+                    parent.display()
+                )
+            })? {
+                let entry = entry?;
+                let manifest = entry.path().join("Cargo.toml");
+                if manifest.is_file() {
+                    paths.push(manifest);
+                }
+            }
+            continue;
+        }
+        let manifest = root.join(member).join("Cargo.toml");
+        if manifest.is_file() {
+            paths.push(manifest);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn relative_manifest_path(root: &Path, manifest: &Path) -> String {
+    manifest
+        .strip_prefix(root)
+        .unwrap_or(manifest)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn dependency_tables(value: &TomlValue) -> Vec<(String, &toml::map::Map<String, TomlValue>)> {
+    let mut tables = Vec::new();
+    for section in DEPENDENCY_SECTIONS {
+        if let Some(table) = value.get(*section).and_then(TomlValue::as_table) {
+            tables.push(((*section).to_string(), table));
+        }
+    }
+    if let Some(targets) = value.get("target").and_then(TomlValue::as_table) {
+        for (target, target_value) in targets {
+            for section in DEPENDENCY_SECTIONS {
+                if let Some(table) = target_value.get(*section).and_then(TomlValue::as_table) {
+                    tables.push((format!("target.{target}.{section}"), table));
+                }
+            }
+        }
+    }
+    tables
+}
+
+fn find_dependency_in_table(
+    manifest_path: &str,
+    section: String,
+    table: &toml::map::Map<String, TomlValue>,
+    candidates: &[String],
+    workspace_dependencies: Option<&toml::map::Map<String, TomlValue>>,
+) -> Option<CargoDependencyDeclaration> {
+    table.iter().find_map(|(key, value)| {
+        let package_name = manifest_package_name(key, value, workspace_dependencies);
+        let declared = candidates.iter().any(|candidate| candidate == key)
+            || package_name
+                .as_deref()
+                .is_some_and(|package| candidates.iter().any(|candidate| candidate == package));
+        declared.then(|| CargoDependencyDeclaration {
+            section: section.clone(),
+            manifest_path: manifest_path.to_string(),
+            manifest_key: key.clone(),
+            display_value: manifest_dependency_value(value),
+        })
+    })
+}
+
+fn manifest_package_name(
+    manifest_key: &str,
+    value: &TomlValue,
+    workspace_dependencies: Option<&toml::map::Map<String, TomlValue>>,
+) -> Option<String> {
+    if let Some(package) = value
+        .as_table()
+        .and_then(|table| table.get("package"))
+        .and_then(TomlValue::as_str)
+    {
+        return Some(package.to_string());
+    }
+    if value
+        .as_table()
+        .and_then(|table| table.get("workspace"))
+        .and_then(TomlValue::as_bool)
+        == Some(true)
+    {
+        return workspace_dependencies
+            .and_then(|dependencies| dependencies.get(manifest_key))
+            .and_then(|workspace_value| {
+                workspace_value
+                    .as_table()
+                    .and_then(|table| table.get("package"))
+                    .and_then(TomlValue::as_str)
+            })
+            .map(str::to_string);
+    }
+    None
 }
 
 impl DependencyImportGraph {
@@ -289,8 +446,21 @@ impl DependencyImportGraph {
             for macro_call in &health.ast.macro_calls {
                 graph.push(file, &macro_call.path);
             }
+            for surface in &health.ast.opaque_surfaces {
+                graph.push(file, &surface.detail);
+            }
         }
         graph
+    }
+
+    fn zero_observed_is_grounded(&self) -> bool {
+        self.complete && self.partial_reason.is_none()
+    }
+
+    fn zero_observed_unavailable_reason(&self) -> &str {
+        self.partial_reason
+            .as_deref()
+            .unwrap_or("rust-source-health import graph is incomplete")
     }
 
     fn push(&mut self, file: &str, path: &str) {

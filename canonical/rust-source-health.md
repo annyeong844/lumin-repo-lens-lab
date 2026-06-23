@@ -155,9 +155,9 @@ Canonical JSON fields:
   `pub use crate::model::Thing as Alias` expose `name = "Thing"` and
   `alias = "Alias"` so Rust pre-write can mirror the TS/JS exported alias
   exact-name cue without parsing raw syntax text.
-- `ast.pathRefs[]`: qualified expression-position path references with raw path
-  text, terminal name, and `location`. Local variable refs and constructor-like
-  single-segment paths are not emitted as raw path facts.
+- `ast.pathRefs[]`: qualified expression- and type-position path references
+  with raw path text, terminal name, and `location`. Local variable refs and
+  constructor-like single-segment paths are not emitted as raw path facts.
 - `ast.methodCallCounts`: per-file method-name counts for all observed method
   call sites.
 - `ast.methodCalls[]`: review-relevant method call observations with method

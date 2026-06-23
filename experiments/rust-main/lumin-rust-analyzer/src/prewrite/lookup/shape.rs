@@ -3,7 +3,7 @@ use serde::Serialize;
 use crate::prewrite::intent::{NormalizedIntent, ShapeIntent};
 use lumin_rust_source_health::protocol::{
     AstCallableKind, AstFunctionSignature, AstShapeConfidence, AstShapeField, AstShapeKind,
-    AstVisibility, HealthResponse,
+    AstVisibility, HealthResponse, PathClassification,
 };
 
 const FIELD_ONLY_UNAVAILABLE_CITATION: &str =
@@ -118,6 +118,9 @@ impl ShapeLookupMatch {
         match self {
             Self::Shape(_) => false,
             Self::Signature(candidate) => {
+                if candidate.policy_excluded {
+                    return false;
+                }
                 candidate.callable_kind == AstCallableKind::Function
                     && matches!(
                         candidate.visibility,
@@ -131,6 +134,20 @@ impl ShapeLookupMatch {
         match self {
             Self::Shape(_) => None,
             Self::Signature(candidate) => Some(candidate.visibility_label()),
+        }
+    }
+
+    pub(in crate::prewrite) fn path_classifications(&self) -> &[PathClassification] {
+        match self {
+            Self::Shape(candidate) => &candidate.path_classifications,
+            Self::Signature(candidate) => &candidate.path_classifications,
+        }
+    }
+
+    pub(in crate::prewrite) fn policy_excluded(&self) -> bool {
+        match self {
+            Self::Shape(candidate) => candidate.policy_excluded,
+            Self::Signature(candidate) => candidate.policy_excluded,
         }
     }
 }
@@ -154,6 +171,9 @@ pub(in crate::prewrite) struct ShapeMatch {
     fields: Vec<AstShapeField>,
     visibility: lumin_rust_source_health::protocol::AstVisibility,
     confidence: AstShapeConfidence,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    path_classifications: Vec<PathClassification>,
+    policy_excluded: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -167,6 +187,9 @@ pub(in crate::prewrite) struct SignatureMatch {
     pub(in crate::prewrite) callable_kind: AstCallableKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite) local_name: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    path_classifications: Vec<PathClassification>,
+    policy_excluded: bool,
     confidence: &'static str,
 }
 
@@ -319,6 +342,14 @@ fn shape_hash_matches(hash: &str, syntax: &HealthResponse) -> Vec<ShapeMatch> {
                 fields: fact.fields.clone(),
                 visibility: fact.visibility,
                 confidence: fact.confidence,
+                path_classifications: file.path.classifications.clone(),
+                policy_excluded: file.path.suppressed
+                    || file.path.classifications.iter().any(|classification| {
+                        matches!(
+                            classification,
+                            PathClassification::Test | PathClassification::Generated
+                        )
+                    }),
             });
         }
     }
@@ -333,14 +364,24 @@ fn function_signature_matches(hash: &str, syntax: &HealthResponse) -> Vec<Signat
             if fact.hash != hash {
                 continue;
             }
-            matches.push(signature_match(owner_file, fact));
+            matches.push(signature_match(
+                owner_file,
+                fact,
+                file.path.classifications.clone(),
+                file.path.suppressed,
+            ));
         }
     }
     matches.sort_by(|left, right| left.identity.cmp(&right.identity));
     matches
 }
 
-fn signature_match(owner_file: &str, fact: &AstFunctionSignature) -> SignatureMatch {
+fn signature_match(
+    owner_file: &str,
+    fact: &AstFunctionSignature,
+    path_classifications: Vec<PathClassification>,
+    path_suppressed: bool,
+) -> SignatureMatch {
     let identity = match &fact.owner {
         None => format!("{owner_file}::{}", fact.name),
         Some(owner) => match &owner.trait_path {
@@ -366,6 +407,14 @@ fn signature_match(owner_file: &str, fact: &AstFunctionSignature) -> SignatureMa
         visibility: fact.visibility,
         callable_kind: fact.callable_kind,
         local_name,
+        policy_excluded: path_suppressed
+            || path_classifications.iter().any(|classification| {
+                matches!(
+                    classification,
+                    PathClassification::Test | PathClassification::Generated
+                )
+            }),
+        path_classifications,
         confidence: "high",
     }
 }

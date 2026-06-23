@@ -85,14 +85,20 @@ fn lookup_name(
         _ => LookupResult::ExistsMultiple,
     };
     let owner_file = declaration.and_then(NameDeclaration::effective_owner_file);
+    let fuzzy_candidates = index
+        .candidates
+        .iter()
+        .copied()
+        .filter(|candidate| candidate.lane != CandidateLane::UseTree)
+        .collect::<Vec<_>>();
     let (near_names, suppressed_near_names, suppressed_near_name_count) = if identities.is_empty() {
-        near::near_name_candidates(intent_name, owner_file, &index.candidates)
+        near::near_name_candidates(intent_name, owner_file, &fuzzy_candidates)
     } else {
         (Vec::new(), Vec::new(), 0)
     };
     let (intent_tokens, semantic_hints, suppressed_semantic_hints, suppressed_semantic_hint_count) =
         if identities.is_empty() {
-            semantic::semantic_hint_candidates(intent_name, declaration, &index.candidates)
+            semantic::semantic_hint_candidates(intent_name, declaration, &fuzzy_candidates)
         } else {
             (
                 semantic::query_tokens(intent_name, declaration),

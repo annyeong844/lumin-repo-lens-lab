@@ -8,7 +8,7 @@ use crate::protocol::{
 };
 use lumin_rust_common::sha256_text;
 use ra_ap_syntax::{
-    ast::{self, HasGenericParams, HasName, HasVisibility, StructKind},
+    ast::{self, HasAttrs, HasGenericParams, HasName, HasVisibility, StructKind},
     AstNode, SyntaxKind, SyntaxNode,
 };
 use serde::Serialize;
@@ -75,6 +75,9 @@ pub(super) fn collect_struct_shape_hash(
     if item.generic_param_list().is_some() {
         return;
     }
+    if has_cfg_gate_attr(item) {
+        return;
+    }
     let Some(name) = item.name() else {
         return;
     };
@@ -110,13 +113,20 @@ pub(super) fn collect_struct_shape_hash(
 fn record_shape_fields(record_fields: &ast::RecordFieldList) -> Option<Vec<AstShapeField>> {
     let mut fields = Vec::new();
     for field in record_fields.fields() {
+        if has_cfg_gate_attr(&field) {
+            return None;
+        }
         let name = field.name()?;
         let ty = field.ty()?;
+        let visibility = visibility_for(field.visibility());
+        if visibility == crate::protocol::AstVisibility::Restricted {
+            return None;
+        }
         fields.push(AstShapeField {
             kind: AstShapeFieldKind::Property,
             name: name.text().to_string(),
             type_text: compact_rust_type_text(&syntax_text(ty.syntax())),
-            visibility: visibility_for(field.visibility()),
+            visibility,
         });
     }
     Some(fields)
@@ -148,6 +158,12 @@ fn function_signature(
     visibility: Option<ast::Visibility>,
     line_index: &LineIndex,
 ) -> Option<AstFunctionSignature> {
+    if function_is_unsafe(function.syntax()) || function_is_async(function.syntax()) {
+        return None;
+    }
+    if function.where_clause().is_some() {
+        return None;
+    }
     let name = function.name()?;
     let param_list = function.param_list()?;
     let receiver = param_list.self_param().map(function_receiver);
@@ -247,9 +263,12 @@ fn function_is_nested_or_associated(node: &SyntaxNode) -> bool {
 fn compact_rust_type_text(raw: &str) -> String {
     let mut out = String::new();
     let mut pending_space = false;
+    let mut skip_space_after_punctuation = false;
     for ch in raw.chars() {
         if ch.is_whitespace() {
-            pending_space = true;
+            if !skip_space_after_punctuation {
+                pending_space = true;
+            }
             continue;
         }
         if compact_type_punctuation(ch) {
@@ -258,6 +277,7 @@ fn compact_rust_type_text(raw: &str) -> String {
             }
             out.push(ch);
             pending_space = false;
+            skip_space_after_punctuation = true;
             continue;
         }
         if pending_space && !out.is_empty() {
@@ -265,8 +285,24 @@ fn compact_rust_type_text(raw: &str) -> String {
         }
         out.push(ch);
         pending_space = false;
+        skip_space_after_punctuation = false;
     }
     out.trim().to_string()
+}
+
+fn has_cfg_gate_attr<T: HasAttrs>(owner: &T) -> bool {
+    owner.attrs().any(|attr| {
+        let text = crate::analyzer::attrs::normalized_attr_text(&attr);
+        text.starts_with("#[cfg(")
+            || text.starts_with("#![cfg(")
+            || text.starts_with("#[cfg_attr(")
+            || text.starts_with("#![cfg_attr(")
+    })
+}
+
+fn function_is_async(node: &SyntaxNode) -> bool {
+    node.children_with_tokens()
+        .any(|child| child.kind() == SyntaxKind::ASYNC_KW)
 }
 
 fn compact_type_punctuation(ch: char) -> bool {
