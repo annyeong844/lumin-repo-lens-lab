@@ -316,6 +316,64 @@ unsupported evidence: `_lib/pre-write-intent.mjs`,
 `_lib/pre-write-lookup-dep.mjs`, and
 `_lib/pre-write-lookup-inline-patterns.mjs`.
 
+Rust pre-write lookup helpers have canonical owners:
+
+- `lumin-rust-analyzer/src/prewrite/index.rs` owns the borrowed candidate index
+  built from `HealthResponse::files[*].ast`. It may expose exact, near,
+  semantic, service, local, shape, and dependency lookup candidates, but it must
+  not serialize a repository-wide index into the product artifact.
+- `lumin-rust-analyzer/src/prewrite/tokens.rs` owns shared pre-write token
+  splitting, normalization, and weak-token classification. Lane-local token
+  helpers may compose it, but must not redefine the shared tokenizer.
+- `lumin-rust-analyzer/src/prewrite/lookup/name.rs` owns exact Rust name lookup
+  against candidate-index entries.
+- `lumin-rust-analyzer/src/prewrite/lookup/near.rs` owns JS/TS-derived near-name
+  lookup, capped Levenshtein scoring, suppressed-near ordering, and the
+  associated `meta.lookupPolicy.nearName` provenance.
+- `lumin-rust-analyzer/src/prewrite/lookup/file.rs` owns Rust file intent lookup
+  results, including `FILE_EXISTS`, `NEW_FILE`, skipped-file,
+  symlink-unknown, and source-health path-policy handling.
+- `lumin-rust-analyzer/src/prewrite/lookup/file/domain_cluster.rs` owns the
+  JS/TS-derived file domain-cluster cue translation. Its `candidates`, `path`,
+  and `tokens` submodules are implementation details of that lane.
+- `lumin-rust-analyzer/src/prewrite/lookup/shape.rs` owns exact
+  `SHAPE_MATCH`, exact `SIGNATURE_MATCH`, fields-only/type-literal
+  unavailable handling, and the shape/signature lookup coverage states. Its
+  `candidate`, `matches`, `model`, and `evidence` submodules are
+  implementation details of that lane.
+- `lumin-rust-analyzer/src/prewrite/lookup/service.rs` owns service-operation
+  sibling review policy and the associated JS/TS-derived lookup policy
+  provenance.
+- `lumin-rust-analyzer/src/prewrite/lookup/local.rs` owns same-file local
+  operation sibling review policy and the associated JS/TS-derived lookup
+  policy provenance.
+- `lumin-rust-analyzer/src/prewrite/lookup/dependency.rs` owns Cargo dependency
+  intent lookup orchestration and the JS/TS dependency lane translation.
+- `lumin-rust-analyzer/src/prewrite/lookup/dependency/graph.rs` owns the Rust
+  AST static import graph, dependency import observations, and graph
+  completeness evidence.
+- `lumin-rust-analyzer/src/prewrite/lookup/dependency/manifest.rs` owns Cargo
+  manifest aggregation, workspace dependency inheritance checks, declaration
+  lookup, and binding observed consumers to the package/member manifest that
+  owns the file.
+- `lumin-rust-analyzer/src/prewrite/lookup/dependency/declarations.rs` owns
+  Cargo dependency table scanning, target-specific dependency tables, renamed
+  package handling, and manifest-key-to-code-root mapping.
+- `lumin-rust-analyzer/src/prewrite/lookup/dependency/workspace.rs` owns Cargo
+  workspace member expansion and `workspace.exclude` path handling. Its `glob`
+  submodules own Cargo member glob expansion only; exclude entries remain
+  literal path prefixes.
+- `lumin-rust-analyzer/src/prewrite/lookup/dependency/scope.rs` and
+  `lumin-rust-analyzer/src/prewrite/lookup/dependency/targets.rs` own package
+  scope matching, including explicit Cargo target paths outside a member
+  directory.
+- `lumin-rust-analyzer/src/prewrite/lookup/dependency/projection.rs` owns
+  dependency lookup artifact projection, citations, count confidence, and
+  examples.
+- `lumin-rust-analyzer/src/prewrite/lookup/inline_pattern.rs` owns Rust inline
+  extraction unsupported evidence until a Rust-owned inline-pattern producer or
+  bridge exists.
+
 Rust pre-write semantic hint helpers have canonical owners:
 
 - `lumin-rust-analyzer/src/prewrite/lookup/semantic.rs` owns the semantic hint
