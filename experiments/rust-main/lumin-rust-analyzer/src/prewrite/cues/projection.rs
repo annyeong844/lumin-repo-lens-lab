@@ -4,7 +4,7 @@ use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
     CandidateRecord, DependencyLookup, FileLookup, LocalOperationPolicyEntry, NameLookup,
     ServiceOperationPolicyEntry, ShapeLookup, ShapeLookupMatch, SuppressedNearNameHint,
-    SuppressedSemanticHint, DEPENDENCY_WATCH_FOR_THRESHOLD,
+    SuppressedSemanticHint,
 };
 use crate::prewrite::tokens::TOKEN_POLICY_VERSION;
 
@@ -13,6 +13,9 @@ use super::model::{
     CueMatchedField, CueProjection, CueTier, EvidenceLane, MutedReason, NotSafeFor, SafeMeaning,
     SuppressedCue,
 };
+
+mod dependency;
+mod file;
 
 pub(in crate::prewrite) fn project(
     lookups: &[NameLookup],
@@ -53,9 +56,8 @@ pub(in crate::prewrite) fn project(
         add_local_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
     }
     add_shape_lookup_cues(shape_lookups, &mut cards);
-    add_file_exact_cues(file_lookups, &mut cards);
-    add_file_domain_cluster_cues(file_lookups, &mut cards);
-    add_dependency_hub_cues(dependency_lookups, &mut cards);
+    file::add_file_cues(file_lookups, &mut cards);
+    dependency::add_dependency_cues(dependency_lookups, &mut cards);
 
     let mut cue_cards = cards
         .into_values()
@@ -118,51 +120,6 @@ fn add_active_cue(
     }
 
     add_cue_for_candidate(cards, CueCandidate::from(candidate), cue);
-}
-
-fn add_file_exact_cues(file_lookups: &[FileLookup], cards: &mut BTreeMap<String, CueCardBuilder>) {
-    for lookup in file_lookups.iter().filter(|lookup| lookup.exists()) {
-        let identity = file_candidate_identity(&lookup.intent_file);
-        add_cue_for_candidate(
-            cards,
-            file_candidate(&lookup.intent_file),
-            file_exact_cue(identity, lookup),
-        );
-    }
-}
-
-fn add_file_domain_cluster_cues(
-    file_lookups: &[FileLookup],
-    cards: &mut BTreeMap<String, CueCardBuilder>,
-) {
-    for lookup in file_lookups
-        .iter()
-        .filter(|lookup| lookup.has_domain_cluster())
-    {
-        let identity = file_candidate_identity(&lookup.intent_file);
-        add_cue_for_candidate(
-            cards,
-            file_candidate(&lookup.intent_file),
-            file_domain_cluster_cue(identity, lookup),
-        );
-    }
-}
-
-fn add_dependency_hub_cues(
-    dependency_lookups: &[DependencyLookup],
-    cards: &mut BTreeMap<String, CueCardBuilder>,
-) {
-    for lookup in dependency_lookups
-        .iter()
-        .filter(|lookup| lookup.is_watch_for_eligible())
-    {
-        let identity = dependency_candidate_identity(&lookup.dep_name);
-        add_cue_for_candidate(
-            cards,
-            dependency_candidate(&lookup.dep_name),
-            dependency_hub_cue(identity, lookup),
-        );
-    }
 }
 
 fn add_shape_lookup_cues(
@@ -278,145 +235,6 @@ fn function_signature_cue(candidate: &ShapeLookupMatch, shape_hash: &str) -> Cue
             container_name: None,
             container_kind: None,
         }],
-    }
-}
-
-fn file_exact_cue(identity: String, lookup: &FileLookup) -> Cue {
-    Cue {
-        cue_tier: CueTier::Safe,
-        safe_meaning: Some(SafeMeaning::ClaimOnly),
-        not_safe_for: vec![
-            NotSafeFor::SemanticEquivalence,
-            NotSafeFor::AutoReuse,
-            NotSafeFor::AutoFix,
-        ],
-        evidence_lane: EvidenceLane::ExactFile,
-        claim: CueClaim::ExactFileExists,
-        confidence: CueConfidence::Grounded,
-        evidence: vec![CueEvidence {
-            artifact: "rust-source-health",
-            matched_field: CueMatchedField::RustSourceHealthFiles,
-            matched_field_source: None,
-            algorithm_version: Some("exact-file.v1"),
-            hash: None,
-            visibility: None,
-            local_name: None,
-            candidate_identity: identity,
-            file: Some(lookup.intent_file.clone()),
-            file_lookup_result: Some(lookup.result()),
-            dependency_lookup_result: None,
-            observed_import_count: None,
-            consumer_threshold: None,
-            distance: None,
-            tokens: Vec::new(),
-            policy_id: None,
-            policy_version: None,
-            operation_family: None,
-            shared_domain_tokens: Vec::new(),
-            locality: None,
-            supporting_reasons: Vec::new(),
-            surface_kind: None,
-            container_name: None,
-            container_kind: None,
-        }],
-    }
-}
-
-fn file_domain_cluster_cue(identity: String, lookup: &FileLookup) -> Cue {
-    Cue {
-        cue_tier: CueTier::AgentReview,
-        safe_meaning: None,
-        not_safe_for: Vec::new(),
-        evidence_lane: EvidenceLane::FileDomainCluster,
-        claim: CueClaim::RelatedRustFileDomainCluster,
-        confidence: CueConfidence::HeuristicReview,
-        evidence: vec![CueEvidence {
-            artifact: "pre-write-advisory.json",
-            matched_field: CueMatchedField::FileDomainCluster,
-            matched_field_source: None,
-            algorithm_version: None,
-            hash: None,
-            visibility: None,
-            local_name: None,
-            candidate_identity: identity,
-            file: Some(lookup.intent_file.clone()),
-            file_lookup_result: Some(lookup.result()),
-            dependency_lookup_result: None,
-            observed_import_count: None,
-            consumer_threshold: None,
-            distance: None,
-            tokens: Vec::new(),
-            policy_id: None,
-            policy_version: None,
-            operation_family: None,
-            shared_domain_tokens: Vec::new(),
-            locality: None,
-            supporting_reasons: Vec::new(),
-            surface_kind: None,
-            container_name: None,
-            container_kind: None,
-        }],
-    }
-}
-
-fn dependency_hub_cue(identity: String, lookup: &DependencyLookup) -> Cue {
-    Cue {
-        cue_tier: CueTier::AgentReview,
-        safe_meaning: None,
-        not_safe_for: Vec::new(),
-        evidence_lane: EvidenceLane::DependencyHub,
-        claim: CueClaim::RustDependencyHub,
-        confidence: CueConfidence::Grounded,
-        evidence: vec![CueEvidence {
-            artifact: "pre-write-advisory.json",
-            matched_field: CueMatchedField::DependencyExistingImports,
-            matched_field_source: None,
-            algorithm_version: None,
-            hash: None,
-            visibility: None,
-            local_name: None,
-            candidate_identity: identity,
-            file: None,
-            file_lookup_result: None,
-            dependency_lookup_result: Some(lookup.result()),
-            observed_import_count: lookup.observed_import_count(),
-            consumer_threshold: Some(DEPENDENCY_WATCH_FOR_THRESHOLD),
-            distance: None,
-            tokens: Vec::new(),
-            policy_id: None,
-            policy_version: None,
-            operation_family: None,
-            shared_domain_tokens: Vec::new(),
-            locality: None,
-            supporting_reasons: Vec::new(),
-            surface_kind: None,
-            container_name: None,
-            container_kind: None,
-        }],
-    }
-}
-
-fn file_candidate_identity(intent_file: &str) -> String {
-    format!("{intent_file}::__file__")
-}
-
-fn file_candidate(intent_file: &str) -> CueCandidate {
-    CueCandidate {
-        owner_file: intent_file.to_string(),
-        name: "__file__".to_string(),
-        identity: file_candidate_identity(intent_file),
-    }
-}
-
-fn dependency_candidate_identity(dep_name: &str) -> String {
-    format!("Cargo.toml::dependency::{dep_name}")
-}
-
-fn dependency_candidate(dep_name: &str) -> CueCandidate {
-    CueCandidate {
-        owner_file: "Cargo.toml".to_string(),
-        name: dep_name.to_string(),
-        identity: dependency_candidate_identity(dep_name),
     }
 }
 
