@@ -273,6 +273,15 @@ Rust dependency intent lookup is the Rust analogue of the JS/TS
   `DEPENDENCY_AVAILABLE_IMPORT_GRAPH_UNAVAILABLE`, never zero observed;
 - undeclared dependency is `NEW_PACKAGE`.
 
+Cargo dependency declarations are package/member scoped. In a workspace,
+`[workspace.dependencies]` is not a declaration for every member by itself; it
+only counts for a member when that member inherits it with `workspace = true`
+or declares the dependency directly. A declaration in one member must not make a
+consumer in another member `DEPENDENCY_AVAILABLE`. When observed Rust path
+consumers live in a member whose `Cargo.toml` does not declare or inherit the
+dependency, pre-write reports `NEW_PACKAGE` for that consuming manifest scope
+and cites the member manifest that lacks the declaration.
+
 The Rust-only normalization from Cargo package key to code path crate root is
 required because Cargo packages may use hyphens while Rust paths use
 underscores, for example `tracing-subscriber` is imported as
