@@ -1,7 +1,6 @@
-use anyhow::{Context, Result};
-use serde_json::Value;
+use anyhow::Result;
 
-use crate::support::prewrite::PreWriteRepo;
+use crate::support::prewrite::{citations, dependency_lookup, examples, PreWriteRepo};
 
 #[test]
 fn prewrite_dependency_lane_reads_workspace_renames_targets_and_attribute_consumers() -> Result<()>
@@ -103,94 +102,4 @@ pub async fn wait() {
     );
     assert_eq!(windows["declaredIn"], "target.cfg(windows).dependencies");
     Ok(())
-}
-
-#[test]
-fn prewrite_dependency_lane_keeps_member_declarations_package_scoped() -> Result<()> {
-    let repo = PreWriteRepo::new()?;
-    repo.write_bytes(
-        "Cargo.toml",
-        br#"[workspace]
-members = ["crates/declared", "crates/consumer"]
-
-[workspace.dependencies]
-serde1 = { package = "serde", version = "1" }
-"#,
-    )?;
-    repo.write_bytes(
-        "crates/declared/Cargo.toml",
-        br#"[package]
-name = "declared"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-serde1 = { workspace = true }
-"#,
-    )?;
-    repo.write_bytes(
-        "crates/declared/src/lib.rs",
-        b"pub fn declared() -> serde1::Result<()> { Ok(()) }\n",
-    )?;
-    repo.write_bytes(
-        "crates/consumer/Cargo.toml",
-        br#"[package]
-name = "consumer"
-version = "0.1.0"
-edition = "2021"
-"#,
-    )?;
-    repo.write_bytes(
-        "crates/consumer/src/lib.rs",
-        b"pub fn consumer(_value: serde::de::IgnoredAny) {}\n",
-    )?;
-
-    let artifact = repo.run_json(
-        r#"{
-  "names": [],
-  "shapes": [],
-  "files": [],
-  "dependencies": ["serde"],
-  "plannedTypeEscapes": []
-}"#,
-    )?;
-
-    let serde = dependency_lookup(&artifact, "serde")?;
-    assert_eq!(serde["result"], "NEW_PACKAGE");
-    assert_eq!(serde["declaredIn"], Value::Null);
-    assert!(citations(serde).any(|citation| {
-        citation.contains("crates/consumer/Cargo.toml")
-            && citation.contains("without a matching declaration")
-    }));
-    assert!(examples(serde).any(|example| {
-        example["file"] == "crates/consumer/src/lib.rs"
-            && example["fromSpec"]
-                .as_str()
-                .is_some_and(|from_spec| from_spec == "serde::de::IgnoredAny")
-    }));
-    Ok(())
-}
-
-fn dependency_lookup<'a>(artifact: &'a Value, dependency: &str) -> Result<&'a Value> {
-    artifact["dependencyLookups"]
-        .as_array()
-        .context("dependencyLookups array")?
-        .iter()
-        .find(|lookup| lookup["depName"] == dependency)
-        .with_context(|| format!("dependency lookup {dependency}"))
-}
-
-fn citations(lookup: &Value) -> impl Iterator<Item = &str> {
-    lookup["citations"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-}
-
-fn examples(lookup: &Value) -> impl Iterator<Item = &Value> {
-    lookup["existingImports"]["examples"]
-        .as_array()
-        .into_iter()
-        .flatten()
 }

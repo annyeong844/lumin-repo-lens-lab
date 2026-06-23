@@ -10,6 +10,10 @@ mod dependency_errors;
 mod dependency_graph;
 #[path = "prewrite/dependency_workspace.rs"]
 mod dependency_workspace;
+#[path = "prewrite/dependency_workspace_globs.rs"]
+mod dependency_workspace_globs;
+#[path = "prewrite/dependency_workspace_scope.rs"]
+mod dependency_workspace_scope;
 #[path = "prewrite/errors.rs"]
 mod errors;
 #[path = "prewrite/file_domain.rs"]

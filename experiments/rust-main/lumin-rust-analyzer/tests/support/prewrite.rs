@@ -133,3 +133,27 @@ impl PreWriteRepo {
         self.temp.path().join("pre-write.json")
     }
 }
+
+pub fn dependency_lookup<'a>(artifact: &'a Value, dependency: &str) -> Result<&'a Value> {
+    artifact["dependencyLookups"]
+        .as_array()
+        .context("dependencyLookups array")?
+        .iter()
+        .find(|lookup| lookup["depName"] == dependency)
+        .with_context(|| format!("dependency lookup {dependency}"))
+}
+
+pub fn citations(lookup: &Value) -> impl Iterator<Item = &str> {
+    lookup["citations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+}
+
+pub fn examples(lookup: &Value) -> impl Iterator<Item = &Value> {
+    lookup["existingImports"]["examples"]
+        .as_array()
+        .into_iter()
+        .flatten()
+}
