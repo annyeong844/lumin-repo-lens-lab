@@ -16,6 +16,7 @@ pub struct Summary {
     pub signals: usize,
     pub definitions: usize,
     pub shape_hashes: usize,
+    pub function_signatures: usize,
     pub impl_blocks: usize,
     pub impl_methods: usize,
     pub use_trees: usize,

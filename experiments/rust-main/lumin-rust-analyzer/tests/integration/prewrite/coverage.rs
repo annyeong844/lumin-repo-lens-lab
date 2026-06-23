@@ -51,7 +51,7 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
         .iter()
         .any(|citation| citation
             .as_str()
-            .is_some_and(|text| text.contains("does not yet make complete absence claims"))));
+            .is_some_and(|text| text.contains("do not yet make complete absence claims"))));
 
     let unavailable = artifact["unavailableEvidence"]
         .as_array()

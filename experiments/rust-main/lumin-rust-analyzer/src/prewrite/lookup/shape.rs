@@ -2,7 +2,8 @@ use serde::Serialize;
 
 use crate::prewrite::intent::{NormalizedIntent, ShapeIntent};
 use lumin_rust_source_health::protocol::{
-    AstShapeConfidence, AstShapeField, AstShapeKind, HealthResponse,
+    AstCallableKind, AstFunctionSignature, AstShapeConfidence, AstShapeField, AstShapeKind,
+    AstVisibility, HealthResponse,
 };
 
 const FIELD_ONLY_UNAVAILABLE_CITATION: &str =
@@ -21,7 +22,7 @@ pub(in crate::prewrite) struct ShapeLookup {
     #[serde(skip_serializing_if = "Option::is_none")]
     shape_hash_source: Option<ShapeHashSource>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    matches: Vec<ShapeMatch>,
+    matches: Vec<ShapeLookupMatch>,
     citations: Vec<String>,
 }
 
@@ -44,11 +45,19 @@ impl ShapeLookup {
         self.result == ShapeLookupResult::ShapeMatch && !self.matches.is_empty()
     }
 
+    pub(in crate::prewrite) fn is_signature_match(&self) -> bool {
+        self.result == ShapeLookupResult::SignatureMatch && !self.matches.is_empty()
+    }
+
+    pub(in crate::prewrite) fn is_match(&self) -> bool {
+        self.is_shape_match() || self.is_signature_match()
+    }
+
     pub(in crate::prewrite) fn shape_hash(&self) -> Option<&str> {
         self.shape_hash.as_deref()
     }
 
-    pub(in crate::prewrite) fn matches(&self) -> &[ShapeMatch] {
+    pub(in crate::prewrite) fn matches(&self) -> &[ShapeLookupMatch] {
         &self.matches
     }
 }
@@ -63,14 +72,75 @@ enum ShapeLookupKind {
 enum ShapeLookupResult {
     #[serde(rename = "SHAPE_MATCH")]
     ShapeMatch,
+    #[serde(rename = "SIGNATURE_MATCH")]
+    SignatureMatch,
     #[serde(rename = "UNAVAILABLE")]
     Unavailable,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
-enum ShapeHashSource {
+pub(in crate::prewrite) enum ShapeHashSource {
     Hash,
+    FunctionSignature,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub(in crate::prewrite) enum ShapeLookupMatch {
+    Shape(ShapeMatch),
+    Signature(SignatureMatch),
+}
+
+impl ShapeLookupMatch {
+    pub(in crate::prewrite) fn identity(&self) -> &str {
+        match self {
+            Self::Shape(candidate) => &candidate.identity,
+            Self::Signature(candidate) => &candidate.identity,
+        }
+    }
+
+    pub(in crate::prewrite) fn owner_file(&self) -> &str {
+        match self {
+            Self::Shape(candidate) => &candidate.owner_file,
+            Self::Signature(candidate) => &candidate.owner_file,
+        }
+    }
+
+    pub(in crate::prewrite) fn name(&self) -> &str {
+        match self {
+            Self::Shape(candidate) => &candidate.name,
+            Self::Signature(candidate) => &candidate.name,
+        }
+    }
+
+    pub(in crate::prewrite) fn is_safe_signature_surface(&self) -> bool {
+        match self {
+            Self::Shape(_) => false,
+            Self::Signature(candidate) => {
+                candidate.callable_kind == AstCallableKind::Function
+                    && matches!(
+                        candidate.visibility,
+                        AstVisibility::Public | AstVisibility::Crate | AstVisibility::Restricted
+                    )
+            }
+        }
+    }
+
+    pub(in crate::prewrite) fn signature_visibility(&self) -> Option<SignatureVisibility> {
+        match self {
+            Self::Shape(_) => None,
+            Self::Signature(candidate) => Some(candidate.visibility_label()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(in crate::prewrite) enum SignatureVisibility {
+    Exported,
+    FileLocal,
+    Unknown,
 }
 
 #[derive(Debug, Serialize)]
@@ -84,6 +154,40 @@ pub(in crate::prewrite) struct ShapeMatch {
     fields: Vec<AstShapeField>,
     visibility: lumin_rust_source_health::protocol::AstVisibility,
     confidence: AstShapeConfidence,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::prewrite) struct SignatureMatch {
+    pub(in crate::prewrite) identity: String,
+    pub(in crate::prewrite) owner_file: String,
+    pub(in crate::prewrite) name: String,
+    pub(in crate::prewrite) hash: String,
+    pub(in crate::prewrite) visibility: AstVisibility,
+    pub(in crate::prewrite) callable_kind: AstCallableKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite) local_name: Option<String>,
+    confidence: &'static str,
+}
+
+impl SignatureMatch {
+    fn visibility_label(&self) -> SignatureVisibility {
+        if self.is_exported_surface() {
+            SignatureVisibility::Exported
+        } else if matches!(self.visibility, AstVisibility::Private) {
+            SignatureVisibility::FileLocal
+        } else {
+            SignatureVisibility::Unknown
+        }
+    }
+
+    fn is_exported_surface(&self) -> bool {
+        self.callable_kind == AstCallableKind::Function
+            && matches!(
+                self.visibility,
+                AstVisibility::Public | AstVisibility::Crate | AstVisibility::Restricted
+            )
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -139,27 +243,46 @@ pub(in crate::prewrite) fn lookup_shapes(
 fn lookup_shape(shape: &ShapeIntent, syntax: &HealthResponse) -> ShapeLookup {
     if let Some(hash) = &shape.hash {
         let matches = shape_hash_matches(hash, syntax);
-        if matches.is_empty() {
-            return unavailable(
-                shape,
-                Some(hash.clone()),
-                Some(ShapeHashSource::Hash),
-                vec![format!(
-                    "[확인 불가, rust-source-health files[*].ast.shapeHashes has no exact match for {hash}; Rust shape producer does not yet make complete absence claims]"
-                )],
-            );
-        }
-        return ShapeLookup {
-            kind: ShapeLookupKind::Shape,
-            shape: shape.clone(),
-            result: ShapeLookupResult::ShapeMatch,
-            shape_hash: Some(hash.clone()),
-            shape_hash_source: Some(ShapeHashSource::Hash),
-            matches,
-            citations: vec![format!(
+        if !matches.is_empty() {
+            return ShapeLookup {
+                kind: ShapeLookupKind::Shape,
+                shape: shape.clone(),
+                result: ShapeLookupResult::ShapeMatch,
+                shape_hash: Some(hash.clone()),
+                shape_hash_source: Some(ShapeHashSource::Hash),
+                matches: matches.into_iter().map(ShapeLookupMatch::Shape).collect(),
+                citations: vec![format!(
                 "[grounded, rust-source-health files[*].ast.shapeHashes matched exact hash {hash}]"
             )],
-        };
+            };
+        }
+
+        let matches = function_signature_matches(hash, syntax);
+        if !matches.is_empty() {
+            return ShapeLookup {
+                kind: ShapeLookupKind::Shape,
+                shape: shape.clone(),
+                result: ShapeLookupResult::SignatureMatch,
+                shape_hash: Some(hash.clone()),
+                shape_hash_source: Some(ShapeHashSource::FunctionSignature),
+                matches: matches
+                    .into_iter()
+                    .map(ShapeLookupMatch::Signature)
+                    .collect(),
+                citations: vec![format!(
+                    "[grounded, rust-source-health files[*].ast.functionSignatures matched exact hash {hash}]"
+                )],
+            };
+        }
+
+        return unavailable(
+            shape,
+            Some(hash.clone()),
+            Some(ShapeHashSource::Hash),
+            vec![format!(
+                "[확인 불가, rust-source-health files[*].ast.shapeHashes and files[*].ast.functionSignatures have no exact match for {hash}; Rust producers do not yet make complete absence claims]"
+            )],
+        );
     }
 
     if shape.type_literal.is_some() {
@@ -201,6 +324,50 @@ fn shape_hash_matches(hash: &str, syntax: &HealthResponse) -> Vec<ShapeMatch> {
     }
     matches.sort_by(|left, right| left.identity.cmp(&right.identity));
     matches
+}
+
+fn function_signature_matches(hash: &str, syntax: &HealthResponse) -> Vec<SignatureMatch> {
+    let mut matches = Vec::new();
+    for (owner_file, file) in &syntax.files {
+        for fact in &file.ast.function_signatures {
+            if fact.hash != hash {
+                continue;
+            }
+            matches.push(signature_match(owner_file, fact));
+        }
+    }
+    matches.sort_by(|left, right| left.identity.cmp(&right.identity));
+    matches
+}
+
+fn signature_match(owner_file: &str, fact: &AstFunctionSignature) -> SignatureMatch {
+    let identity = match &fact.owner {
+        None => format!("{owner_file}::{}", fact.name),
+        Some(owner) => match &owner.trait_path {
+            None => format!("{owner_file}::{}#{}", owner.target, fact.name),
+            Some(trait_path) => {
+                format!(
+                    "{owner_file}::{} as {trait_path}#{}",
+                    owner.target, fact.name
+                )
+            }
+        },
+    };
+    let local_name = if fact.name == "default" {
+        None
+    } else {
+        Some(fact.name.clone())
+    };
+    SignatureMatch {
+        identity,
+        owner_file: owner_file.to_string(),
+        name: fact.name.clone(),
+        hash: fact.hash.clone(),
+        visibility: fact.visibility,
+        callable_kind: fact.callable_kind,
+        local_name,
+        confidence: "high",
+    }
 }
 
 fn unavailable(

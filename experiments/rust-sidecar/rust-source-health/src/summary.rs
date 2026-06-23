@@ -18,6 +18,7 @@ pub(crate) fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
         summary.signals += file.signals.len();
         summary.definitions += file.ast.definitions.len();
         summary.shape_hashes += file.ast.shape_hashes.len();
+        summary.function_signatures += file.ast.function_signatures.len();
         summary.impl_blocks += file.ast.impls.len();
         summary.impl_methods += file
             .ast

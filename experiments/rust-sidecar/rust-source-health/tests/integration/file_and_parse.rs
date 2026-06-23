@@ -55,6 +55,7 @@ impl Maybe {
         AstSummaryCounts {
             definitions: 4,
             shape_hashes: 1,
+            function_signatures: 3,
             impl_blocks: 1,
             impl_methods: 2,
             use_trees: 3,

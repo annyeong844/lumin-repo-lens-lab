@@ -45,8 +45,8 @@ pub(super) use service::{
     SERVICE_OPERATION_POLICY_VERSION,
 };
 pub(super) use shape::{
-    lookup_shapes, unavailable_evidence_from_shape_lookups, ShapeLookup, ShapeMatch,
-    UnavailableEvidence,
+    lookup_shapes, unavailable_evidence_from_shape_lookups, ShapeLookup, ShapeLookupMatch,
+    SignatureVisibility, UnavailableEvidence,
 };
 
 pub(super) fn lookup_names(

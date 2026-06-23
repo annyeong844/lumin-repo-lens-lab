@@ -140,6 +140,11 @@ Canonical JSON fields:
   Tuple structs, unit structs, generic structs, type aliases, and field-name-only
   intents remain unsupported until a checker-grade or explicitly documented
   producer exists.
+- `ast.functionSignatures[]`: exact Rust callable signature facts for parsed
+  top-level functions and `impl` methods. The normalized form is Rust-owned and
+  includes callable kind, receiver kind/text, compacted generic params,
+  parameter type text, and return type text. It does not include the function
+  name or body, and it does not claim semantic equivalence.
 - `ast.impls[]`: Rust `impl` block observations with `target`, optional
   `trait`, method owner evidence, and `location`. This is the Rust analogue of
   the JS/TS `classMethodIndex`: impl methods are visible as owner evidence
@@ -231,19 +236,25 @@ the JS/TS P1-2 behavior.
 Rust shape intent lookup follows the JS/TS P4 discipline: it must not infer
 structural equality from loose field names and must not add fuzzy shape
 matching. Non-empty shape intents emit `coverage.shapes = "ran"` because Rust
-source health now owns a narrow exact-hash shape producer. A `shape.hash`
-matching `HealthResponse::files[*].ast.shapeHashes[].hash` returns
-`SHAPE_MATCH`. Fields-only intents remain `UNAVAILABLE` because field names
-alone are not structural equality evidence. `typeLiteral` without an exact hash
-remains `UNAVAILABLE`; Rust must not parse TS/JS type literals in this lane.
-An unmatched exact hash is also `UNAVAILABLE` for now, not `NOT_OBSERVED`,
-because the Rust producer does not yet make complete absence claims for every
-Rust shape form. A positive exact-hash `SHAPE_MATCH` may emit the JS/TS
-`shape-hash` `SAFE_CUE` as claim-only evidence with `notSafeFor` preserving that
-it is not semantic equivalence, auto-reuse, or auto-fix proof. No review cue,
-absence cue, fuzzy cue, field-only cue, or `typeLiteral` cue may be emitted from
-this shape lane until a checker-grade or explicitly documented Rust producer
-owns that evidence.
+source health now owns narrow exact-hash producers. A `shape.hash` matching
+`HealthResponse::files[*].ast.shapeHashes[].hash` returns `SHAPE_MATCH`. A
+`shape.hash` matching
+`HealthResponse::files[*].ast.functionSignatures[].hash` returns
+`SIGNATURE_MATCH`, mirroring the JS/TS `_lib/pre-write-lookup-shape.mjs`
+`functionSignature` branch. Fields-only intents remain `UNAVAILABLE` because
+field names alone are not structural equality evidence. `typeLiteral` without
+an exact hash remains `UNAVAILABLE`; Rust must not parse TS/JS type literals in
+this lane. An unmatched exact hash is also `UNAVAILABLE` for now, not
+`NOT_OBSERVED`, because the Rust producer does not yet make complete absence
+claims for every Rust shape or callable form. A positive exact-hash
+`SHAPE_MATCH` may emit the JS/TS `shape-hash` `SAFE_CUE` as claim-only evidence.
+A positive function-signature `SIGNATURE_MATCH` may emit the JS/TS
+`function-signature` cue: top-level public/crate/restricted Rust functions may
+be claim-only `SAFE_CUE`; private functions and all `impl` methods remain
+`AGENT_REVIEW_CUE`. In all cases `notSafeFor` must preserve that the cue is not
+semantic equivalence, auto-reuse, or auto-fix proof. No absence cue, fuzzy cue,
+field-only cue, or `typeLiteral` cue may be emitted from this lane until a
+checker-grade or explicitly documented Rust producer owns that evidence.
 
 Rust dependency intent lookup is the Rust analogue of the JS/TS
 `pre-write-lookup-dep.mjs` lane:
@@ -428,6 +439,7 @@ Final artifacts must satisfy these counts:
 - `summary.unsafeFunctions === sum(files[*].facts.unsafeFunctions)`
 - `summary.definitions === sum(files[*].ast.definitions.length)`
 - `summary.shapeHashes === sum(files[*].ast.shapeHashes.length)`
+- `summary.functionSignatures === sum(files[*].ast.functionSignatures.length)`
 - `summary.implBlocks === sum(files[*].ast.impls.length)`
 - `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`
 - `summary.useTrees === sum(files[*].ast.useTrees.length)`

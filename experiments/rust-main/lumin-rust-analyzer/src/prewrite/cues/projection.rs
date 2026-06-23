@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
     CandidateRecord, DependencyLookup, FileLookup, LocalOperationPolicyEntry, NameLookup,
-    ServiceOperationPolicyEntry, ShapeLookup, ShapeMatch, SuppressedNearNameHint,
+    ServiceOperationPolicyEntry, ShapeLookup, ShapeLookupMatch, SuppressedNearNameHint,
     SuppressedSemanticHint, DEPENDENCY_WATCH_FOR_THRESHOLD,
 };
 use crate::prewrite::tokens::TOKEN_POLICY_VERSION;
@@ -52,7 +52,7 @@ pub(in crate::prewrite) fn project(
         add_service_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
         add_local_operation_sibling_policy(lookup, &mut cards, &mut suppressed);
     }
-    add_shape_hash_cues(shape_lookups, &mut cards);
+    add_shape_lookup_cues(shape_lookups, &mut cards);
     add_file_exact_cues(file_lookups, &mut cards);
     add_file_domain_cluster_cues(file_lookups, &mut cards);
     add_dependency_hub_cues(dependency_lookups, &mut cards);
@@ -165,14 +165,11 @@ fn add_dependency_hub_cues(
     }
 }
 
-fn add_shape_hash_cues(
+fn add_shape_lookup_cues(
     shape_lookups: &[ShapeLookup],
     cards: &mut BTreeMap<String, CueCardBuilder>,
 ) {
-    for lookup in shape_lookups
-        .iter()
-        .filter(|lookup| lookup.is_shape_match())
-    {
+    for lookup in shape_lookups.iter().filter(|lookup| lookup.is_match()) {
         let Some(shape_hash) = lookup.shape_hash() else {
             continue;
         };
@@ -180,13 +177,20 @@ fn add_shape_hash_cues(
             add_cue_for_candidate(
                 cards,
                 CueCandidate::from(candidate),
-                shape_hash_cue(candidate, shape_hash),
+                shape_lookup_cue(candidate, shape_hash),
             );
         }
     }
 }
 
-fn shape_hash_cue(candidate: &ShapeMatch, shape_hash: &str) -> Cue {
+fn shape_lookup_cue(candidate: &ShapeLookupMatch, shape_hash: &str) -> Cue {
+    match candidate {
+        ShapeLookupMatch::Shape(_) => shape_hash_cue(candidate, shape_hash),
+        ShapeLookupMatch::Signature(_) => function_signature_cue(candidate, shape_hash),
+    }
+}
+
+fn shape_hash_cue(candidate: &ShapeLookupMatch, shape_hash: &str) -> Cue {
     Cue {
         cue_tier: CueTier::Safe,
         safe_meaning: Some(SafeMeaning::ClaimOnly),
@@ -204,8 +208,60 @@ fn shape_hash_cue(candidate: &ShapeMatch, shape_hash: &str) -> Cue {
             matched_field_source: None,
             algorithm_version: Some("shape-hash.normalized.v1"),
             hash: Some(shape_hash.to_string()),
-            candidate_identity: candidate.identity.clone(),
-            file: Some(candidate.owner_file.clone()),
+            visibility: None,
+            local_name: None,
+            candidate_identity: candidate.identity().to_string(),
+            file: Some(candidate.owner_file().to_string()),
+            file_lookup_result: None,
+            dependency_lookup_result: None,
+            observed_import_count: None,
+            consumer_threshold: None,
+            distance: None,
+            tokens: Vec::new(),
+            policy_id: None,
+            policy_version: None,
+            operation_family: None,
+            shared_domain_tokens: Vec::new(),
+            locality: None,
+            supporting_reasons: Vec::new(),
+            surface_kind: None,
+            container_name: None,
+            container_kind: None,
+        }],
+    }
+}
+
+fn function_signature_cue(candidate: &ShapeLookupMatch, shape_hash: &str) -> Cue {
+    let safe = candidate.is_safe_signature_surface();
+    Cue {
+        cue_tier: if safe {
+            CueTier::Safe
+        } else {
+            CueTier::AgentReview
+        },
+        safe_meaning: safe.then_some(SafeMeaning::ClaimOnly),
+        not_safe_for: if safe {
+            vec![
+                NotSafeFor::SemanticEquivalence,
+                NotSafeFor::AutoReuse,
+                NotSafeFor::AutoFix,
+            ]
+        } else {
+            Vec::new()
+        },
+        evidence_lane: EvidenceLane::FunctionSignature,
+        claim: CueClaim::SameNormalizedFunctionSignature,
+        confidence: CueConfidence::Grounded,
+        evidence: vec![CueEvidence {
+            artifact: "rust-source-health",
+            matched_field: CueMatchedField::RustSourceHealthFunctionSignatureHash,
+            matched_field_source: None,
+            algorithm_version: Some("function-signature.normalized.v1"),
+            hash: Some(shape_hash.to_string()),
+            visibility: candidate.signature_visibility(),
+            local_name: Some(candidate.name().to_string()),
+            candidate_identity: candidate.identity().to_string(),
+            file: Some(candidate.owner_file().to_string()),
             file_lookup_result: None,
             dependency_lookup_result: None,
             observed_import_count: None,
@@ -243,6 +299,8 @@ fn file_exact_cue(identity: String, lookup: &FileLookup) -> Cue {
             matched_field_source: None,
             algorithm_version: Some("exact-file.v1"),
             hash: None,
+            visibility: None,
+            local_name: None,
             candidate_identity: identity,
             file: Some(lookup.intent_file.clone()),
             file_lookup_result: Some(lookup.result()),
@@ -278,6 +336,8 @@ fn file_domain_cluster_cue(identity: String, lookup: &FileLookup) -> Cue {
             matched_field_source: None,
             algorithm_version: None,
             hash: None,
+            visibility: None,
+            local_name: None,
             candidate_identity: identity,
             file: Some(lookup.intent_file.clone()),
             file_lookup_result: Some(lookup.result()),
@@ -313,6 +373,8 @@ fn dependency_hub_cue(identity: String, lookup: &DependencyLookup) -> Cue {
             matched_field_source: None,
             algorithm_version: None,
             hash: None,
+            visibility: None,
+            local_name: None,
             candidate_identity: identity,
             file: None,
             file_lookup_result: None,
@@ -397,6 +459,8 @@ fn safe_cue(candidate: &CandidateRecord) -> Cue {
             matched_field_source: None,
             algorithm_version: Some("exact-symbol.v1"),
             hash: None,
+            visibility: None,
+            local_name: None,
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
@@ -441,6 +505,8 @@ fn near_name_cue(candidate: &CandidateRecord, distance: usize) -> Cue {
             matched_field_source: None,
             algorithm_version: Some("near-name.v1"),
             hash: None,
+            visibility: None,
+            local_name: None,
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
@@ -485,6 +551,8 @@ fn semantic_hint_cue(candidate: &CandidateRecord, tokens: &[String]) -> Cue {
             matched_field_source: None,
             algorithm_version: Some(TOKEN_POLICY_VERSION),
             hash: None,
+            visibility: None,
+            local_name: None,
             candidate_identity: candidate.identity.clone(),
             file: None,
             file_lookup_result: None,
@@ -563,6 +631,8 @@ fn service_operation_cue(
             matched_field_source: None,
             algorithm_version: None,
             hash: None,
+            visibility: None,
+            local_name: None,
             candidate_identity: entry.identity.clone(),
             file: None,
             file_lookup_result: None,
@@ -661,6 +731,8 @@ fn local_operation_cue(
             matched_field_source: Some(entry.matched_field),
             algorithm_version: None,
             hash: None,
+            visibility: None,
+            local_name: None,
             candidate_identity: entry.identity.clone(),
             file: None,
             file_lookup_result: None,

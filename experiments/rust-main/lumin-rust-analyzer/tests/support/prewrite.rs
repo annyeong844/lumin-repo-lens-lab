@@ -3,6 +3,11 @@ use std::path::Path;
 use std::process::Output;
 
 use anyhow::{Context, Result};
+use lumin_rust_source_health::{
+    analyze_root,
+    protocol::{HealthResponse, DEFAULT_WORKER_STACK_BYTES},
+    RustSourceHealthOptions,
+};
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -75,6 +80,15 @@ impl PreWriteRepo {
         );
         serde_json::from_slice(&fs::read(self.output_path())?)
             .context("parse rust pre-write artifact")
+    }
+
+    pub fn source_health(&self) -> Result<HealthResponse> {
+        analyze_root(RustSourceHealthOptions {
+            root: self.temp.path().to_path_buf(),
+            source_commit: "test-source-commit".to_string(),
+            thread_count: None,
+            worker_stack_bytes: DEFAULT_WORKER_STACK_BYTES,
+        })
     }
 
     pub fn run(&self, intent: &str) -> Result<Output> {

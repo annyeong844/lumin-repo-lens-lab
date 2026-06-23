@@ -19,7 +19,7 @@ pub fn assert_syntax_artifact_metadata(artifact: &Value) {
     assert_eq!(artifact["meta"]["parser"]["version"], "0.0.337");
     assert_eq!(
         artifact["meta"]["policy"]["version"],
-        "m6-rust-source-health-syntax-v4"
+        "m6-rust-source-health-syntax-v5"
     );
     assert_eq!(
         artifact["meta"]["policy"]["signalPolicy"]["id"],

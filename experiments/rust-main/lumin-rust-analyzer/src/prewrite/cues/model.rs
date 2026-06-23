@@ -5,7 +5,8 @@ use crate::prewrite::index::MatchedField;
 use crate::prewrite::lookup::{
     CandidateRecord, DependencyLookupResult, FileLookupResult, LocalOperationMuteReason,
     LocalOperationPolicyEntry, Locality, PolicySupportingReason, ServiceOperationFamily,
-    ServiceOperationMuteReason, ServiceOperationPolicyEntry, ShapeMatch, SuppressionReason,
+    ServiceOperationMuteReason, ServiceOperationPolicyEntry, ShapeLookupMatch, SignatureVisibility,
+    SuppressionReason,
 };
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
@@ -31,6 +32,7 @@ pub(in crate::prewrite) enum EvidenceLane {
     ServiceOperationSibling,
     LocalOperationSibling,
     ShapeHash,
+    FunctionSignature,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -76,6 +78,8 @@ pub(in crate::prewrite::cues) enum CueClaim {
     RelatedLocalServiceOperation,
     #[serde(rename = "same normalized type shape")]
     SameNormalizedTypeShape,
+    #[serde(rename = "same normalized function signature")]
+    SameNormalizedFunctionSignature,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -100,6 +104,8 @@ pub(in crate::prewrite) enum CueMatchedField {
     LocalOperationSiblingPolicyPromoted,
     #[serde(rename = "files[].ast.shapeHashes[].hash")]
     RustSourceHealthShapeHash,
+    #[serde(rename = "files[].ast.functionSignatures[].hash")]
+    RustSourceHealthFunctionSignatureHash,
 }
 
 impl From<MatchedField> for CueMatchedField {
@@ -124,6 +130,10 @@ pub(in crate::prewrite) struct CueEvidence {
     pub(in crate::prewrite::cues) algorithm_version: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite) hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) visibility: Option<SignatureVisibility>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::prewrite::cues) local_name: Option<String>,
     pub(in crate::prewrite::cues) candidate_identity: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(in crate::prewrite::cues) file: Option<String>,
@@ -211,12 +221,12 @@ impl From<&LocalOperationPolicyEntry> for CueCandidate {
     }
 }
 
-impl From<&ShapeMatch> for CueCandidate {
-    fn from(candidate: &ShapeMatch) -> Self {
+impl From<&ShapeLookupMatch> for CueCandidate {
+    fn from(candidate: &ShapeLookupMatch) -> Self {
         Self {
-            identity: candidate.identity.clone(),
-            owner_file: candidate.owner_file.clone(),
-            name: candidate.name.clone(),
+            identity: candidate.identity().to_string(),
+            owner_file: candidate.owner_file().to_string(),
+            name: candidate.name().to_string(),
         }
     }
 }

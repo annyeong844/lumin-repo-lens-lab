@@ -27,6 +27,32 @@ pub fn assert_core_ast_fact_projection(artifact: &Value, path: &str) {
     assert_eq!(ast["shapeHashes"][0]["fields"][1]["name"], "label");
     assert_eq!(ast["shapeHashes"][0]["fields"][1]["type"], "usize");
     assert_eq!(ast["shapeHashes"][0]["fields"][1]["visibility"], "private");
+    assert_eq!(ast["functionSignatures"][0]["kind"], "function-signature");
+    assert_eq!(ast["functionSignatures"][0]["callableKind"], "function");
+    assert_eq!(ast["functionSignatures"][0]["name"], "build");
+    assert_eq!(ast["functionSignatures"][0]["visibility"], "public");
+    assert_eq!(
+        ast["functionSignatures"][0]["normalizedVersion"],
+        "rust-function-signature.normalized.v1"
+    );
+    assert!(ast["functionSignatures"][0]["hash"]
+        .as_str()
+        .is_some_and(|hash| hash.starts_with("sha256:")));
+    assert!(ast["functionSignatures"][0]["params"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+    assert!(ast["functionSignatures"][0].get("returnType").is_none());
+    assert_eq!(ast["functionSignatures"][1]["callableKind"], "impl-method");
+    assert_eq!(ast["functionSignatures"][1]["name"], "normalize");
+    assert_eq!(ast["functionSignatures"][1]["owner"]["target"], "Maybe");
+    assert_eq!(ast["functionSignatures"][1]["receiver"]["kind"], "ref");
+    assert_eq!(ast["functionSignatures"][1]["receiver"]["text"], "&self");
+    assert_eq!(ast["functionSignatures"][1]["returnType"], "usize");
+    assert_eq!(ast["functionSignatures"][2]["callableKind"], "impl-method");
+    assert_eq!(ast["functionSignatures"][2]["name"], "make");
+    assert_eq!(ast["functionSignatures"][2]["visibility"], "crate");
+    assert!(ast["functionSignatures"][2].get("receiver").is_none());
+    assert_eq!(ast["functionSignatures"][2]["returnType"], "Self");
     assert_eq!(ast["impls"][0]["target"], "Maybe");
     assert!(ast["impls"][0].get("trait").is_none());
     assert_eq!(ast["impls"][0]["methods"][0]["name"], "normalize");

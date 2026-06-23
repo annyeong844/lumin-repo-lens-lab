@@ -1,13 +1,15 @@
 use crate::locations::LineIndex;
 use crate::protocol::{
-    AstDefinitionKind, AstImplBlock, AstImplMethod, AstShapeConfidence, AstShapeField,
-    AstShapeFieldKind, AstShapeHash, AstShapeHashKind, AstShapeKind, SignalKind,
+    AstCallableKind, AstDefinitionKind, AstFunctionOwner, AstFunctionParam, AstFunctionReceiver,
+    AstFunctionReceiverKind, AstFunctionSignature, AstFunctionSignatureKind, AstImplBlock,
+    AstImplMethod, AstShapeConfidence, AstShapeField, AstShapeFieldKind, AstShapeHash,
+    AstShapeHashKind, AstShapeKind, SignalKind, RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
     RUST_SHAPE_HASH_NORMALIZED_VERSION,
 };
 use lumin_rust_common::sha256_text;
 use ra_ap_syntax::{
     ast::{self, HasGenericParams, HasName, HasVisibility, StructKind},
-    AstNode, SyntaxNode,
+    AstNode, SyntaxKind, SyntaxNode,
 };
 use serde::Serialize;
 
@@ -34,6 +36,21 @@ pub(super) fn collect_function(node: &SyntaxNode, line_index: &LineIndex, syntax
         ast::Fn::cast(node.clone()),
         line_index,
     );
+    let Some(function) = ast::Fn::cast(node.clone()) else {
+        return;
+    };
+    if function_is_nested_or_associated(node) {
+        return;
+    }
+    if let Some(signature) = function_signature(
+        &function,
+        AstCallableKind::Function,
+        None,
+        function.visibility(),
+        line_index,
+    ) {
+        syntax.ast.function_signatures.push(signature);
+    }
 }
 
 pub(super) fn collect_struct(node: &SyntaxNode, line_index: &LineIndex, syntax: &mut FileSyntax) {
@@ -124,6 +141,109 @@ fn rust_shape_hash(fields: &[AstShapeField]) -> Option<String> {
         .map(|text| sha256_text(&text))
 }
 
+fn function_signature(
+    function: &ast::Fn,
+    callable_kind: AstCallableKind,
+    owner: Option<AstFunctionOwner>,
+    visibility: Option<ast::Visibility>,
+    line_index: &LineIndex,
+) -> Option<AstFunctionSignature> {
+    let name = function.name()?;
+    let param_list = function.param_list()?;
+    let receiver = param_list.self_param().map(function_receiver);
+    let params = param_list
+        .params()
+        .map(|param| {
+            let ty = param.ty()?;
+            Some(AstFunctionParam {
+                type_text: compact_rust_type_text(&syntax_text(ty.syntax())),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let return_type = function
+        .ret_type()
+        .and_then(|ret_type| ret_type.ty())
+        .map(|ty| compact_rust_type_text(&syntax_text(ty.syntax())));
+    let generics = function
+        .generic_param_list()
+        .map(|generics| compact_rust_type_text(&syntax_text(generics.syntax())))
+        .filter(|text| !text.is_empty());
+    let hash = rust_function_signature_hash(
+        callable_kind,
+        generics.as_deref(),
+        receiver.as_ref(),
+        &params,
+        return_type.as_deref(),
+    )?;
+
+    Some(AstFunctionSignature {
+        kind: AstFunctionSignatureKind::FunctionSignature,
+        hash,
+        name: name.text().to_string(),
+        visibility: visibility_for(visibility),
+        callable_kind,
+        owner,
+        normalized_version: RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
+        generics,
+        receiver,
+        params,
+        return_type,
+        location: ast_location(line_index, function.syntax().text_range()),
+    })
+}
+
+fn function_receiver(self_param: ast::SelfParam) -> AstFunctionReceiver {
+    let kind = match self_param.kind() {
+        ast::SelfParamKind::Owned => AstFunctionReceiverKind::Owned,
+        ast::SelfParamKind::Ref => AstFunctionReceiverKind::Ref,
+        ast::SelfParamKind::MutRef => AstFunctionReceiverKind::MutRef,
+    };
+    AstFunctionReceiver {
+        kind,
+        text: compact_rust_type_text(&syntax_text(self_param.syntax())),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NormalizedRustFunctionSignature<'a> {
+    schema_version: &'static str,
+    callable_kind: AstCallableKind,
+    generics: Option<&'a str>,
+    receiver: Option<&'a AstFunctionReceiver>,
+    params: &'a [AstFunctionParam],
+    return_type: Option<&'a str>,
+}
+
+fn rust_function_signature_hash(
+    callable_kind: AstCallableKind,
+    generics: Option<&str>,
+    receiver: Option<&AstFunctionReceiver>,
+    params: &[AstFunctionParam],
+    return_type: Option<&str>,
+) -> Option<String> {
+    let normalized = NormalizedRustFunctionSignature {
+        schema_version: RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
+        callable_kind,
+        generics,
+        receiver,
+        params,
+        return_type,
+    };
+    serde_json::to_string(&normalized)
+        .ok()
+        .map(|text| sha256_text(&text))
+}
+
+fn function_is_nested_or_associated(node: &SyntaxNode) -> bool {
+    node.ancestors().skip(1).any(|ancestor| {
+        matches!(
+            ancestor.kind(),
+            SyntaxKind::FN | SyntaxKind::ASSOC_ITEM_LIST
+        )
+    })
+}
+
 fn compact_rust_type_text(raw: &str) -> String {
     let mut out = String::new();
     let mut pending_space = false;
@@ -182,26 +302,48 @@ pub(super) fn collect_impl(node: &SyntaxNode, line_index: &LineIndex, syntax: &m
     let Some(target) = impl_block.self_ty() else {
         return;
     };
-    syntax.ast.impls.push(AstImplBlock {
+    let owner = AstFunctionOwner {
         target: syntax_text(target.syntax()),
         trait_path: impl_block
             .trait_()
             .map(|trait_path| syntax_text(trait_path.syntax())),
-        methods: impl_methods(&impl_block, line_index),
+    };
+    let (methods, signatures) = impl_methods_and_signatures(&impl_block, &owner, line_index);
+    syntax.ast.function_signatures.extend(signatures);
+    syntax.ast.impls.push(AstImplBlock {
+        target: owner.target,
+        trait_path: owner.trait_path,
+        methods,
         location: ast_location(line_index, impl_block.syntax().text_range()),
     });
 }
 
-fn impl_methods(impl_block: &ast::Impl, line_index: &LineIndex) -> Vec<AstImplMethod> {
+fn impl_methods_and_signatures(
+    impl_block: &ast::Impl,
+    owner: &AstFunctionOwner,
+    line_index: &LineIndex,
+) -> (Vec<AstImplMethod>, Vec<AstFunctionSignature>) {
     let Some(items) = impl_block.assoc_item_list() else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
-    items
-        .assoc_items()
-        .filter_map(|item| match item {
+    let mut methods = Vec::new();
+    let mut signatures = Vec::new();
+    for item in items.assoc_items() {
+        match item {
             ast::AssocItem::Fn(function) => {
-                let name = function.name()?;
-                Some(AstImplMethod {
+                let Some(name) = function.name() else {
+                    continue;
+                };
+                if let Some(signature) = function_signature(
+                    &function,
+                    AstCallableKind::ImplMethod,
+                    Some(owner.clone()),
+                    function.visibility(),
+                    line_index,
+                ) {
+                    signatures.push(signature);
+                }
+                methods.push(AstImplMethod {
                     name: name.text().to_string(),
                     visibility: visibility_for(function.visibility()),
                     has_receiver: function
@@ -209,13 +351,14 @@ fn impl_methods(impl_block: &ast::Impl, line_index: &LineIndex) -> Vec<AstImplMe
                         .and_then(|params| params.self_param())
                         .is_some(),
                     location: ast_location(line_index, function.syntax().text_range()),
-                })
+                });
             }
             ast::AssocItem::Const(_)
             | ast::AssocItem::MacroCall(_)
-            | ast::AssocItem::TypeAlias(_) => None,
-        })
-        .collect()
+            | ast::AssocItem::TypeAlias(_) => {}
+        }
+    }
+    (methods, signatures)
 }
 
 pub(super) fn collect_module(node: &SyntaxNode, line_index: &LineIndex, syntax: &mut FileSyntax) {

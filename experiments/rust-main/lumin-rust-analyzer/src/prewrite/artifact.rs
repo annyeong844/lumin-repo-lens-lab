@@ -73,6 +73,12 @@ impl PreWriteArtifact {
                                     == CueMatchedField::RustSourceHealthShapeHash
                                     && evidence.hash.is_some()
                             }) => {}
+                        EvidenceLane::FunctionSignature
+                            if cue.evidence.iter().all(|evidence| {
+                                evidence.matched_field
+                                    == CueMatchedField::RustSourceHealthFunctionSignatureHash
+                                    && evidence.hash.is_some()
+                            }) => {}
                         _ => bail!(
                             "blocked-artifact-contract: SAFE cue {} is not exact source-health evidence",
                             card.candidate.identity
@@ -117,7 +123,7 @@ impl PreWriteArtifact {
             if &lookup.shape != intent_shape {
                 bail!("blocked-artifact-contract: shape lookup drifted from normalized intent");
             }
-            if !lookup.is_unavailable() && !lookup.is_shape_match() {
+            if !lookup.is_unavailable() && !lookup.is_match() {
                 bail!("blocked-artifact-contract: shape lookup emitted an invalid result");
             }
         }
