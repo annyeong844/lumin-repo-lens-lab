@@ -6,7 +6,7 @@ use toml::Value as TomlValue;
 
 mod glob;
 
-use glob::{member_manifest_paths_for_pattern, workspace_member_root_matches};
+use glob::{member_manifest_paths_for_pattern, workspace_member_root_is_excluded};
 
 pub(super) fn workspace_member_manifest_paths(
     root: &Path,
@@ -52,5 +52,5 @@ fn is_excluded_workspace_member(root: &Path, manifest: &Path, excludes: &[String
     let member_root = manifest.parent().unwrap_or(manifest);
     excludes
         .iter()
-        .any(|exclude| workspace_member_root_matches(root, member_root, exclude))
+        .any(|exclude| workspace_member_root_is_excluded(root, member_root, exclude))
 }

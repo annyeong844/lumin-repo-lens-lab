@@ -16,12 +16,15 @@ pub(super) fn member_manifest_paths_for_pattern(root: &Path, member: &str) -> Re
     Ok(manifest.is_file().then_some(manifest).into_iter().collect())
 }
 
-pub(super) fn workspace_member_root_matches(
+pub(super) fn workspace_member_root_is_excluded(
     root: &Path,
     member_root: &Path,
-    pattern: &str,
+    exclude: &str,
 ) -> bool {
-    let components = member_components(pattern);
+    let exclude_components = member_components(exclude);
+    if exclude_components.is_empty() {
+        return false;
+    }
     let member_components = member_root
         .strip_prefix(root)
         .unwrap_or(member_root)
@@ -29,7 +32,7 @@ pub(super) fn workspace_member_root_matches(
         .filter_map(|component| component.as_os_str().to_str())
         .map(str::to_string)
         .collect::<Vec<_>>();
-    path_components_match(&components, &member_components)
+    path_components_start_with(&member_components, &exclude_components)
 }
 
 fn collect_glob_member_manifests(
@@ -94,17 +97,8 @@ fn child_directories(parent: &Path) -> Result<Vec<PathBuf>> {
     Ok(children)
 }
 
-fn path_components_match(pattern: &[String], path: &[String]) -> bool {
-    if pattern.is_empty() {
-        return path.is_empty();
-    }
-    if pattern[0] == "**" {
-        return path_components_match(&pattern[1..], path)
-            || (!path.is_empty() && path_components_match(pattern, &path[1..]));
-    }
-    !path.is_empty()
-        && glob_component_matches(&pattern[0], &path[0])
-        && path_components_match(&pattern[1..], &path[1..])
+fn path_components_start_with(path: &[String], prefix: &[String]) -> bool {
+    path.len() >= prefix.len() && path[..prefix.len()] == *prefix
 }
 
 fn member_components(pattern: &str) -> Vec<String> {
@@ -117,11 +111,11 @@ fn member_components(pattern: &str) -> Vec<String> {
 }
 
 fn member_contains_glob(pattern: &str) -> bool {
-    pattern.contains('*') || pattern.contains('?')
+    pattern.contains('*') || pattern.contains('?') || pattern.contains('[')
 }
 
 fn component_contains_glob(component: &str) -> bool {
-    component.contains('*') || component.contains('?')
+    component.contains('*') || component.contains('?') || component.contains('[')
 }
 
 fn glob_component_matches(pattern: &str, value: &str) -> bool {
@@ -141,6 +135,37 @@ fn glob_chars_match(pattern: &[char], value: &[char]) -> bool {
                 || (!value.is_empty() && glob_chars_match(pattern, &value[1..]))
         }
         '?' => !value.is_empty() && glob_chars_match(&pattern[1..], &value[1..]),
+        '[' => {
+            if let Some((matched, consumed)) = match_char_class(pattern, value.first().copied()) {
+                matched && glob_chars_match(&pattern[consumed..], &value[1..])
+            } else {
+                value.first() == Some(&'[') && glob_chars_match(&pattern[1..], &value[1..])
+            }
+        }
         ch => value.first() == Some(&ch) && glob_chars_match(&pattern[1..], &value[1..]),
     }
+}
+
+fn match_char_class(pattern: &[char], value: Option<char>) -> Option<(bool, usize)> {
+    let value = value?;
+    let negated = matches!(pattern.get(1), Some('!' | '^'));
+    let mut index = if negated { 2 } else { 1 };
+    let mut matched = false;
+    let mut has_member = false;
+    while index < pattern.len() {
+        if pattern[index] == ']' && has_member {
+            return Some((if negated { !matched } else { matched }, index + 1));
+        }
+        if index + 2 < pattern.len() && pattern[index + 1] == '-' && pattern[index + 2] != ']' {
+            let start = pattern[index];
+            let end = pattern[index + 2];
+            matched |= start <= value && value <= end;
+            index += 3;
+        } else {
+            matched |= pattern[index] == value;
+            index += 1;
+        }
+        has_member = true;
+    }
+    None
 }
