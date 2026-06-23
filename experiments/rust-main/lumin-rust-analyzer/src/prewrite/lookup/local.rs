@@ -2,15 +2,19 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use lumin_rust_common::posix_path_text;
-use lumin_rust_source_health::protocol::PathClassification;
+
+mod mute;
+mod order;
 
 use super::model::{
-    LocalOperationMuteReason, LocalOperationPolicyEntry, LocalOperationPolicyStatus,
-    LocalOperationSiblingPolicy, Locality, PolicySupportingReason,
+    LocalOperationPolicyEntry, LocalOperationPolicyStatus, LocalOperationSiblingPolicy, Locality,
+    PolicySupportingReason,
 };
-use super::ServiceOperationFamily;
 use crate::prewrite::index::LocalOperationCandidate;
 use crate::prewrite::operation::service_operation_info;
+
+use mute::local_mute_reason;
+use order::sort_local_entries;
 
 pub(in crate::prewrite) const LOCAL_OPERATION_POLICY_ID: &str = "prewrite-local-operation-sibling";
 pub(in crate::prewrite) const LOCAL_OPERATION_POLICY_VERSION: &str =
@@ -114,48 +118,6 @@ fn empty_policy(reason: Option<&'static str>) -> LocalOperationSiblingPolicy {
     }
 }
 
-fn local_mute_reason(
-    candidate: &LocalOperationCandidate<'_>,
-    intent_family: Option<ServiceOperationFamily>,
-    intent_domains: &BTreeSet<String>,
-    shared_domain_tokens: &[String],
-    locality: Locality,
-) -> Option<LocalOperationMuteReason> {
-    if candidate.identity().is_empty()
-        || candidate.name.is_empty()
-        || candidate.file.is_empty()
-        || candidate.container_name.is_empty()
-    {
-        Some(LocalOperationMuteReason::InsufficientMetadata)
-    } else if candidate.container_kind != "function-declaration" {
-        Some(LocalOperationMuteReason::SurfaceKindUnsupported)
-    } else if is_policy_excluded(candidate) {
-        Some(LocalOperationMuteReason::PolicyExcluded)
-    } else if !locality.same_file {
-        Some(LocalOperationMuteReason::LocalityMismatch)
-    } else if intent_family.is_none() {
-        Some(LocalOperationMuteReason::UnknownOperation)
-    } else if intent_domains.is_empty() || shared_domain_tokens.is_empty() {
-        Some(LocalOperationMuteReason::DomainMismatch)
-    } else if intent_family != Some(candidate.operation_family) {
-        Some(LocalOperationMuteReason::FamilyMismatch)
-    } else if intent_family != Some(ServiceOperationFamily::ReadQuery) {
-        Some(LocalOperationMuteReason::FamilyNotPromotable)
-    } else {
-        None
-    }
-}
-
-fn is_policy_excluded(candidate: &LocalOperationCandidate<'_>) -> bool {
-    candidate.path.suppressed
-        || candidate.classifications().iter().any(|classification| {
-            matches!(
-                classification,
-                PathClassification::Test | PathClassification::Generated
-            )
-        })
-}
-
 fn locality_for(owner_file: &str, candidate_file: &str) -> Locality {
     Locality {
         same_file: owner_file == candidate_file,
@@ -165,21 +127,4 @@ fn locality_for(owner_file: &str, candidate_file: &str) -> Locality {
 
 fn parent_path(path: &str) -> Option<&Path> {
     Path::new(path).parent()
-}
-
-fn sort_local_entries(entries: &mut [LocalOperationPolicyEntry]) {
-    entries.sort_by(|left, right| {
-        right
-            .locality
-            .rank()
-            .cmp(&left.locality.rank())
-            .then(
-                left.operation_family
-                    .as_str()
-                    .cmp(right.operation_family.as_str()),
-            )
-            .then(left.name.cmp(&right.name))
-            .then(left.owner_file.cmp(&right.owner_file))
-            .then(left.identity.cmp(&right.identity))
-    });
 }
