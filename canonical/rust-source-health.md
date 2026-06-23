@@ -114,7 +114,7 @@ forbidden unless this canonical file is amended with a migration reason.
 | AST fact range conversion | `ast_location(line_index, range)` | `src/analyzer.rs` |
 | file syntax collection | `collect_file_syntax(...)` | `src/analyzer/syntax.rs` |
 | single-pass syntax node dispatch | `collect_syntax_node(...)` | `src/analyzer/syntax/visit.rs` |
-| Rust record shape hash extraction | `collect_struct_shape_hash(...)` | `src/analyzer/syntax/items.rs` |
+| Rust record shape hash extraction | `collect_struct_shape_hash(...)` | `src/analyzer/syntax/items/shapes.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
 | unsafe block syntax check | `is_unsafe_block_expr(node)` | `src/analyzer.rs` |
