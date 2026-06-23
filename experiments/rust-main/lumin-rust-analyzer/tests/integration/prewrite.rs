@@ -4,9 +4,31 @@ mod coverage;
 mod cues;
 #[path = "prewrite/dependencies.rs"]
 mod dependencies;
+#[path = "prewrite/dependency_errors.rs"]
+mod dependency_errors;
+#[path = "prewrite/dependency_graph.rs"]
+mod dependency_graph;
+#[path = "prewrite/dependency_workspace.rs"]
+mod dependency_workspace;
 #[path = "prewrite/errors.rs"]
 mod errors;
+#[path = "prewrite/file_domain.rs"]
+mod file_domain;
+#[path = "prewrite/file_symlinks.rs"]
+mod file_symlinks;
 #[path = "prewrite/files.rs"]
 mod files;
+#[path = "prewrite/intent_lanes.rs"]
+mod intent_lanes;
 #[path = "prewrite/local_operations.rs"]
 mod local_operations;
+#[path = "prewrite/service_cues.rs"]
+mod service_cues;
+#[path = "prewrite/shape.rs"]
+mod shape;
+#[path = "prewrite/signature_cues.rs"]
+mod signature_cues;
+#[path = "prewrite/stability.rs"]
+mod stability;
+#[path = "prewrite/use_tree_cues.rs"]
+mod use_tree_cues;

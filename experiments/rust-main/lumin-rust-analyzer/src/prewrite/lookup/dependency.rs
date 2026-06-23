@@ -92,12 +92,15 @@ struct CargoManifest {
 
 struct CargoManifestScope {
     manifest_path: String,
+    scope_root: String,
     value: TomlValue,
 }
 
+#[derive(Clone)]
 struct CargoDependencyDeclaration {
     section: String,
     manifest_path: String,
+    scope_root: String,
     manifest_key: String,
     display_value: String,
 }
@@ -138,9 +141,20 @@ fn lookup_dependency(
     graph: &DependencyImportGraph,
 ) -> DependencyLookup {
     let requested_root = dependency_root(dependency);
-    let declaration = manifest.find_dependency(&requested_root);
-    let code_roots = code_root_candidates(&requested_root, declaration.as_ref());
-    let observations = graph.observations_for(&code_roots);
+    let declarations = manifest.find_declarations(&requested_root);
+    let code_roots = code_root_candidates(&requested_root, &declarations);
+    let all_observations = graph.observations_for(&code_roots);
+    let observed_scope_misses = manifest.observed_scope_misses(&all_observations, &declarations);
+    let declaration = if observed_scope_misses.is_empty() {
+        declarations.first().cloned()
+    } else {
+        None
+    };
+    let observations = if observed_scope_misses.is_empty() && !declarations.is_empty() {
+        manifest.observations_in_declared_scopes(all_observations, &declarations)
+    } else {
+        all_observations
+    };
     let observed_import_count = observations.len();
     let examples = observations
         .iter()
@@ -159,6 +173,11 @@ fn lookup_dependency(
             declaration.section,
             declaration.manifest_key,
             declaration.display_value
+        ));
+    } else if !observed_scope_misses.is_empty() {
+        citations.push(format!(
+            "[grounded, observed Rust path consumers for '{dependency}' in Cargo manifest scope(s) without a matching declaration: {}]",
+            observed_scope_misses.join(", ")
         ));
     } else {
         citations.push(format!(
@@ -259,14 +278,17 @@ impl CargoManifest {
             .cloned();
         let mut scopes = vec![CargoManifestScope {
             manifest_path: "Cargo.toml".to_string(),
+            scope_root: String::new(),
             value: value.clone(),
         }];
         for member_manifest in workspace_member_manifest_paths(root, &value)? {
             if member_manifest == path {
                 continue;
             }
+            let manifest_path = relative_manifest_path(root, &member_manifest);
             scopes.push(CargoManifestScope {
-                manifest_path: relative_manifest_path(root, &member_manifest),
+                scope_root: manifest_scope_root(&manifest_path),
+                manifest_path,
                 value: parse_manifest(&member_manifest)?,
             });
         }
@@ -276,21 +298,69 @@ impl CargoManifest {
         })
     }
 
-    fn find_dependency(&self, dependency_root: &str) -> Option<CargoDependencyDeclaration> {
+    fn find_declarations(&self, dependency_root: &str) -> Vec<CargoDependencyDeclaration> {
         let candidates = manifest_key_candidates(dependency_root);
-        self.scopes.iter().find_map(|scope| {
-            dependency_tables(&scope.value)
-                .into_iter()
-                .find_map(|(section, table)| {
-                    find_dependency_in_table(
-                        &scope.manifest_path,
-                        section,
-                        table,
-                        &candidates,
-                        self.workspace_dependencies.as_ref(),
-                    )
+        self.scopes
+            .iter()
+            .flat_map(|scope| {
+                dependency_tables(&scope.value)
+                    .into_iter()
+                    .filter_map(|(section, table)| {
+                        find_dependency_in_table(
+                            scope,
+                            section,
+                            table,
+                            &candidates,
+                            self.workspace_dependencies.as_ref(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn observations_in_declared_scopes<'a>(
+        &self,
+        observations: Vec<&'a DependencyImportObservation>,
+        declarations: &[CargoDependencyDeclaration],
+    ) -> Vec<&'a DependencyImportObservation> {
+        observations
+            .into_iter()
+            .filter(|observation| {
+                self.scope_for_file(&observation.file).is_some_and(|scope| {
+                    declarations
+                        .iter()
+                        .any(|declaration| declaration.scope_root == scope.scope_root)
                 })
-        })
+            })
+            .collect()
+    }
+
+    fn observed_scope_misses(
+        &self,
+        observations: &[&DependencyImportObservation],
+        declarations: &[CargoDependencyDeclaration],
+    ) -> Vec<String> {
+        let mut misses = BTreeSet::new();
+        for observation in observations {
+            let Some(scope) = self.scope_for_file(&observation.file) else {
+                continue;
+            };
+            let declared_in_scope = declarations
+                .iter()
+                .any(|declaration| declaration.scope_root == scope.scope_root);
+            if !declared_in_scope {
+                misses.insert(scope.manifest_path.clone());
+            }
+        }
+        misses.into_iter().collect()
+    }
+
+    fn scope_for_file(&self, file: &str) -> Option<&CargoManifestScope> {
+        self.scopes
+            .iter()
+            .filter(|scope| file_is_in_scope(file, &scope.scope_root))
+            .max_by_key(|scope| scope.scope_root.len())
     }
 }
 
@@ -356,6 +426,21 @@ fn relative_manifest_path(root: &Path, manifest: &Path) -> String {
         .replace('\\', "/")
 }
 
+fn manifest_scope_root(manifest_path: &str) -> String {
+    manifest_path
+        .strip_suffix("/Cargo.toml")
+        .unwrap_or("")
+        .to_string()
+}
+
+fn file_is_in_scope(file: &str, scope_root: &str) -> bool {
+    scope_root.is_empty()
+        || file == scope_root
+        || file
+            .strip_prefix(scope_root)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
 fn dependency_tables(value: &TomlValue) -> Vec<(String, &toml::map::Map<String, TomlValue>)> {
     let mut tables = Vec::new();
     for section in DEPENDENCY_SECTIONS {
@@ -376,7 +461,7 @@ fn dependency_tables(value: &TomlValue) -> Vec<(String, &toml::map::Map<String, 
 }
 
 fn find_dependency_in_table(
-    manifest_path: &str,
+    scope: &CargoManifestScope,
     section: String,
     table: &toml::map::Map<String, TomlValue>,
     candidates: &[String],
@@ -390,7 +475,8 @@ fn find_dependency_in_table(
                 .is_some_and(|package| candidates.iter().any(|candidate| candidate == package));
         declared.then(|| CargoDependencyDeclaration {
             section: section.clone(),
-            manifest_path: manifest_path.to_string(),
+            manifest_path: scope.manifest_path.clone(),
+            scope_root: scope.scope_root.clone(),
             manifest_key: key.clone(),
             display_value: manifest_dependency_value(value),
         })
@@ -503,12 +589,12 @@ fn manifest_key_candidates(root: &str) -> Vec<String> {
 
 fn code_root_candidates(
     requested_root: &str,
-    declaration: Option<&CargoDependencyDeclaration>,
+    declarations: &[CargoDependencyDeclaration],
 ) -> BTreeSet<String> {
     let mut roots = BTreeSet::new();
     roots.insert(requested_root.to_string());
     roots.insert(requested_root.replace('-', "_"));
-    if let Some(declaration) = declaration {
+    for declaration in declarations {
         roots.insert(declaration.manifest_key.clone());
         roots.insert(declaration.manifest_key.replace('-', "_"));
     }
