@@ -1,6 +1,10 @@
 use lumin_rust_source_health::protocol::HealthResponse;
 
-const LOCAL_RUST_PATH_ROOTS: &[&str] = &["Self", "crate", "self", "super", "std", "core", "alloc"];
+mod completeness;
+mod roots;
+
+use completeness::partial_import_graph_reason;
+use roots::rust_path_root;
 
 #[derive(Default)]
 pub(super) struct DependencyImportGraph {
@@ -63,32 +67,5 @@ impl DependencyImportGraph {
             file: file.to_string(),
             from_spec: path.to_string(),
         });
-    }
-}
-
-fn rust_path_root(path: &str) -> Option<String> {
-    let normalized = path.trim_start_matches("::");
-    let root = normalized.split("::").next().unwrap_or(normalized);
-    if root.is_empty() || LOCAL_RUST_PATH_ROOTS.contains(&root) {
-        None
-    } else {
-        Some(root.to_string())
-    }
-}
-
-fn partial_import_graph_reason(syntax: &HealthResponse) -> Option<String> {
-    let parse_error_files = syntax.summary.parse_error_files;
-    let skipped_files = syntax.skipped_files.len();
-    match (parse_error_files, skipped_files) {
-        (0, 0) => None,
-        (parse_error_files, 0) => Some(format!(
-            "rust-source-health import graph is partial: {parse_error_files} parse-error file(s)"
-        )),
-        (0, skipped_files) => Some(format!(
-            "rust-source-health import graph is partial: {skipped_files} skipped file(s)"
-        )),
-        (parse_error_files, skipped_files) => Some(format!(
-            "rust-source-health import graph is partial: {parse_error_files} parse-error file(s), {skipped_files} skipped file(s)"
-        )),
     }
 }
