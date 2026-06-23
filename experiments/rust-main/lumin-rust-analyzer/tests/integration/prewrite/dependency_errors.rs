@@ -31,7 +31,7 @@ fn prewrite_dependency_lane_hard_stops_on_negated_workspace_member() -> Result<(
     repo.write_bytes(
         "Cargo.toml",
         br#"[workspace]
-members = ["crates/*", "!crates/ignored"]
+members = ["!crates/ignored"]
 "#,
     )?;
 
@@ -50,5 +50,62 @@ members = ["crates/*", "!crates/ignored"]
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("blocked-prewrite-dependency-manifest"));
     assert!(stderr.contains("workspace.members does not support negated member"));
+    Ok(())
+}
+
+#[test]
+fn prewrite_dependency_lane_hard_stops_on_missing_exact_workspace_member() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes(
+        "Cargo.toml",
+        br#"[workspace]
+members = ["crates/missing"]
+"#,
+    )?;
+
+    let output = repo.run(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": [],
+  "dependencies": ["serde"],
+  "plannedTypeEscapes": []
+}"#,
+    )?;
+
+    assert!(!output.status.success());
+    assert!(!repo.output_exists());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("blocked-prewrite-dependency-manifest"));
+    assert!(stderr.contains("workspace member 'crates/missing' does not contain Cargo.toml"));
+    Ok(())
+}
+
+#[test]
+fn prewrite_dependency_lane_hard_stops_on_glob_member_without_manifest() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes(
+        "Cargo.toml",
+        br#"[workspace]
+members = ["crates/*"]
+"#,
+    )?;
+    repo.write_bytes("crates/app/src/lib.rs", b"pub fn app() {}\n")?;
+
+    let output = repo.run(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": [],
+  "dependencies": ["serde"],
+  "plannedTypeEscapes": []
+}"#,
+    )?;
+
+    assert!(!output.status.success());
+    assert!(!repo.output_exists());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("blocked-prewrite-dependency-manifest"));
+    assert!(stderr.contains("does not contain Cargo.toml"));
     Ok(())
 }

@@ -4,12 +4,12 @@ use serde_json::Value;
 use crate::support::prewrite::{citations, dependency_lookup, PreWriteRepo};
 
 #[test]
-fn prewrite_dependency_lane_honors_recursive_members_and_workspace_excludes() -> Result<()> {
+fn prewrite_dependency_lane_honors_member_globs_and_workspace_excludes() -> Result<()> {
     let repo = PreWriteRepo::new()?;
     repo.write_bytes(
         "Cargo.toml",
         br#"[workspace]
-members = ["crates/**"]
+members = ["crates/*"]
 exclude = ["crates/ignored", "crates/excluded"]
 
 [workspace.dependencies]
@@ -17,9 +17,9 @@ serde1 = { package = "serde", version = "1" }
 "#,
     )?;
     repo.write_bytes(
-        "crates/nested/app/Cargo.toml",
+        "crates/app/Cargo.toml",
         br#"[package]
-name = "nested-app"
+name = "app"
 version = "0.1.0"
 edition = "2021"
 
@@ -28,8 +28,8 @@ serde1 = { workspace = true }
 "#,
     )?;
     repo.write_bytes(
-        "crates/nested/app/src/lib.rs",
-        b"pub fn nested() -> serde1::Result<()> { Ok(()) }\n",
+        "crates/app/src/lib.rs",
+        b"pub fn app() -> serde1::Result<()> { Ok(()) }\n",
     )?;
     repo.write_bytes(
         "crates/ignored/Cargo.toml",
@@ -75,7 +75,7 @@ regex = "1"
     let serde = dependency_lookup(&artifact, "serde")?;
     assert_eq!(serde["result"], "DEPENDENCY_AVAILABLE");
     assert!(citations(serde).any(|citation| {
-        citation.contains("crates/nested/app/Cargo.toml.dependencies['serde1'] declares serde")
+        citation.contains("crates/app/Cargo.toml.dependencies['serde1'] declares serde")
     }));
 
     let ignored = dependency_lookup(&artifact, "anyhow")?;
