@@ -102,11 +102,19 @@ impl CargoManifest {
                 continue;
             }
             if let Some(scope) = scope {
-                let alias_declared_in_scope = declarations.iter().any(|declaration| {
+                let alias_matches_dependency = declarations
+                    .iter()
+                    .any(|declaration| declaration.matches_manifest_key_root(&observation.root));
+                if !alias_matches_dependency {
+                    continue;
+                }
+                if declarations.iter().any(|declaration| {
                     declaration.manifest_path == scope.manifest_path
                         && declaration.matches_manifest_key_root(&observation.root)
-                });
-                if alias_declared_in_scope {
+                }) {
+                    observations.push(observation);
+                } else {
+                    misses.insert(scope.manifest_path.clone());
                     observations.push(observation);
                 }
             }

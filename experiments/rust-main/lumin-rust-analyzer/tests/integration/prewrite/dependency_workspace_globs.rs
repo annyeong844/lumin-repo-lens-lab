@@ -9,8 +9,8 @@ fn prewrite_dependency_lane_honors_recursive_members_and_workspace_excludes() ->
     repo.write_bytes(
         "Cargo.toml",
         br#"[workspace]
-members = ["crates/**", "!crates/ignored"]
-exclude = ["crates/excluded"]
+members = ["crates/**"]
+exclude = ["crates/ignored", "crates/excluded"]
 
 [workspace.dependencies]
 serde1 = { package = "serde", version = "1" }
@@ -89,5 +89,48 @@ regex = "1"
     assert_eq!(excluded["declaredIn"], Value::Null);
     assert!(!citations(excluded)
         .any(|citation| citation.contains("crates/excluded/Cargo.toml.dependencies")));
+    Ok(())
+}
+
+#[test]
+fn prewrite_dependency_lane_honors_cargo_member_globs_with_middle_wildcards() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes(
+        "Cargo.toml",
+        br#"[workspace]
+members = ["crates/*/app"]
+"#,
+    )?;
+    repo.write_bytes(
+        "crates/foo/app/Cargo.toml",
+        br#"[package]
+name = "foo-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1"
+"#,
+    )?;
+    repo.write_bytes(
+        "crates/foo/app/src/lib.rs",
+        b"pub fn decode(_: serde::de::IgnoredAny) {}\n",
+    )?;
+
+    let artifact = repo.run_json(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": [],
+  "dependencies": ["serde"],
+  "plannedTypeEscapes": []
+}"#,
+    )?;
+
+    let serde = dependency_lookup(&artifact, "serde")?;
+    assert_eq!(serde["result"], "DEPENDENCY_AVAILABLE");
+    assert!(citations(serde).any(|citation| {
+        citation.contains("crates/foo/app/Cargo.toml.dependencies['serde'] declares serde")
+    }));
     Ok(())
 }

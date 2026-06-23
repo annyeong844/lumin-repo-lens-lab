@@ -172,17 +172,18 @@ edition = "2021"
     )?;
 
     let serde = dependency_lookup(&artifact, "serde")?;
-    assert_eq!(serde["result"], "DEPENDENCY_AVAILABLE");
+    assert_eq!(serde["result"], "NEW_PACKAGE");
+    assert_eq!(serde["declaredIn"], Value::Null);
     assert!(citations(serde).any(|citation| {
-        citation.contains("crates/a/Cargo.toml.dependencies['serde1'] declares serde")
+        citation.contains("crates/b/Cargo.toml")
+            && citation.contains("without a matching declaration")
     }));
     assert!(examples(serde).any(|example| {
-        example["file"] == "crates/a/src/lib.rs"
+        example["file"] == "crates/b/src/lib.rs"
             && example["fromSpec"]
                 .as_str()
-                .is_some_and(|from_spec| from_spec == "serde1::Result")
+                .is_some_and(|from_spec| from_spec == "serde1::local::Thing")
     }));
-    assert!(!examples(serde).any(|example| example["file"] == "crates/b/src/lib.rs"));
     Ok(())
 }
 
