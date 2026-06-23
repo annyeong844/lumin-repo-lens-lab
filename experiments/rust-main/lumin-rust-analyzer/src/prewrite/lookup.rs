@@ -9,6 +9,7 @@ mod semantic;
 mod service;
 mod shape;
 mod taint;
+mod unavailable;
 
 pub(super) use super::operation::ServiceOperationFamily;
 pub(super) use dependency::{
@@ -42,5 +43,6 @@ pub(super) use service::{
 };
 pub(super) use shape::{
     lookup_shapes, unavailable_evidence_from_shape_lookups, ShapeLookup, ShapeLookupMatch,
-    SignatureVisibility, UnavailableEvidence,
+    SignatureVisibility,
 };
+pub(super) use unavailable::UnavailableEvidence;

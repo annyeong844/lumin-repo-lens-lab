@@ -8,8 +8,8 @@ use lumin_rust_source_health::protocol::HealthResponse;
 
 pub(in crate::prewrite) use candidate::{ShapeLookupMatch, SignatureVisibility};
 pub(in crate::prewrite) use evidence::unavailable_evidence_from_shape_lookups;
+pub(in crate::prewrite) use model::ShapeLookup;
 use model::{ShapeHashSource, ShapeLookupResult};
-pub(in crate::prewrite) use model::{ShapeLookup, UnavailableEvidence};
 
 const FIELD_ONLY_UNAVAILABLE_CITATION: &str =
     "[확인 불가, shape intent lacks exact sha256 shape hash or typeLiteral; field names alone are not structural equality evidence for P4 shape-hash lookup]";

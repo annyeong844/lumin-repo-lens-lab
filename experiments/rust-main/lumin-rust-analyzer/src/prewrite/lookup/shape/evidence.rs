@@ -1,4 +1,6 @@
-use super::model::{ShapeLookup, UnavailableEvidence};
+use crate::prewrite::lookup::unavailable::UnavailableEvidence;
+
+use super::model::ShapeLookup;
 
 pub(in crate::prewrite) fn unavailable_evidence_from_shape_lookups(
     lookups: &[ShapeLookup],

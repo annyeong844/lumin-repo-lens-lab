@@ -329,6 +329,12 @@ Rust pre-write semantic hint helpers have canonical owners:
 - `lumin-rust-analyzer/src/prewrite/lookup/semantic/order.rs` owns
   deterministic ordering for promoted and suppressed semantic hints.
 
+`lumin-rust-analyzer/src/prewrite/lookup/unavailable.rs` owns the shared
+`unavailableEvidence[]` artifact shape for Rust pre-write lookup lanes. Shape
+lookup and inline extraction may create lane-specific unavailable evidence
+through that owner, but they must not define second copies of the evidence
+shape in lane-local model files.
+
 Cargo/rustc semantic checks are a Rust-only necessity: JS/TS lanes do not
 produce Cargo `target/` build products, but Rust oracle runs do. Rust must not
 write into the analyzed repository's `target/` directory by default. The
