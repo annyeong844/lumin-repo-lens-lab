@@ -9,6 +9,7 @@ mod declarations;
 mod graph;
 mod manifest;
 mod model;
+mod scope;
 mod targets;
 mod workspace;
 
