@@ -8,20 +8,12 @@ use toml::Value as TomlValue;
 use super::declarations::find_declarations_in_scopes;
 pub(super) use super::declarations::CargoDependencyDeclaration;
 use super::graph::{DependencyImportGraph, DependencyImportObservation};
-use super::targets::{is_package_manifest, manifest_target_files};
+use super::scope::CargoManifestScope;
 use super::workspace::workspace_member_manifest_paths;
 
 pub(super) struct CargoManifest {
     scopes: Vec<CargoManifestScope>,
     workspace_dependencies: Option<toml::map::Map<String, TomlValue>>,
-}
-
-pub(super) struct CargoManifestScope {
-    pub(super) manifest_path: String,
-    scope_root: String,
-    is_package: bool,
-    target_files: BTreeSet<String>,
-    pub(super) value: TomlValue,
 }
 
 impl CargoManifest {
@@ -33,26 +25,13 @@ impl CargoManifest {
             .and_then(|workspace| workspace.get("dependencies"))
             .and_then(TomlValue::as_table)
             .cloned();
-        let mut scopes = vec![CargoManifestScope {
-            manifest_path: "Cargo.toml".to_string(),
-            scope_root: String::new(),
-            is_package: is_package_manifest(&value),
-            target_files: manifest_target_files(root, &path, &value),
-            value: value.clone(),
-        }];
+        let mut scopes = vec![CargoManifestScope::root(root, &path, &value)];
         for member_manifest in workspace_member_manifest_paths(root, &value)? {
             if member_manifest == path {
                 continue;
             }
-            let manifest_path = relative_manifest_path(root, &member_manifest);
             let value = parse_manifest(&member_manifest)?;
-            scopes.push(CargoManifestScope {
-                scope_root: manifest_scope_root(&manifest_path),
-                manifest_path,
-                is_package: is_package_manifest(&value),
-                target_files: manifest_target_files(root, &member_manifest, &value),
-                value,
-            });
+            scopes.push(CargoManifestScope::member(root, &member_manifest, value));
         }
         Ok(Self {
             scopes,
@@ -140,14 +119,7 @@ impl CargoManifest {
         self.scopes
             .iter()
             .filter(|scope| scope.file_is_in_scope(file))
-            .max_by_key(|scope| scope.scope_root.len())
-    }
-}
-
-impl CargoManifestScope {
-    fn file_is_in_scope(&self, file: &str) -> bool {
-        self.target_files.contains(file)
-            || (self.is_package && file_is_in_scope(file, &self.scope_root))
+            .max_by_key(|scope| scope.scope_priority_len())
     }
 }
 
@@ -164,29 +136,6 @@ fn parse_manifest(path: &Path) -> Result<TomlValue> {
             path.display()
         )
     })
-}
-
-fn relative_manifest_path(root: &Path, manifest: &Path) -> String {
-    manifest
-        .strip_prefix(root)
-        .unwrap_or(manifest)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-fn manifest_scope_root(manifest_path: &str) -> String {
-    manifest_path
-        .strip_suffix("/Cargo.toml")
-        .unwrap_or("")
-        .to_string()
-}
-
-fn file_is_in_scope(file: &str, scope_root: &str) -> bool {
-    scope_root.is_empty()
-        || file == scope_root
-        || file
-            .strip_prefix(scope_root)
-            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 fn rust_code_root_candidates(root: &str) -> BTreeSet<String> {

@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use toml::Value as TomlValue;
 
-use super::manifest::CargoManifestScope;
+use super::scope::CargoManifestScope;
 
 const DEPENDENCY_SECTIONS: &[&str] = &["dependencies", "dev-dependencies", "build-dependencies"];
 
