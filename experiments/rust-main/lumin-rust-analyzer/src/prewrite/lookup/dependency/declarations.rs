@@ -2,12 +2,11 @@ use std::collections::BTreeSet;
 
 use toml::Value as TomlValue;
 
+use super::roots::{manifest_key_candidates, rust_code_root_candidates};
 use super::scope::CargoManifestScope;
-use roots::{manifest_key_candidates, rust_code_root_candidates};
 use table::{dependency_tables, DependencyTable};
 use value::{manifest_dependency_value, manifest_package_name};
 
-mod roots;
 mod table;
 mod value;
 
