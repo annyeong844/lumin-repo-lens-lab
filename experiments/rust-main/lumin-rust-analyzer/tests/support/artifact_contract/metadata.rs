@@ -124,5 +124,9 @@ pub(super) fn assert_metadata_and_policy(artifact: &Value) -> Result<()> {
         artifact["policy"]["semantic"]["productProjection"]["sampleLimits"]["oracleScope"],
         3
     );
+    assert_eq!(
+        artifact["policy"]["semantic"]["productProjection"]["sampleLimits"]["findingSpans"],
+        3
+    );
     Ok(())
 }

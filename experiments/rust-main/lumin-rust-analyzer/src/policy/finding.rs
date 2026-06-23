@@ -13,13 +13,13 @@ use super::{
     evidence::{CoverageEvidence, SupportEvidence, TaintEvidence},
     semantic, span_overlap, ActionTier, FileParseStatus, OracleConfidence,
     ProductFileSemanticSummary, ProductPrimarySpanProjection, ProductSyntaxFileSummary,
+    SEMANTIC_FINDING_SPAN_SAMPLE_LIMIT,
 };
 use bridge::FindingOracleBridgeProjection;
 use support::finding_support_evidence;
 use taint::finding_taint_evidence;
 
 const FINDING_ORACLE_BRIDGE_SCHEMA_VERSION: &str = "rust-finding-oracle-bridge.v1";
-const FINDING_SPAN_SAMPLE_LIMIT: usize = 3;
 
 pub(crate) fn product_semantic_finding<'a>(
     finding: &'a Finding,
@@ -184,6 +184,6 @@ fn macro_expansion_span_examples(spans: &[PrimarySpan]) -> Vec<ProductPrimarySpa
         .iter()
         .filter(|span| span.has_expansion)
         .map(ProductPrimarySpanProjection::from_span)
-        .take(FINDING_SPAN_SAMPLE_LIMIT)
+        .take(SEMANTIC_FINDING_SPAN_SAMPLE_LIMIT)
         .collect()
 }

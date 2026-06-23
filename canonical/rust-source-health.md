@@ -312,6 +312,11 @@ limits. When `oraclePlan` caps target-path, omitted-package, selected-package,
 or unmatched-path examples, the artifact must preserve the full counts and
 publish the example caps under `oraclePlan.sampleLimits`.
 
+Unified analyzer semantic finding span examples are also compact artifact
+projections. When `semanticFindings[*].macroExpansionSpanExamples` is capped,
+the product artifact must preserve `macroExpansionSpanCount` and publish the cap
+under `policy.semantic.productProjection.sampleLimits.findingSpans`.
+
 Rust planned type escape intent support follows the JS/TS pre-write Step 2
 contract:
 

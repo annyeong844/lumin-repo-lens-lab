@@ -8,7 +8,7 @@ use super::{
     PARSE_ERROR_SAMPLE_LIMIT, POLICY_VERSION, SIGNAL_SAMPLE_LIMIT, SKIPPED_FILE_SAMPLE_LIMIT,
     SYNTAX_CONFIDENCE_TIER, USE_TREE_SAMPLE_LIMIT,
 };
-use super::{FILE_AST_SAMPLE_LIMIT, FILE_SIGNAL_SAMPLE_LIMIT};
+use super::{FILE_AST_SAMPLE_LIMIT, FILE_SIGNAL_SAMPLE_LIMIT, SEMANTIC_FINDING_SPAN_SAMPLE_LIMIT};
 
 pub(crate) fn policy_metadata() -> PolicyMetadata {
     PolicyMetadata {
@@ -60,6 +60,7 @@ pub(crate) fn policy_metadata() -> PolicyMetadata {
                 raw_lane_owner: RawLaneOwner::RustCargoOracle,
                 sample_limits: SemanticProductSampleLimits {
                     oracle_scope: ORACLE_SCOPE_SAMPLE_LIMIT,
+                    finding_spans: SEMANTIC_FINDING_SPAN_SAMPLE_LIMIT,
                 },
             },
         },
@@ -208,6 +209,7 @@ enum SemanticCoverageProjectionPolicy {
 #[serde(rename_all = "camelCase")]
 struct SemanticProductSampleLimits {
     oracle_scope: usize,
+    finding_spans: usize,
 }
 
 #[derive(Debug, Serialize)]

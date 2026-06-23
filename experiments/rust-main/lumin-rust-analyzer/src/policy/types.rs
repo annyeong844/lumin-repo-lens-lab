@@ -20,6 +20,7 @@ pub(crate) const FILE_AST_SAMPLE_LIMIT: usize = 1;
 pub(crate) const DEFINITION_SAMPLE_LIMIT: usize = 2;
 pub(crate) const USE_TREE_SAMPLE_LIMIT: usize = 2;
 pub(crate) const ORACLE_SCOPE_SAMPLE_LIMIT: usize = 3;
+pub(crate) const SEMANTIC_FINDING_SPAN_SAMPLE_LIMIT: usize = 3;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub(crate) struct RawLaneOmitted;
