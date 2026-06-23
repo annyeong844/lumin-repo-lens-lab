@@ -393,6 +393,19 @@ lookup and inline extraction may create lane-specific unavailable evidence
 through that owner, but they must not define second copies of the evidence
 shape in lane-local model files.
 
+Rust workspace common helpers have canonical owners:
+
+- `experiments/rust-common/src/error.rs` owns shared `UsageError`,
+  `usage_error(...)`, and `is_usage_error(...)` downcast classification. Rust
+  CLIs must not classify usage/runtime exits by matching error-message text.
+- `experiments/rust-common/src/path.rs` owns shared repository-root discovery,
+  existing-directory canonicalization, POSIX path text normalization, and exact
+  path-segment matching.
+- `experiments/rust-common/src/json.rs` owns compact and pretty atomic JSON
+  artifact writes with a trailing newline.
+- `experiments/rust-common/src/hash.rs` owns the shared `sha256:`-prefixed byte,
+  text, and file hashing helpers.
+
 Cargo/rustc semantic checks are a Rust-only necessity: JS/TS lanes do not
 produce Cargo `target/` build products, but Rust oracle runs do. Rust must not
 write into the analyzed repository's `target/` directory by default. The
