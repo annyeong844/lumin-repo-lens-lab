@@ -425,6 +425,16 @@ write into the analyzed repository's `target/` directory by default. The
 These fields are transparency evidence only. They are not timeouts, analysis
 caps, or permission to skip large repositories.
 
+Targeted Cargo checks may run multiple package-scoped `cargo check` commands
+inside the same workspace. Cargo can then emit the same underlying user-code
+diagnostic more than once, for example when several selected packages depend on
+the same broken workspace member. This is a Rust-only package-scope artifact,
+not a second finding. `rust-cargo-oracle` must deduplicate identical diagnostics
+before projecting `diagnostics[]`, `findings[]`, safe actions, and product
+summary counts. The identity includes the diagnostic level/code/message,
+rendered first line, primary spans including ownership class, and suggestion
+candidate spans so distinct rustc suggestions remain distinct.
+
 Rust oracle plan example arrays are compact artifact projections, not analysis
 limits. When `oraclePlan` caps target-path, omitted-package, selected-package,
 or unmatched-path examples, the artifact must preserve the full counts and

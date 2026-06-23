@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use super::PrimarySpanClass;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrimarySpan {
     pub file_name: Option<String>,
@@ -34,7 +34,7 @@ impl PrimarySpan {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrimarySpanExpansion {
     pub macro_decl_name: Option<String>,
@@ -42,7 +42,7 @@ pub struct PrimarySpanExpansion {
     pub def_site_span: Option<PrimarySpanLocation>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrimarySpanLocation {
     pub file_name: Option<String>,

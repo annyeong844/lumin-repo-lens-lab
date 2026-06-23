@@ -36,7 +36,7 @@ pub enum SafeActionKind {
     ApplyRustcMachineApplicableSuggestion,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Copy, Clone, Eq, Hash, PartialEq, Serialize)]
 pub enum RustcSuggestionApplicability {
     #[serde(rename = "MachineApplicable")]
     MachineApplicable,

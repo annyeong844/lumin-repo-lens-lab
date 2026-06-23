@@ -18,7 +18,7 @@ pub enum FindingSourceVersion {
     CargoCheckJsonV1,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Copy, Clone, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PrimarySpanClass {
     UserCode,

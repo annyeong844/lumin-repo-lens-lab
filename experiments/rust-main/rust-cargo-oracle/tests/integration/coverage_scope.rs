@@ -183,3 +183,30 @@ fn targeted_later_nonzero_exit_does_not_mark_combined_stream_clean() -> Result<(
         .is_some_and(|reason| reason.contains("cargo check exited with status")));
     Ok(())
 }
+
+#[test]
+fn targeted_repeated_dependency_diagnostics_are_deduped() -> Result<()> {
+    let env = RealCargoEnv::targeted_duplicate_dependency_diagnostic_workspace()?;
+    let artifact = env.run_targeted(vec![
+        "a-app/src/lib.rs".to_string(),
+        "b-app/src/lib.rs".to_string(),
+    ])?;
+
+    assert_eq!(artifact["oraclePlan"]["status"], "ran");
+    assert_eq!(artifact["oraclePlan"]["selectedPackageCount"], 2);
+
+    let diagnostics = artifact["diagnostics"].as_array().context("diagnostics")?;
+    let e0308_diagnostics = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic["normalized"]["codeValue"] == "E0308")
+        .collect::<Vec<_>>();
+    assert_eq!(e0308_diagnostics.len(), 1);
+    let span = e0308_diagnostics[0]["primarySpans"]
+        .as_array()
+        .and_then(|spans| spans.first())
+        .context("E0308 primary span")?;
+    assert_eq!(span["fileName"], "shared-bad/src/lib.rs");
+    assert_eq!(span["lineStart"], 1);
+    assert_eq!(span["columnStart"], 25);
+    Ok(())
+}

@@ -17,7 +17,7 @@ pub struct DiagnosticEvidence {
     pub rendered_first_line: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum DiagnosticCode {
     Detail(DiagnosticCodeDetail),
@@ -25,7 +25,7 @@ pub enum DiagnosticCode {
     Null,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize)]
 pub struct DiagnosticCodeDetail {
     pub code: Option<String>,
     pub explanation: Option<String>,

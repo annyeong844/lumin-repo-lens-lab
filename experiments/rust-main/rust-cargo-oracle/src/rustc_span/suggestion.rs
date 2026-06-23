@@ -1,7 +1,7 @@
 use super::RustcSpan;
 use crate::protocol::RustcSuggestionApplicability;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub(crate) struct RustcSuggestionSpan {
     file_name: Option<String>,
     line_start: Option<i64>,

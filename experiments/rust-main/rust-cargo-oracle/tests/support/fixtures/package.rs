@@ -113,4 +113,37 @@ impl RealCargoEnv {
         )?;
         Self::from_root(temp, root)
     }
+
+    pub fn targeted_duplicate_dependency_diagnostic_workspace() -> Result<Self> {
+        let temp = TempDir::new()?;
+        let root = temp.path().join("workspace");
+        for package in ["a-app", "b-app", "shared-bad"] {
+            fs::create_dir_all(root.join(package).join("src"))?;
+        }
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"a-app\", \"b-app\", \"shared-bad\"]\nresolver = \"2\"\n",
+        )?;
+        for package in ["a-app", "b-app"] {
+            fs::write(
+                root.join(package).join("Cargo.toml"),
+                format!(
+                    "[package]\nname = \"{package}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nshared-bad = {{ path = \"../shared-bad\" }}\n"
+                ),
+            )?;
+            fs::write(
+                root.join(package).join("src").join("lib.rs"),
+                "pub fn app_value() -> u32 { shared_bad::value() }\n",
+            )?;
+        }
+        fs::write(
+            root.join("shared-bad").join("Cargo.toml"),
+            "[package]\nname = \"shared-bad\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )?;
+        fs::write(
+            root.join("shared-bad").join("src").join("lib.rs"),
+            "pub fn value() -> u32 { \"wrong\" }\n",
+        )?;
+        Self::from_root(temp, root)
+    }
 }
