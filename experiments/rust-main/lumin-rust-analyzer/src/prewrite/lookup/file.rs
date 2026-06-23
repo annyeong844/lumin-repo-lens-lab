@@ -5,80 +5,16 @@ use lumin_rust_common::{posix_path_has_segment, posix_path_text};
 use lumin_rust_source_health::protocol::{
     HealthResponse, PathClassification, SkippedFile, SkippedFileReason,
 };
-use serde::Serialize;
 
 use super::super::intent::NormalizedIntent;
 use domain_cluster::{find_domain_cluster, DomainCluster};
 pub(in crate::prewrite) use domain_cluster::{
     DOMAIN_CLUSTER_MAX_EXAMPLES, DOMAIN_CLUSTER_MIN_MATCHES, DOMAIN_CLUSTER_MIN_PREFIX_LEN,
 };
+pub(in crate::prewrite) use model::{FileLookup, FileLookupResult};
 
 mod domain_cluster;
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(in crate::prewrite) struct FileLookup {
-    kind: FileLookupKind,
-    pub(in crate::prewrite) intent_file: String,
-    result: FileLookupResult,
-    loc: Option<usize>,
-    inbound_fan_in: Option<usize>,
-    inbound_fan_in_confidence: FanInConfidence,
-    submodule: Option<String>,
-    boundary: FileBoundary,
-    tags: Vec<&'static str>,
-    domain_cluster: Option<DomainCluster>,
-    citations: Vec<String>,
-}
-
-impl FileLookup {
-    pub(in crate::prewrite) fn has_domain_cluster(&self) -> bool {
-        self.domain_cluster.is_some()
-    }
-
-    pub(in crate::prewrite) fn exists(&self) -> bool {
-        matches!(self.result, FileLookupResult::Exists)
-    }
-
-    pub(in crate::prewrite) fn result(&self) -> FileLookupResult {
-        self.result
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-enum FileLookupKind {
-    #[serde(rename = "file")]
-    File,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-pub(in crate::prewrite) enum FileLookupResult {
-    #[serde(rename = "FILE_EXISTS")]
-    Exists,
-    #[serde(rename = "NEW_FILE")]
-    New,
-    #[serde(rename = "FILE_STATUS_UNKNOWN")]
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum FanInConfidence {
-    Unavailable,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct FileBoundary {
-    status: BoundaryStatus,
-    rule: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-enum BoundaryStatus {
-    #[serde(rename = "NOT_EVALUATED")]
-    NotEvaluated,
-}
+mod model;
 
 pub(in crate::prewrite) fn lookup_files(
     intent: &NormalizedIntent,
@@ -145,22 +81,7 @@ fn lookup_file(intent_file: &str, syntax: &HealthResponse, root: &Path) -> FileL
             .to_string(),
     );
 
-    FileLookup {
-        kind: FileLookupKind::File,
-        intent_file: normalized,
-        result,
-        loc: None,
-        inbound_fan_in: None,
-        inbound_fan_in_confidence: FanInConfidence::Unavailable,
-        submodule: None,
-        boundary: FileBoundary {
-            status: BoundaryStatus::NotEvaluated,
-            rule: None,
-        },
-        tags,
-        domain_cluster,
-        citations,
-    }
+    FileLookup::new(normalized, result, tags, domain_cluster, citations)
 }
 
 fn skipped_file<'a>(path: &str, syntax: &'a HealthResponse) -> Option<&'a SkippedFile> {
