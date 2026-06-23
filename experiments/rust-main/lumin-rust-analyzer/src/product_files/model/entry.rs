@@ -5,7 +5,7 @@ use crate::policy::{
     ProductSyntaxFileSummary,
 };
 
-use super::collection::SemanticRefCounts;
+use super::refs::SemanticRefCounts;
 
 #[derive(Debug, Copy, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
