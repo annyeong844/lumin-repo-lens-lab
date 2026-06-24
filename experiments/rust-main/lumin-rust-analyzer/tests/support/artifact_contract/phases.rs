@@ -13,9 +13,14 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
             .len()
     );
     assert_eq!(artifact["phases"]["syntax"]["summary"]["pathRefs"], 1);
+    assert_eq!(artifact["phases"]["syntax"]["summary"]["shapeHashes"], 1);
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionSignatures"],
+        10
+    );
     assert_eq!(
         artifact["phases"]["syntax"]["summary"]["functionBodyFingerprints"],
-        8
+        10
     );
     assert_eq!(
         artifact["phases"]["syntax"]["summary"]["functionCloneExactBodyGroups"],
@@ -28,6 +33,10 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
     assert_eq!(
         artifact["phases"]["syntax"]["summary"]["functionCloneNearCandidates"],
         0
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionCloneNearCandidateProjectionLimit"],
+        50
     );
     assert_eq!(artifact["phases"]["syntax"]["summary"]["inlinePatterns"], 3);
     assert!(artifact["phases"]["syntax"]["summary"]

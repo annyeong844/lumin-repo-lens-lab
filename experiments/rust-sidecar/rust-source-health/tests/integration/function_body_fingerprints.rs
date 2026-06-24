@@ -304,6 +304,30 @@ pub fn load_user_settings(raw: &str) -> usize {
         "function-clone-near-policy-v1"
     );
     assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["calibrationVersion"],
+        "rust-function-clone-near-calibration.v1"
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["minSignificantCallTokenLen"],
+        4
+    );
+    assert!(
+        groups["policy"]["nearCandidatePolicy"]["suppressedGenericCallTokens"]
+            .as_array()
+            .is_some_and(|tokens| tokens.iter().any(|token| token == "to_string")
+                && tokens.iter().any(|token| token == "unwrap")
+                && tokens.iter().any(|token| token == "collect"))
+    );
+    assert!(
+        groups["policy"]["nearCandidatePolicy"]["requiredMatchingQualifiers"]
+            .as_array()
+            .is_some_and(
+                |qualifiers| qualifiers.iter().any(|qualifier| qualifier == "async")
+                    && qualifiers.iter().any(|qualifier| qualifier == "unsafe")
+                    && qualifiers.iter().any(|qualifier| qualifier == "const")
+            )
+    );
+    assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["minNearScore"],
         0.62
     );
@@ -338,6 +362,69 @@ pub fn load_user_settings(raw: &str) -> usize {
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
 
     Ok(())
+}
+
+#[test]
+fn function_body_clone_counts_exclude_generated_only_groups() {
+    let artifact = analyze_file(
+        "generated/bindings.rs",
+        r#"
+pub fn generated_alpha() -> usize {
+    let generated = 7;
+    generated
+}
+
+pub fn generated_beta() -> usize {
+    let generated = 7;
+    generated
+}
+"#,
+    );
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["exactBodyGroupCount"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["exactBodyGroups"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["exactBodyGroups"][0]["generatedOnly"],
+        true
+    );
+}
+
+#[test]
+fn function_body_near_candidate_count_reports_uncapped_review_visible_total() {
+    let mut source = String::new();
+    for index in 0..11 {
+        source.push_str(&format!(
+            "pub fn load_user_{index}(input: &str) -> usize {{ sanitize(fetch_user(input.trim())).len() + {index} }}\n"
+        ));
+    }
+
+    let artifact = analyze_file("src/lib.rs", &source);
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 11);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 55);
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidateCount"],
+        55
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidateProjectionLimit"],
+        50
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidates"]
+            .as_array()
+            .map(Vec::len),
+        Some(50)
+    );
 }
 
 #[test]

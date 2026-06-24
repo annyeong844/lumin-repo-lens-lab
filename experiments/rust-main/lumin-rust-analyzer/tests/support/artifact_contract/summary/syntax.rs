@@ -11,10 +11,16 @@ pub(super) fn assert_syntax_summary(artifact: &Value) {
             .unwrap_or(0)
             >= 3
     );
-    assert_eq!(artifact["summary"]["syntaxFunctionBodyFingerprints"], 8);
+    assert_eq!(artifact["summary"]["syntaxShapeHashes"], 1);
+    assert_eq!(artifact["summary"]["syntaxFunctionSignatures"], 10);
+    assert_eq!(artifact["summary"]["syntaxFunctionBodyFingerprints"], 10);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneExactBodyGroups"], 1);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneStructureGroups"], 1);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneNearCandidates"], 0);
+    assert_eq!(
+        artifact["summary"]["syntaxFunctionCloneNearCandidateProjectionLimit"],
+        50
+    );
     assert_eq!(artifact["summary"]["syntaxInlinePatterns"], 3);
     assert_eq!(artifact["summary"]["syntaxPathRefs"], 1);
     assert_eq!(artifact["summary"]["syntaxMethodCallSites"], 10);

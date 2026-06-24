@@ -53,6 +53,7 @@ struct CompactFunctionCloneGroups<'a> {
     exact_body_group_count: usize,
     structure_group_count: usize,
     near_function_candidate_count: usize,
+    near_function_candidate_projection_limit: usize,
     example_limit: usize,
     exact_body_group_examples: &'a [AstFunctionCloneGroup],
     structure_group_examples: &'a [AstFunctionCloneGroup],
@@ -63,9 +64,11 @@ impl<'a> CompactFunctionCloneGroups<'a> {
     fn from_groups(groups: &'a AstFunctionCloneGroups) -> Self {
         Self {
             policy: &groups.policy,
-            exact_body_group_count: groups.exact_body_groups.len(),
-            structure_group_count: groups.structure_groups.len(),
-            near_function_candidate_count: groups.near_function_candidates.len(),
+            exact_body_group_count: groups.exact_body_group_count,
+            structure_group_count: groups.structure_group_count,
+            near_function_candidate_count: groups.near_function_candidate_count,
+            near_function_candidate_projection_limit: groups
+                .near_function_candidate_projection_limit,
             example_limit: FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT,
             exact_body_group_examples: &groups.exact_body_groups[..groups
                 .exact_body_groups

@@ -35,7 +35,7 @@ pub(in crate::product_artifact) fn syntax_phase_brief<'a>(
         elapsed_ms,
         schema_version: syntax.schema_version,
         meta: SyntaxPhaseMetaBrief::from_meta(&syntax.meta),
-        summary: SyntaxPhaseSummaryBrief::from_summary(&syntax.summary),
+        summary: SyntaxPhaseSummaryBrief::from_syntax(syntax),
         skipped_file_count: syntax.skipped_files.len(),
         skipped_file_examples: &syntax.skipped_files
             [..syntax.skipped_files.len().min(SKIPPED_FILE_SAMPLE_LIMIT)],

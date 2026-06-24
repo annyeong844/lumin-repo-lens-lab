@@ -88,10 +88,13 @@ struct ProductSyntaxSummary<'a> {
     syntax_muted_signals_by_reason: &'a BTreeMap<SignalMuteReason, usize>,
     syntax_review_signal_examples: Vec<SyntaxReviewSignalExample<'a>>,
     syntax_definitions: usize,
+    syntax_shape_hashes: usize,
+    syntax_function_signatures: usize,
     syntax_function_body_fingerprints: usize,
     syntax_function_clone_exact_body_groups: usize,
     syntax_function_clone_structure_groups: usize,
     syntax_function_clone_near_candidates: usize,
+    syntax_function_clone_near_candidate_projection_limit: usize,
     syntax_inline_patterns: usize,
     syntax_impl_blocks: usize,
     syntax_impl_methods: usize,
@@ -119,10 +122,21 @@ impl<'a> ProductSyntaxSummary<'a> {
             syntax_muted_signals_by_reason: &summary.muted_signals_by_reason,
             syntax_review_signal_examples: syntax_review_signal_examples(response),
             syntax_definitions: summary.definitions,
+            syntax_shape_hashes: summary.shape_hashes,
+            syntax_function_signatures: summary.function_signatures,
             syntax_function_body_fingerprints: summary.function_body_fingerprints,
-            syntax_function_clone_exact_body_groups: summary.function_clone_exact_body_groups,
-            syntax_function_clone_structure_groups: summary.function_clone_structure_groups,
-            syntax_function_clone_near_candidates: summary.function_clone_near_candidates,
+            syntax_function_clone_exact_body_groups: response
+                .function_clone_groups
+                .exact_body_group_count,
+            syntax_function_clone_structure_groups: response
+                .function_clone_groups
+                .structure_group_count,
+            syntax_function_clone_near_candidates: response
+                .function_clone_groups
+                .near_function_candidate_count,
+            syntax_function_clone_near_candidate_projection_limit: response
+                .function_clone_groups
+                .near_function_candidate_projection_limit,
             syntax_inline_patterns: summary.inline_patterns,
             syntax_impl_blocks: summary.impl_blocks,
             syntax_impl_methods: summary.impl_methods,

@@ -152,19 +152,27 @@ recommendation. The checked thresholds mirror TS/JS
 `maxNearCandidates = 50`). `maxNearCandidates` is the checked TS/JS review
 surface projection limit after candidates are scored and sorted; it is not a
 wall-time limit, repository-size cap, or permission to skip analysis. The
-compact CLI projection reports full counts with capped examples; this cap is an
-artifact projection choice, not an analysis cap.
+Rust artifact reports review-visible counts separately from capped candidate
+arrays: generated-only clone groups stay in raw evidence but do not increment
+the review count fields, and `nearFunctionCandidateCount` is the review-visible
+total before `nearFunctionCandidates[]` is projected to
+`nearFunctionCandidateProjectionLimit`. This cap is an artifact projection
+choice, not an analysis cap.
 Rust near candidates use the TS/JS policy but calibrate generic call-token
 suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
-`collect`. Near candidates also require matching Rust callable qualifiers
-(`async`, `unsafe`, and `const`) before scoring; mixed qualifier pairs are not
-review candidates.
+`collect`. The calibration is serialized as
+`rust-function-clone-near-calibration.v1`, including
+`minSignificantCallTokenLen = 4`, the Rust generic-token suppression set, and
+the required matching callable qualifiers. Near candidates also require matching
+Rust callable qualifiers (`async`, `unsafe`, and `const`) before scoring; mixed
+qualifier pairs are not review candidates.
 The unified Rust analyzer product artifact follows the TS/JS
 `audit-summary` / `audit-review-pack` measured-cue surface by projecting the
-function body fingerprint, clone-group, and inline-pattern occurrence counts
-into the top-level product summary and the syntax phase brief. It does not
-embed the raw `functionCloneGroups` arrays or raw `inlinePatterns[]` facts;
-those remain owned by the Rust source-health artifact.
+shape-hash, function-signature, function body fingerprint, clone-group, and
+inline-pattern occurrence counts into the top-level product summary and the
+syntax phase brief. It does not embed the raw `shapeHashes[]`,
+`functionSignatures[]`, `functionCloneGroups` arrays, or raw `inlinePatterns[]`
+facts; those remain owned by the Rust source-health artifact.
 
 Canonical JSON fields:
 
@@ -634,9 +642,10 @@ Final artifacts must satisfy these counts:
 - `summary.shapeHashes === sum(files[*].ast.shapeHashes.length)`
 - `summary.functionSignatures === sum(files[*].ast.functionSignatures.length)`
 - `summary.functionBodyFingerprints === sum(files[*].ast.functionBodyFingerprints.length)`
-- `summary.functionCloneExactBodyGroups === functionCloneGroups.exactBodyGroups.length`
-- `summary.functionCloneStructureGroups === functionCloneGroups.structureGroups.length`
-- `summary.functionCloneNearCandidates === functionCloneGroups.nearFunctionCandidates.length`
+- `summary.functionCloneExactBodyGroups === functionCloneGroups.exactBodyGroupCount`
+- `summary.functionCloneStructureGroups === functionCloneGroups.structureGroupCount`
+- `summary.functionCloneNearCandidates === functionCloneGroups.nearFunctionCandidateCount`
+- `functionCloneGroups.nearFunctionCandidates.length <= functionCloneGroups.nearFunctionCandidateProjectionLimit`
 - `summary.inlinePatterns === sum(files[*].ast.inlinePatterns.length)`
 - `summary.implBlocks === sum(files[*].ast.impls.length)`
 - `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`

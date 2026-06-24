@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-const LIB_RS: &str = "pub mod factory { pub struct Made; impl Made { pub fn normalize(&self) {} } pub fn make() -> Made { Made } }\nmacro_rules! custom_macro { () => {}; }\n#[cfg(feature = \"fast\")]\npub fn gated() {}\npub fn repeated_alpha() -> usize {\n    let answer = 42;\n    answer\n}\npub fn repeated_beta() -> usize {\n    let answer = 42;\n    answer\n}\npub fn demo() { let value = Some(1); let _ = value.unwrap(); let made = crate::factory::make(); let _ = made.normalize(); { made.normalize(); made.normalize(); } { made.normalize(); made.normalize(); } { made.normalize(); made.normalize(); } custom_macro!(); let _typed: u32 = \"wrong\"; }\n";
+const LIB_RS: &str = "pub mod factory { pub struct Made; impl Made { pub fn normalize(&self) {} } pub fn make() -> Made { Made } }\npub struct RecordShape { pub id: u64, pub count: usize }\nmacro_rules! custom_macro { () => {}; }\n#[cfg(feature = \"fast\")]\npub fn gated() {}\npub fn repeated_alpha() -> usize {\n    let answer = 42;\n    answer\n}\npub fn repeated_beta() -> usize {\n    let answer = 42;\n    answer\n}\npub fn demo() { let value = Some(1); let _ = value.unwrap(); let made = crate::factory::make(); let _ = made.normalize(); { made.normalize(); made.normalize(); } { made.normalize(); made.normalize(); } { made.normalize(); made.normalize(); } custom_macro!(); let _typed: u32 = \"wrong\"; }\n";
 
 pub fn write_unified_cli_workspace(root: &Path) -> Result<()> {
     fs::create_dir_all(root.join("src"))?;
@@ -22,7 +22,7 @@ pub fn write_unified_cli_workspace(root: &Path) -> Result<()> {
     fs::create_dir_all(root.join("generated"))?;
     fs::write(
         root.join("generated").join("bindings.rs"),
-        "pub fn binding() { let value = Some(1); let _ = value.unwrap(); }\n",
+        "pub fn binding() { let value = Some(1); let _ = value.unwrap(); }\npub fn generated_alpha() -> usize { let generated = 7; generated }\npub fn generated_beta() -> usize { let generated = 7; generated }\n",
     )?;
     Ok(())
 }

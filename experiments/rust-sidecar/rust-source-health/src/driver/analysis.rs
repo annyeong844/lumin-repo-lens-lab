@@ -28,9 +28,9 @@ pub fn analyze_request(
     let function_clone_groups = group_function_body_fingerprints(&files);
     let mut summary = summarize(&files);
     summary.skipped_files = skipped_files.len();
-    summary.function_clone_exact_body_groups = function_clone_groups.exact_body_groups.len();
-    summary.function_clone_structure_groups = function_clone_groups.structure_groups.len();
-    summary.function_clone_near_candidates = function_clone_groups.near_function_candidates.len();
+    summary.function_clone_exact_body_groups = function_clone_groups.exact_body_group_count;
+    summary.function_clone_structure_groups = function_clone_groups.structure_group_count;
+    summary.function_clone_near_candidates = function_clone_groups.near_function_candidate_count;
     let (generated, sidecar, input) = final_meta
         .map(|meta| (Some(meta.generated), Some(meta.sidecar), Some(meta.input)))
         .unwrap_or((None, None, None));

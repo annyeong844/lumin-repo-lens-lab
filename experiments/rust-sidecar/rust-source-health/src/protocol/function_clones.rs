@@ -6,6 +6,10 @@ use super::AstVisibility;
 #[serde(rename_all = "camelCase")]
 pub struct AstFunctionCloneGroups {
     pub policy: AstFunctionCloneGroupsPolicy,
+    pub exact_body_group_count: usize,
+    pub structure_group_count: usize,
+    pub near_function_candidate_count: usize,
+    pub near_function_candidate_projection_limit: usize,
     pub exact_body_groups: Vec<AstFunctionCloneGroup>,
     pub structure_groups: Vec<AstFunctionCloneGroup>,
     pub near_function_candidates: Vec<AstNearFunctionCandidate>,
@@ -49,6 +53,10 @@ pub struct AstNearFunctionCandidatePolicy {
     pub policy_id: &'static str,
     pub policy_version: &'static str,
     pub policy_class: &'static str,
+    pub calibration_version: &'static str,
+    pub min_significant_call_token_len: usize,
+    pub suppressed_generic_call_tokens: &'static [&'static str],
+    pub required_matching_qualifiers: &'static [&'static str],
     pub max_param_count_delta: usize,
     pub min_body_loc_similarity: f64,
     pub min_statement_count_similarity: f64,
@@ -66,6 +74,13 @@ impl Default for AstNearFunctionCandidatePolicy {
             policy_id: super::RUST_FUNCTION_CLONE_NEAR_POLICY_ID,
             policy_version: super::RUST_FUNCTION_CLONE_NEAR_POLICY_VERSION,
             policy_class: super::RUST_FUNCTION_CLONE_NEAR_POLICY_CLASS,
+            calibration_version: super::RUST_FUNCTION_CLONE_NEAR_CALIBRATION_VERSION,
+            min_significant_call_token_len:
+                super::RUST_FUNCTION_CLONE_NEAR_MIN_SIGNIFICANT_CALL_TOKEN_LEN,
+            suppressed_generic_call_tokens:
+                super::RUST_FUNCTION_CLONE_NEAR_SUPPRESSED_GENERIC_CALL_TOKENS,
+            required_matching_qualifiers:
+                super::RUST_FUNCTION_CLONE_NEAR_REQUIRED_MATCHING_QUALIFIERS,
             max_param_count_delta: super::RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA,
             min_body_loc_similarity: super::RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY,
             min_statement_count_similarity:

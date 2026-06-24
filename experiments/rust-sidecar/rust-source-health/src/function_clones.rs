@@ -11,8 +11,10 @@ use crate::protocol::{
     RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY,
     RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_JACCARD,
     RUST_FUNCTION_CLONE_NEAR_MIN_NAME_TOKEN_JACCARD_FALLBACK, RUST_FUNCTION_CLONE_NEAR_MIN_SCORE,
+    RUST_FUNCTION_CLONE_NEAR_MIN_SIGNIFICANT_CALL_TOKEN_LEN,
     RUST_FUNCTION_CLONE_NEAR_MIN_STATEMENT_COUNT_SIMILARITY,
     RUST_FUNCTION_CLONE_NEAR_NAME_TOKEN_WEIGHT, RUST_FUNCTION_CLONE_NEAR_STATEMENT_COUNT_WEIGHT,
+    RUST_FUNCTION_CLONE_NEAR_SUPPRESSED_GENERIC_CALL_TOKENS,
     RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC, RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS,
 };
 
@@ -39,11 +41,19 @@ pub(crate) fn group_function_body_fingerprints(
         build_near_function_candidates(files, &exact_body_groups, &structure_groups);
 
     AstFunctionCloneGroups {
+        exact_body_group_count: review_visible_group_count(&exact_body_groups),
+        structure_group_count: review_visible_group_count(&structure_groups),
+        near_function_candidate_count: near_function_candidates.review_visible_count,
+        near_function_candidate_projection_limit: RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
         exact_body_groups,
         structure_groups,
-        near_function_candidates,
+        near_function_candidates: near_function_candidates.candidates,
         ..AstFunctionCloneGroups::default()
     }
+}
+
+fn review_visible_group_count(groups: &[AstFunctionCloneGroup]) -> usize {
+    groups.iter().filter(|group| !group.generated_only).count()
 }
 
 fn group_by_hash(
@@ -185,7 +195,7 @@ fn build_near_function_candidates(
     files: &BTreeMap<String, FileHealth>,
     exact_body_groups: &[AstFunctionCloneGroup],
     structure_groups: &[AstFunctionCloneGroup],
-) -> Vec<AstNearFunctionCandidate> {
+) -> NearFunctionCandidateProjection {
     let grouped = grouped_identity_set(exact_body_groups, structure_groups);
     let mut eligible = function_members(files)
         .into_iter()
@@ -230,6 +240,11 @@ fn build_near_function_candidates(
         }
     }
 
+    let review_visible_count = candidates
+        .iter()
+        .filter(|candidate| !candidate.generated_only)
+        .count();
+
     candidates.sort_by(|left, right| {
         left.generated_only
             .cmp(&right.generated_only)
@@ -237,7 +252,10 @@ fn build_near_function_candidates(
             .then_with(|| left.identities.join("|").cmp(&right.identities.join("|")))
     });
     candidates.truncate(RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES);
-    candidates
+    NearFunctionCandidateProjection {
+        review_visible_count,
+        candidates,
+    }
 }
 
 fn function_members(files: &BTreeMap<String, FileHealth>) -> Vec<GroupMember<'_>> {
@@ -411,60 +429,16 @@ fn grouped_identity_set(
 fn significant_call_tokens(fact: &AstFunctionBodyFingerprint) -> Vec<String> {
     fact.call_tokens
         .iter()
-        .filter(|token| token.len() >= 4 && !GENERIC_CALL_TOKENS.contains(&token.as_str()))
+        .filter(|token| {
+            token.len() >= RUST_FUNCTION_CLONE_NEAR_MIN_SIGNIFICANT_CALL_TOKEN_LEN
+                && !RUST_FUNCTION_CLONE_NEAR_SUPPRESSED_GENERIC_CALL_TOKENS
+                    .contains(&token.as_str())
+        })
         .cloned()
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
 }
-
-const GENERIC_CALL_TOKENS: &[&str] = &[
-    "apply",
-    "as_mut",
-    "as_ref",
-    "bind",
-    "borrow",
-    "borrow_mut",
-    "call",
-    "catch",
-    "clone",
-    "cloned",
-    "collect",
-    "copied",
-    "count",
-    "err",
-    "expect",
-    "filter",
-    "find",
-    "flat_map",
-    "forEach",
-    "for_each",
-    "format",
-    "get",
-    "includes",
-    "insert",
-    "into_iter",
-    "is_empty",
-    "is_none",
-    "is_some",
-    "iter",
-    "iter_mut",
-    "join",
-    "map",
-    "ok",
-    "push",
-    "reduce",
-    "slice",
-    "split",
-    "then",
-    "toString",
-    "to_owned",
-    "to_string",
-    "trim",
-    "unwrap",
-    "unwrap_or",
-    "unwrap_or_default",
-];
 
 fn name_tokens(name: &str) -> Vec<String> {
     let mut expanded = String::new();
@@ -550,4 +524,9 @@ struct NearFact<'a> {
     identity: String,
     significant_call_tokens: Vec<String>,
     name_tokens: Vec<String>,
+}
+
+struct NearFunctionCandidateProjection {
+    review_visible_count: usize,
+    candidates: Vec<AstNearFunctionCandidate>,
 }
