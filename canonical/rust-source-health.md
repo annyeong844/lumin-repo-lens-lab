@@ -648,6 +648,7 @@ Final artifacts must satisfy these counts:
 - `summary.functionBodyFingerprints === sum(files[*].ast.functionBodyFingerprints.length)`
 - `summary.functionCloneExactBodyGroups === functionCloneGroups.exactBodyGroupCount`
 - `summary.functionCloneStructureGroups === functionCloneGroups.structureGroupCount`
+- `summary.functionCloneSignatureGroups === functionCloneGroups.signatureGroupCount`
 - `summary.functionCloneNearCandidates === functionCloneGroups.nearFunctionCandidateCount`
 - `functionCloneGroups.nearFunctionCandidates.length <= functionCloneGroups.nearFunctionCandidateProjectionLimit`
 - `summary.inlinePatterns === sum(files[*].ast.inlinePatterns.length)`
