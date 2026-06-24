@@ -81,6 +81,8 @@ The protocol owns its names. The parser is an implementation detail.
 | File | Owns | Must not own |
 |---|---|---|
 | `src/protocol.rs` / `src/protocol/*.rs` | Request/response structs, schema constants, project-owned enums/strings | parser traversal, signal construction logic |
+| `src/protocol/function_clones.rs` | Top-level Rust function-clone artifact protocol shape | clone grouping, syntax traversal |
+| `src/protocol/function_clones/*.rs` | Function-clone protocol sub-shapes: policy provenance, support capability map, group/candidate/member shapes | clone grouping, syntax traversal, artifact projection |
 | `src/locations.rs` | `LineIndex`, byte-to-line/column conversion | signal kinds, summary counts |
 | `src/signals.rs` | `review_signal(...)`, `syntax_parse_error(...)`, signal visibility policy application | parser traversal, summary counts |
 | `src/summary.rs` | `summarize(...)` for `BTreeMap<String, FileHealth>` | signal construction, path policy |
