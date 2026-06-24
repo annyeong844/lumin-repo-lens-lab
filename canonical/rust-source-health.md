@@ -139,6 +139,10 @@ from `files[*].ast.functionBodyFingerprints[]` and
 `files[*].ast.functionSignatures[]`. The owner is `src/function_clones.rs`;
 its `src/function_clones/` submodules are implementation details of that
 owner.
+`src/analyzer/syntax/items/function_bodies.rs` owns function-body fingerprint
+orchestration; its `src/analyzer/syntax/items/function_bodies/` submodules are
+implementation details for body normalization, numeric literal canonicalization,
+call-token extraction, and local metrics.
 Current review surfaces are `exactBodyGroups`, `structureGroups`,
 `signatureGroups`, and `nearFunctionCandidates`; all are deterministic review
 evidence only and carry the same caveat as the TS/JS function clone artifact:
