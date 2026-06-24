@@ -11,6 +11,7 @@ pub struct AstFunctionCloneGroups {
     pub signature_group_count: usize,
     pub near_function_candidate_count: usize,
     pub near_function_candidate_projection_limit: usize,
+    pub generated_file_fact_count: usize,
     pub exact_body_groups: Vec<AstFunctionCloneGroup>,
     pub structure_groups: Vec<AstFunctionCloneGroup>,
     pub signature_groups: Vec<AstFunctionSignatureGroup>,

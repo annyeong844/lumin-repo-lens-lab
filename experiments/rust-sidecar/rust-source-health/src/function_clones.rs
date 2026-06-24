@@ -48,6 +48,7 @@ pub(crate) fn group_function_body_fingerprints(
         signature_group_count: review_visible_signature_group_count(&signature_groups),
         near_function_candidate_count: near_function_candidates.review_visible_count,
         near_function_candidate_projection_limit: RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
+        generated_file_fact_count: generated_file_fact_count(files),
         exact_body_groups,
         structure_groups,
         signature_groups,
@@ -62,6 +63,19 @@ fn review_visible_group_count(groups: &[AstFunctionCloneGroup]) -> usize {
 
 fn review_visible_signature_group_count(groups: &[AstFunctionSignatureGroup]) -> usize {
     groups.iter().filter(|group| !group.generated_only).count()
+}
+
+fn generated_file_fact_count(files: &BTreeMap<String, FileHealth>) -> usize {
+    files
+        .values()
+        .filter(|health| {
+            health
+                .path
+                .classifications
+                .contains(&PathClassification::Generated)
+        })
+        .map(|health| health.ast.function_body_fingerprints.len())
+        .sum()
 }
 
 fn group_by_hash(

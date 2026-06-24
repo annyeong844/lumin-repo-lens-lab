@@ -3,7 +3,7 @@
 > **Role:** canonical naming, shape, helper, and module contract for the Rust source health track.
 > **Owner:** this file.
 > **Status:** M6 spine addition.
-> **Last updated:** 2026-06-23
+> **Last updated:** 2026-06-24
 
 ---
 
@@ -170,6 +170,11 @@ suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
 the required matching callable qualifiers. Near candidates also require matching
 Rust callable qualifiers (`async`, `unsafe`, and `const`) before scoring; mixed
 qualifier pairs are not review candidates.
+Rust also mirrors the TS/JS `function-clones.json.meta.generatedFileFactCount`
+counter as `functionCloneGroups.generatedFileFactCount`: it counts
+`files[*].ast.functionBodyFingerprints[]` facts from generated-path files.
+Generated-only clone groups remain raw evidence but do not increment
+review-visible group or near-candidate counts.
 The unified Rust analyzer product artifact follows the TS/JS
 `audit-summary` / `audit-review-pack` measured-cue surface by projecting the
 shape-hash, function-signature, function body fingerprint, clone-group, and

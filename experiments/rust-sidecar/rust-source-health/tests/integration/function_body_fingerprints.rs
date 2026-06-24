@@ -404,6 +404,7 @@ pub fn generated_beta() -> usize {
     assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 0);
     assert_eq!(artifact["functionCloneGroups"]["exactBodyGroupCount"], 0);
     assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["generatedFileFactCount"], 2);
     assert_eq!(
         artifact["functionCloneGroups"]["exactBodyGroups"]
             .as_array()

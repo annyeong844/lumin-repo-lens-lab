@@ -55,6 +55,7 @@ struct CompactFunctionCloneGroups<'a> {
     signature_group_count: usize,
     near_function_candidate_count: usize,
     near_function_candidate_projection_limit: usize,
+    generated_file_fact_count: usize,
     example_limit: usize,
     exact_body_group_examples: &'a [AstFunctionCloneGroup],
     structure_group_examples: &'a [AstFunctionCloneGroup],
@@ -72,6 +73,7 @@ impl<'a> CompactFunctionCloneGroups<'a> {
             near_function_candidate_count: groups.near_function_candidate_count,
             near_function_candidate_projection_limit: groups
                 .near_function_candidate_projection_limit,
+            generated_file_fact_count: groups.generated_file_fact_count,
             example_limit: FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT,
             exact_body_group_examples: &groups.exact_body_groups[..groups
                 .exact_body_groups

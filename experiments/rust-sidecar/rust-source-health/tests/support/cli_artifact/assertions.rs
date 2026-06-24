@@ -37,6 +37,7 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
         artifact["functionCloneGroups"]["nearFunctionCandidateProjectionLimit"],
         50
     );
+    assert_eq!(artifact["functionCloneGroups"]["generatedFileFactCount"], 0);
     assert_eq!(artifact["functionCloneGroups"]["exampleLimit"], 10);
     assert_eq!(artifact["summary"]["signalsByKind"]["unwrap-call"], 1);
     assert!(artifact["files"]["src/lib.rs"].is_object());
