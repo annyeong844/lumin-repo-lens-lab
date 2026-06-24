@@ -140,7 +140,9 @@ the Rust analogue of `_lib/function-clone-artifact.mjs` group evidence built
 from `files[*].ast.functionBodyFingerprints[]` and
 `files[*].ast.functionSignatures[]`. The owner is `src/function_clones.rs`;
 its `src/function_clones/` submodules are implementation details of that
-owner.
+owner. `src/function_clones/body.rs` owns exact/structure body-group
+orchestration; its `body/group.rs` submodule owns projection from grouped
+members into `AstFunctionCloneGroup`.
 `src/analyzer/syntax/items/function_bodies.rs` owns function-body fingerprint
 orchestration; its `src/analyzer/syntax/items/function_bodies/` submodules are
 implementation details for body normalization, numeric literal canonicalization,
