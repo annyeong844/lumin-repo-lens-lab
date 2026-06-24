@@ -218,6 +218,11 @@ inline-pattern occurrence counts into the top-level product summary and the
 syntax phase brief. It does not embed the raw `shapeHashes[]`,
 `functionSignatures[]`, `functionCloneGroups` arrays, or raw `inlinePatterns[]`
 facts; those remain owned by the Rust source-health artifact.
+`lumin-rust-analyzer/src/product_summary.rs` owns top-level product summary
+orchestration. Its `product_summary/` submodules are implementation details:
+`syntax.rs` projects syntax/source-health counts and examples, `semantic.rs`
+projects semantic/oracle counts and unlinked refs, and `actions.rs` projects
+action-policy counts.
 
 Canonical JSON fields:
 
