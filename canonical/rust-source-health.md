@@ -179,6 +179,9 @@ otherwise dominate review candidates. The calibration is serialized as
 the required matching callable qualifiers. Near candidates also require matching
 Rust callable qualifiers (`async`, `unsafe`, and `const`) before scoring; mixed
 qualifier pairs are not review candidates.
+`src/function_clones/near.rs` owns near-candidate orchestration; its
+`src/function_clones/near/` submodules are implementation details for candidate
+projection, token filtering, local scoring, and local model structs.
 Rust mirrors the TS/JS `function-clones.json.meta.complete`,
 `filesWithParseErrors`, and `filesWithReadErrors` contract as
 `functionCloneGroups.complete`,
