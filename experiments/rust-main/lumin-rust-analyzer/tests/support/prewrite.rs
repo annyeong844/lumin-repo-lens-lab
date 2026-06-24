@@ -78,6 +78,10 @@ impl PreWriteRepo {
             "stderr: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        self.read_json_output()
+    }
+
+    pub fn read_json_output(&self) -> Result<Value> {
         serde_json::from_slice(&fs::read(self.output_path())?)
             .context("parse rust pre-write artifact")
     }

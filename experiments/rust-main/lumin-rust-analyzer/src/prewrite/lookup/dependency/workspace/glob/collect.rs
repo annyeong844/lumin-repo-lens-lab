@@ -75,6 +75,9 @@ impl GlobMemberCollector<'_> {
     }
 
     fn collect_recursive_member_manifests(&mut self, current: &Path) -> Result<()> {
+        if self.collect_excluded_member_root(current) {
+            return Ok(());
+        }
         for child in child_directories(current)? {
             self.collect_recursive_member_candidate(&child)?;
         }
@@ -82,8 +85,7 @@ impl GlobMemberCollector<'_> {
     }
 
     fn collect_recursive_member_candidate(&mut self, current: &Path) -> Result<()> {
-        if self.member_root_is_excluded(current) {
-            *self.matched_member_roots += 1;
+        if self.collect_excluded_member_root(current) {
             return Ok(());
         }
         self.collect_member_root(current)?;
@@ -113,6 +115,14 @@ impl GlobMemberCollector<'_> {
         self.excludes
             .iter()
             .any(|exclude| workspace_member_root_is_excluded(self.root, current, exclude))
+    }
+
+    fn collect_excluded_member_root(&mut self, current: &Path) -> bool {
+        if !self.member_root_is_excluded(current) {
+            return false;
+        }
+        *self.matched_member_roots += 1;
+        true
     }
 }
 struct ChildEntry {
