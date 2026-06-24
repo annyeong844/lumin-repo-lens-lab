@@ -25,7 +25,7 @@ pub fn analyze_request(
     let runtime_config = RuntimeConfig::try_from(request.runtime)?;
     let pool = build_pool(runtime_config)?;
     let files = pool.install(|| analyze_files(&request.files, &request.parser))?;
-    let function_clone_groups = group_function_body_fingerprints(&files);
+    let function_clone_groups = group_function_body_fingerprints(&files, &skipped_files);
     let mut summary = summarize(&files);
     summary.skipped_files = skipped_files.len();
     summary.function_clone_exact_body_groups = function_clone_groups.exact_body_group_count;

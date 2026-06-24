@@ -225,9 +225,26 @@ pub fn structure_b(value: &str) -> usize {
     assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
 
     let groups = &artifact["functionCloneGroups"];
+    assert_eq!(groups["complete"], true);
+    assert_eq!(
+        groups["filesWithParseErrors"].as_array().map(Vec::len),
+        Some(0)
+    );
+    assert_eq!(
+        groups["filesWithReadErrors"].as_array().map(Vec::len),
+        Some(0)
+    );
     assert_eq!(
         groups["policy"]["policyId"],
         "rust-function-clone-group-policy"
+    );
+    assert_eq!(
+        groups["policy"]["normalizedVersion"],
+        "rust-function-body.normalized.v2"
+    );
+    assert_eq!(
+        groups["policy"]["functionSignatureNormalizedVersion"],
+        "rust-function-signature.normalized.v1"
     );
     assert_eq!(
         groups["policy"]["caveat"],
@@ -283,6 +300,57 @@ pub fn structure_b(value: &str) -> usize {
 }
 
 #[test]
+fn function_body_clone_groups_keep_good_evidence_when_parse_errors_make_artifact_incomplete(
+) -> Result<()> {
+    let artifact = stdout_json(run_sidecar(request(vec![
+        file(
+            "src/a.rs",
+            r#"
+pub fn exact_a() -> usize {
+    let answer = 42;
+    answer
+}
+"#,
+        ),
+        file(
+            "src/b.rs",
+            r#"
+pub fn exact_b() -> usize {
+    let answer = 42;
+    answer
+}
+"#,
+        ),
+        file("src/bad.rs", "fn main( {"),
+    ])));
+
+    assert_eq!(artifact["summary"]["parseErrorFiles"], 1);
+    assert!(artifact["summary"]["functionBodyFingerprints"]
+        .as_u64()
+        .is_some_and(|count| count >= 2));
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 1);
+
+    let groups = &artifact["functionCloneGroups"];
+    assert_eq!(groups["complete"], false);
+    assert_eq!(
+        groups["filesWithReadErrors"].as_array().map(Vec::len),
+        Some(0)
+    );
+    assert_eq!(groups["filesWithParseErrors"][0]["file"], "src/bad.rs");
+    assert!(groups["filesWithParseErrors"][0]["message"].is_string());
+    assert!(identity_list_contains(
+        &groups["exactBodyGroups"][0],
+        "src/a.rs::exact_a"
+    ));
+    assert!(identity_list_contains(
+        &groups["exactBodyGroups"][0],
+        "src/b.rs::exact_b"
+    ));
+
+    Ok(())
+}
+
+#[test]
 fn function_body_clone_groups_include_ts_style_near_candidates() -> Result<()> {
     let artifact = analyze_file(
         "src/lib.rs",
@@ -322,7 +390,7 @@ pub fn load_user_settings(raw: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["calibrationVersion"],
-        "rust-function-clone-near-calibration.v1"
+        "rust-function-clone-near-calibration.v2"
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["minSignificantCallTokenLen"],

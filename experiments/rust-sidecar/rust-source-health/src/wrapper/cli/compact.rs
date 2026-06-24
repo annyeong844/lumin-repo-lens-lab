@@ -4,9 +4,10 @@ use serde::Serialize;
 
 use crate::protocol::{
     AstFacts, AstFunctionCloneGroup, AstFunctionCloneGroups, AstFunctionCloneGroupsPolicy,
-    AstFunctionCloneGroupsSupports, AstFunctionSignatureGroup, AstNearFunctionCandidate,
-    AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility, Facts, FileHealth,
-    HealthResponse, ParseStatus, PathMeta, ResponseMeta, Signal, SkippedFile, Summary,
+    AstFunctionCloneGroupsSupports, AstFunctionCloneInputError, AstFunctionSignatureGroup,
+    AstNearFunctionCandidate, AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility,
+    Facts, FileHealth, HealthResponse, ParseStatus, PathMeta, ResponseMeta, Signal, SkippedFile,
+    Summary,
 };
 
 const REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT: usize = 10;
@@ -51,6 +52,9 @@ impl<'a> CompactHealthResponse<'a> {
 struct CompactFunctionCloneGroups<'a> {
     policy: &'a AstFunctionCloneGroupsPolicy,
     supports: &'a AstFunctionCloneGroupsSupports,
+    complete: bool,
+    files_with_parse_errors: &'a [AstFunctionCloneInputError],
+    files_with_read_errors: &'a [AstFunctionCloneInputError],
     exact_body_group_count: usize,
     structure_group_count: usize,
     signature_group_count: usize,
@@ -69,6 +73,9 @@ impl<'a> CompactFunctionCloneGroups<'a> {
         Self {
             policy: &groups.policy,
             supports: &groups.supports,
+            complete: groups.complete,
+            files_with_parse_errors: &groups.files_with_parse_errors,
+            files_with_read_errors: &groups.files_with_read_errors,
             exact_body_group_count: groups.exact_body_group_count,
             structure_group_count: groups.structure_group_count,
             signature_group_count: groups.signature_group_count,

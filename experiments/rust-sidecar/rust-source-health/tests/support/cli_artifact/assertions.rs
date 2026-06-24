@@ -28,6 +28,21 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     assert_eq!(artifact["functionCloneGroups"]["exactBodyGroupCount"], 0);
     assert_eq!(artifact["functionCloneGroups"]["structureGroupCount"], 0);
     assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["complete"], false);
+    assert_eq!(
+        artifact["functionCloneGroups"]["filesWithParseErrors"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["filesWithReadErrors"][0]["file"],
+        "src/bad.rs"
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["filesWithReadErrors"][0]["message"],
+        "invalid-utf8"
+    );
     assert!(artifact["functionCloneGroups"]["signatureGroupExamples"].is_array());
     assert_eq!(
         artifact["functionCloneGroups"]["supports"]["nearFunctionCandidates"],
@@ -36,6 +51,10 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     assert_eq!(
         artifact["functionCloneGroups"]["supports"]["semanticEquivalence"],
         false
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["policy"]["functionSignatureNormalizedVersion"],
+        "rust-function-signature.normalized.v1"
     );
     assert_eq!(
         artifact["functionCloneGroups"]["nearFunctionCandidateCount"],
@@ -96,6 +115,11 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
 pub fn assert_full_cli_artifact(output_path: &Path) -> Result<()> {
     let artifact: Value = serde_json::from_slice(&fs::read(output_path)?)?;
     assert!(artifact["artifactProfile"].is_null());
+    assert_eq!(artifact["functionCloneGroups"]["complete"], false);
+    assert_eq!(
+        artifact["functionCloneGroups"]["filesWithReadErrors"][0]["file"],
+        "src/bad.rs"
+    );
     assert!(artifact["functionCloneGroups"]["exactBodyGroups"].is_array());
     assert!(artifact["functionCloneGroups"]["structureGroups"].is_array());
     assert!(artifact["functionCloneGroups"]["signatureGroups"].is_array());

@@ -2,11 +2,14 @@ use serde::Serialize;
 
 use super::AstVisibility;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AstFunctionCloneGroups {
     pub policy: AstFunctionCloneGroupsPolicy,
     pub supports: AstFunctionCloneGroupsSupports,
+    pub complete: bool,
+    pub files_with_parse_errors: Vec<AstFunctionCloneInputError>,
+    pub files_with_read_errors: Vec<AstFunctionCloneInputError>,
     pub exact_body_group_count: usize,
     pub structure_group_count: usize,
     pub signature_group_count: usize,
@@ -19,12 +22,36 @@ pub struct AstFunctionCloneGroups {
     pub near_function_candidates: Vec<AstNearFunctionCandidate>,
 }
 
+impl Default for AstFunctionCloneGroups {
+    fn default() -> Self {
+        Self {
+            policy: AstFunctionCloneGroupsPolicy::default(),
+            supports: AstFunctionCloneGroupsSupports::default(),
+            complete: true,
+            files_with_parse_errors: Vec::new(),
+            files_with_read_errors: Vec::new(),
+            exact_body_group_count: 0,
+            structure_group_count: 0,
+            signature_group_count: 0,
+            near_function_candidate_count: 0,
+            near_function_candidate_projection_limit:
+                super::RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
+            generated_file_fact_count: 0,
+            exact_body_groups: Vec::new(),
+            structure_groups: Vec::new(),
+            signature_groups: Vec::new(),
+            near_function_candidates: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AstFunctionCloneGroupsPolicy {
     pub policy_id: &'static str,
     pub policy_version: &'static str,
     pub normalized_version: &'static str,
+    pub function_signature_normalized_version: &'static str,
     pub min_group_size: usize,
     pub exact_min_body_loc: usize,
     pub exact_min_statements: usize,
@@ -40,6 +67,8 @@ impl Default for AstFunctionCloneGroupsPolicy {
             policy_id: super::RUST_FUNCTION_CLONE_GROUP_POLICY_ID,
             policy_version: super::RUST_FUNCTION_CLONE_GROUP_POLICY_VERSION,
             normalized_version: super::RUST_FUNCTION_BODY_NORMALIZED_VERSION,
+            function_signature_normalized_version:
+                super::RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
             min_group_size: super::RUST_FUNCTION_CLONE_MIN_GROUP_SIZE,
             exact_min_body_loc: super::RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC,
             exact_min_statements: super::RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS,
@@ -49,6 +78,13 @@ impl Default for AstFunctionCloneGroupsPolicy {
             caveat: "Function clone groups and near candidates are deterministic review evidence. They do not prove semantic equivalence, auto-reuse, auto-fix safety, or a merge recommendation.",
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AstFunctionCloneInputError {
+    pub file: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

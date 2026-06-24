@@ -162,14 +162,28 @@ the review count fields, and `nearFunctionCandidateCount` is the review-visible
 total before `nearFunctionCandidates[]` is projected to
 `nearFunctionCandidateProjectionLimit`. This cap is an artifact projection
 choice, not an analysis cap.
+The group policy must expose both body and signature normalizer provenance:
+`functionCloneGroups.policy.normalizedVersion` is the function-body normalizer,
+and `functionCloneGroups.policy.functionSignatureNormalizedVersion` is the
+function-signature normalizer. Compact artifacts may omit raw
+`files[*].ast.functionSignatures[]`, so signature group hashes must carry their
+normalizer version on the group surface.
 Rust near candidates use the TS/JS policy but calibrate generic call-token
 suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
-`collect`. The calibration is serialized as
-`rust-function-clone-near-calibration.v1`, including
+`collect`, plus ubiquitous Rust macro/method tokens such as `format` that
+otherwise dominate review candidates. The calibration is serialized as
+`rust-function-clone-near-calibration.v2`, including
 `minSignificantCallTokenLen = 4`, the Rust generic-token suppression set, and
 the required matching callable qualifiers. Near candidates also require matching
 Rust callable qualifiers (`async`, `unsafe`, and `const`) before scoring; mixed
 qualifier pairs are not review candidates.
+Rust mirrors the TS/JS `function-clones.json.meta.complete`,
+`filesWithParseErrors`, and `filesWithReadErrors` contract as
+`functionCloneGroups.complete`,
+`functionCloneGroups.filesWithParseErrors`, and
+`functionCloneGroups.filesWithReadErrors`: positive clone and signature matches
+remain grounded when some inputs fail, but absence claims are not grounded when
+the group artifact is incomplete.
 Rust also mirrors the TS/JS `function-clones.json.meta.generatedFileFactCount`
 counter as `functionCloneGroups.generatedFileFactCount`: it counts
 `files[*].ast.functionBodyFingerprints[]` facts from generated-path files.

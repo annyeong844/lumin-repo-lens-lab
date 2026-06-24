@@ -2,10 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{
     AstFunctionBodyFingerprint, AstFunctionCloneGroup, AstFunctionCloneGroupKind,
-    AstFunctionCloneGroups, AstFunctionCloneLine, AstFunctionParam, AstFunctionReceiver,
-    AstFunctionSignature, AstFunctionSignatureGroup, AstFunctionSignatureGroupKind,
-    AstNearFunctionCandidate, AstNearFunctionCandidateKind, AstVisibility, FileHealth,
-    FunctionCloneRisk, PathClassification, RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC,
+    AstFunctionCloneGroups, AstFunctionCloneInputError, AstFunctionCloneLine, AstFunctionParam,
+    AstFunctionReceiver, AstFunctionSignature, AstFunctionSignatureGroup,
+    AstFunctionSignatureGroupKind, AstNearFunctionCandidate, AstNearFunctionCandidateKind,
+    AstVisibility, FileHealth, FunctionCloneRisk, PathClassification, SkippedFile,
+    SkippedFileReason, RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC,
     RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS, RUST_FUNCTION_CLONE_MIN_GROUP_SIZE,
     RUST_FUNCTION_CLONE_NEAR_BODY_LOC_WEIGHT, RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT,
     RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES, RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA,
@@ -21,6 +22,7 @@ use crate::protocol::{
 
 pub(crate) fn group_function_body_fingerprints(
     files: &BTreeMap<String, FileHealth>,
+    skipped_files: &[SkippedFile],
 ) -> AstFunctionCloneGroups {
     let exact_body_groups = group_by_hash(
         files,
@@ -41,8 +43,14 @@ pub(crate) fn group_function_body_fingerprints(
     let signature_groups = group_signature_facts(files);
     let near_function_candidates =
         build_near_function_candidates(files, &exact_body_groups, &structure_groups);
+    let files_with_parse_errors = files_with_parse_errors(files);
+    let files_with_read_errors = files_with_read_errors(skipped_files);
+    let complete = files_with_parse_errors.is_empty() && files_with_read_errors.is_empty();
 
     AstFunctionCloneGroups {
+        complete,
+        files_with_parse_errors,
+        files_with_read_errors,
         exact_body_group_count: review_visible_group_count(&exact_body_groups),
         structure_group_count: review_visible_group_count(&structure_groups),
         signature_group_count: review_visible_signature_group_count(&signature_groups),
@@ -54,6 +62,44 @@ pub(crate) fn group_function_body_fingerprints(
         signature_groups,
         near_function_candidates: near_function_candidates.candidates,
         ..AstFunctionCloneGroups::default()
+    }
+}
+
+fn files_with_parse_errors(
+    files: &BTreeMap<String, FileHealth>,
+) -> Vec<AstFunctionCloneInputError> {
+    files
+        .iter()
+        .filter_map(|(file, health)| {
+            if health.parse.ok {
+                return None;
+            }
+            Some(AstFunctionCloneInputError {
+                file: file.clone(),
+                message: health
+                    .parse
+                    .errors
+                    .first()
+                    .map(|error| error.message.clone())
+                    .unwrap_or_else(|| "parse error".to_string()),
+            })
+        })
+        .collect()
+}
+
+fn files_with_read_errors(skipped_files: &[SkippedFile]) -> Vec<AstFunctionCloneInputError> {
+    skipped_files
+        .iter()
+        .map(|file| AstFunctionCloneInputError {
+            file: file.path.clone(),
+            message: skipped_file_reason_message(file.reason).to_string(),
+        })
+        .collect()
+}
+
+fn skipped_file_reason_message(reason: SkippedFileReason) -> &'static str {
+    match reason {
+        SkippedFileReason::InvalidUtf8 => "invalid-utf8",
     }
 }
 
