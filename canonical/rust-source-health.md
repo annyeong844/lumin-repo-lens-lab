@@ -438,7 +438,9 @@ Targeted Cargo checks select every package with review-visible Rust syntax
 evidence, then execute one multi-package `cargo check` invocation for the
 selected package set. This keeps Cargo command provenance honest, lets Cargo own
 the workspace scheduling, and avoids rerunning the same workspace graph once per
-selected package. This is not an analysis cap: `targetPathCount`,
+selected package. Multi-package targeted checks include Cargo `--keep-going` so
+one failing selected package does not hide diagnostics from later selected
+packages. This is not an analysis cap: `targetPathCount`,
 `candidatePackageCount`, and `selectedPackageCount` still describe the full
 selected scope. Cargo may still emit the same underlying user-code diagnostic
 more than once, for example when several selected packages depend on the same

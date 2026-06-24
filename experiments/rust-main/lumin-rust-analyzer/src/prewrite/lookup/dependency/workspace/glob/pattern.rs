@@ -6,7 +6,7 @@ pub(super) fn member_components(pattern: &str) -> Vec<String> {
     pattern
         .replace('\\', "/")
         .split('/')
-        .filter(|component| !component.is_empty())
+        .filter(|component| !component.is_empty() && *component != ".")
         .map(str::to_string)
         .collect()
 }

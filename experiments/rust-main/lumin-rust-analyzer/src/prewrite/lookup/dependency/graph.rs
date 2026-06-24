@@ -59,6 +59,16 @@ impl DependencyImportGraph {
     }
 
     fn push(&mut self, file: &str, path: &str) {
+        if let Some(derive_paths) = derive_macro_paths(path) {
+            for derive_path in derive_paths {
+                self.push_path(file, derive_path);
+            }
+            return;
+        }
+        self.push_path(file, path);
+    }
+
+    fn push_path(&mut self, file: &str, path: &str) {
         let Some(root) = rust_path_root(path) else {
             return;
         };
@@ -68,4 +78,14 @@ impl DependencyImportGraph {
             from_spec: path.to_string(),
         });
     }
+}
+
+fn derive_macro_paths(detail: &str) -> Option<Vec<&str>> {
+    let inner = detail.strip_prefix("derive(")?.strip_suffix(')')?;
+    let paths = inner
+        .split(',')
+        .map(str::trim)
+        .filter(|item| item.contains("::"))
+        .collect::<Vec<_>>();
+    (!paths.is_empty()).then_some(paths)
 }

@@ -176,6 +176,7 @@ fn targeted_multi_package_nonzero_exit_does_not_mark_stream_clean() -> Result<()
         serde_json::json!([
             "check",
             "--message-format=json",
+            "--keep-going",
             "--package",
             "a-clean",
             "--package",

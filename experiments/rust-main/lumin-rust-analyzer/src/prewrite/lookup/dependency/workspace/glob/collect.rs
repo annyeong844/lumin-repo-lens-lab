@@ -55,6 +55,16 @@ fn collect_glob_member_manifests_at(
 
     let component = &components[index];
     if component == "**" {
+        if index + 1 == components.len() {
+            collect_recursive_member_manifests(
+                root,
+                excludes,
+                matched_member_roots,
+                current,
+                paths,
+            )?;
+            return Ok(());
+        }
         collect_glob_member_manifests_at(
             root,
             components,
@@ -79,20 +89,24 @@ fn collect_glob_member_manifests_at(
     }
 
     if component_contains_glob(component) {
-        for child in child_directories(current)? {
+        for child in child_entries(current)? {
             let Some(name) = child.file_name().and_then(|name| name.to_str()) else {
                 continue;
             };
             if glob_component_matches(component, name) {
-                collect_glob_member_manifests_at(
-                    root,
-                    components,
-                    excludes,
-                    matched_member_roots,
-                    index + 1,
-                    &child,
-                    paths,
-                )?;
+                if child.is_dir() {
+                    collect_glob_member_manifests_at(
+                        root,
+                        components,
+                        excludes,
+                        matched_member_roots,
+                        index + 1,
+                        child.path(),
+                        paths,
+                    )?;
+                } else if index + 1 == components.len() {
+                    *matched_member_roots += 1;
+                }
             }
         }
         return Ok(());
@@ -111,6 +125,71 @@ fn collect_glob_member_manifests_at(
         )?;
     }
     Ok(())
+}
+
+fn collect_recursive_member_manifests(
+    root: &Path,
+    excludes: &[Vec<String>],
+    matched_member_roots: &mut usize,
+    current: &Path,
+    paths: &mut Vec<PathBuf>,
+) -> Result<()> {
+    *matched_member_roots += 1;
+    if excludes
+        .iter()
+        .any(|exclude| workspace_member_root_is_excluded(root, current, exclude))
+    {
+        return Ok(());
+    }
+    let manifest = current.join("Cargo.toml");
+    if manifest.is_file() {
+        paths.push(manifest);
+    }
+    for child in child_directories(current)? {
+        collect_recursive_member_manifests(root, excludes, matched_member_roots, &child, paths)?;
+    }
+    Ok(())
+}
+
+struct ChildEntry {
+    path: PathBuf,
+    is_dir: bool,
+}
+
+impl ChildEntry {
+    fn file_name(&self) -> Option<&std::ffi::OsStr> {
+        self.path.file_name()
+    }
+
+    fn is_dir(&self) -> bool {
+        self.is_dir
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+fn child_entries(parent: &Path) -> Result<Vec<ChildEntry>> {
+    if !parent.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut children = Vec::new();
+    for entry in fs::read_dir(parent).with_context(|| {
+        format!(
+            "blocked-prewrite-dependency-manifest: failed to read workspace member directory {}",
+            parent.display()
+        )
+    })? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        children.push(ChildEntry {
+            path: entry.path(),
+            is_dir: file_type.is_dir(),
+        });
+    }
+    children.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(children)
 }
 
 fn child_directories(parent: &Path) -> Result<Vec<PathBuf>> {

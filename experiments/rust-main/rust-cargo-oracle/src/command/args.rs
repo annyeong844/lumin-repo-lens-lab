@@ -10,6 +10,9 @@ pub(crate) fn cargo_check_args_for_packages(
     package_names: &[String],
 ) -> Vec<String> {
     let mut args = vec!["check".to_string(), "--message-format=json".to_string()];
+    if package_names.len() > 1 {
+        args.push("--keep-going".to_string());
+    }
     for package_name in package_names {
         args.push("--package".to_string());
         args.push(package_name.to_string());
@@ -89,6 +92,7 @@ mod tests {
             vec![
                 "check".to_string(),
                 "--message-format=json".to_string(),
+                "--keep-going".to_string(),
                 "--package".to_string(),
                 "app".to_string(),
                 "--package".to_string(),

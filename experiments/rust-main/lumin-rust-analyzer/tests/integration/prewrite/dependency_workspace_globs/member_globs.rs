@@ -136,6 +136,77 @@ serde = "1"
 }
 
 #[test]
+fn prewrite_dependency_lane_honors_recursive_member_globs_without_prefix_manifest() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes(
+        "Cargo.toml",
+        br#"[workspace]
+members = ["crates/**"]
+exclude = ["crates/app/src"]
+"#,
+    )?;
+    repo.write_bytes(
+        "crates/app/Cargo.toml",
+        br#"[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1"
+"#,
+    )?;
+    repo.write_bytes(
+        "crates/app/src/lib.rs",
+        b"pub fn decode(_: serde::de::IgnoredAny) {}\n",
+    )?;
+
+    let artifact = repo.run_json(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": [],
+  "dependencies": ["serde"],
+  "plannedTypeEscapes": []
+}"#,
+    )?;
+
+    let serde = dependency_lookup(&artifact, "serde")?;
+    assert_eq!(serde["result"], "DEPENDENCY_AVAILABLE");
+    assert!(citations(serde).any(|citation| {
+        citation.contains("crates/app/Cargo.toml.dependencies['serde'] declares serde")
+    }));
+    Ok(())
+}
+
+#[test]
+fn prewrite_dependency_lane_ignores_file_only_workspace_glob_matches() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes(
+        "Cargo.toml",
+        br#"[workspace]
+members = ["crates/*"]
+"#,
+    )?;
+    repo.write_bytes("crates/README.md", b"placeholder\n")?;
+
+    let artifact = repo.run_json(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": [],
+  "dependencies": ["serde"],
+  "plannedTypeEscapes": []
+}"#,
+    )?;
+
+    let serde = dependency_lookup(&artifact, "serde")?;
+    assert_eq!(serde["result"], "NEW_PACKAGE");
+    assert_eq!(serde["declaredIn"], Value::Null);
+    Ok(())
+}
+
+#[test]
 fn prewrite_dependency_lane_honors_cargo_character_class_member_globs() -> Result<()> {
     let repo = PreWriteRepo::new()?;
     repo.write_bytes(

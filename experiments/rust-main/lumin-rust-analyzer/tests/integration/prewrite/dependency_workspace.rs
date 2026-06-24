@@ -26,6 +26,7 @@ edition = "2021"
 tokio = "1"
 serde1 = { workspace = true }
 async-trait = "0.1"
+thiserror = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = "0.52"
@@ -44,6 +45,10 @@ pub fn decode() -> serde1::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("app failed")]
+pub struct AppError;
+
 pub async fn wait() {
     sleep(std::time::Duration::from_millis(1)).await;
 }
@@ -55,7 +60,7 @@ pub async fn wait() {
   "names": [],
   "shapes": [],
   "files": [],
-  "dependencies": ["serde", "tokio", "time", "async-trait", "windows-sys"],
+  "dependencies": ["serde", "tokio", "time", "async-trait", "thiserror", "windows-sys"],
   "plannedTypeEscapes": []
 }"#,
     )?;
@@ -93,6 +98,14 @@ pub async fn wait() {
         example["fromSpec"]
             .as_str()
             .is_some_and(|from_spec| from_spec == "async_trait::async_trait")
+    }));
+
+    let thiserror = dependency_lookup(&artifact, "thiserror")?;
+    assert_eq!(thiserror["result"], "DEPENDENCY_AVAILABLE");
+    assert!(examples(thiserror).any(|example| {
+        example["fromSpec"]
+            .as_str()
+            .is_some_and(|from_spec| from_spec == "thiserror::Error")
     }));
 
     let windows = dependency_lookup(&artifact, "windows-sys")?;
