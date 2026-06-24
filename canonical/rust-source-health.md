@@ -170,13 +170,13 @@ Canonical JSON fields:
 - `ast.functionBodyFingerprints[]`: Rust function-body fingerprint facts for
   parsed top-level functions and `impl` methods. This is the Rust analogue of
   `_lib/function-clone-artifact.mjs` facts with
-  `kind = "function-body-fingerprint"`. The producer records exact compact body
-  hashes, normalized-exact body hashes, anonymized-structure body hashes,
-  qualifier fields, body/statement counts, call tokens, visibility, callable
-  kind, optional impl owner evidence, and source locations. These facts are
-  review evidence only. They do not claim semantic equivalence, auto-reuse, or
-  auto-fix safety, and they do not create function-clone groups until a Rust
-  grouping owner is documented.
+  `kind = "function-body-fingerprint"`. The producer records token-compacted
+  exact body hashes that preserve literal token text, normalized-exact body
+  hashes with identifier anonymization and canonical numeric literal values,
+  anonymized-structure body hashes, qualifier fields, body/statement counts
+  including tail expressions, call tokens, visibility, callable kind, optional
+  impl owner evidence, and source locations. These facts are review evidence
+  only. They do not claim semantic equivalence, auto-reuse, or auto-fix safety.
 - `ast.inlinePatterns[]`: repeated-inline extraction occurrence facts for
   simple Rust statement lists. The producer is the Rust analogue of
   `_lib/inline-pattern-artifact.mjs`: it records syntax-only occurrences whose

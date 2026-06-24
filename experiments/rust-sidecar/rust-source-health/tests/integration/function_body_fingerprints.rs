@@ -21,6 +21,38 @@ pub fn read_c(input: &str) -> usize {
     parsed + 2
 }
 
+pub fn literal_space_a() -> &'static str {
+    "a  b"
+}
+
+pub fn literal_space_b() -> &'static str {
+    "a b"
+}
+
+pub fn byte_a() -> u8 {
+    b'a'
+}
+
+pub fn byte_b() -> u8 {
+    b'b'
+}
+
+pub fn thousand_decimal() -> usize {
+    1_000
+}
+
+pub fn thousand_plain() -> usize {
+    1000
+}
+
+pub fn hex_byte() -> usize {
+    0xff
+}
+
+pub fn decimal_byte() -> usize {
+    255
+}
+
 pub struct Worker;
 
 impl Worker {
@@ -35,7 +67,7 @@ impl Worker {
 "#;
 
     let artifact = analyze_file("src/lib.rs", source);
-    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 5);
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 13);
 
     let facts = file_health(&artifact, "src/lib.rs")["ast"]["functionBodyFingerprints"]
         .as_array()
@@ -48,7 +80,7 @@ impl Worker {
     assert_eq!(read_a["callableKind"], "function");
     assert_eq!(read_a["visibility"], "public");
     assert_eq!(read_a["paramCount"], 1);
-    assert_eq!(read_a["statementCount"], 1);
+    assert_eq!(read_a["statementCount"], 2);
     assert_eq!(read_a["bodyLoc"], 4);
     assert_eq!(read_a["async"], false);
     assert_eq!(read_a["unsafe"], false);
@@ -63,6 +95,48 @@ impl Worker {
         read_c["normalizedStructureHash"]
     );
     assert_ne!(read_a["normalizedExactHash"], read_c["normalizedExactHash"]);
+
+    let literal_space_a = fact_named(facts, "literal_space_a")?;
+    let literal_space_b = fact_named(facts, "literal_space_b")?;
+    assert_ne!(
+        literal_space_a["exactBodyHash"],
+        literal_space_b["exactBodyHash"]
+    );
+    assert_ne!(
+        literal_space_a["normalizedExactHash"],
+        literal_space_b["normalizedExactHash"]
+    );
+    assert_eq!(
+        literal_space_a["normalizedStructureHash"],
+        literal_space_b["normalizedStructureHash"]
+    );
+    assert_eq!(literal_space_a["statementCount"], 1);
+
+    let byte_a = fact_named(facts, "byte_a")?;
+    let byte_b = fact_named(facts, "byte_b")?;
+    assert_ne!(byte_a["normalizedExactHash"], byte_b["normalizedExactHash"]);
+    assert_eq!(
+        byte_a["normalizedStructureHash"],
+        byte_b["normalizedStructureHash"]
+    );
+
+    let thousand_decimal = fact_named(facts, "thousand_decimal")?;
+    let thousand_plain = fact_named(facts, "thousand_plain")?;
+    assert_ne!(
+        thousand_decimal["exactBodyHash"],
+        thousand_plain["exactBodyHash"]
+    );
+    assert_eq!(
+        thousand_decimal["normalizedExactHash"],
+        thousand_plain["normalizedExactHash"]
+    );
+
+    let hex_byte = fact_named(facts, "hex_byte")?;
+    let decimal_byte = fact_named(facts, "decimal_byte")?;
+    assert_eq!(
+        hex_byte["normalizedExactHash"],
+        decimal_byte["normalizedExactHash"]
+    );
 
     let refresh = fact_named(facts, "refresh")?;
     assert_eq!(refresh["callableKind"], "impl-method");
@@ -121,7 +195,7 @@ pub fn structure_b(value: &str) -> usize {
 
     assert_eq!(artifact["summary"]["functionBodyFingerprints"], 4);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 1);
-    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 1);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 2);
 
     let groups = &artifact["functionCloneGroups"];
     assert_eq!(
@@ -144,7 +218,11 @@ pub fn structure_b(value: &str) -> usize {
         "same normalized function body; verify domain ownership before merging"
     );
 
-    let structure = &groups["structureGroups"][0];
+    let structure_groups = groups["structureGroups"]
+        .as_array()
+        .context("structure clone groups")?;
+    let structure = group_with_identity(structure_groups, "src/a.rs::structure_a")
+        .context("structure_a clone group")?;
     assert_eq!(structure["kind"], "function-body-structure-group");
     assert_eq!(structure["risk"], "review-only");
     assert_eq!(structure["size"], 2);
@@ -165,4 +243,10 @@ fn identity_list_contains(group: &Value, identity: &str) -> bool {
     group["identities"]
         .as_array()
         .is_some_and(|identities| identities.iter().any(|entry| entry == identity))
+}
+
+fn group_with_identity<'a>(groups: &'a [Value], identity: &str) -> Option<&'a Value> {
+    groups
+        .iter()
+        .find(|group| identity_list_contains(group, identity))
 }
