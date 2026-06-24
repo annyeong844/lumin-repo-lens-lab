@@ -280,6 +280,9 @@ Canonical JSON fields:
   (`rust-inline-statement-normalizer-v1`). These facts are extraction review
   evidence only; they do not claim semantic equivalence, auto-reuse, or
   auto-fix safety.
+  `src/analyzer/syntax/items/inline_patterns.rs` owns inline pattern extraction
+  orchestration; its `inline_patterns/normalize.rs` submodule owns the simple
+  no-argument statement normalizer for this fact lane.
 - `ast.impls[]`: Rust `impl` block observations with `target`, optional
   `trait`, method owner evidence, and `location`. This is the Rust analogue of
   the JS/TS `classMethodIndex`: impl methods are visible as owner evidence
