@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
-use lumin_rust_source_health::{
-    analyze_root, protocol::DEFAULT_WORKER_STACK_BYTES, RustSourceHealthOptions,
-};
 
 use crate::support::prewrite::PreWriteRepo;
+
+use super::support::{shape_hash, source_health};
 
 #[test]
 fn prewrite_shape_hash_matches_rust_source_health_record_struct() -> Result<()> {
@@ -21,23 +20,7 @@ pub struct EventMirror {
 }
 "#,
     )?;
-    let health = analyze_root(RustSourceHealthOptions {
-        root: repo.root_path().to_path_buf(),
-        source_commit: "test-source-commit".to_string(),
-        thread_count: None,
-        worker_stack_bytes: DEFAULT_WORKER_STACK_BYTES,
-    })?;
-    let shape_hash = health
-        .files
-        .get("src/lib.rs")
-        .context("source-health file")?
-        .ast
-        .shape_hashes
-        .iter()
-        .find(|fact| fact.name == "Event")
-        .context("Event shape hash")?
-        .hash
-        .clone();
+    let shape_hash = shape_hash(&source_health(&repo)?, "src/lib.rs", "Event")?;
     let artifact = repo.run_json(&format!(
         r#"{{
   "names": [],
@@ -109,77 +92,5 @@ pub struct EventMirror {
     assert!(cue_cards
         .iter()
         .any(|card| card["candidate"]["identity"] == "src/lib.rs::EventMirror"));
-    Ok(())
-}
-
-#[test]
-fn prewrite_shape_and_signature_cues_preserve_path_policy_suppression() -> Result<()> {
-    let repo = PreWriteRepo::new()?;
-    repo.write_bytes(
-        "tests/helper.rs",
-        br#"pub struct TestShape {
-    pub id: u64,
-}
-
-pub fn parse_test(input: &str) -> usize {
-    input.len()
-}
-"#,
-    )?;
-    let health = analyze_root(RustSourceHealthOptions {
-        root: repo.root_path().to_path_buf(),
-        source_commit: "test-source-commit".to_string(),
-        thread_count: None,
-        worker_stack_bytes: DEFAULT_WORKER_STACK_BYTES,
-    })?;
-    let test_file = health
-        .files
-        .get("tests/helper.rs")
-        .context("tests/helper.rs health")?;
-    let shape_hash = test_file
-        .ast
-        .shape_hashes
-        .iter()
-        .find(|fact| fact.name == "TestShape")
-        .context("test shape hash")?
-        .hash
-        .clone();
-    let signature_hash = test_file
-        .ast
-        .function_signatures
-        .iter()
-        .find(|fact| fact.name == "parse_test")
-        .context("test function signature")?
-        .hash
-        .clone();
-    let artifact = repo.run_json(&format!(
-        r#"{{
-  "names": [],
-  "shapes": [{{"hash": "{shape_hash}"}}, {{"hash": "{signature_hash}"}}],
-  "files": [],
-  "dependencies": [],
-  "plannedTypeEscapes": []
-}}"#
-    ))?;
-
-    let cue_cards = artifact["cueCards"].as_array().context("cue cards")?;
-    assert!(cue_cards.iter().all(|card| {
-        card["candidate"]["identity"] != "tests/helper.rs::TestShape"
-            && card["candidate"]["identity"] != "tests/helper.rs::parse_test"
-    }));
-    let suppressed = artifact["suppressedCues"]
-        .as_array()
-        .context("suppressed cues")?;
-    for (identity, lane) in [
-        ("tests/helper.rs::TestShape", "shape-hash"),
-        ("tests/helper.rs::parse_test", "function-signature"),
-    ] {
-        let cue = suppressed
-            .iter()
-            .find(|cue| cue["candidate"]["identity"] == identity && cue["evidenceLane"] == lane)
-            .with_context(|| format!("suppressed {lane} cue for {identity}"))?;
-        assert_eq!(cue["reason"], "policy-excluded");
-        assert_eq!(cue["pathClassifications"], serde_json::json!(["test"]));
-    }
     Ok(())
 }

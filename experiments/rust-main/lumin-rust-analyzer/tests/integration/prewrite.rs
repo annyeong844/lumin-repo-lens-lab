@@ -28,9 +28,9 @@ mod intent_lanes;
 mod local_operations;
 #[path = "prewrite/service_cues.rs"]
 mod service_cues;
-#[path = "prewrite/shape.rs"]
+#[path = "prewrite/shape/mod.rs"]
 mod shape;
-#[path = "prewrite/signature_cues.rs"]
+#[path = "prewrite/signature_cues/mod.rs"]
 mod signature_cues;
 #[path = "prewrite/stability.rs"]
 mod stability;
