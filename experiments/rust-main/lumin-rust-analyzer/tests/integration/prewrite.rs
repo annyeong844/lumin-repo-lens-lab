@@ -1,8 +1,8 @@
-#[path = "prewrite/coverage.rs"]
+#[path = "prewrite/coverage/mod.rs"]
 mod coverage;
 #[path = "prewrite/cues.rs"]
 mod cues;
-#[path = "prewrite/dependencies.rs"]
+#[path = "prewrite/dependencies/mod.rs"]
 mod dependencies;
 #[path = "prewrite/dependency_errors/mod.rs"]
 mod dependency_errors;
