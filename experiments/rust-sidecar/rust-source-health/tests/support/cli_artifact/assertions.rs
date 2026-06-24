@@ -30,6 +30,14 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 0);
     assert!(artifact["functionCloneGroups"]["signatureGroupExamples"].is_array());
     assert_eq!(
+        artifact["functionCloneGroups"]["supports"]["nearFunctionCandidates"],
+        true
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["supports"]["semanticEquivalence"],
+        false
+    );
+    assert_eq!(
         artifact["functionCloneGroups"]["nearFunctionCandidateCount"],
         0
     );

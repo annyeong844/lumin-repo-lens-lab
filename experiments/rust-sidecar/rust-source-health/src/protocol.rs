@@ -23,9 +23,10 @@ pub use ast::{
 pub use file::{Facts, FileHealth};
 pub use function_clones::{
     AstFunctionCloneGroup, AstFunctionCloneGroupKind, AstFunctionCloneGroups,
-    AstFunctionCloneGroupsPolicy, AstFunctionCloneLine, AstFunctionSignatureGroup,
-    AstFunctionSignatureGroupKind, AstNearFunctionCandidate, AstNearFunctionCandidateKind,
-    AstNearFunctionCandidatePolicy, AstNearFunctionCandidateWeights, FunctionCloneRisk,
+    AstFunctionCloneGroupsPolicy, AstFunctionCloneGroupsSupports, AstFunctionCloneLine,
+    AstFunctionSignatureGroup, AstFunctionSignatureGroupKind, AstNearFunctionCandidate,
+    AstNearFunctionCandidateKind, AstNearFunctionCandidatePolicy, AstNearFunctionCandidateWeights,
+    FunctionCloneRisk,
 };
 pub use location::Location;
 pub use meta::{

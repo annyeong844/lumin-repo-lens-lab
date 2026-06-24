@@ -175,6 +175,12 @@ counter as `functionCloneGroups.generatedFileFactCount`: it counts
 `files[*].ast.functionBodyFingerprints[]` facts from generated-path files.
 Generated-only clone groups remain raw evidence but do not increment
 review-visible group or near-candidate counts.
+Rust mirrors the TS/JS `function-clones.json.meta.supports` capability map as
+`functionCloneGroups.supports`: the artifact must say, in machine-readable
+form, that function signatures, near-function candidates, generated-file
+evidence, exact/normalized body hashes, top-level functions, impl methods, and
+function visibility facts are supported, while `semanticEquivalence` remains
+`false`.
 The unified Rust analyzer product artifact follows the TS/JS
 `audit-summary` / `audit-review-pack` measured-cue surface by projecting the
 shape-hash, function-signature, function body fingerprint, clone-group, and

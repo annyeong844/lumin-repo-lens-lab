@@ -6,6 +6,7 @@ use super::AstVisibility;
 #[serde(rename_all = "camelCase")]
 pub struct AstFunctionCloneGroups {
     pub policy: AstFunctionCloneGroupsPolicy,
+    pub supports: AstFunctionCloneGroupsSupports,
     pub exact_body_group_count: usize,
     pub structure_group_count: usize,
     pub signature_group_count: usize,
@@ -46,6 +47,45 @@ impl Default for AstFunctionCloneGroupsPolicy {
             structure_min_statements: super::RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS,
             near_candidate_policy: AstNearFunctionCandidatePolicy::default(),
             caveat: "Function clone groups and near candidates are deterministic review evidence. They do not prove semantic equivalence, auto-reuse, auto-fix safety, or a merge recommendation.",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AstFunctionCloneGroupsSupports {
+    pub top_level_functions: bool,
+    pub impl_methods: bool,
+    pub function_fact_visibility: bool,
+    pub exact_body_hash: bool,
+    pub normalized_exact_hash: bool,
+    pub normalized_structure_hash: bool,
+    pub normalized_version: &'static str,
+    pub normalized_function_signature_hash: bool,
+    pub function_signature_groups: bool,
+    pub function_signature_normalized_version: &'static str,
+    pub near_function_candidates: bool,
+    pub generated_file_evidence: bool,
+    pub semantic_equivalence: bool,
+}
+
+impl Default for AstFunctionCloneGroupsSupports {
+    fn default() -> Self {
+        Self {
+            top_level_functions: true,
+            impl_methods: true,
+            function_fact_visibility: true,
+            exact_body_hash: true,
+            normalized_exact_hash: true,
+            normalized_structure_hash: true,
+            normalized_version: super::RUST_FUNCTION_BODY_NORMALIZED_VERSION,
+            normalized_function_signature_hash: true,
+            function_signature_groups: true,
+            function_signature_normalized_version:
+                super::RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
+            near_function_candidates: true,
+            generated_file_evidence: true,
+            semantic_equivalence: false,
         }
     }
 }

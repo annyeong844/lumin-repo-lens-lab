@@ -328,6 +328,18 @@ pub fn load_user_settings(raw: &str) -> usize {
         groups["policy"]["nearCandidatePolicy"]["minSignificantCallTokenLen"],
         4
     );
+    assert_eq!(groups["supports"]["nearFunctionCandidates"], true);
+    assert_eq!(groups["supports"]["functionSignatureGroups"], true);
+    assert_eq!(groups["supports"]["generatedFileEvidence"], true);
+    assert_eq!(groups["supports"]["semanticEquivalence"], false);
+    assert_eq!(
+        groups["supports"]["normalizedVersion"],
+        "rust-function-body.normalized.v2"
+    );
+    assert_eq!(
+        groups["supports"]["functionSignatureNormalizedVersion"],
+        "rust-function-signature.normalized.v1"
+    );
     assert!(
         groups["policy"]["nearCandidatePolicy"]["suppressedGenericCallTokens"]
             .as_array()

@@ -4,9 +4,9 @@ use serde::Serialize;
 
 use crate::protocol::{
     AstFacts, AstFunctionCloneGroup, AstFunctionCloneGroups, AstFunctionCloneGroupsPolicy,
-    AstFunctionSignatureGroup, AstNearFunctionCandidate, AstOpaqueMuteReason, AstOpaqueSurface,
-    AstOpaqueSurfaceVisibility, Facts, FileHealth, HealthResponse, ParseStatus, PathMeta,
-    ResponseMeta, Signal, SkippedFile, Summary,
+    AstFunctionCloneGroupsSupports, AstFunctionSignatureGroup, AstNearFunctionCandidate,
+    AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility, Facts, FileHealth,
+    HealthResponse, ParseStatus, PathMeta, ResponseMeta, Signal, SkippedFile, Summary,
 };
 
 const REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT: usize = 10;
@@ -50,6 +50,7 @@ impl<'a> CompactHealthResponse<'a> {
 #[serde(rename_all = "camelCase")]
 struct CompactFunctionCloneGroups<'a> {
     policy: &'a AstFunctionCloneGroupsPolicy,
+    supports: &'a AstFunctionCloneGroupsSupports,
     exact_body_group_count: usize,
     structure_group_count: usize,
     signature_group_count: usize,
@@ -67,6 +68,7 @@ impl<'a> CompactFunctionCloneGroups<'a> {
     fn from_groups(groups: &'a AstFunctionCloneGroups) -> Self {
         Self {
             policy: &groups.policy,
+            supports: &groups.supports,
             exact_body_group_count: groups.exact_body_group_count,
             structure_group_count: groups.structure_group_count,
             signature_group_count: groups.signature_group_count,
