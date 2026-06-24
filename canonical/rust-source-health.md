@@ -308,6 +308,9 @@ Canonical JSON fields:
 AST opaque surfaces are evidence, not findings. They are the escalation map for
 the unified analyzer: Cargo/rustc oracle evidence may clear or qualify them, but
 the syntax phase must preserve them raw.
+`src/analyzer/opaque.rs` owns AST opaque surface visibility classification; its
+`opaque/macros.rs` submodule owns macro-name mute reason classification for
+opaque macro surfaces.
 
 Opaque surface muting is not deletion. Common, low-review-value syntax opacity
 is still auditable as `muted`: test/generated paths, direct test-only AST

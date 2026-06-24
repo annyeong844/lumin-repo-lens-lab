@@ -5,6 +5,8 @@ use crate::protocol::{
 use super::signal_policy::test_context_mute_reason;
 use ra_ap_syntax::SyntaxNode;
 
+mod macros;
+
 pub(super) fn classify_macro_opaque_surface(
     path: &str,
     name: &str,
@@ -26,34 +28,9 @@ pub(super) fn classify_macro_opaque_surface(
             mute_reason: reason,
         };
     }
-    if is_assertion_macro(name) {
+    if let Some(reason) = macros::macro_opaque_mute_reason(path, name) {
         return AstOpaqueSurfaceVisibility::Muted {
-            mute_reason: AstOpaqueMuteReason::AssertionMacro,
-        };
-    }
-    if is_collection_macro(name) {
-        return AstOpaqueSurfaceVisibility::Muted {
-            mute_reason: AstOpaqueMuteReason::CollectionMacro,
-        };
-    }
-    if is_data_literal_macro(path, name) {
-        return AstOpaqueSurfaceVisibility::Muted {
-            mute_reason: AstOpaqueMuteReason::DataLiteralMacro,
-        };
-    }
-    if is_formatting_macro(name) {
-        return AstOpaqueSurfaceVisibility::Muted {
-            mute_reason: AstOpaqueMuteReason::FormattingMacro,
-        };
-    }
-    if is_io_formatting_macro(name) {
-        return AstOpaqueSurfaceVisibility::Muted {
-            mute_reason: AstOpaqueMuteReason::IoFormattingMacro,
-        };
-    }
-    if is_logging_macro(path, name) {
-        return AstOpaqueSurfaceVisibility::Muted {
-            mute_reason: AstOpaqueMuteReason::LoggingMacro,
+            mute_reason: reason,
         };
     }
 
@@ -131,32 +108,4 @@ fn is_cfg_test_expr(expr: &str) -> bool {
     matches!(expr, "#[cfg(test)]" | "#![cfg(test)]")
         || expr.starts_with("#[cfg_attr(test,")
         || expr.starts_with("#![cfg_attr(test,")
-}
-
-fn is_assertion_macro(name: &str) -> bool {
-    name == "matches" || name.starts_with("assert")
-}
-
-fn is_collection_macro(name: &str) -> bool {
-    matches!(name, "vec")
-}
-
-fn is_data_literal_macro(path: &str, name: &str) -> bool {
-    name == "json" || path == "serde_json::json"
-}
-
-fn is_formatting_macro(name: &str) -> bool {
-    matches!(name, "format" | "format_args")
-}
-
-fn is_io_formatting_macro(name: &str) -> bool {
-    matches!(
-        name,
-        "print" | "println" | "eprint" | "eprintln" | "write" | "writeln"
-    )
-}
-
-fn is_logging_macro(path: &str, name: &str) -> bool {
-    matches!(name, "trace" | "debug" | "info" | "warn" | "error")
-        && (path == name || path.starts_with("tracing::") || path.starts_with("log::"))
 }
