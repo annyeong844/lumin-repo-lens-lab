@@ -5,7 +5,9 @@ use super::super::model::DependencyLookupResult;
 pub(super) fn declaration_citations(
     dependency: &str,
     declaration: Option<&CargoDependencyDeclaration>,
+    observed_import_count: usize,
     observed_scope_misses: &[String],
+    unowned_observation_count: usize,
 ) -> Vec<String> {
     if let Some(declaration) = declaration {
         return vec![format!(
@@ -22,6 +24,11 @@ pub(super) fn declaration_citations(
             observed_scope_misses.join(", ")
         )];
     }
+    if observed_import_count == 0 && unowned_observation_count > 0 {
+        return vec![format!(
+            "[확인 불가, observed {unowned_observation_count} Rust path consumer(s) for '{dependency}' only in files outside Cargo package manifest scopes; no package manifest can be selected safely]"
+        )];
+    }
     vec![format!(
         "[grounded, Cargo manifest scope does not declare '{dependency}' in dependency tables]"
     )]
@@ -31,6 +38,7 @@ pub(super) fn push_lookup_result_citation(
     dependency: &str,
     result: DependencyLookupResult,
     observed_import_count: usize,
+    unowned_observation_count: usize,
     graph: &DependencyImportGraph,
     citations: &mut Vec<String>,
 ) {
@@ -49,6 +57,11 @@ pub(super) fn push_lookup_result_citation(
             let reason = graph.zero_observed_unavailable_reason();
             citations.push(format!(
                 "[확인 불가, reason: {reason}; zero observed Rust path consumers is not a grounded absence claim]"
+            ));
+        }
+        DependencyLookupResult::ScopeUnavailable => {
+            citations.push(format!(
+                "[확인 불가, omitted {unowned_observation_count} Rust path consumer(s) outside Cargo package scopes from dependency reuse/new-package classification]"
             ));
         }
         DependencyLookupResult::NewPackage => {}

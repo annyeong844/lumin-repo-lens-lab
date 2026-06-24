@@ -46,6 +46,8 @@ pub(in crate::prewrite) enum DependencyLookupResult {
     AvailableNoObservedImports,
     #[serde(rename = "DEPENDENCY_AVAILABLE_IMPORT_GRAPH_UNAVAILABLE")]
     AvailableImportGraphUnavailable,
+    #[serde(rename = "DEPENDENCY_SCOPE_UNAVAILABLE")]
+    ScopeUnavailable,
     #[serde(rename = "NEW_PACKAGE")]
     NewPackage,
 }

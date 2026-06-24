@@ -33,14 +33,29 @@ pub(super) fn workspace_member_manifest_paths(
     Ok(paths.into_iter().collect())
 }
 
+pub(super) fn workspace_exclude_roots(value: &TomlValue) -> Result<Vec<String>> {
+    let Some(workspace) = workspace_table(value)? else {
+        return Ok(Vec::new());
+    };
+    workspace_exclude_patterns(workspace)
+}
+
 fn workspace_exclude_patterns(
     workspace: &toml::map::Map<String, TomlValue>,
 ) -> Result<Vec<String>> {
     Ok(workspace_string_array(workspace, "exclude")?
         .unwrap_or_default()
         .into_iter()
-        .map(str::to_string)
+        .map(normalize_workspace_path)
         .collect())
+}
+
+fn normalize_workspace_path(path: &str) -> String {
+    path.replace('\\', "/")
+        .split('/')
+        .filter(|component| !component.is_empty() && *component != ".")
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn workspace_table(value: &TomlValue) -> Result<Option<&toml::map::Map<String, TomlValue>>> {

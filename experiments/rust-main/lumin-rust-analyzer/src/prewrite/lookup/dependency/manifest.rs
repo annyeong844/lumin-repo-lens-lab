@@ -10,11 +10,14 @@ use super::declarations::find_declarations_in_scopes;
 pub(super) use super::declarations::CargoDependencyDeclaration;
 use super::graph::{DependencyImportGraph, DependencyImportObservation};
 use super::scope::CargoManifestScope;
-use super::workspace::workspace_member_manifest_paths;
-use observations::{declaration_for_observations, observations_for_dependency};
+use super::workspace::{workspace_exclude_roots, workspace_member_manifest_paths};
+use observations::{
+    declaration_for_observations, observations_for_dependency, DependencyObservations,
+};
 
 pub(super) struct CargoManifest {
     scopes: Vec<CargoManifestScope>,
+    workspace_exclude_roots: Vec<String>,
     workspace_dependencies: Option<toml::map::Map<String, TomlValue>>,
 }
 
@@ -23,6 +26,7 @@ impl CargoManifest {
         let path = root.join("Cargo.toml");
         let value = parse_manifest(&path)?;
         let workspace_dependencies = workspace_dependencies(&value)?;
+        let workspace_exclude_roots = workspace_exclude_roots(&value)?;
         let mut scopes = vec![CargoManifestScope::root(root, &path, &value)];
         for member_manifest in workspace_member_manifest_paths(root, &value)? {
             if member_manifest == path {
@@ -33,6 +37,7 @@ impl CargoManifest {
         }
         Ok(Self {
             scopes,
+            workspace_exclude_roots,
             workspace_dependencies,
         })
     }
@@ -53,8 +58,14 @@ impl CargoManifest {
         graph: &'a DependencyImportGraph,
         requested_root: &str,
         declarations: &[CargoDependencyDeclaration],
-    ) -> (Vec<&'a DependencyImportObservation>, Vec<String>) {
-        observations_for_dependency(&self.scopes, graph, requested_root, declarations)
+    ) -> DependencyObservations<'a> {
+        observations_for_dependency(
+            &self.scopes,
+            &self.workspace_exclude_roots,
+            graph,
+            requested_root,
+            declarations,
+        )
     }
 
     pub(super) fn declaration_for_observations(

@@ -48,11 +48,11 @@ fn lookup_dependency(
 ) -> DependencyLookup {
     let requested_root = dependency_root(dependency);
     let declarations = manifest.find_declarations(&requested_root);
-    let (observations, observed_scope_misses) =
+    let observation_set =
         manifest.observations_for_dependency(graph, &requested_root, &declarations);
-    let declaration = if observed_scope_misses.is_empty() {
+    let declaration = if observation_set.observed_scope_misses.is_empty() {
         manifest
-            .declaration_for_observations(&observations, &declarations)
+            .declaration_for_observations(&observation_set.observations, &declarations)
             .or_else(|| declarations.first().cloned())
     } else {
         None
@@ -60,8 +60,9 @@ fn lookup_dependency(
     project_dependency_lookup(
         dependency,
         declaration.as_ref(),
-        &observed_scope_misses,
-        &observations,
+        &observation_set.observed_scope_misses,
+        observation_set.unowned_observation_count,
+        &observation_set.observations,
         graph,
     )
 }

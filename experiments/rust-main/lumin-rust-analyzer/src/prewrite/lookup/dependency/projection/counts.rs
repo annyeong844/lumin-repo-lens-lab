@@ -23,6 +23,9 @@ pub(super) fn existing_import_count_fields(
         DependencyLookupResult::AvailableImportGraphUnavailable => {
             (None, ImportCountConfidence::Unavailable, partial_reason)
         }
+        DependencyLookupResult::ScopeUnavailable => {
+            (None, ImportCountConfidence::Unavailable, partial_reason)
+        }
         DependencyLookupResult::NewPackage => {
             if partial_reason.is_some() {
                 (

@@ -488,6 +488,18 @@ Rust pre-write lookup helpers have canonical owners:
 - `lumin-rust-analyzer/src/prewrite/lookup/dependency/projection.rs` owns
   dependency lookup artifact projection, citations, count confidence, and
   examples.
+
+Rust dependency lookup mirrors the JS/TS dependency lane result vocabulary
+where Cargo package ownership is known: `DEPENDENCY_AVAILABLE`,
+`DEPENDENCY_AVAILABLE_NO_OBSERVED_IMPORTS`,
+`DEPENDENCY_AVAILABLE_IMPORT_GRAPH_UNAVAILABLE`, and `NEW_PACKAGE`.
+Cargo adds one Rust-only scope guard that JS/TS does not need:
+`DEPENDENCY_SCOPE_UNAVAILABLE`. This result is required when every observed
+consumer for a requested dependency is in a Rust file that cannot be assigned to
+a Cargo package/member manifest. Rust must not project those observations as
+`NEW_PACKAGE`, because there is no package-scoped manifest to update. The
+artifact must keep the omitted-scope reason visible in citations and mark the
+consumer count unavailable rather than grounded zero.
 - `lumin-rust-analyzer/src/prewrite/lookup/inline_pattern.rs` owns Rust inline
   extraction lookup over `HealthResponse::files[*].ast.inlinePatterns[]`,
   grouping, source intersection, unavailable evidence, and the JS/TS-derived
