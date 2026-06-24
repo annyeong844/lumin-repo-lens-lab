@@ -1,5 +1,5 @@
 use lumin_rust_source_health::protocol::{
-    AstDefinitionKind, AstVisibility, Location, PathClassification, PathMeta,
+    AstDefinitionKind, AstFunctionSignature, AstVisibility, Location, PathClassification, PathMeta,
 };
 use serde::Serialize;
 
@@ -50,6 +50,7 @@ pub(in crate::prewrite) struct Candidate<'a> {
     pub(in crate::prewrite) visibility: AstVisibility,
     pub(in crate::prewrite) location: &'a Location,
     pub(in crate::prewrite) path: &'a PathMeta,
+    pub(in crate::prewrite) function_signature: Option<&'a AstFunctionSignature>,
 }
 
 impl<'a> Candidate<'a> {

@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use lumin_rust_source_health::protocol::{AstDefinitionKind, AstVisibility, FileHealth};
+use lumin_rust_source_health::protocol::{
+    AstDefinition, AstDefinitionKind, AstFunctionSignature, AstVisibility, FileHealth,
+};
 
 use crate::prewrite::index::model::{Candidate, CandidateLane, ImplOwner};
 
@@ -32,6 +34,7 @@ pub(super) fn collect_definitions<'a>(
                 visibility: definition.visibility,
                 location: &definition.location,
                 path: &health.path,
+                function_signature: signature_for_definition(health, definition),
             }),
     );
 }
@@ -55,6 +58,7 @@ pub(super) fn collect_use_trees<'a>(
             visibility: use_tree.visibility,
             location: &use_tree.location,
             path: &health.path,
+            function_signature: None,
         })
     }));
 }
@@ -78,8 +82,23 @@ pub(super) fn collect_impl_methods<'a>(
             visibility: method.visibility,
             location: &method.location,
             path: &health.path,
+            function_signature: None,
         }));
     }
+}
+
+fn signature_for_definition<'a>(
+    health: &'a FileHealth,
+    definition: &AstDefinition,
+) -> Option<&'a AstFunctionSignature> {
+    if definition.kind != AstDefinitionKind::Function {
+        return None;
+    }
+    health.ast.function_signatures.iter().find(|signature| {
+        signature.name == definition.name
+            && signature.location.byte_start == definition.location.byte_start
+            && signature.location.byte_end == definition.location.byte_end
+    })
 }
 
 fn is_reexport_visibility(visibility: AstVisibility) -> bool {

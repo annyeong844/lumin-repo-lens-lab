@@ -39,10 +39,21 @@ fn prewrite_service_operation_sibling_promotes_read_query_and_mutes_mismatches()
     assert_eq!(promoted["operationFamily"], "read-query");
     assert_eq!(promoted["matchedField"], "defIndex");
     assert_eq!(promoted["sharedDomainTokens"], serde_json::json!(["user"]));
+    let signature_support = &promoted["signatureSupport"];
+    assert_eq!(signature_support["status"], "grounded");
+    assert_eq!(signature_support["artifact"], "rust-source-health");
     assert_eq!(
-        promoted["signatureSupport"],
-        serde_json::json!({"status": "unavailable", "reason": "no-signature-facts"})
+        signature_support["matchedField"],
+        "files[].ast.functionSignatures[].hash"
     );
+    assert_eq!(
+        signature_support["normalizedVersion"],
+        "rust-function-signature.normalized.v1"
+    );
+    assert!(signature_support["hash"]
+        .as_str()
+        .is_some_and(|hash| hash.starts_with("sha256:")));
+    assert!(signature_support.get("reason").is_none());
     assert!(promoted["supportingReasons"]
         .as_array()
         .context("supporting reasons")?
@@ -110,6 +121,52 @@ fn prewrite_service_operation_sibling_promotes_read_query_and_mutes_mismatches()
         "src/lib.rs::fetch_user",
         "service-sibling-operation-family-mismatch",
     )?;
+    Ok(())
+}
+
+#[test]
+fn prewrite_service_operation_signature_support_stays_unavailable_without_signature_fact(
+) -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes(
+        "src/lib.rs",
+        br#"pub fn fetch_report<T>(value: T) -> T
+where
+    T: Clone,
+{
+    value
+}
+"#,
+    )?;
+    let artifact = repo.run_json(
+        r#"{
+  "names": [
+    {
+      "name": "search_report",
+      "kind": "function",
+      "why": "search report data",
+      "ownerFile": "src/report_search.rs"
+    }
+  ],
+  "shapes": [],
+  "files": [],
+  "dependencies": [],
+  "plannedTypeEscapes": []
+}"#,
+    )?;
+    let search_lookup = lookup(&artifact, "search_report")?;
+    let promoted = search_lookup["serviceOperationSiblingPolicy"]["promoted"]
+        .as_array()
+        .context("promoted service candidates")?
+        .iter()
+        .find(|entry| entry["identity"] == "src/lib.rs::fetch_report")
+        .context("promoted fetch_report service sibling")?;
+
+    assert_eq!(promoted["operationFamily"], "read-query");
+    assert_eq!(
+        promoted["signatureSupport"],
+        serde_json::json!({"status": "unavailable", "reason": "no-signature-facts"})
+    );
     Ok(())
 }
 

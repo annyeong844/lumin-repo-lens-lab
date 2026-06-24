@@ -341,10 +341,11 @@ source health now owns narrow exact-hash producers. A `shape.hash` matching
 field names alone are not structural equality evidence. `typeLiteral` without
 an exact hash remains `UNAVAILABLE`; Rust must not parse TS/JS type literals in
 this lane. An unmatched exact hash is `NOT_OBSERVED` only when
-rust-source-health input is complete (`summary.parseErrorFiles == 0` and
-`skippedFiles[]` is empty). If parsing or read evidence is incomplete, the same
-unmatched hash remains `UNAVAILABLE`, matching the JS/TS shape/function-clone
-lookup rule that positive matches are grounded but absence claims are not.
+rust-source-health input is complete (`summary.parseErrorFiles == 0`,
+`skippedFiles[]` is empty, and `summary.reviewOpaqueSurfaces == 0`). If parsing,
+read evidence, or review-visible AST opacity is incomplete, the same unmatched
+hash remains `UNAVAILABLE`, matching the JS/TS shape/function-clone lookup rule
+that positive matches are grounded but absence claims are not.
 A positive exact-hash
 `SHAPE_MATCH` may emit the JS/TS `shape-hash` `SAFE_CUE` as claim-only evidence.
 A positive function-signature `SIGNATURE_MATCH` may emit the JS/TS
@@ -406,6 +407,19 @@ service-operation sibling review, local-operation sibling review, file
 domain-cluster cues, and dependency hub cues. These fields are provenance for
 existing advisory policy. They are not repository-size caps, time limits, or
 permission to skip analysis.
+
+Service-operation sibling review keeps the TS/JS `signatureSupport` field.
+TS/JS emits `unavailable/no-signature-facts` because its name-lookup symbol
+surface does not carry callable signature facts. Rust may set
+`signatureSupport.status = "grounded"` only for top-level function candidates
+whose `HealthResponse::files[*].ast.functionSignatures[]` fact matches the same
+file, name, and source location. The support record must cite
+`rust-source-health`, `files[].ast.functionSignatures[].hash`, the hash, and
+the Rust function-signature normalizer version. This remains review support for
+the service-sibling cue; it is not semantic-equivalence, auto-reuse, or auto-fix
+evidence. Same-file local-operation sibling review stays
+`unavailable/no-signature-facts` until Rust source health owns nested-function
+signature facts.
 
 `meta.lookupPolicy.jsTsPrecedent` must include the JS/TS intent, cue tier, and
 lookup owners that Rust pre-write has translated or intentionally exposes as

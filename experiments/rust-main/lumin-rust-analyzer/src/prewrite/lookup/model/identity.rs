@@ -1,4 +1,6 @@
-use lumin_rust_source_health::protocol::{AstDefinitionKind, AstVisibility, PathClassification};
+use lumin_rust_source_health::protocol::{
+    AstDefinitionKind, AstFunctionSignature, AstVisibility, PathClassification,
+};
 use serde::Serialize;
 
 use crate::prewrite::index::{Candidate, MatchedField};
@@ -29,8 +31,25 @@ pub(in crate::prewrite) struct CandidateRecord {
     pub(in crate::prewrite) visibility: AstVisibility,
     pub(in crate::prewrite) line: usize,
     pub(in crate::prewrite) column: usize,
+    #[serde(skip)]
+    pub(in crate::prewrite) function_signature: Option<FunctionSignatureEvidence>,
     pub(in crate::prewrite) policy_excluded: bool,
     pub(in crate::prewrite) path_classifications: Vec<PathClassification>,
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::prewrite) struct FunctionSignatureEvidence {
+    pub(in crate::prewrite) hash: String,
+    pub(in crate::prewrite) normalized_version: &'static str,
+}
+
+impl FunctionSignatureEvidence {
+    fn from_fact(fact: &AstFunctionSignature) -> Self {
+        Self {
+            hash: fact.hash.clone(),
+            normalized_version: fact.normalized_version,
+        }
+    }
 }
 
 impl CandidateRecord {
@@ -57,6 +76,9 @@ impl CandidateRecord {
             visibility: candidate.visibility,
             line: candidate.location.line,
             column: candidate.location.column,
+            function_signature: candidate
+                .function_signature
+                .map(FunctionSignatureEvidence::from_fact),
             policy_excluded,
             path_classifications,
         }

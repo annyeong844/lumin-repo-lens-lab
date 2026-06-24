@@ -5,7 +5,7 @@ use crate::support::prewrite::PreWriteRepo;
 const SHAPE_HASH: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
-fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()> {
+fn prewrite_shape_miss_keeps_opaque_taint_and_file_lane_visible() -> Result<()> {
     let repo = PreWriteRepo::new()?;
     let artifact = repo.run_json(&format!(
         r#"{{
@@ -42,19 +42,19 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
             text.contains("field names alone are not structural equality evidence")
         })));
     assert_eq!(shape_lookups[1]["shapeHash"], SHAPE_HASH);
-    assert_eq!(shape_lookups[1]["result"], "NOT_OBSERVED");
+    assert_eq!(shape_lookups[1]["result"], "UNAVAILABLE");
     assert!(shape_lookups[1]["citations"]
         .as_array()
         .context("hash shape citations")?
         .iter()
         .any(|citation| citation
             .as_str()
-            .is_some_and(|text| text.contains("complete rust-source-health"))));
+            .is_some_and(|text| text.contains("incomplete or opaque"))));
 
     let unavailable = artifact["unavailableEvidence"]
         .as_array()
         .context("unavailable evidence")?;
-    assert_eq!(unavailable.len(), 1);
+    assert_eq!(unavailable.len(), 2);
     assert!(unavailable.iter().all(|entry| {
         entry["evidenceLane"] == "shape-hash"
             && entry["status"] == "UNAVAILABLE"

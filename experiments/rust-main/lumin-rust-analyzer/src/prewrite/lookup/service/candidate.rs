@@ -22,6 +22,8 @@ impl MergedServiceCandidate {
         shared_domain_tokens: Vec<String>,
         reason: Option<ServiceOperationMuteReason>,
     ) -> ServiceOperationPolicyEntry {
+        let signature_support =
+            ServiceSignatureSupport::from_evidence(self.record.function_signature.as_ref());
         ServiceOperationPolicyEntry {
             identity: self.record.identity,
             name: self.record.name,
@@ -37,7 +39,7 @@ impl MergedServiceCandidate {
                 .map(PolicySupportingReason::from)
                 .collect(),
             locality: self.locality,
-            signature_support: ServiceSignatureSupport::unavailable(),
+            signature_support,
             suppressed_lanes: self.suppressed_lanes,
         }
     }
