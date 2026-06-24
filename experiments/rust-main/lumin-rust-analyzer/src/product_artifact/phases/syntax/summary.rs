@@ -16,6 +16,7 @@ pub(super) struct SyntaxPhaseSummaryBrief {
     function_body_fingerprints: usize,
     function_clone_exact_body_groups: usize,
     function_clone_structure_groups: usize,
+    function_clone_signature_groups: usize,
     function_clone_near_candidates: usize,
     function_clone_near_candidate_projection_limit: usize,
     inline_patterns: usize,
@@ -48,6 +49,7 @@ impl SyntaxPhaseSummaryBrief {
             function_body_fingerprints: summary.function_body_fingerprints,
             function_clone_exact_body_groups: syntax.function_clone_groups.exact_body_group_count,
             function_clone_structure_groups: syntax.function_clone_groups.structure_group_count,
+            function_clone_signature_groups: syntax.function_clone_groups.signature_group_count,
             function_clone_near_candidates: syntax
                 .function_clone_groups
                 .near_function_candidate_count,

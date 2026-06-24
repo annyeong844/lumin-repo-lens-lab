@@ -2,12 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{
     AstFunctionBodyFingerprint, AstFunctionCloneGroup, AstFunctionCloneGroupKind,
-    AstFunctionCloneGroups, AstFunctionCloneLine, AstNearFunctionCandidate,
-    AstNearFunctionCandidateKind, FileHealth, FunctionCloneRisk, PathClassification,
-    RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC, RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS,
-    RUST_FUNCTION_CLONE_MIN_GROUP_SIZE, RUST_FUNCTION_CLONE_NEAR_BODY_LOC_WEIGHT,
-    RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT, RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
-    RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA,
+    AstFunctionCloneGroups, AstFunctionCloneLine, AstFunctionParam, AstFunctionReceiver,
+    AstFunctionSignature, AstFunctionSignatureGroup, AstFunctionSignatureGroupKind,
+    AstNearFunctionCandidate, AstNearFunctionCandidateKind, AstVisibility, FileHealth,
+    FunctionCloneRisk, PathClassification, RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC,
+    RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS, RUST_FUNCTION_CLONE_MIN_GROUP_SIZE,
+    RUST_FUNCTION_CLONE_NEAR_BODY_LOC_WEIGHT, RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT,
+    RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES, RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA,
     RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY,
     RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_JACCARD,
     RUST_FUNCTION_CLONE_NEAR_MIN_NAME_TOKEN_JACCARD_FALLBACK, RUST_FUNCTION_CLONE_NEAR_MIN_SCORE,
@@ -37,22 +38,29 @@ pub(crate) fn group_function_body_fingerprints(
         |fact| &fact.normalized_structure_hash,
         "same anonymized function-body structure; review cue only, not proof of semantic equivalence",
     );
+    let signature_groups = group_signature_facts(files);
     let near_function_candidates =
         build_near_function_candidates(files, &exact_body_groups, &structure_groups);
 
     AstFunctionCloneGroups {
         exact_body_group_count: review_visible_group_count(&exact_body_groups),
         structure_group_count: review_visible_group_count(&structure_groups),
+        signature_group_count: review_visible_signature_group_count(&signature_groups),
         near_function_candidate_count: near_function_candidates.review_visible_count,
         near_function_candidate_projection_limit: RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
         exact_body_groups,
         structure_groups,
+        signature_groups,
         near_function_candidates: near_function_candidates.candidates,
         ..AstFunctionCloneGroups::default()
     }
 }
 
 fn review_visible_group_count(groups: &[AstFunctionCloneGroup]) -> usize {
+    groups.iter().filter(|group| !group.generated_only).count()
+}
+
+fn review_visible_signature_group_count(groups: &[AstFunctionSignatureGroup]) -> usize {
     groups.iter().filter(|group| !group.generated_only).count()
 }
 
@@ -97,6 +105,98 @@ fn group_by_hash(
             .then_with(|| left.identities.join("|").cmp(&right.identities.join("|")))
     });
     groups
+}
+
+fn group_signature_facts(files: &BTreeMap<String, FileHealth>) -> Vec<AstFunctionSignatureGroup> {
+    let mut by_hash = BTreeMap::<String, Vec<SignatureMember<'_>>>::new();
+    for (file, health) in files {
+        let generated = health
+            .path
+            .classifications
+            .contains(&PathClassification::Generated);
+        for fact in &health.ast.function_signatures {
+            by_hash
+                .entry(fact.hash.clone())
+                .or_default()
+                .push(SignatureMember {
+                    file: file.as_str(),
+                    fact,
+                    generated,
+                });
+        }
+    }
+
+    let mut groups = by_hash
+        .into_iter()
+        .filter_map(|(hash, members)| signature_group_from_members(hash, members))
+        .collect::<Vec<_>>();
+    groups.sort_by(|left, right| {
+        left.generated_only
+            .cmp(&right.generated_only)
+            .then_with(|| right.size.cmp(&left.size))
+            .then_with(|| left.identities.join("|").cmp(&right.identities.join("|")))
+    });
+    groups
+}
+
+fn signature_group_from_members(
+    hash: String,
+    mut members: Vec<SignatureMember<'_>>,
+) -> Option<AstFunctionSignatureGroup> {
+    if members.len() < RUST_FUNCTION_CLONE_MIN_GROUP_SIZE {
+        return None;
+    }
+    members.sort_by_key(signature_member_identity);
+
+    let generated_only = members.iter().all(|member| member.generated);
+    let owner_files = members
+        .iter()
+        .map(|member| member.file.to_string())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let names = members
+        .iter()
+        .map(|member| member.fact.name.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let visibilities = members
+        .iter()
+        .map(|member| member.fact.visibility)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let lines = members
+        .iter()
+        .map(|member| AstFunctionCloneLine {
+            identity: signature_member_identity(member),
+            file: member.file.to_string(),
+            line: member.fact.location.line,
+        })
+        .collect::<Vec<_>>();
+    let has_non_public = visibilities
+        .iter()
+        .any(|visibility| *visibility != AstVisibility::Public);
+
+    Some(AstFunctionSignatureGroup {
+        kind: AstFunctionSignatureGroupKind::FunctionSignatureGroup,
+        hash,
+        size: members.len(),
+        risk: FunctionCloneRisk::ReviewOnly,
+        generated_only,
+        signature: members.first().map(|member| signature_text(member.fact)),
+        identities: lines.iter().map(|line| line.identity.clone()).collect(),
+        owner_files,
+        names,
+        visibilities,
+        lines,
+        reason: if has_non_public {
+            "same normalized function type signature; non-public helpers are review cues only; not import/reuse proof or a merge recommendation"
+        } else {
+            "same normalized public function type signature; review cue only; not proof of semantic equivalence or a merge recommendation"
+        },
+    })
 }
 
 fn group_from_members(
@@ -512,10 +612,59 @@ fn member_identity(member: &GroupMember<'_>) -> String {
     }
 }
 
+fn signature_member_identity(member: &SignatureMember<'_>) -> String {
+    match &member.fact.owner {
+        None => format!("{}::{}", member.file, member.fact.name),
+        Some(owner) => match &owner.trait_path {
+            None => format!("{}::{}#{}", member.file, owner.target, member.fact.name),
+            Some(trait_path) => format!(
+                "{}::{} as {}#{}",
+                member.file, owner.target, trait_path, member.fact.name
+            ),
+        },
+    }
+}
+
+fn signature_text(signature: &AstFunctionSignature) -> String {
+    let mut params = Vec::new();
+    if let Some(receiver) = &signature.receiver {
+        params.push(receiver_text(receiver));
+    }
+    params.extend(signature.params.iter().map(param_text));
+
+    let mut text = String::from("fn");
+    if let Some(generics) = &signature.generics {
+        text.push_str(generics);
+    }
+    text.push('(');
+    text.push_str(&params.join(", "));
+    text.push(')');
+    if let Some(return_type) = &signature.return_type {
+        text.push_str(" -> ");
+        text.push_str(return_type);
+    }
+    text
+}
+
+fn receiver_text(receiver: &AstFunctionReceiver) -> String {
+    receiver.text.clone()
+}
+
+fn param_text(param: &AstFunctionParam) -> String {
+    param.type_text.clone()
+}
+
 #[derive(Clone, Copy)]
 struct GroupMember<'a> {
     file: &'a str,
     fact: &'a AstFunctionBodyFingerprint,
+    generated: bool,
+}
+
+#[derive(Clone, Copy)]
+struct SignatureMember<'a> {
+    file: &'a str,
+    fact: &'a AstFunctionSignature,
     generated: bool,
 }
 

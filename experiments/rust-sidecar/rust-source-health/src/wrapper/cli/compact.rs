@@ -4,9 +4,9 @@ use serde::Serialize;
 
 use crate::protocol::{
     AstFacts, AstFunctionCloneGroup, AstFunctionCloneGroups, AstFunctionCloneGroupsPolicy,
-    AstNearFunctionCandidate, AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility,
-    Facts, FileHealth, HealthResponse, ParseStatus, PathMeta, ResponseMeta, Signal, SkippedFile,
-    Summary,
+    AstFunctionSignatureGroup, AstNearFunctionCandidate, AstOpaqueMuteReason, AstOpaqueSurface,
+    AstOpaqueSurfaceVisibility, Facts, FileHealth, HealthResponse, ParseStatus, PathMeta,
+    ResponseMeta, Signal, SkippedFile, Summary,
 };
 
 const REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT: usize = 10;
@@ -52,11 +52,13 @@ struct CompactFunctionCloneGroups<'a> {
     policy: &'a AstFunctionCloneGroupsPolicy,
     exact_body_group_count: usize,
     structure_group_count: usize,
+    signature_group_count: usize,
     near_function_candidate_count: usize,
     near_function_candidate_projection_limit: usize,
     example_limit: usize,
     exact_body_group_examples: &'a [AstFunctionCloneGroup],
     structure_group_examples: &'a [AstFunctionCloneGroup],
+    signature_group_examples: &'a [AstFunctionSignatureGroup],
     near_function_candidate_examples: &'a [AstNearFunctionCandidate],
 }
 
@@ -66,6 +68,7 @@ impl<'a> CompactFunctionCloneGroups<'a> {
             policy: &groups.policy,
             exact_body_group_count: groups.exact_body_group_count,
             structure_group_count: groups.structure_group_count,
+            signature_group_count: groups.signature_group_count,
             near_function_candidate_count: groups.near_function_candidate_count,
             near_function_candidate_projection_limit: groups
                 .near_function_candidate_projection_limit,
@@ -76,6 +79,10 @@ impl<'a> CompactFunctionCloneGroups<'a> {
                 .min(FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT)],
             structure_group_examples: &groups.structure_groups[..groups
                 .structure_groups
+                .len()
+                .min(FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT)],
+            signature_group_examples: &groups.signature_groups[..groups
+                .signature_groups
                 .len()
                 .min(FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT)],
             near_function_candidate_examples: &groups.near_function_candidates[..groups

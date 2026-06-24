@@ -221,6 +221,7 @@ pub fn structure_b(value: &str) -> usize {
     assert_eq!(artifact["summary"]["functionBodyFingerprints"], 4);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 1);
     assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 2);
+    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 2);
     assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
 
     let groups = &artifact["functionCloneGroups"];
@@ -259,6 +260,22 @@ pub fn structure_b(value: &str) -> usize {
         .as_array()
         .is_some_and(|tokens| tokens.iter().any(|token| token == "len")));
     assert!(structure["reason"]
+        .as_str()
+        .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
+
+    assert_eq!(groups["signatureGroupCount"], 2);
+    let signature_groups = groups["signatureGroups"]
+        .as_array()
+        .context("signature clone groups")?;
+    let signature = group_with_identity(signature_groups, "src/a.rs::exact_a")
+        .context("exact_a signature group")?;
+    assert_eq!(signature["kind"], "function-signature-group");
+    assert_eq!(signature["risk"], "review-only");
+    assert_eq!(signature["generatedOnly"], false);
+    assert_eq!(signature["signature"], "fn() -> usize");
+    assert!(identity_list_contains(signature, "src/a.rs::exact_a"));
+    assert!(identity_list_contains(signature, "src/b.rs::exact_b"));
+    assert!(signature["reason"]
         .as_str()
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
 
@@ -316,7 +333,8 @@ pub fn load_user_settings(raw: &str) -> usize {
             .as_array()
             .is_some_and(|tokens| tokens.iter().any(|token| token == "to_string")
                 && tokens.iter().any(|token| token == "unwrap")
-                && tokens.iter().any(|token| token == "collect"))
+                && tokens.iter().any(|token| token == "collect")
+                && tokens.iter().any(|token| token == "format"))
     );
     assert!(
         groups["policy"]["nearCandidatePolicy"]["requiredMatchingQualifiers"]
@@ -383,7 +401,9 @@ pub fn generated_beta() -> usize {
 
     assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 0);
     assert_eq!(artifact["functionCloneGroups"]["exactBodyGroupCount"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 0);
     assert_eq!(
         artifact["functionCloneGroups"]["exactBodyGroups"]
             .as_array()
@@ -392,6 +412,16 @@ pub fn generated_beta() -> usize {
     );
     assert_eq!(
         artifact["functionCloneGroups"]["exactBodyGroups"][0]["generatedOnly"],
+        true
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["signatureGroups"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["signatureGroups"][0]["generatedOnly"],
         true
     );
 }
@@ -446,6 +476,29 @@ pub fn generic_beta(value: Option<String>) -> usize {
     let text = copied.unwrap();
     text.to_string().len()
 }
+"#,
+    );
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidates"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
+}
+
+#[test]
+fn function_body_near_candidates_ignore_format_macro_token() {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+pub fn render_invoice(input: &str) -> usize { format!("invoice: {input}").len() }
+
+pub fn compose_alert(input: &str) -> usize { format!("alert: {input}").len() }
 "#,
     );
 

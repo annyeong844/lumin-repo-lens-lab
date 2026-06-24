@@ -135,12 +135,16 @@ then semantic oracles only where the syntax surface is opaque.
 
 Rust source health also emits a top-level `functionCloneGroups` object. It is
 the Rust analogue of `_lib/function-clone-artifact.mjs` group evidence built
-from `files[*].ast.functionBodyFingerprints[]`. The owner is
-`src/function_clones.rs`. Current review surfaces are `exactBodyGroups`,
-`structureGroups`, and `nearFunctionCandidates`; all are deterministic review
+from `files[*].ast.functionBodyFingerprints[]` and
+`files[*].ast.functionSignatures[]`. The owner is `src/function_clones.rs`.
+Current review surfaces are `exactBodyGroups`, `structureGroups`,
+`signatureGroups`, and `nearFunctionCandidates`; all are deterministic review
 evidence only and carry the same caveat as the TS/JS function clone artifact:
 they do not prove semantic equivalence, auto-reuse, auto-fix safety, or a merge
-recommendation. The checked thresholds mirror TS/JS
+recommendation. Signature groups mirror TS/JS `groupSignatureFacts`: functions
+with the same normalized function type signature are grouped as review-only
+cues, generated-only groups stay in raw evidence, and only non-generated groups
+increment review-visible count fields. The checked thresholds mirror TS/JS
 `function-clone-near-policy`: exact groups use `minBodyLoc = 1`,
 `minStatements = 1`, and `minGroupSize = 2`; structure groups use
 `minBodyLocForGrouping = 3`, `minStatementsForGrouping = 2`, and

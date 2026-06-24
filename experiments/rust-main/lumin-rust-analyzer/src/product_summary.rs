@@ -93,6 +93,7 @@ struct ProductSyntaxSummary<'a> {
     syntax_function_body_fingerprints: usize,
     syntax_function_clone_exact_body_groups: usize,
     syntax_function_clone_structure_groups: usize,
+    syntax_function_clone_signature_groups: usize,
     syntax_function_clone_near_candidates: usize,
     syntax_function_clone_near_candidate_projection_limit: usize,
     syntax_inline_patterns: usize,
@@ -131,6 +132,9 @@ impl<'a> ProductSyntaxSummary<'a> {
             syntax_function_clone_structure_groups: response
                 .function_clone_groups
                 .structure_group_count,
+            syntax_function_clone_signature_groups: response
+                .function_clone_groups
+                .signature_group_count,
             syntax_function_clone_near_candidates: response
                 .function_clone_groups
                 .near_function_candidate_count,

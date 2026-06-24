@@ -20,6 +20,7 @@ pub struct Summary {
     pub function_body_fingerprints: usize,
     pub function_clone_exact_body_groups: usize,
     pub function_clone_structure_groups: usize,
+    pub function_clone_signature_groups: usize,
     pub function_clone_near_candidates: usize,
     pub inline_patterns: usize,
     pub impl_blocks: usize,

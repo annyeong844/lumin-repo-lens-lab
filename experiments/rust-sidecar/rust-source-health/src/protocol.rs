@@ -23,9 +23,9 @@ pub use ast::{
 pub use file::{Facts, FileHealth};
 pub use function_clones::{
     AstFunctionCloneGroup, AstFunctionCloneGroupKind, AstFunctionCloneGroups,
-    AstFunctionCloneGroupsPolicy, AstFunctionCloneLine, AstNearFunctionCandidate,
-    AstNearFunctionCandidateKind, AstNearFunctionCandidatePolicy, AstNearFunctionCandidateWeights,
-    FunctionCloneRisk,
+    AstFunctionCloneGroupsPolicy, AstFunctionCloneLine, AstFunctionSignatureGroup,
+    AstFunctionSignatureGroupKind, AstNearFunctionCandidate, AstNearFunctionCandidateKind,
+    AstNearFunctionCandidatePolicy, AstNearFunctionCandidateWeights, FunctionCloneRisk,
 };
 pub use location::Location;
 pub use meta::{
@@ -89,6 +89,7 @@ pub const RUST_FUNCTION_CLONE_NEAR_SUPPRESSED_GENERIC_CALL_TOKENS: &[&str] = &[
     "filter",
     "find",
     "flat_map",
+    "format",
     "for_each",
     "get",
     "insert",

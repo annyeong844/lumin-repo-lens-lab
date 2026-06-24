@@ -8,10 +8,12 @@ pub struct AstFunctionCloneGroups {
     pub policy: AstFunctionCloneGroupsPolicy,
     pub exact_body_group_count: usize,
     pub structure_group_count: usize,
+    pub signature_group_count: usize,
     pub near_function_candidate_count: usize,
     pub near_function_candidate_projection_limit: usize,
     pub exact_body_groups: Vec<AstFunctionCloneGroup>,
     pub structure_groups: Vec<AstFunctionCloneGroup>,
+    pub signature_groups: Vec<AstFunctionSignatureGroup>,
     pub near_function_candidates: Vec<AstNearFunctionCandidate>,
 }
 
@@ -140,6 +142,24 @@ pub struct AstFunctionCloneGroup {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AstFunctionSignatureGroup {
+    pub kind: AstFunctionSignatureGroupKind,
+    pub hash: String,
+    pub size: usize,
+    pub risk: FunctionCloneRisk,
+    pub generated_only: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    pub identities: Vec<String>,
+    pub owner_files: Vec<String>,
+    pub names: Vec<String>,
+    pub visibilities: Vec<AstVisibility>,
+    pub lines: Vec<AstFunctionCloneLine>,
+    pub reason: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AstNearFunctionCandidate {
     pub kind: AstNearFunctionCandidateKind,
     pub identities: Vec<String>,
@@ -172,6 +192,12 @@ pub struct AstFunctionCloneLine {
 pub enum AstFunctionCloneGroupKind {
     ExactFunctionBodyGroup,
     FunctionBodyStructureGroup,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AstFunctionSignatureGroupKind {
+    FunctionSignatureGroup,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]

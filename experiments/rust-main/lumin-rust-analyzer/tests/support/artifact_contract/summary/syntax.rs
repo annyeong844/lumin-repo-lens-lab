@@ -16,6 +16,7 @@ pub(super) fn assert_syntax_summary(artifact: &Value) {
     assert_eq!(artifact["summary"]["syntaxFunctionBodyFingerprints"], 10);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneExactBodyGroups"], 1);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneStructureGroups"], 1);
+    assert_eq!(artifact["summary"]["syntaxFunctionCloneSignatureGroups"], 2);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneNearCandidates"], 0);
     assert_eq!(
         artifact["summary"]["syntaxFunctionCloneNearCandidateProjectionLimit"],

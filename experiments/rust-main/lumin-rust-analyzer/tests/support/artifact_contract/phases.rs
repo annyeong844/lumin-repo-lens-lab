@@ -31,6 +31,10 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
         1
     );
     assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionCloneSignatureGroups"],
+        2
+    );
+    assert_eq!(
         artifact["phases"]["syntax"]["summary"]["functionCloneNearCandidates"],
         0
     );
