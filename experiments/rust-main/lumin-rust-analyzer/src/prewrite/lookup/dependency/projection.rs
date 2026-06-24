@@ -76,10 +76,10 @@ fn lookup_result(
     unowned_observation_count: usize,
     graph: &DependencyImportGraph,
 ) -> DependencyLookupResult {
+    if observed_import_count == 0 && unowned_observation_count > 0 {
+        return DependencyLookupResult::ScopeUnavailable;
+    }
     if !has_declaration {
-        if observed_import_count == 0 && unowned_observation_count > 0 {
-            return DependencyLookupResult::ScopeUnavailable;
-        }
         return DependencyLookupResult::NewPackage;
     }
     if observed_import_count > 0 {
