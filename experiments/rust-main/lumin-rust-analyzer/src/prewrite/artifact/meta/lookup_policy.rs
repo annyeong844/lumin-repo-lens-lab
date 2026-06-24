@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 use crate::prewrite::lookup;
+use lumin_rust_source_health::protocol::RUST_INLINE_PATTERN_MAX_STATEMENTS;
 
 const LOOKUP_POLICY_JS_TS_PRECEDENT: &[&str] = &[
     "_lib/pre-write-intent.mjs",
@@ -22,6 +23,7 @@ pub(super) struct LookupPolicyMeta {
     local_operation_sibling: OperationSiblingPolicyMeta,
     file_domain_cluster: FileDomainClusterPolicyMeta,
     dependency_hub: DependencyHubPolicyMeta,
+    inline_pattern: InlinePatternPolicyMeta,
 }
 
 impl LookupPolicyMeta {
@@ -56,6 +58,12 @@ impl LookupPolicyMeta {
             dependency_hub: DependencyHubPolicyMeta {
                 example_limit: lookup::DEPENDENCY_EXAMPLE_LIMIT,
                 watch_for_threshold: lookup::DEPENDENCY_WATCH_FOR_THRESHOLD,
+            },
+            inline_pattern: InlinePatternPolicyMeta {
+                policy_id: lookup::INLINE_PATTERN_POLICY_ID,
+                policy_version: lookup::INLINE_PATTERN_POLICY_VERSION,
+                min_occurrences: lookup::INLINE_PATTERN_MIN_OCCURRENCES,
+                max_pattern_statements: RUST_INLINE_PATTERN_MAX_STATEMENTS,
             },
         }
     }
@@ -98,4 +106,13 @@ struct FileDomainClusterPolicyMeta {
 struct DependencyHubPolicyMeta {
     example_limit: usize,
     watch_for_threshold: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InlinePatternPolicyMeta {
+    policy_id: &'static str,
+    policy_version: &'static str,
+    min_occurrences: usize,
+    max_pattern_statements: usize,
 }

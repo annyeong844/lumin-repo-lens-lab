@@ -6,6 +6,7 @@ pub struct AstSummaryCounts {
     pub definitions: u64,
     pub shape_hashes: u64,
     pub function_signatures: u64,
+    pub inline_patterns: u64,
     pub impl_blocks: u64,
     pub impl_methods: u64,
     pub use_trees: u64,
@@ -24,6 +25,10 @@ pub fn assert_ast_summary_counts(artifact: &Value, expected: AstSummaryCounts) {
     assert_eq!(
         summary_count(artifact, "functionSignatures"),
         expected.function_signatures
+    );
+    assert_eq!(
+        summary_count(artifact, "inlinePatterns"),
+        expected.inline_patterns
     );
     assert_eq!(summary_count(artifact, "implBlocks"), expected.impl_blocks);
     assert_eq!(

@@ -115,6 +115,7 @@ forbidden unless this canonical file is amended with a migration reason.
 | file syntax collection | `collect_file_syntax(...)` | `src/analyzer/syntax.rs` |
 | single-pass syntax node dispatch | `collect_syntax_node(...)` | `src/analyzer/syntax/visit.rs` |
 | Rust record shape hash extraction | `collect_struct_shape_hash(...)` | `src/analyzer/syntax/items/shapes.rs` |
+| Rust inline statement pattern extraction | `collect_inline_patterns(...)` | `src/analyzer/syntax/items/inline_patterns.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
 | unsafe block syntax check | `is_unsafe_block_expr(node)` | `src/analyzer.rs` |
@@ -149,6 +150,15 @@ Canonical JSON fields:
   `where` clause are not emitted until those qualifiers and bounds are
   represented in the normalized payload; Rust must refuse the exact cue rather
   than hash an incomplete call surface.
+- `ast.inlinePatterns[]`: repeated-inline extraction occurrence facts for
+  simple Rust statement lists. The producer is the Rust analogue of
+  `_lib/inline-pattern-artifact.mjs`: it records syntax-only occurrences whose
+  statements are all no-argument call or method-call expression statements,
+  capped at the checked JS/TS `inline-pattern-policy.maxCatchStatements = 2`.
+  The occurrence normalizer is Rust-owned
+  (`rust-inline-statement-normalizer-v1`). These facts are extraction review
+  evidence only; they do not claim semantic equivalence, auto-reuse, or
+  auto-fix safety.
 - `ast.impls[]`: Rust `impl` block observations with `target`, optional
   `trait`, method owner evidence, and `location`. This is the Rust analogue of
   the JS/TS `classMethodIndex`: impl methods are visible as owner evidence
@@ -380,8 +390,11 @@ Rust pre-write lookup helpers have canonical owners:
   dependency lookup artifact projection, citations, count confidence, and
   examples.
 - `lumin-rust-analyzer/src/prewrite/lookup/inline_pattern.rs` owns Rust inline
-  extraction unsupported evidence until a Rust-owned inline-pattern producer or
-  bridge exists.
+  extraction lookup over `HealthResponse::files[*].ast.inlinePatterns[]`,
+  grouping, source intersection, unavailable evidence, and the JS/TS-derived
+  `INLINE_PATTERN_MATCH` / `NO_INLINE_PATTERN_MATCH` result contract. Its
+  `groups`, `model`, and `source` submodules are implementation details of this
+  lane.
 
 Rust pre-write semantic hint helpers have canonical owners:
 
@@ -481,14 +494,24 @@ Rust inline extraction intent support is the Rust analogue of the JS/TS
   source evidence and follows the JS/TS input contract: `file` must be a safe
   POSIX repository-relative path, `lines[]` must contain positive integers when
   present, and `why` must be non-empty when present.
-- Rust does not currently produce `inline-patterns.json`. When
-  `refactorSources` is non-empty, the pre-write artifact must make that omitted
-  scope visible as `coverage.inlinePatterns = "unsupported"`,
-  `inlinePatternLookups[]` with `result = "UNAVAILABLE"`, and
-  `unavailableEvidence[]` on the `inline-extraction` lane.
-- Missing Rust inline-pattern support must not create `cueCards[]` or
-  `suppressedCues[]`. Review cues for repeated inline statement patterns require
-  a future Rust-owned inline-pattern producer or an explicit artifact bridge.
+- Rust does not create a separate `inline-patterns.json` file. Rust source
+  health owns the raw producer as `files[*].ast.inlinePatterns[]`, and pre-write
+  consumes that in-memory typed artifact.
+- When `refactorSources` is non-empty and every referenced source file has a
+  parsed `HealthResponse::files` entry, `coverage.inlinePatterns = "ran"`.
+  Matching groups emit `INLINE_PATTERN_MATCH`; no intersecting repeated group
+  emits `NO_INLINE_PATTERN_MATCH`.
+- If a requested refactor source is missing, skipped, or parse-failed, the lane
+  emits `UNAVAILABLE` with `unavailableEvidence[]` on the `inline-extraction`
+  lane. Rust must not turn incomplete source evidence into a grounded absence
+  claim.
+- A group is review-visible only when at least the checked JS/TS
+  `inline-pattern-policy.minOccurrences = 3` occurrences share the same Rust
+  normalized pattern hash and at least one occurrence intersects the declared
+  `refactorSources[]` file/line range.
+- Positive inline-pattern matches may create `AGENT_REVIEW_CUE` cue cards with
+  `notSafeFor = ["semantic-equivalence", "auto-reuse", "auto-fix"]`. They must
+  never create `SAFE_CUE`, auto-fix, or semantic-equivalence evidence.
 
 ## 8. Do Not Invent These Again
 
@@ -565,6 +588,7 @@ Final artifacts must satisfy these counts:
 - `summary.definitions === sum(files[*].ast.definitions.length)`
 - `summary.shapeHashes === sum(files[*].ast.shapeHashes.length)`
 - `summary.functionSignatures === sum(files[*].ast.functionSignatures.length)`
+- `summary.inlinePatterns === sum(files[*].ast.inlinePatterns.length)`
 - `summary.implBlocks === sum(files[*].ast.impls.length)`
 - `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`
 - `summary.useTrees === sum(files[*].ast.useTrees.length)`

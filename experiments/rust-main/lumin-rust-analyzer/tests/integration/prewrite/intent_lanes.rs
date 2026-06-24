@@ -50,7 +50,7 @@ fn prewrite_planned_type_escapes_are_ran_and_preserved_like_js_ts() -> Result<()
 }
 
 #[test]
-fn prewrite_refactor_sources_report_inline_pattern_unavailable_without_cues() -> Result<()> {
+fn prewrite_refactor_sources_run_inline_pattern_lookup_without_match() -> Result<()> {
     let repo = PreWriteRepo::new()?;
     let artifact = repo.run_json(
         r#"{
@@ -69,7 +69,7 @@ fn prewrite_refactor_sources_report_inline_pattern_unavailable_without_cues() ->
 }"#,
     )?;
 
-    assert_eq!(artifact["coverage"]["inlinePatterns"], "unsupported");
+    assert_eq!(artifact["coverage"]["inlinePatterns"], "ran");
     assert_eq!(
         artifact["intent"]["refactorSources"][0]["file"],
         "src/lib.rs"
@@ -84,19 +84,15 @@ fn prewrite_refactor_sources_report_inline_pattern_unavailable_without_cues() ->
         .context("inline pattern lookups")?;
     assert_eq!(inline_lookups.len(), 1);
     assert_eq!(inline_lookups[0]["kind"], "inline-pattern");
-    assert_eq!(inline_lookups[0]["result"], "UNAVAILABLE");
-    assert_eq!(inline_lookups[0]["reason"], "missing-artifact");
-    assert_eq!(inline_lookups[0]["artifact"], "inline-patterns.json");
+    assert_eq!(inline_lookups[0]["result"], "NO_INLINE_PATTERN_MATCH");
+    assert_eq!(inline_lookups[0]["groups"], serde_json::json!([]));
 
     let unavailable = artifact["unavailableEvidence"]
         .as_array()
         .context("unavailable evidence")?;
-    assert!(unavailable.iter().any(|entry| {
-        entry["evidenceLane"] == "inline-extraction"
-            && entry["status"] == "UNAVAILABLE"
-            && entry["reason"] == "missing-artifact"
-            && entry["artifact"] == "inline-patterns.json"
-    }));
+    assert!(unavailable
+        .iter()
+        .all(|entry| entry["evidenceLane"] != "inline-extraction"));
     assert!(artifact["cueCards"]
         .as_array()
         .context("cue cards")?

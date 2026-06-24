@@ -7,7 +7,6 @@ use crate::prewrite::intent::NormalizedIntent;
 #[serde(rename_all = "kebab-case")]
 enum LaneStatus {
     Ran,
-    Unsupported,
     NotRequested,
 }
 
@@ -29,7 +28,7 @@ impl IntentLaneCoverage {
             shapes: ran_if_requested(!intent.shapes.is_empty()),
             files: ran_if_requested(!intent.files.is_empty()),
             dependencies: ran_if_requested(!intent.dependencies.is_empty()),
-            inline_patterns: unsupported_if_requested(intent.has_refactor_sources()),
+            inline_patterns: ran_if_requested(intent.has_refactor_sources()),
             planned_type_escapes: LaneStatus::Ran,
         }
     }
@@ -39,7 +38,7 @@ impl IntentLaneCoverage {
             || self.shapes != ran_if_requested(!intent.shapes.is_empty())
             || self.files != ran_if_requested(!intent.files.is_empty())
             || self.dependencies != ran_if_requested(!intent.dependencies.is_empty())
-            || self.inline_patterns != unsupported_if_requested(intent.has_refactor_sources())
+            || self.inline_patterns != ran_if_requested(intent.has_refactor_sources())
             || self.planned_type_escapes != LaneStatus::Ran
         {
             bail!("blocked-artifact-contract: intent lane coverage drifted from normalized input");
@@ -51,14 +50,6 @@ impl IntentLaneCoverage {
 fn ran_if_requested(requested: bool) -> LaneStatus {
     if requested {
         LaneStatus::Ran
-    } else {
-        LaneStatus::NotRequested
-    }
-}
-
-fn unsupported_if_requested(requested: bool) -> LaneStatus {
-    if requested {
-        LaneStatus::Unsupported
     } else {
         LaneStatus::NotRequested
     }

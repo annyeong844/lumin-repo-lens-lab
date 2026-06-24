@@ -22,6 +22,8 @@ mod file_domain;
 mod file_symlinks;
 #[path = "prewrite/files.rs"]
 mod files;
+#[path = "prewrite/inline_patterns.rs"]
+mod inline_patterns;
 #[path = "prewrite/intent_lanes.rs"]
 mod intent_lanes;
 #[path = "prewrite/local_operations/mod.rs"]

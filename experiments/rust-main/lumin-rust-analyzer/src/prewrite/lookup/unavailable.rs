@@ -24,14 +24,14 @@ impl UnavailableEvidence {
     pub(in crate::prewrite) fn inline_extraction(
         reason: &'static str,
         artifact: &'static str,
-        citations: Vec<&'static str>,
+        citations: Vec<String>,
     ) -> Self {
         Self {
             evidence_lane: UnavailableEvidenceLane::InlineExtraction,
             status: UnavailableEvidenceStatus::Unavailable,
             reason,
             artifact,
-            citations: citations.into_iter().map(str::to_string).collect(),
+            citations,
         }
     }
 }

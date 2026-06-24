@@ -57,6 +57,13 @@ fn prewrite_meta_exposes_js_ts_lookup_policy_constants() -> Result<()> {
     assert_eq!(policy["fileDomainCluster"]["minPrefixLen"], 4);
     assert_eq!(policy["dependencyHub"]["exampleLimit"], 5);
     assert_eq!(policy["dependencyHub"]["watchForThreshold"], 10);
+    assert_eq!(policy["inlinePattern"]["policyId"], "inline-pattern-policy");
+    assert_eq!(
+        policy["inlinePattern"]["policyVersion"],
+        "inline-pattern-policy-v1"
+    );
+    assert_eq!(policy["inlinePattern"]["minOccurrences"], 3);
+    assert_eq!(policy["inlinePattern"]["maxPatternStatements"], 2);
     assert_eq!(
         artifact["lookups"][0]["serviceOperationSiblingPolicy"]["policyId"],
         policy["serviceOperationSibling"]["policyId"]

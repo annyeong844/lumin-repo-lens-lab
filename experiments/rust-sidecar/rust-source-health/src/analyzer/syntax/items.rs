@@ -1,5 +1,6 @@
 mod functions;
 mod impls;
+mod inline_patterns;
 mod normalize;
 mod shapes;
 
@@ -13,6 +14,7 @@ use crate::analyzer::signal_policy::contextual_review_signal;
 
 pub(super) use functions::collect_function;
 pub(super) use impls::collect_impl;
+pub(super) use inline_patterns::collect_inline_patterns;
 pub(super) use shapes::collect_struct;
 
 pub(super) fn collect_enum(node: &SyntaxNode, line_index: &LineIndex, syntax: &mut FileSyntax) {

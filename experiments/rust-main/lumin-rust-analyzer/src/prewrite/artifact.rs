@@ -56,7 +56,7 @@ pub(super) fn build(
     let index = CandidateIndex::from_health(syntax);
     let lookups = lookup::lookup_names(&loaded.intent, &index, syntax);
     let shape_lookups = lookup::lookup_shapes(&loaded.intent, syntax);
-    let inline_pattern_lookups = lookup::lookup_inline_patterns(&loaded.intent);
+    let inline_pattern_lookups = lookup::lookup_inline_patterns(&loaded.intent, syntax);
     let mut unavailable_evidence = lookup::unavailable_evidence_from_shape_lookups(&shape_lookups);
     unavailable_evidence.extend(lookup::unavailable_evidence_from_inline_pattern_lookups(
         &inline_pattern_lookups,
@@ -66,7 +66,13 @@ pub(super) fn build(
     let CueProjection {
         cue_cards,
         suppressed_cues,
-    } = cues::project(&lookups, &shape_lookups, &file_lookups, &dependency_lookups);
+    } = cues::project(
+        &lookups,
+        &shape_lookups,
+        &file_lookups,
+        &dependency_lookups,
+        &inline_pattern_lookups,
+    );
     let coverage = IntentLaneCoverage::from_intent(&loaded.intent);
     let artifact = PreWriteArtifact {
         schema_version: SCHEMA_VERSION,

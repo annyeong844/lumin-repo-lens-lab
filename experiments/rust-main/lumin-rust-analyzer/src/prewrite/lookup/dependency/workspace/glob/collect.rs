@@ -82,6 +82,10 @@ impl GlobMemberCollector<'_> {
     }
 
     fn collect_recursive_member_candidate(&mut self, current: &Path) -> Result<()> {
+        if self.member_root_is_excluded(current) {
+            *self.matched_member_roots += 1;
+            return Ok(());
+        }
         self.collect_member_root(current)?;
         for child in child_directories(current)? {
             self.collect_recursive_member_candidate(&child)?;

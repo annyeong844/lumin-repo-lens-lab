@@ -46,6 +46,10 @@ impl PreWriteArtifact {
                                     == CueMatchedField::RustSourceHealthFunctionSignatureHash
                                     && evidence.hash.is_some()
                             }) => {}
+                        EvidenceLane::InlineExtraction => bail!(
+                            "blocked-artifact-contract: inline extraction cue {} entered SAFE",
+                            card.candidate.identity
+                        ),
                         _ => bail!(
                             "blocked-artifact-contract: SAFE cue {} is not exact source-health evidence",
                             card.candidate.identity
@@ -163,10 +167,8 @@ impl PreWriteArtifact {
             );
         }
         for lookup in &self.inline_pattern_lookups {
-            if !lookup.is_unavailable() {
-                bail!(
-                    "blocked-artifact-contract: unsupported Rust inline-pattern lane emitted a match"
-                );
+            if !(lookup.is_unavailable() || lookup.is_match() || lookup.is_no_match()) {
+                bail!("blocked-artifact-contract: inline-pattern lookup emitted an invalid result");
             }
         }
         Ok(())

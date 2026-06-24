@@ -20,6 +20,7 @@ pub(super) fn collect_syntax_node(
         SyntaxKind::CONST => items::collect_const(node, line_index, syntax),
         SyntaxKind::STATIC => items::collect_static(node, line_index, syntax),
         SyntaxKind::TYPE_ALIAS => items::collect_type_alias(node, line_index, syntax),
+        SyntaxKind::STMT_LIST => items::collect_inline_patterns(node, line_index, syntax),
         SyntaxKind::USE => refs::collect_use_tree(node, line_index, syntax),
         SyntaxKind::PATH_EXPR => refs::collect_path_ref(node, line_index, syntax),
         SyntaxKind::PATH_TYPE => refs::collect_type_path_ref(node, line_index, syntax),

@@ -26,6 +26,7 @@ pub(in crate::prewrite) enum EvidenceLane {
     LocalOperationSibling,
     ShapeHash,
     FunctionSignature,
+    InlineExtraction,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -73,6 +74,8 @@ pub(in crate::prewrite::cues) enum CueClaim {
     SameNormalizedTypeShape,
     #[serde(rename = "same normalized function signature")]
     SameNormalizedFunctionSignature,
+    #[serde(rename = "repeated inline statement pattern")]
+    RepeatedInlineStatementPattern,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -99,6 +102,8 @@ pub(in crate::prewrite) enum CueMatchedField {
     RustSourceHealthShapeHash,
     #[serde(rename = "files[].ast.functionSignatures[].hash")]
     RustSourceHealthFunctionSignatureHash,
+    #[serde(rename = "files[].ast.inlinePatterns[].patternHash")]
+    RustSourceHealthInlinePatternHash,
 }
 
 impl From<MatchedField> for CueMatchedField {

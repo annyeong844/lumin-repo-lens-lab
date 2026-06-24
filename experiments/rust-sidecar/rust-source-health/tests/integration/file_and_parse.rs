@@ -56,6 +56,7 @@ impl Maybe {
             definitions: 4,
             shape_hashes: 1,
             function_signatures: 3,
+            inline_patterns: 0,
             impl_blocks: 1,
             impl_methods: 2,
             use_trees: 3,
@@ -66,6 +67,60 @@ impl Maybe {
         },
     );
     assert_core_ast_fact_projection(&value, "src/lib.rs");
+}
+
+#[test]
+fn inline_patterns_record_repeated_simple_no_arg_statement_blocks() -> Result<()> {
+    let source = r#"
+pub struct Worker;
+
+impl Worker {
+    pub fn first(&self) {
+        self.cleanup();
+        self.close();
+    }
+
+    pub fn second(&self) {
+        self.cleanup();
+        self.close();
+    }
+
+    pub fn third(&self) {
+        self.cleanup();
+        self.close();
+    }
+
+    pub fn gated(&self) {
+        #[cfg(feature = "fast")]
+        self.cleanup();
+    }
+}
+"#;
+    let value = analyze_file("src/lib.rs", source);
+    let patterns = value["files"]["src/lib.rs"]["ast"]["inlinePatterns"]
+        .as_array()
+        .context("inline patterns")?;
+
+    assert_eq!(value["summary"]["inlinePatterns"], 3);
+    assert_eq!(patterns.len(), 3);
+    assert!(patterns
+        .iter()
+        .all(|pattern| pattern["kind"] == "statement-sequence"));
+    assert!(patterns
+        .iter()
+        .all(|pattern| pattern["statementCount"] == 2));
+    assert!(patterns.iter().all(|pattern| {
+        pattern["normalizedPattern"] == "block { self.cleanup(); self.close(); }"
+    }));
+    assert!(patterns
+        .iter()
+        .all(|pattern| pattern["normalizedVersion"] == "rust-inline-statement-normalizer-v1"));
+    assert_eq!(patterns[0]["patternHash"], patterns[1]["patternHash"]);
+    assert_eq!(patterns[1]["patternHash"], patterns[2]["patternHash"]);
+    assert!(patterns
+        .iter()
+        .all(|pattern| pattern["enclosingFunction"] != "gated"));
+    Ok(())
 }
 
 #[test]

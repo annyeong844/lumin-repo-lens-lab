@@ -9,7 +9,7 @@ mod model;
 mod normalize;
 
 pub(super) use model::{
-    IntentWarning, LoadedIntent, NameDeclaration, NormalizedIntent, ShapeIntent,
+    IntentWarning, LoadedIntent, NameDeclaration, NormalizedIntent, RefactorSource, ShapeIntent,
 };
 
 pub(super) fn load(path: &Path) -> Result<LoadedIntent> {

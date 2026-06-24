@@ -21,7 +21,9 @@ pub(super) use file::{
     DOMAIN_CLUSTER_MIN_MATCHES, DOMAIN_CLUSTER_MIN_PREFIX_LEN,
 };
 pub(super) use inline_pattern::{
-    lookup_inline_patterns, unavailable_evidence_from_inline_pattern_lookups, InlinePatternLookup,
+    lookup_inline_patterns, unavailable_evidence_from_inline_pattern_lookups, InlinePatternGroup,
+    InlinePatternLookup, INLINE_PATTERN_MIN_OCCURRENCES, INLINE_PATTERN_POLICY_ID,
+    INLINE_PATTERN_POLICY_VERSION,
 };
 pub(super) use local::{
     LOCAL_OPERATION_POLICY_ID, LOCAL_OPERATION_POLICY_MAX_RESULTS, LOCAL_OPERATION_POLICY_VERSION,

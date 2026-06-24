@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 mod definitions;
 mod functions;
 mod impls;
+mod inline_patterns;
 mod opaque;
 mod refs;
 mod shapes;
@@ -14,6 +15,7 @@ pub use functions::{
     AstFunctionReceiverKind, AstFunctionSignature, AstFunctionSignatureKind,
 };
 pub use impls::{AstImplBlock, AstImplMethod};
+pub use inline_patterns::{AstInlinePattern, AstInlinePatternKind};
 pub use opaque::{
     AstCfgGate, AstMacroCall, AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface,
     AstOpaqueSurfaceKind, AstOpaqueSurfaceVisibility, AstOpaqueVisibility,
@@ -30,6 +32,7 @@ pub struct AstFacts {
     pub definitions: Vec<AstDefinition>,
     pub shape_hashes: Vec<AstShapeHash>,
     pub function_signatures: Vec<AstFunctionSignature>,
+    pub inline_patterns: Vec<AstInlinePattern>,
     pub impls: Vec<AstImplBlock>,
     pub use_trees: Vec<AstUseTree>,
     pub path_refs: Vec<AstPathRef>,

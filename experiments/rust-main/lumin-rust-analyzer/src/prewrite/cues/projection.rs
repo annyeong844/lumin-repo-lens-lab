@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
-use crate::prewrite::lookup::{DependencyLookup, FileLookup, NameLookup, ShapeLookup};
+use crate::prewrite::lookup::{
+    DependencyLookup, FileLookup, InlinePatternLookup, NameLookup, ShapeLookup,
+};
 
 use super::model::{Cue, CueCandidate, CueCard, CueCardBuilder, CueProjection, CueTier};
 
 mod dependency;
 mod file;
+mod inline_pattern;
 mod operation;
 mod shape;
 mod symbol;
@@ -15,6 +18,7 @@ pub(in crate::prewrite) fn project(
     shape_lookups: &[ShapeLookup],
     file_lookups: &[FileLookup],
     dependency_lookups: &[DependencyLookup],
+    inline_pattern_lookups: &[InlinePatternLookup],
 ) -> CueProjection {
     let mut cards = BTreeMap::<String, CueCardBuilder>::new();
     let mut suppressed = Vec::new();
@@ -25,6 +29,7 @@ pub(in crate::prewrite) fn project(
     shape::add_shape_cues(shape_lookups, &mut cards, &mut suppressed);
     file::add_file_cues(file_lookups, &mut cards);
     dependency::add_dependency_cues(dependency_lookups, &mut cards);
+    inline_pattern::add_inline_pattern_cues(inline_pattern_lookups, &mut cards);
 
     let mut cue_cards = cards
         .into_values()
