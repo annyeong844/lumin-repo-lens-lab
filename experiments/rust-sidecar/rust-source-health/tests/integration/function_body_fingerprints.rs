@@ -323,7 +323,7 @@ pub fn load_user_settings(raw: &str) -> usize {
     assert!(candidate["score"]
         .as_f64()
         .is_some_and(|score| score >= 0.62));
-    assert_eq!(candidate["callTokenJaccard"], 0.667);
+    assert_eq!(candidate["callTokenJaccard"], 1.0);
     assert_eq!(candidate["nameTokenJaccard"], 0.5);
     assert!(candidate["sharedCallTokens"]
         .as_array()
@@ -338,6 +338,76 @@ pub fn load_user_settings(raw: &str) -> usize {
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
 
     Ok(())
+}
+
+#[test]
+fn function_body_near_candidates_ignore_rust_generic_call_tokens() {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+pub fn generic_alpha(value: Option<String>) -> usize {
+    let copied = value.clone();
+    let text = copied.unwrap();
+    text.to_string().len()
+}
+
+pub fn generic_beta(value: Option<String>) -> usize {
+    let copied = value.clone();
+    if copied.is_none() {
+        return 0;
+    }
+    let text = copied.unwrap();
+    text.to_string().len()
+}
+"#,
+    );
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidates"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
+}
+
+#[test]
+fn function_body_near_candidates_respect_rust_qualifiers() {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+pub fn refresh_cache(input: &str) -> usize {
+    let parsed = input.trim();
+    let normalized = sanitize(parsed);
+    let loaded = fetch_user(normalized);
+    loaded.len()
+}
+
+pub unsafe fn refresh_cache_unchecked(raw: &str) -> usize {
+    let cleaned = raw.trim();
+    let ready = sanitize(cleaned);
+    let fetched = fetch_user(ready);
+    if fetched.is_empty() {
+        return 0;
+    }
+    fetched.len()
+}
+"#,
+    );
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidates"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
 }
 
 fn identity_list_contains(group: &Value, identity: &str) -> bool {

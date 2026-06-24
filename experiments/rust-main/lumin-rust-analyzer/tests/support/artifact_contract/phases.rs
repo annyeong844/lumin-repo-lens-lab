@@ -13,6 +13,22 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
             .len()
     );
     assert_eq!(artifact["phases"]["syntax"]["summary"]["pathRefs"], 1);
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionBodyFingerprints"],
+        8
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionCloneExactBodyGroups"],
+        1
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionCloneStructureGroups"],
+        1
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionCloneNearCandidates"],
+        0
+    );
     assert!(artifact["phases"]["syntax"]["summary"]
         .get("signalsByKind")
         .is_none());

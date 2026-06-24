@@ -265,7 +265,10 @@ fn near_candidate_from_pair(
     left: &NearFact<'_>,
     right: &NearFact<'_>,
 ) -> Option<AstNearFunctionCandidate> {
-    if left.member.fact.is_async != right.member.fact.is_async {
+    if left.member.fact.is_async != right.member.fact.is_async
+        || left.member.fact.is_unsafe != right.member.fact.is_unsafe
+        || left.member.fact.is_const != right.member.fact.is_const
+    {
         return None;
     }
     if left
@@ -416,8 +419,51 @@ fn significant_call_tokens(fact: &AstFunctionBodyFingerprint) -> Vec<String> {
 }
 
 const GENERIC_CALL_TOKENS: &[&str] = &[
-    "apply", "bind", "call", "catch", "filter", "find", "forEach", "format", "includes", "join",
-    "map", "push", "reduce", "slice", "split", "then", "toString", "trim",
+    "apply",
+    "as_mut",
+    "as_ref",
+    "bind",
+    "borrow",
+    "borrow_mut",
+    "call",
+    "catch",
+    "clone",
+    "cloned",
+    "collect",
+    "copied",
+    "count",
+    "err",
+    "expect",
+    "filter",
+    "find",
+    "flat_map",
+    "forEach",
+    "for_each",
+    "format",
+    "get",
+    "includes",
+    "insert",
+    "into_iter",
+    "is_empty",
+    "is_none",
+    "is_some",
+    "iter",
+    "iter_mut",
+    "join",
+    "map",
+    "ok",
+    "push",
+    "reduce",
+    "slice",
+    "split",
+    "then",
+    "toString",
+    "to_owned",
+    "to_string",
+    "trim",
+    "unwrap",
+    "unwrap_or",
+    "unwrap_or_default",
 ];
 
 fn name_tokens(name: &str) -> Vec<String> {

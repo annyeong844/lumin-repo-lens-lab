@@ -154,6 +154,17 @@ surface projection limit after candidates are scored and sorted; it is not a
 wall-time limit, repository-size cap, or permission to skip analysis. The
 compact CLI projection reports full counts with capped examples; this cap is an
 artifact projection choice, not an analysis cap.
+Rust near candidates use the TS/JS policy but calibrate generic call-token
+suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
+`collect`. Near candidates also require matching Rust callable qualifiers
+(`async`, `unsafe`, and `const`) before scoring; mixed qualifier pairs are not
+review candidates.
+The unified Rust analyzer product artifact follows the TS/JS
+`audit-summary` / `audit-review-pack` measured-cue surface by projecting the
+function body fingerprint and clone-group counts into the top-level product
+summary and the syntax phase brief. It does not embed the raw
+`functionCloneGroups` arrays; those remain owned by the Rust source-health
+artifact.
 
 Canonical JSON fields:
 
