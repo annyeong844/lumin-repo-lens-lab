@@ -136,17 +136,24 @@ then semantic oracles only where the syntax surface is opaque.
 Rust source health also emits a top-level `functionCloneGroups` object. It is
 the Rust analogue of `_lib/function-clone-artifact.mjs` group evidence built
 from `files[*].ast.functionBodyFingerprints[]`. The owner is
-`src/function_clones.rs`. Current groups are `exactBodyGroups` and
-`structureGroups`; both are deterministic review evidence only and carry the
-same caveat as the TS/JS function clone artifact: they do not prove semantic
-equivalence, auto-reuse, auto-fix safety, or a merge recommendation. The
-checked thresholds mirror TS/JS `function-clone-near-policy`: exact groups use
-`minBodyLoc = 1`, `minStatements = 1`, and `minGroupSize = 2`; structure groups
-use `minBodyLocForGrouping = 3`, `minStatementsForGrouping = 2`, and
-`minGroupSize = 2`. Rust does not emit `nearFunctionCandidates` until a Rust
-owner implements the TS/JS score policy and documents the calibration surface.
-The compact CLI projection reports full counts with capped examples; this cap is
-an artifact projection choice, not an analysis cap.
+`src/function_clones.rs`. Current review surfaces are `exactBodyGroups`,
+`structureGroups`, and `nearFunctionCandidates`; all are deterministic review
+evidence only and carry the same caveat as the TS/JS function clone artifact:
+they do not prove semantic equivalence, auto-reuse, auto-fix safety, or a merge
+recommendation. The checked thresholds mirror TS/JS
+`function-clone-near-policy`: exact groups use `minBodyLoc = 1`,
+`minStatements = 1`, and `minGroupSize = 2`; structure groups use
+`minBodyLocForGrouping = 3`, `minStatementsForGrouping = 2`, and
+`minGroupSize = 2`; near candidates use
+`function-clone-near-policy-v1` (`maxParamCountDelta = 1`,
+`minBodyLocSimilarity = 0.34`, `minStatementCountSimilarity = 0.34`,
+`minCallTokenJaccard = 0.5`, `minNameTokenJaccardFallback = 0.34`,
+`minNearScore = 0.62`, weights `0.45/0.25/0.15/0.15`, and
+`maxNearCandidates = 50`). `maxNearCandidates` is the checked TS/JS review
+surface projection limit after candidates are scored and sorted; it is not a
+wall-time limit, repository-size cap, or permission to skip analysis. The
+compact CLI projection reports full counts with capped examples; this cap is an
+artifact projection choice, not an analysis cap.
 
 Canonical JSON fields:
 
@@ -618,6 +625,7 @@ Final artifacts must satisfy these counts:
 - `summary.functionBodyFingerprints === sum(files[*].ast.functionBodyFingerprints.length)`
 - `summary.functionCloneExactBodyGroups === functionCloneGroups.exactBodyGroups.length`
 - `summary.functionCloneStructureGroups === functionCloneGroups.structureGroups.length`
+- `summary.functionCloneNearCandidates === functionCloneGroups.nearFunctionCandidates.length`
 - `summary.inlinePatterns === sum(files[*].ast.inlinePatterns.length)`
 - `summary.implBlocks === sum(files[*].ast.impls.length)`
 - `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`

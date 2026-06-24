@@ -4,8 +4,9 @@ use serde::Serialize;
 
 use crate::protocol::{
     AstFacts, AstFunctionCloneGroup, AstFunctionCloneGroups, AstFunctionCloneGroupsPolicy,
-    AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility, Facts, FileHealth,
-    HealthResponse, ParseStatus, PathMeta, ResponseMeta, Signal, SkippedFile, Summary,
+    AstNearFunctionCandidate, AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility,
+    Facts, FileHealth, HealthResponse, ParseStatus, PathMeta, ResponseMeta, Signal, SkippedFile,
+    Summary,
 };
 
 const REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT: usize = 10;
@@ -51,9 +52,11 @@ struct CompactFunctionCloneGroups<'a> {
     policy: &'a AstFunctionCloneGroupsPolicy,
     exact_body_group_count: usize,
     structure_group_count: usize,
+    near_function_candidate_count: usize,
     example_limit: usize,
     exact_body_group_examples: &'a [AstFunctionCloneGroup],
     structure_group_examples: &'a [AstFunctionCloneGroup],
+    near_function_candidate_examples: &'a [AstNearFunctionCandidate],
 }
 
 impl<'a> CompactFunctionCloneGroups<'a> {
@@ -62,6 +65,7 @@ impl<'a> CompactFunctionCloneGroups<'a> {
             policy: &groups.policy,
             exact_body_group_count: groups.exact_body_groups.len(),
             structure_group_count: groups.structure_groups.len(),
+            near_function_candidate_count: groups.near_function_candidates.len(),
             example_limit: FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT,
             exact_body_group_examples: &groups.exact_body_groups[..groups
                 .exact_body_groups
@@ -69,6 +73,10 @@ impl<'a> CompactFunctionCloneGroups<'a> {
                 .min(FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT)],
             structure_group_examples: &groups.structure_groups[..groups
                 .structure_groups
+                .len()
+                .min(FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT)],
+            near_function_candidate_examples: &groups.near_function_candidates[..groups
+                .near_function_candidates
                 .len()
                 .min(FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT)],
         }

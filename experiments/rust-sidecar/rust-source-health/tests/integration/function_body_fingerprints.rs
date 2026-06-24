@@ -196,6 +196,7 @@ pub fn structure_b(value: &str) -> usize {
     assert_eq!(artifact["summary"]["functionBodyFingerprints"], 4);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 1);
     assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 2);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
 
     let groups = &artifact["functionCloneGroups"];
     assert_eq!(
@@ -204,7 +205,7 @@ pub fn structure_b(value: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["caveat"],
-        "Function clone groups are deterministic review evidence. They do not prove semantic equivalence, auto-reuse, or auto-fix safety."
+        "Function clone groups and near candidates are deterministic review evidence. They do not prove semantic equivalence, auto-reuse, auto-fix safety, or a merge recommendation."
     );
 
     let exact = &groups["exactBodyGroups"][0];
@@ -233,6 +234,81 @@ pub fn structure_b(value: &str) -> usize {
         .as_array()
         .is_some_and(|tokens| tokens.iter().any(|token| token == "len")));
     assert!(structure["reason"]
+        .as_str()
+        .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
+
+    Ok(())
+}
+
+#[test]
+fn function_body_clone_groups_include_ts_style_near_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+pub fn load_user_profile(input: &str) -> usize {
+    let parsed = input.trim();
+    let normalized = sanitize(parsed);
+    let loaded = fetch_user(normalized);
+    loaded.len()
+}
+
+pub fn load_user_settings(raw: &str) -> usize {
+    let cleaned = raw.trim();
+    let ready = sanitize(cleaned);
+    let fetched = fetch_user(ready);
+    if fetched.is_empty() {
+        return 0;
+    }
+    fetched.len()
+}
+"#,
+    );
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 1);
+
+    let groups = &artifact["functionCloneGroups"];
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["policyId"],
+        "function-clone-near-policy"
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["policyVersion"],
+        "function-clone-near-policy-v1"
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["minNearScore"],
+        0.62
+    );
+
+    let candidate = &groups["nearFunctionCandidates"][0];
+    assert_eq!(candidate["kind"], "near-function-candidate");
+    assert_eq!(candidate["risk"], "review-only");
+    assert_eq!(candidate["generatedOnly"], false);
+    assert!(identity_list_contains(
+        candidate,
+        "src/lib.rs::load_user_profile"
+    ));
+    assert!(identity_list_contains(
+        candidate,
+        "src/lib.rs::load_user_settings"
+    ));
+    assert!(candidate["score"]
+        .as_f64()
+        .is_some_and(|score| score >= 0.62));
+    assert_eq!(candidate["callTokenJaccard"], 0.667);
+    assert_eq!(candidate["nameTokenJaccard"], 0.5);
+    assert!(candidate["sharedCallTokens"]
+        .as_array()
+        .is_some_and(|tokens| tokens.iter().any(|token| token == "sanitize")
+            && tokens.iter().any(|token| token == "fetch_user")));
+    assert!(candidate["sharedNameTokens"]
+        .as_array()
+        .is_some_and(|tokens| tokens.iter().any(|token| token == "load")
+            && tokens.iter().any(|token| token == "user")));
+    assert!(candidate["reason"]
         .as_str()
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
 

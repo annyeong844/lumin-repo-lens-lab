@@ -23,7 +23,9 @@ pub use ast::{
 pub use file::{Facts, FileHealth};
 pub use function_clones::{
     AstFunctionCloneGroup, AstFunctionCloneGroupKind, AstFunctionCloneGroups,
-    AstFunctionCloneGroupsPolicy, AstFunctionCloneLine, FunctionCloneRisk,
+    AstFunctionCloneGroupsPolicy, AstFunctionCloneLine, AstNearFunctionCandidate,
+    AstNearFunctionCandidateKind, AstNearFunctionCandidatePolicy, AstNearFunctionCandidateWeights,
+    FunctionCloneRisk,
 };
 pub use location::Location;
 pub use meta::{
@@ -41,18 +43,32 @@ pub use signal::{
 pub use summary::Summary;
 
 pub const SCHEMA_VERSION: u32 = 1;
-pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v8";
+pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v9";
 pub const RUST_SHAPE_HASH_NORMALIZED_VERSION: &str = "rust-shape-hash.normalized.v1";
 pub const RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION: &str =
     "rust-function-signature.normalized.v1";
 pub const RUST_FUNCTION_BODY_NORMALIZED_VERSION: &str = "rust-function-body.normalized.v2";
 pub const RUST_FUNCTION_CLONE_GROUP_POLICY_ID: &str = "rust-function-clone-group-policy";
-pub const RUST_FUNCTION_CLONE_GROUP_POLICY_VERSION: &str = "rust-function-clone-group-policy.v1";
+pub const RUST_FUNCTION_CLONE_GROUP_POLICY_VERSION: &str = "rust-function-clone-group-policy.v2";
 pub const RUST_FUNCTION_CLONE_MIN_GROUP_SIZE: usize = 2;
 pub const RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC: usize = 1;
 pub const RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS: usize = 1;
 pub const RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC: usize = 3;
 pub const RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS: usize = 2;
+pub const RUST_FUNCTION_CLONE_NEAR_POLICY_ID: &str = "function-clone-near-policy";
+pub const RUST_FUNCTION_CLONE_NEAR_POLICY_VERSION: &str = "function-clone-near-policy-v1";
+pub const RUST_FUNCTION_CLONE_NEAR_POLICY_CLASS: &str = "review";
+pub const RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA: usize = 1;
+pub const RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY: f64 = 0.34;
+pub const RUST_FUNCTION_CLONE_NEAR_MIN_STATEMENT_COUNT_SIMILARITY: f64 = 0.34;
+pub const RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_JACCARD: f64 = 0.5;
+pub const RUST_FUNCTION_CLONE_NEAR_MIN_NAME_TOKEN_JACCARD_FALLBACK: f64 = 0.34;
+pub const RUST_FUNCTION_CLONE_NEAR_MIN_SCORE: f64 = 0.62;
+pub const RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES: usize = 50;
+pub const RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT: f64 = 0.45;
+pub const RUST_FUNCTION_CLONE_NEAR_NAME_TOKEN_WEIGHT: f64 = 0.25;
+pub const RUST_FUNCTION_CLONE_NEAR_BODY_LOC_WEIGHT: f64 = 0.15;
+pub const RUST_FUNCTION_CLONE_NEAR_STATEMENT_COUNT_WEIGHT: f64 = 0.15;
 pub const RUST_INLINE_PATTERN_NORMALIZED_VERSION: &str = "rust-inline-statement-normalizer-v1";
 pub const RUST_INLINE_PATTERN_MAX_STATEMENTS: usize = 2;
 pub const PARSER_KIND: ParserKind = ParserKind::RaApSyntax;

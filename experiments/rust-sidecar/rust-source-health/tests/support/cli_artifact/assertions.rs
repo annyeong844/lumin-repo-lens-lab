@@ -23,8 +23,13 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     assert_eq!(artifact["summary"]["functionBodyFingerprints"], 3);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
     assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
     assert_eq!(artifact["functionCloneGroups"]["exactBodyGroupCount"], 0);
     assert_eq!(artifact["functionCloneGroups"]["structureGroupCount"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidateCount"],
+        0
+    );
     assert_eq!(artifact["functionCloneGroups"]["exampleLimit"], 10);
     assert_eq!(artifact["summary"]["signalsByKind"]["unwrap-call"], 1);
     assert!(artifact["files"]["src/lib.rs"].is_object());
@@ -77,6 +82,7 @@ pub fn assert_full_cli_artifact(output_path: &Path) -> Result<()> {
     assert!(artifact["artifactProfile"].is_null());
     assert!(artifact["functionCloneGroups"]["exactBodyGroups"].is_array());
     assert!(artifact["functionCloneGroups"]["structureGroups"].is_array());
+    assert!(artifact["functionCloneGroups"]["nearFunctionCandidates"].is_array());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["definitions"].is_array());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["functionSignatures"].is_array());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["functionBodyFingerprints"].is_array());

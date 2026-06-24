@@ -30,6 +30,7 @@ pub fn analyze_request(
     summary.skipped_files = skipped_files.len();
     summary.function_clone_exact_body_groups = function_clone_groups.exact_body_groups.len();
     summary.function_clone_structure_groups = function_clone_groups.structure_groups.len();
+    summary.function_clone_near_candidates = function_clone_groups.near_function_candidates.len();
     let (generated, sidecar, input) = final_meta
         .map(|meta| (Some(meta.generated), Some(meta.sidecar), Some(meta.input)))
         .unwrap_or((None, None, None));
