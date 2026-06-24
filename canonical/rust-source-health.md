@@ -225,6 +225,12 @@ orchestration. Its `product_summary/` submodules are implementation details:
 `syntax.rs` projects syntax/source-health counts and examples, `semantic.rs`
 projects semantic/oracle counts and unlinked refs, and `actions.rs` projects
 action-policy counts.
+`lumin-rust-analyzer/src/policy/finding.rs` owns semantic finding policy
+assembly. Its `policy/finding/` submodules are implementation details:
+`projection.rs` owns serialized semantic finding projection shapes and capped
+macro-expansion span examples, `bridge.rs` owns finding-level oracle bridge
+evidence, `support.rs` owns finding support evidence, and `taint.rs` owns
+finding taint evidence.
 
 Canonical JSON fields:
 

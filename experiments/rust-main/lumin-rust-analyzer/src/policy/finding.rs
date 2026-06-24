@@ -1,21 +1,21 @@
 mod bridge;
+mod projection;
 mod support;
 mod taint;
 
-use lumin_rust_cargo_oracle::protocol::{
-    ActionBlockerReason, ClaimKind, ConfidenceTier, CoverageId, Finding, FindingConfidence,
-    OracleId, PrimarySpan, SafeAction, SafeActionEdit, SafeActionKind, SafeActionProof,
-};
+use lumin_rust_cargo_oracle::protocol::Finding;
 use lumin_rust_source_health::protocol::FileHealth;
-use serde::Serialize;
 
 use super::{
-    evidence::{CoverageEvidence, SupportEvidence, TaintEvidence},
-    semantic, span_overlap, ActionTier, FileParseStatus, OracleConfidence,
-    ProductFileSemanticSummary, ProductPrimarySpanProjection, ProductSyntaxFileSummary,
-    SEMANTIC_FINDING_SPAN_SAMPLE_LIMIT,
+    evidence::CoverageEvidence, semantic, span_overlap, ProductFileSemanticSummary,
+    ProductPrimarySpanProjection, ProductSyntaxFileSummary,
 };
 use bridge::FindingOracleBridgeProjection;
+pub(crate) use projection::ProductSemanticFindingProjection;
+use projection::{
+    macro_expansion_span_count, macro_expansion_span_examples, ProductFindingConfidenceProjection,
+    ProductSafeActionProjection,
+};
 use support::finding_support_evidence;
 use taint::finding_taint_evidence;
 
@@ -106,84 +106,4 @@ pub(crate) fn product_semantic_finding<'a>(
 pub(crate) struct ProductSemanticFinding<'a> {
     pub(crate) summary: ProductFileSemanticSummary,
     pub(crate) projection: ProductSemanticFindingProjection<'a>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ProductSemanticFindingProjection<'a> {
-    oracle_id: OracleId,
-    confidence: ProductFindingConfidenceProjection<'a>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    diagnostic_code: Option<&'a str>,
-    message: Option<&'a str>,
-    span: Option<ProductPrimarySpanProjection<'a>>,
-    primary_span_count: usize,
-    macro_expansion_span_count: usize,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    macro_expansion_span_examples: Vec<ProductPrimarySpanProjection<'a>>,
-    coverage_ref: CoverageId,
-    action_blockers: &'a [ActionBlockerReason],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    safe_action: Option<ProductSafeActionProjection<'a>>,
-    parse_status: FileParseStatus,
-    supported_by: Vec<SupportEvidence>,
-    tainted_by: Vec<TaintEvidence<'a>>,
-    oracle_confidence: OracleConfidence,
-    action_tier: ActionTier,
-    oracle_bridge: FindingOracleBridgeProjection,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ProductFindingConfidenceProjection<'a> {
-    tier: ConfidenceTier,
-    authority_ids: &'a [&'static str],
-    rule_ids: &'a [&'static str],
-    claim_kind: ClaimKind,
-}
-
-impl<'a> ProductFindingConfidenceProjection<'a> {
-    fn from_confidence(confidence: &'a FindingConfidence) -> Self {
-        Self {
-            tier: confidence.tier,
-            authority_ids: confidence.authority_ids.as_slice(),
-            rule_ids: confidence.rule_ids.as_slice(),
-            claim_kind: confidence.claim_kind,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ProductSafeActionProjection<'a> {
-    kind: SafeActionKind,
-    proof_complete: bool,
-    edit_count: usize,
-    edits: &'a [SafeActionEdit],
-    proof: &'a SafeActionProof,
-}
-
-impl<'a> ProductSafeActionProjection<'a> {
-    fn from_action(action: &'a SafeAction) -> Self {
-        Self {
-            kind: action.kind,
-            proof_complete: action.proof_complete,
-            edit_count: action.edits.len(),
-            edits: &action.edits,
-            proof: &action.proof,
-        }
-    }
-}
-
-fn macro_expansion_span_count(spans: &[PrimarySpan]) -> usize {
-    spans.iter().filter(|span| span.has_expansion).count()
-}
-
-fn macro_expansion_span_examples(spans: &[PrimarySpan]) -> Vec<ProductPrimarySpanProjection<'_>> {
-    spans
-        .iter()
-        .filter(|span| span.has_expansion)
-        .map(ProductPrimarySpanProjection::from_span)
-        .take(SEMANTIC_FINDING_SPAN_SAMPLE_LIMIT)
-        .collect()
 }
