@@ -107,7 +107,7 @@ fn compact_token_source(body: &SyntaxNode) -> String {
         .join(" ")
 }
 
-fn compact_source(source: &str) -> String {
+fn compact_call_token_source(source: &str) -> String {
     source.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -191,7 +191,7 @@ fn collect_call_tokens(body: &SyntaxNode) -> Vec<String> {
     for call in body.descendants().filter_map(ast::CallExpr::cast) {
         if let Some(token) = call
             .expr()
-            .map(|expr| compact_source(&syntax_text(expr.syntax())))
+            .map(|expr| compact_call_token_source(&syntax_text(expr.syntax())))
         {
             if !token.is_empty() {
                 tokens.insert(token);
@@ -205,7 +205,7 @@ fn collect_call_tokens(body: &SyntaxNode) -> Vec<String> {
     }
     for call in body.descendants().filter_map(ast::MacroCall::cast) {
         if let Some(path) = call.path() {
-            tokens.insert(compact_source(&syntax_text(path.syntax())));
+            tokens.insert(compact_call_token_source(&syntax_text(path.syntax())));
         }
     }
     tokens.into_iter().collect()

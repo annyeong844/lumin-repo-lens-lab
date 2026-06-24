@@ -5,7 +5,7 @@ use crate::artifact::{analyze_file, file, file_health, request, run_sidecar, std
 
 #[test]
 fn function_body_fingerprints_preserve_exact_and_structure_hashes() -> Result<()> {
-    let source = r#"
+    let source = r####"
 pub fn read_a(input: &str) -> usize {
     let parsed = input.len();
     parsed + 1
@@ -27,6 +27,15 @@ pub fn literal_space_a() -> &'static str {
 
 pub fn literal_space_b() -> &'static str {
     "a b"
+}
+
+pub fn literal_raw_space_a() -> &'static str {
+    r#"a
+  b"#
+}
+
+pub fn literal_raw_space_b() -> &'static str {
+    r#"a b"#
 }
 
 pub fn byte_a() -> u8 {
@@ -64,10 +73,10 @@ impl Worker {
         cleanup();
     }
 }
-"#;
+"####;
 
     let artifact = analyze_file("src/lib.rs", source);
-    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 13);
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 15);
 
     let facts = file_health(&artifact, "src/lib.rs")["ast"]["functionBodyFingerprints"]
         .as_array()
@@ -111,6 +120,22 @@ impl Worker {
         literal_space_b["normalizedStructureHash"]
     );
     assert_eq!(literal_space_a["statementCount"], 1);
+
+    let literal_raw_space_a = fact_named(facts, "literal_raw_space_a")?;
+    let literal_raw_space_b = fact_named(facts, "literal_raw_space_b")?;
+    assert_ne!(
+        literal_raw_space_a["exactBodyHash"],
+        literal_raw_space_b["exactBodyHash"]
+    );
+    assert_ne!(
+        literal_raw_space_a["normalizedExactHash"],
+        literal_raw_space_b["normalizedExactHash"]
+    );
+    assert_eq!(
+        literal_raw_space_a["normalizedStructureHash"],
+        literal_raw_space_b["normalizedStructureHash"]
+    );
+    assert_eq!(literal_raw_space_a["statementCount"], 1);
 
     let byte_a = fact_named(facts, "byte_a")?;
     let byte_b = fact_named(facts, "byte_b")?;
