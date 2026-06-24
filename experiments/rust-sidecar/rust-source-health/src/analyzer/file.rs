@@ -13,7 +13,7 @@ pub(super) fn analyze_file(file: &RequestFile, edition: Edition) -> Result<(Stri
     let root = source_file.syntax();
     let line_index = LineIndex::new(&file.text);
 
-    let classifications = classify_path(&file.path);
+    let classifications = classify_path(&file.path, &file.text);
     let mut syntax = collect_file_syntax(root, &line_index, &classifications);
 
     let mut errors = parse

@@ -19,15 +19,29 @@ pub fn assert_source_paths_with_policy_words_stay_source() {
 }
 
 pub fn assert_generated_paths_do_not_use_substring_matching() {
-    let artifact = stdout_json(run_sidecar(request(vec![file(
-        "generated/bindings.rs",
-        "fn generated() {}",
-    )])));
+    let artifact = stdout_json(run_sidecar(request(vec![
+        file("generated/bindings.rs", "fn generated_segment() {}"),
+        file("__generated__/bindings.rs", "fn generated_dunder() {}"),
+        file("src/bindings.gen.rs", "fn generated_suffix() {}"),
+        file("src/model.generated.rs", "fn generated_word_suffix() {}"),
+        file(
+            "src/header_marker.rs",
+            "// @generated\nfn generated_header() {}",
+        ),
+    ])));
 
-    assert_eq!(
-        artifact["files"]["generated/bindings.rs"]["path"]["classifications"],
-        json!(["generated"])
-    );
+    for path in [
+        "generated/bindings.rs",
+        "__generated__/bindings.rs",
+        "src/bindings.gen.rs",
+        "src/model.generated.rs",
+        "src/header_marker.rs",
+    ] {
+        assert_eq!(
+            artifact["files"][path]["path"]["classifications"],
+            json!(["generated"])
+        );
+    }
 }
 
 pub fn assert_test_like_paths_are_classified_as_test() {

@@ -512,6 +512,35 @@ pub fn generated_beta() -> usize {
 }
 
 #[test]
+fn function_body_clone_counts_exclude_ts_js_generated_path_and_header_policy() {
+    let source = r#"
+pub fn generated_alpha() -> usize {
+    let generated = 7;
+    generated
+}
+"#;
+    let artifact = stdout_json(run_sidecar(request(vec![
+        file("src/bindings.gen.rs", source),
+        file("src/header_marker.rs", &format!("// @generated\n{source}")),
+    ])));
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["exactBodyGroupCount"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["generatedFileFactCount"], 2);
+    assert_eq!(
+        artifact["functionCloneGroups"]["exactBodyGroups"][0]["generatedOnly"],
+        true
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["signatureGroups"][0]["generatedOnly"],
+        true
+    );
+}
+
+#[test]
 fn function_body_near_candidate_count_reports_uncapped_review_visible_total() {
     let mut source = String::new();
     for index in 0..11 {
