@@ -6,16 +6,27 @@ pub fn assert_source_paths_with_policy_words_stay_source() {
     let artifact = stdout_json(run_sidecar(request(vec![
         file("src/notgenerated.rs", "fn source() {}"),
         file("src/contest.rs", "fn contest() {}"),
+        file(
+            "src/generated_at_marker.rs",
+            "// maintained by @generated_at tooling\nfn source() {}",
+        ),
+        file(
+            "src/auto_generated_at_marker.rs",
+            "// auto-generated_at is not a generated-file marker\nfn source() {}",
+        ),
     ])));
 
-    assert_eq!(
-        artifact["files"]["src/notgenerated.rs"]["path"]["classifications"],
-        json!(["source"])
-    );
-    assert_eq!(
-        artifact["files"]["src/contest.rs"]["path"]["classifications"],
-        json!(["source"])
-    );
+    for path in [
+        "src/notgenerated.rs",
+        "src/contest.rs",
+        "src/generated_at_marker.rs",
+        "src/auto_generated_at_marker.rs",
+    ] {
+        assert_eq!(
+            artifact["files"][path]["path"]["classifications"],
+            json!(["source"])
+        );
+    }
 }
 
 pub fn assert_generated_paths_do_not_use_substring_matching() {
