@@ -13,162 +13,104 @@ pub(super) fn collect_glob_member_manifests(
     matched_member_roots: &mut usize,
     paths: &mut Vec<PathBuf>,
 ) -> Result<()> {
-    collect_glob_member_manifests_at(
+    GlobMemberCollector {
         root,
         components,
         excludes,
         matched_member_roots,
-        0,
-        root,
         paths,
-    )
+    }
+    .collect_at(0, root)
 }
 
-fn collect_glob_member_manifests_at(
-    root: &Path,
-    components: &[String],
-    excludes: &[Vec<String>],
-    matched_member_roots: &mut usize,
-    index: usize,
-    current: &Path,
-    paths: &mut Vec<PathBuf>,
-) -> Result<()> {
-    if index == components.len() {
-        *matched_member_roots += 1;
-        if excludes
-            .iter()
-            .any(|exclude| workspace_member_root_is_excluded(root, current, exclude))
-        {
+struct GlobMemberCollector<'a> {
+    root: &'a Path,
+    components: &'a [String],
+    excludes: &'a [Vec<String>],
+    matched_member_roots: &'a mut usize,
+    paths: &'a mut Vec<PathBuf>,
+}
+
+impl GlobMemberCollector<'_> {
+    fn collect_at(&mut self, index: usize, current: &Path) -> Result<()> {
+        if index == self.components.len() {
+            self.collect_member_root(current)?;
+            return Ok(());
+        }
+
+        let component = &self.components[index];
+        if component == "**" {
+            if index + 1 == self.components.len() {
+                self.collect_recursive_member_manifests(current)?;
+                return Ok(());
+            }
+            self.collect_at(index + 1, current)?;
+            for child in child_directories(current)? {
+                self.collect_at(index, &child)?;
+            }
+            return Ok(());
+        }
+
+        if component_contains_glob(component) {
+            for child in child_entries(current)? {
+                let Some(name) = child.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                if glob_component_matches(component, name) {
+                    if child.is_dir() {
+                        self.collect_at(index + 1, child.path())?;
+                    } else if index + 1 == self.components.len() {
+                        *self.matched_member_roots += 1;
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        let next = current.join(component);
+        if next.is_dir() {
+            self.collect_at(index + 1, &next)?;
+        }
+        Ok(())
+    }
+
+    fn collect_recursive_member_manifests(&mut self, current: &Path) -> Result<()> {
+        for child in child_directories(current)? {
+            self.collect_recursive_member_candidate(&child)?;
+        }
+        Ok(())
+    }
+
+    fn collect_recursive_member_candidate(&mut self, current: &Path) -> Result<()> {
+        self.collect_member_root(current)?;
+        for child in child_directories(current)? {
+            self.collect_recursive_member_candidate(&child)?;
+        }
+        Ok(())
+    }
+
+    fn collect_member_root(&mut self, current: &Path) -> Result<()> {
+        *self.matched_member_roots += 1;
+        if self.member_root_is_excluded(current) {
             return Ok(());
         }
         let manifest = current.join("Cargo.toml");
         if manifest.is_file() {
-            paths.push(manifest);
-        } else {
-            bail!(
-                "blocked-prewrite-dependency-manifest: workspace member directory {} does not contain Cargo.toml",
-                current.display()
-            );
-        }
-        return Ok(());
-    }
-
-    let component = &components[index];
-    if component == "**" {
-        if index + 1 == components.len() {
-            collect_recursive_member_manifests(
-                root,
-                excludes,
-                matched_member_roots,
-                current,
-                paths,
-            )?;
+            self.paths.push(manifest);
             return Ok(());
         }
-        collect_glob_member_manifests_at(
-            root,
-            components,
-            excludes,
-            matched_member_roots,
-            index + 1,
-            current,
-            paths,
-        )?;
-        for child in child_directories(current)? {
-            collect_glob_member_manifests_at(
-                root,
-                components,
-                excludes,
-                matched_member_roots,
-                index,
-                &child,
-                paths,
-            )?;
-        }
-        return Ok(());
-    }
-
-    if component_contains_glob(component) {
-        for child in child_entries(current)? {
-            let Some(name) = child.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if glob_component_matches(component, name) {
-                if child.is_dir() {
-                    collect_glob_member_manifests_at(
-                        root,
-                        components,
-                        excludes,
-                        matched_member_roots,
-                        index + 1,
-                        child.path(),
-                        paths,
-                    )?;
-                } else if index + 1 == components.len() {
-                    *matched_member_roots += 1;
-                }
-            }
-        }
-        return Ok(());
-    }
-
-    let next = current.join(component);
-    if next.is_dir() {
-        collect_glob_member_manifests_at(
-            root,
-            components,
-            excludes,
-            matched_member_roots,
-            index + 1,
-            &next,
-            paths,
-        )?;
-    }
-    Ok(())
-}
-
-fn collect_recursive_member_manifests(
-    root: &Path,
-    excludes: &[Vec<String>],
-    matched_member_roots: &mut usize,
-    current: &Path,
-    paths: &mut Vec<PathBuf>,
-) -> Result<()> {
-    for child in child_directories(current)? {
-        collect_recursive_member_candidate(root, excludes, matched_member_roots, &child, paths)?;
-    }
-    Ok(())
-}
-
-fn collect_recursive_member_candidate(
-    root: &Path,
-    excludes: &[Vec<String>],
-    matched_member_roots: &mut usize,
-    current: &Path,
-    paths: &mut Vec<PathBuf>,
-) -> Result<()> {
-    *matched_member_roots += 1;
-    if excludes
-        .iter()
-        .any(|exclude| workspace_member_root_is_excluded(root, current, exclude))
-    {
-        return Ok(());
-    }
-    let manifest = current.join("Cargo.toml");
-    if manifest.is_file() {
-        paths.push(manifest);
-    } else {
         bail!(
             "blocked-prewrite-dependency-manifest: workspace member directory {} does not contain Cargo.toml",
             current.display()
         );
     }
-    for child in child_directories(current)? {
-        collect_recursive_member_candidate(root, excludes, matched_member_roots, &child, paths)?;
-    }
-    Ok(())
-}
 
+    fn member_root_is_excluded(&self, current: &Path) -> bool {
+        self.excludes
+            .iter()
+            .any(|exclude| workspace_member_root_is_excluded(self.root, current, exclude))
+    }
+}
 struct ChildEntry {
     path: PathBuf,
     is_dir: bool,
