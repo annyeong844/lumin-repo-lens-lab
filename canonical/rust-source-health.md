@@ -311,6 +311,10 @@ the syntax phase must preserve them raw.
 `src/analyzer/opaque.rs` owns AST opaque surface visibility classification; its
 `opaque/macros.rs` submodule owns macro-name mute reason classification for
 opaque macro surfaces.
+`src/analyzer/syntax/opaque_surfaces/attribute.rs` owns attribute macro surface
+extraction orchestration; its `attribute/derive.rs` submodule owns derive macro
+mute classification, and its `attribute/inert.rs` submodule owns inert compiler,
+tool, lint, and derive-helper attribute filtering.
 
 Opaque surface muting is not deletion. Common, low-review-value syntax opacity
 is still auditable as `muted`: test/generated paths, direct test-only AST

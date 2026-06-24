@@ -1,6 +1,12 @@
+mod derive;
+mod inert;
+
 use crate::analyzer::attrs::normalized_attr_text;
 use crate::protocol::AstOpaqueMuteReason;
 use ra_ap_syntax::ast;
+
+use derive::{derive_items, derive_mute_reason};
+use inert::is_inert_attribute;
 
 pub(super) struct AttributeMacroSurface {
     pub(super) detail: String,
@@ -32,16 +38,6 @@ fn attr_body(text: &str) -> Option<&str> {
         .and_then(|text| text.strip_suffix(']'))
 }
 
-fn derive_items(body: &str) -> Option<Vec<&str>> {
-    let inner = body.strip_prefix("derive(")?.strip_suffix(')')?;
-    let items = inner
-        .split(',')
-        .map(|item| item.rsplit("::").next().unwrap_or(item).trim())
-        .filter(|item| !item.is_empty())
-        .collect::<Vec<_>>();
-    (!items.is_empty()).then_some(items)
-}
-
 fn attr_path(body: &str) -> Option<&str> {
     let path = body
         .split(['(', '='])
@@ -49,106 +45,4 @@ fn attr_path(body: &str) -> Option<&str> {
         .map(str::trim)
         .filter(|path| !path.is_empty())?;
     Some(path)
-}
-
-fn is_builtin_derive(name: &str) -> bool {
-    matches!(
-        name,
-        "Clone" | "Copy" | "Debug" | "Default" | "Eq" | "Hash" | "Ord" | "PartialEq" | "PartialOrd"
-    )
-}
-
-fn derive_mute_reason(body: &str, items: &[&str]) -> Option<AstOpaqueMuteReason> {
-    if items.iter().all(|item| is_builtin_derive(item)) {
-        return Some(AstOpaqueMuteReason::BuiltinDeriveMacro);
-    }
-    if items
-        .iter()
-        .all(|item| is_builtin_derive(item) || is_known_data_derive(body, item))
-    {
-        return Some(AstOpaqueMuteReason::KnownDataDeriveMacro);
-    }
-    None
-}
-
-fn is_known_data_derive(body: &str, name: &str) -> bool {
-    matches!(
-        name,
-        "Deserialize" | "ExperimentalApi" | "JsonSchema" | "Serialize" | "TS"
-    ) || (name == "Message" && body.contains("prost::Message"))
-}
-
-fn is_inert_attribute(path: &str) -> bool {
-    if is_inert_tool_attribute(path) {
-        return true;
-    }
-    if is_known_derive_helper_attribute(path) {
-        return true;
-    }
-    matches!(
-        path,
-        "allow"
-            | "automatically_derived"
-            | "bench"
-            | "cold"
-            | "deny"
-            | "deprecated"
-            | "doc"
-            | "export_name"
-            | "expect"
-            | "forbid"
-            | "feature"
-            | "default"
-            | "global_allocator"
-            | "ignore"
-            | "inline"
-            | "link"
-            | "link_name"
-            | "link_section"
-            | "macro_use"
-            | "must_use"
-            | "no_mangle"
-            | "no_main"
-            | "no_std"
-            | "non_exhaustive"
-            | "panic_handler"
-            | "path"
-            | "proc_macro"
-            | "proc_macro_attribute"
-            | "proc_macro_derive"
-            | "recursion_limit"
-            | "repr"
-            | "should_panic"
-            | "test"
-            | "target_feature"
-            | "track_caller"
-            | "type_length_limit"
-            | "used"
-            | "warn"
-            | "windows_subsystem"
-    )
-}
-
-fn is_inert_tool_attribute(path: &str) -> bool {
-    ["clippy::", "diagnostic::", "miri::", "rustfmt::"]
-        .iter()
-        .any(|prefix| path.starts_with(prefix))
-}
-
-fn is_known_derive_helper_attribute(path: &str) -> bool {
-    matches!(
-        path,
-        "arg"
-            | "backtrace"
-            | "clap"
-            | "command"
-            | "error"
-            | "from"
-            | "prost"
-            | "schemars"
-            | "serde"
-            | "source"
-            | "strum"
-            | "ts"
-    )
 }
