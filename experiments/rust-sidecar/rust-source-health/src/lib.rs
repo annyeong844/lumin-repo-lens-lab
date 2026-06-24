@@ -1,5 +1,6 @@
 mod analyzer;
 mod driver;
+mod function_clones;
 mod locations;
 mod parallel;
 pub mod protocol;

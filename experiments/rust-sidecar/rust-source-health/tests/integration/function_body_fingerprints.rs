@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use crate::artifact::{analyze_file, file_health};
+use crate::artifact::{analyze_file, file, file_health, request, run_sidecar, stdout_json};
 
 #[test]
 fn function_body_fingerprints_preserve_exact_and_structure_hashes() -> Result<()> {
@@ -82,4 +82,87 @@ fn fact_named<'a>(facts: &'a [Value], name: &str) -> Result<&'a Value> {
         .iter()
         .find(|fact| fact["name"] == name)
         .with_context(|| format!("missing function body fingerprint for {name}"))
+}
+
+#[test]
+fn function_body_clone_groups_are_repo_wide_review_evidence() -> Result<()> {
+    let artifact = stdout_json(run_sidecar(request(vec![
+        file(
+            "src/a.rs",
+            r#"
+pub fn exact_a() -> usize {
+    let answer = 42;
+    answer
+}
+
+pub fn structure_a(input: &str) -> usize {
+    let parsed = input.len();
+    let adjusted = parsed + 1;
+    adjusted
+}
+"#,
+        ),
+        file(
+            "src/b.rs",
+            r#"
+pub fn exact_b() -> usize {
+    let answer = 42;
+    answer
+}
+
+pub fn structure_b(value: &str) -> usize {
+    let amount = value.len();
+    let total = amount + 2;
+    total
+}
+"#,
+        ),
+    ])));
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 4);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 1);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 1);
+
+    let groups = &artifact["functionCloneGroups"];
+    assert_eq!(
+        groups["policy"]["policyId"],
+        "rust-function-clone-group-policy"
+    );
+    assert_eq!(
+        groups["policy"]["caveat"],
+        "Function clone groups are deterministic review evidence. They do not prove semantic equivalence, auto-reuse, or auto-fix safety."
+    );
+
+    let exact = &groups["exactBodyGroups"][0];
+    assert_eq!(exact["kind"], "exact-function-body-group");
+    assert_eq!(exact["risk"], "review-only");
+    assert_eq!(exact["size"], 2);
+    assert!(identity_list_contains(exact, "src/a.rs::exact_a"));
+    assert!(identity_list_contains(exact, "src/b.rs::exact_b"));
+    assert_eq!(
+        exact["reason"],
+        "same normalized function body; verify domain ownership before merging"
+    );
+
+    let structure = &groups["structureGroups"][0];
+    assert_eq!(structure["kind"], "function-body-structure-group");
+    assert_eq!(structure["risk"], "review-only");
+    assert_eq!(structure["size"], 2);
+    assert!(identity_list_contains(structure, "src/a.rs::structure_a"));
+    assert!(identity_list_contains(structure, "src/b.rs::structure_b"));
+    assert_eq!(structure["exactHashCount"], 2);
+    assert!(structure["sharedCallTokens"]
+        .as_array()
+        .is_some_and(|tokens| tokens.iter().any(|token| token == "len")));
+    assert!(structure["reason"]
+        .as_str()
+        .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
+
+    Ok(())
+}
+
+fn identity_list_contains(group: &Value, identity: &str) -> bool {
+    group["identities"]
+        .as_array()
+        .is_some_and(|identities| identities.iter().any(|entry| entry == identity))
 }

@@ -1,5 +1,6 @@
 mod ast;
 mod file;
+mod function_clones;
 mod location;
 mod meta;
 mod parse;
@@ -20,6 +21,10 @@ pub use ast::{
     AstShapeFieldKind, AstShapeHash, AstShapeHashKind, AstShapeKind, AstUseTree, AstVisibility,
 };
 pub use file::{Facts, FileHealth};
+pub use function_clones::{
+    AstFunctionCloneGroup, AstFunctionCloneGroupKind, AstFunctionCloneGroups,
+    AstFunctionCloneGroupsPolicy, AstFunctionCloneLine, FunctionCloneRisk,
+};
 pub use location::Location;
 pub use meta::{
     InputMeta, ParserMeta, PolicyMeta, ResponseMeta, RuntimeMeta, SidecarMeta, SignalPolicyMeta,
@@ -36,11 +41,18 @@ pub use signal::{
 pub use summary::Summary;
 
 pub const SCHEMA_VERSION: u32 = 1;
-pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v6";
+pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v7";
 pub const RUST_SHAPE_HASH_NORMALIZED_VERSION: &str = "rust-shape-hash.normalized.v1";
 pub const RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION: &str =
     "rust-function-signature.normalized.v1";
 pub const RUST_FUNCTION_BODY_NORMALIZED_VERSION: &str = "rust-function-body.normalized.v1";
+pub const RUST_FUNCTION_CLONE_GROUP_POLICY_ID: &str = "rust-function-clone-group-policy";
+pub const RUST_FUNCTION_CLONE_GROUP_POLICY_VERSION: &str = "rust-function-clone-group-policy.v1";
+pub const RUST_FUNCTION_CLONE_MIN_GROUP_SIZE: usize = 2;
+pub const RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC: usize = 1;
+pub const RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS: usize = 1;
+pub const RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC: usize = 3;
+pub const RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS: usize = 2;
 pub const RUST_INLINE_PATTERN_NORMALIZED_VERSION: &str = "rust-inline-statement-normalizer-v1";
 pub const RUST_INLINE_PATTERN_MAX_STATEMENTS: usize = 2;
 pub const PARSER_KIND: ParserKind = ParserKind::RaApSyntax;

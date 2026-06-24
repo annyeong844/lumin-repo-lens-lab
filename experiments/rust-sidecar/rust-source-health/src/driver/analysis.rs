@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::analyzer::analyze_files;
+use crate::function_clones::group_function_body_fingerprints;
 use crate::parallel::{build_pool, RuntimeConfig};
 use crate::protocol::{
     HealthRequest, HealthResponse, InputMeta, ParserMeta, PolicyMeta, ResponseMeta, RuntimeMeta,
@@ -24,8 +25,11 @@ pub fn analyze_request(
     let runtime_config = RuntimeConfig::try_from(request.runtime)?;
     let pool = build_pool(runtime_config)?;
     let files = pool.install(|| analyze_files(&request.files, &request.parser))?;
+    let function_clone_groups = group_function_body_fingerprints(&files);
     let mut summary = summarize(&files);
     summary.skipped_files = skipped_files.len();
+    summary.function_clone_exact_body_groups = function_clone_groups.exact_body_groups.len();
+    summary.function_clone_structure_groups = function_clone_groups.structure_groups.len();
     let (generated, sidecar, input) = final_meta
         .map(|meta| (Some(meta.generated), Some(meta.sidecar), Some(meta.input)))
         .unwrap_or((None, None, None));
@@ -63,6 +67,7 @@ pub fn analyze_request(
             input,
         },
         summary,
+        function_clone_groups,
         skipped_files,
         files,
     })

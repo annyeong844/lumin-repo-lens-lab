@@ -3,11 +3,13 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::protocol::{
-    AstFacts, AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility, Facts, FileHealth,
+    AstFacts, AstFunctionCloneGroup, AstFunctionCloneGroups, AstFunctionCloneGroupsPolicy,
+    AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility, Facts, FileHealth,
     HealthResponse, ParseStatus, PathMeta, ResponseMeta, Signal, SkippedFile, Summary,
 };
 
 const REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT: usize = 10;
+const FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT: usize = 10;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +18,7 @@ pub(super) struct CompactHealthResponse<'a> {
     artifact_profile: &'static str,
     meta: &'a ResponseMeta,
     summary: &'a Summary,
+    function_clone_groups: CompactFunctionCloneGroups<'a>,
     skipped_files: &'a [SkippedFile],
     files: BTreeMap<&'a str, CompactFileHealth<'a>>,
 }
@@ -33,8 +36,41 @@ impl<'a> CompactHealthResponse<'a> {
             artifact_profile: "compact",
             meta: &response.meta,
             summary: &response.summary,
+            function_clone_groups: CompactFunctionCloneGroups::from_groups(
+                &response.function_clone_groups,
+            ),
             skipped_files: &response.skipped_files,
             files,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompactFunctionCloneGroups<'a> {
+    policy: &'a AstFunctionCloneGroupsPolicy,
+    exact_body_group_count: usize,
+    structure_group_count: usize,
+    example_limit: usize,
+    exact_body_group_examples: &'a [AstFunctionCloneGroup],
+    structure_group_examples: &'a [AstFunctionCloneGroup],
+}
+
+impl<'a> CompactFunctionCloneGroups<'a> {
+    fn from_groups(groups: &'a AstFunctionCloneGroups) -> Self {
+        Self {
+            policy: &groups.policy,
+            exact_body_group_count: groups.exact_body_groups.len(),
+            structure_group_count: groups.structure_groups.len(),
+            example_limit: FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT,
+            exact_body_group_examples: &groups.exact_body_groups[..groups
+                .exact_body_groups
+                .len()
+                .min(FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT)],
+            structure_group_examples: &groups.structure_groups[..groups
+                .structure_groups
+                .len()
+                .min(FUNCTION_CLONE_GROUP_EXAMPLE_LIMIT)],
         }
     }
 }

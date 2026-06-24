@@ -116,6 +116,7 @@ forbidden unless this canonical file is amended with a migration reason.
 | single-pass syntax node dispatch | `collect_syntax_node(...)` | `src/analyzer/syntax/visit.rs` |
 | Rust record shape hash extraction | `collect_struct_shape_hash(...)` | `src/analyzer/syntax/items/shapes.rs` |
 | Rust function body fingerprint extraction | `collect_function_body_fingerprint(...)` | `src/analyzer/syntax/items/function_bodies.rs` |
+| Rust function clone group aggregation | `group_function_body_fingerprints(...)` | `src/function_clones.rs` |
 | Rust inline statement pattern extraction | `collect_inline_patterns(...)` | `src/analyzer/syntax/items/inline_patterns.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
@@ -131,6 +132,21 @@ production helpers that convert `TextRange` into `Location`.
 Rust source health emits a project-owned `files[*].ast` object. This is the
 Rust analogue of the JS/TS extractor shape: cheap syntax observations first,
 then semantic oracles only where the syntax surface is opaque.
+
+Rust source health also emits a top-level `functionCloneGroups` object. It is
+the Rust analogue of `_lib/function-clone-artifact.mjs` group evidence built
+from `files[*].ast.functionBodyFingerprints[]`. The owner is
+`src/function_clones.rs`. Current groups are `exactBodyGroups` and
+`structureGroups`; both are deterministic review evidence only and carry the
+same caveat as the TS/JS function clone artifact: they do not prove semantic
+equivalence, auto-reuse, auto-fix safety, or a merge recommendation. The
+checked thresholds mirror TS/JS `function-clone-near-policy`: exact groups use
+`minBodyLoc = 1`, `minStatements = 1`, and `minGroupSize = 2`; structure groups
+use `minBodyLocForGrouping = 3`, `minStatementsForGrouping = 2`, and
+`minGroupSize = 2`. Rust does not emit `nearFunctionCandidates` until a Rust
+owner implements the TS/JS score policy and documents the calibration surface.
+The compact CLI projection reports full counts with capped examples; this cap is
+an artifact projection choice, not an analysis cap.
 
 Canonical JSON fields:
 
@@ -600,6 +616,8 @@ Final artifacts must satisfy these counts:
 - `summary.shapeHashes === sum(files[*].ast.shapeHashes.length)`
 - `summary.functionSignatures === sum(files[*].ast.functionSignatures.length)`
 - `summary.functionBodyFingerprints === sum(files[*].ast.functionBodyFingerprints.length)`
+- `summary.functionCloneExactBodyGroups === functionCloneGroups.exactBodyGroups.length`
+- `summary.functionCloneStructureGroups === functionCloneGroups.structureGroups.length`
 - `summary.inlinePatterns === sum(files[*].ast.inlinePatterns.length)`
 - `summary.implBlocks === sum(files[*].ast.impls.length)`
 - `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`
