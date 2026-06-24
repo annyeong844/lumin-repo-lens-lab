@@ -287,6 +287,10 @@ pub fn structure_b(value: &str) -> usize {
     let signature = group_with_identity(signature_groups, "src/a.rs::exact_a")
         .context("exact_a signature group")?;
     assert_eq!(signature["kind"], "function-signature-group");
+    assert_eq!(
+        signature["normalizedVersion"],
+        "rust-function-signature.normalized.v1"
+    );
     assert_eq!(signature["risk"], "review-only");
     assert_eq!(signature["generatedOnly"], false);
     assert_eq!(signature["signature"], "fn() -> usize");

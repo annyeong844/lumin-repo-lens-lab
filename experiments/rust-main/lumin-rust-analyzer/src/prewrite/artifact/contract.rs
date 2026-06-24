@@ -104,7 +104,7 @@ impl PreWriteArtifact {
             if &lookup.shape != intent_shape {
                 bail!("blocked-artifact-contract: shape lookup drifted from normalized intent");
             }
-            if !lookup.is_unavailable() && !lookup.is_match() {
+            if !lookup.is_unavailable() && !lookup.is_match() && !lookup.is_not_observed() {
                 bail!("blocked-artifact-contract: shape lookup emitted an invalid result");
             }
         }

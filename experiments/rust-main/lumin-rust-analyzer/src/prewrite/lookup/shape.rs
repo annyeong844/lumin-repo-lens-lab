@@ -29,6 +29,9 @@ pub(in crate::prewrite) fn lookup_shapes(
 
 fn lookup_shape(shape: &ShapeIntent, syntax: &HealthResponse) -> ShapeLookup {
     if let Some(hash) = &shape.hash {
+        let source_health_complete =
+            syntax.summary.parse_error_files == 0 && syntax.skipped_files.is_empty();
+
         let matches = matches::shape_hash_matches(hash, syntax);
         if !matches.is_empty() {
             return ShapeLookup::matched(
@@ -57,12 +60,23 @@ fn lookup_shape(shape: &ShapeIntent, syntax: &HealthResponse) -> ShapeLookup {
             );
         }
 
+        if source_health_complete {
+            return ShapeLookup::not_observed(
+                shape,
+                hash,
+                ShapeHashSource::Hash,
+                vec![format!(
+                    "[grounded, complete rust-source-health files[*].ast.shapeHashes and files[*].ast.functionSignatures have no exact match for {hash}]"
+                )],
+            );
+        }
+
         return unavailable(
             shape,
             Some(hash.clone()),
             Some(ShapeHashSource::Hash),
             vec![format!(
-                "[확인 불가, rust-source-health files[*].ast.shapeHashes and files[*].ast.functionSignatures have no exact match for {hash}; Rust producers do not yet make complete absence claims]"
+                "[확인 불가, rust-source-health is incomplete; files[*].ast.shapeHashes and files[*].ast.functionSignatures have no exact match for {hash}, but absence is not grounded]"
             )],
         );
     }

@@ -4,6 +4,9 @@ use crate::support::prewrite::PreWriteRepo;
 
 use super::support::{shape_hash, source_health};
 
+const MISSING_SHAPE_HASH: &str =
+    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
 #[test]
 fn prewrite_shape_hash_matches_rust_source_health_record_struct() -> Result<()> {
     let repo = PreWriteRepo::new()?;
@@ -92,5 +95,43 @@ pub struct EventMirror {
     assert!(cue_cards
         .iter()
         .any(|card| card["candidate"]["identity"] == "src/lib.rs::EventMirror"));
+    Ok(())
+}
+
+#[test]
+fn prewrite_shape_hash_miss_degrades_when_source_health_is_incomplete() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    repo.write_bytes("src/lib.rs", br#"pub struct Event { pub id: u64 }"#)?;
+    repo.write_bytes("src/bad.rs", br#"fn main( {"#)?;
+
+    let artifact = repo.run_json(&format!(
+        r#"{{
+  "names": [],
+  "shapes": [{{"hash": "{MISSING_SHAPE_HASH}"}}],
+  "files": [],
+  "dependencies": [],
+  "plannedTypeEscapes": []
+}}"#
+    ))?;
+
+    assert_eq!(artifact["coverage"]["shapes"], "ran");
+    let shape_lookup = &artifact["shapeLookups"][0];
+    assert_eq!(shape_lookup["result"], "UNAVAILABLE");
+    assert_eq!(shape_lookup["shapeHash"], MISSING_SHAPE_HASH);
+    assert!(shape_lookup["citations"]
+        .as_array()
+        .context("shape miss citations")?
+        .iter()
+        .any(|citation| citation.as_str().is_some_and(|text| {
+            text.contains("rust-source-health is incomplete")
+                && text.contains("absence is not grounded")
+        })));
+
+    let unavailable = artifact["unavailableEvidence"]
+        .as_array()
+        .context("unavailable evidence")?;
+    assert!(unavailable.iter().any(|entry| {
+        entry["evidenceLane"] == "shape-hash" && entry["status"] == "UNAVAILABLE"
+    }));
     Ok(())
 }

@@ -221,6 +221,7 @@ pub struct AstFunctionCloneGroup {
 #[serde(rename_all = "camelCase")]
 pub struct AstFunctionSignatureGroup {
     pub kind: AstFunctionSignatureGroupKind,
+    pub normalized_version: &'static str,
     pub hash: String,
     pub size: usize,
     pub risk: FunctionCloneRisk,

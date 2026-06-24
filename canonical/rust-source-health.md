@@ -340,9 +340,12 @@ source health now owns narrow exact-hash producers. A `shape.hash` matching
 `functionSignature` branch. Fields-only intents remain `UNAVAILABLE` because
 field names alone are not structural equality evidence. `typeLiteral` without
 an exact hash remains `UNAVAILABLE`; Rust must not parse TS/JS type literals in
-this lane. An unmatched exact hash is also `UNAVAILABLE` for now, not
-`NOT_OBSERVED`, because the Rust producer does not yet make complete absence
-claims for every Rust shape or callable form. A positive exact-hash
+this lane. An unmatched exact hash is `NOT_OBSERVED` only when
+rust-source-health input is complete (`summary.parseErrorFiles == 0` and
+`skippedFiles[]` is empty). If parsing or read evidence is incomplete, the same
+unmatched hash remains `UNAVAILABLE`, matching the JS/TS shape/function-clone
+lookup rule that positive matches are grounded but absence claims are not.
+A positive exact-hash
 `SHAPE_MATCH` may emit the JS/TS `shape-hash` `SAFE_CUE` as claim-only evidence.
 A positive function-signature `SIGNATURE_MATCH` may emit the JS/TS
 `function-signature` cue: top-level public/crate/restricted Rust functions may

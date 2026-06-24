@@ -57,6 +57,23 @@ impl ShapeLookup {
         }
     }
 
+    pub(in crate::prewrite::lookup::shape) fn not_observed(
+        shape: &ShapeIntent,
+        shape_hash: &str,
+        shape_hash_source: ShapeHashSource,
+        citations: Vec<String>,
+    ) -> Self {
+        Self {
+            kind: ShapeLookupKind::Shape,
+            shape: shape.clone(),
+            result: ShapeLookupResult::NotObserved,
+            shape_hash: Some(shape_hash.to_string()),
+            shape_hash_source: Some(shape_hash_source),
+            matches: Vec::new(),
+            citations,
+        }
+    }
+
     pub(in crate::prewrite) fn unavailable_evidence(&self) -> UnavailableEvidence {
         UnavailableEvidence::shape_hash(self.citations.clone())
     }
@@ -75,6 +92,10 @@ impl ShapeLookup {
 
     pub(in crate::prewrite) fn is_match(&self) -> bool {
         self.is_shape_match() || self.is_signature_match()
+    }
+
+    pub(in crate::prewrite) fn is_not_observed(&self) -> bool {
+        self.result == ShapeLookupResult::NotObserved
     }
 
     pub(in crate::prewrite) fn shape_hash(&self) -> Option<&str> {
@@ -98,6 +119,8 @@ pub(in crate::prewrite::lookup::shape) enum ShapeLookupResult {
     ShapeMatch,
     #[serde(rename = "SIGNATURE_MATCH")]
     SignatureMatch,
+    #[serde(rename = "NOT_OBSERVED")]
+    NotObserved,
     #[serde(rename = "UNAVAILABLE")]
     Unavailable,
 }

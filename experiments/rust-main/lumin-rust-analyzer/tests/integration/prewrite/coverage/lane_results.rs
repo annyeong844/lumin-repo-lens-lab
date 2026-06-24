@@ -42,18 +42,19 @@ fn prewrite_not_observed_keeps_opaque_taint_and_file_lane_visible() -> Result<()
             text.contains("field names alone are not structural equality evidence")
         })));
     assert_eq!(shape_lookups[1]["shapeHash"], SHAPE_HASH);
+    assert_eq!(shape_lookups[1]["result"], "NOT_OBSERVED");
     assert!(shape_lookups[1]["citations"]
         .as_array()
         .context("hash shape citations")?
         .iter()
         .any(|citation| citation
             .as_str()
-            .is_some_and(|text| text.contains("do not yet make complete absence claims"))));
+            .is_some_and(|text| text.contains("complete rust-source-health"))));
 
     let unavailable = artifact["unavailableEvidence"]
         .as_array()
         .context("unavailable evidence")?;
-    assert_eq!(unavailable.len(), 2);
+    assert_eq!(unavailable.len(), 1);
     assert!(unavailable.iter().all(|entry| {
         entry["evidenceLane"] == "shape-hash"
             && entry["status"] == "UNAVAILABLE"

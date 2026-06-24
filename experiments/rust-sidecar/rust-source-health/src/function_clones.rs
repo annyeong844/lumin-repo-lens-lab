@@ -18,6 +18,7 @@ use crate::protocol::{
     RUST_FUNCTION_CLONE_NEAR_NAME_TOKEN_WEIGHT, RUST_FUNCTION_CLONE_NEAR_STATEMENT_COUNT_WEIGHT,
     RUST_FUNCTION_CLONE_NEAR_SUPPRESSED_GENERIC_CALL_TOKENS,
     RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC, RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS,
+    RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
 };
 
 pub(crate) fn group_function_body_fingerprints(
@@ -241,6 +242,7 @@ fn signature_group_from_members(
 
     Some(AstFunctionSignatureGroup {
         kind: AstFunctionSignatureGroupKind::FunctionSignatureGroup,
+        normalized_version: RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
         hash,
         size: members.len(),
         risk: FunctionCloneRisk::ReviewOnly,
