@@ -231,6 +231,11 @@ assembly. Its `policy/finding/` submodules are implementation details:
 macro-expansion span examples, `bridge.rs` owns finding-level oracle bridge
 evidence, `support.rs` owns finding support evidence, and `taint.rs` owns
 finding taint evidence.
+`lumin-rust-analyzer/src/cli.rs` owns CLI command dispatch and typed option
+structs. Its `cli/` submodules are implementation details: `analyze.rs` owns
+unified analyzer argument parsing and default repository-root/output
+derivation, `pre_write.rs` owns pre-write argument parsing, and `usage.rs`
+owns usage text.
 
 Canonical JSON fields:
 
