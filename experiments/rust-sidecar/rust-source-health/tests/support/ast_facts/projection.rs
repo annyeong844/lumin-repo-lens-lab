@@ -53,6 +53,37 @@ pub fn assert_core_ast_fact_projection(artifact: &Value, path: &str) {
     assert_eq!(ast["functionSignatures"][2]["visibility"], "crate");
     assert!(ast["functionSignatures"][2].get("receiver").is_none());
     assert_eq!(ast["functionSignatures"][2]["returnType"], "Self");
+    assert_eq!(
+        ast["functionBodyFingerprints"][0]["kind"],
+        "function-body-fingerprint"
+    );
+    assert_eq!(
+        ast["functionBodyFingerprints"][0]["callableKind"],
+        "function"
+    );
+    assert_eq!(ast["functionBodyFingerprints"][0]["name"], "build");
+    assert_eq!(ast["functionBodyFingerprints"][0]["visibility"], "public");
+    assert_eq!(
+        ast["functionBodyFingerprints"][0]["normalizedVersion"],
+        "rust-function-body.normalized.v1"
+    );
+    assert!(ast["functionBodyFingerprints"][0]["exactBodyHash"]
+        .as_str()
+        .is_some_and(|hash| hash.starts_with("sha256:")));
+    assert!(
+        ast["functionBodyFingerprints"][0]["normalizedStructureHash"]
+            .as_str()
+            .is_some_and(|hash| hash.starts_with("sha256:"))
+    );
+    assert_eq!(
+        ast["functionBodyFingerprints"][1]["callableKind"],
+        "impl-method"
+    );
+    assert_eq!(ast["functionBodyFingerprints"][1]["name"], "normalize");
+    assert_eq!(
+        ast["functionBodyFingerprints"][1]["owner"]["target"],
+        "Maybe"
+    );
     assert_eq!(ast["impls"][0]["target"], "Maybe");
     assert!(ast["impls"][0].get("trait").is_none());
     assert_eq!(ast["impls"][0]["methods"][0]["name"], "normalize");

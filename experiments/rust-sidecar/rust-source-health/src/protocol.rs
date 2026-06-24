@@ -11,13 +11,13 @@ mod signal;
 mod summary;
 
 pub use ast::{
-    AstCallableKind, AstCfgGate, AstDefinition, AstDefinitionKind, AstFacts, AstFunctionOwner,
-    AstFunctionParam, AstFunctionReceiver, AstFunctionReceiverKind, AstFunctionSignature,
-    AstFunctionSignatureKind, AstImplBlock, AstImplMethod, AstInlinePattern, AstInlinePatternKind,
-    AstMacroCall, AstMethodCall, AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface,
-    AstOpaqueSurfaceKind, AstOpaqueSurfaceVisibility, AstOpaqueVisibility, AstPathRef,
-    AstShapeConfidence, AstShapeField, AstShapeFieldKind, AstShapeHash, AstShapeHashKind,
-    AstShapeKind, AstUseTree, AstVisibility,
+    AstCallableKind, AstCfgGate, AstDefinition, AstDefinitionKind, AstFacts,
+    AstFunctionBodyFingerprint, AstFunctionBodyFingerprintKind, AstFunctionOwner, AstFunctionParam,
+    AstFunctionReceiver, AstFunctionReceiverKind, AstFunctionSignature, AstFunctionSignatureKind,
+    AstImplBlock, AstImplMethod, AstInlinePattern, AstInlinePatternKind, AstMacroCall,
+    AstMethodCall, AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface, AstOpaqueSurfaceKind,
+    AstOpaqueSurfaceVisibility, AstOpaqueVisibility, AstPathRef, AstShapeConfidence, AstShapeField,
+    AstShapeFieldKind, AstShapeHash, AstShapeHashKind, AstShapeKind, AstUseTree, AstVisibility,
 };
 pub use file::{Facts, FileHealth};
 pub use location::Location;
@@ -36,10 +36,11 @@ pub use signal::{
 pub use summary::Summary;
 
 pub const SCHEMA_VERSION: u32 = 1;
-pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v5";
+pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v6";
 pub const RUST_SHAPE_HASH_NORMALIZED_VERSION: &str = "rust-shape-hash.normalized.v1";
 pub const RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION: &str =
     "rust-function-signature.normalized.v1";
+pub const RUST_FUNCTION_BODY_NORMALIZED_VERSION: &str = "rust-function-body.normalized.v1";
 pub const RUST_INLINE_PATTERN_NORMALIZED_VERSION: &str = "rust-inline-statement-normalizer-v1";
 pub const RUST_INLINE_PATTERN_MAX_STATEMENTS: usize = 2;
 pub const PARSER_KIND: ParserKind = ParserKind::RaApSyntax;

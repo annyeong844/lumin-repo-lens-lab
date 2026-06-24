@@ -1,3 +1,4 @@
+mod function_bodies;
 mod functions;
 mod impls;
 mod inline_patterns;

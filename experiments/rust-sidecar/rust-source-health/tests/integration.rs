@@ -51,6 +51,8 @@ mod zero_threads;
 mod cli_hard_stops;
 #[path = "integration/file_and_parse.rs"]
 mod file_and_parse;
+#[path = "integration/function_body_fingerprints.rs"]
+mod function_body_fingerprints;
 #[path = "integration/opaque_surfaces.rs"]
 mod opaque_surfaces;
 #[path = "integration/path_visibility.rs"]

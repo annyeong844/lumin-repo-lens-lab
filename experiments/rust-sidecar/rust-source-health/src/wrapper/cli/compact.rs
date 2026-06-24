@@ -69,6 +69,7 @@ struct CompactAstSummary<'a> {
     definitions: usize,
     shape_hashes: usize,
     function_signatures: usize,
+    function_body_fingerprints: usize,
     inline_patterns: usize,
     impl_blocks: usize,
     impl_methods: usize,
@@ -114,6 +115,7 @@ impl<'a> CompactAstSummary<'a> {
             definitions: ast.definitions.len(),
             shape_hashes: ast.shape_hashes.len(),
             function_signatures: ast.function_signatures.len(),
+            function_body_fingerprints: ast.function_body_fingerprints.len(),
             inline_patterns: ast.inline_patterns.len(),
             impl_blocks: ast.impls.len(),
             impl_methods: ast

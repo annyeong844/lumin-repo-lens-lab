@@ -20,6 +20,7 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     assert_eq!(artifact["summary"]["skippedFiles"], 1);
     assert_eq!(artifact["summary"]["shapeHashes"], 0);
     assert_eq!(artifact["summary"]["functionSignatures"], 3);
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 3);
     assert_eq!(artifact["summary"]["signalsByKind"]["unwrap-call"], 1);
     assert!(artifact["files"]["src/lib.rs"].is_object());
     assert!(artifact["files"]["src/lib.rs"]["ast"].is_null());
@@ -33,6 +34,10 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     );
     assert_eq!(
         artifact["files"]["src/lib.rs"]["astSummary"]["functionSignatures"],
+        3
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["astSummary"]["functionBodyFingerprints"],
         3
     );
     assert_eq!(
@@ -67,6 +72,7 @@ pub fn assert_full_cli_artifact(output_path: &Path) -> Result<()> {
     assert!(artifact["artifactProfile"].is_null());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["definitions"].is_array());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["functionSignatures"].is_array());
+    assert!(artifact["files"]["src/lib.rs"]["ast"]["functionBodyFingerprints"].is_array());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["impls"].is_array());
     assert_eq!(
         artifact["files"]["src/lib.rs"]["ast"]["definitions"][0]["kind"],

@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 mod definitions;
+mod function_bodies;
 mod functions;
 mod impls;
 mod inline_patterns;
@@ -10,6 +11,7 @@ mod refs;
 mod shapes;
 
 pub use definitions::{AstDefinition, AstDefinitionKind, AstVisibility};
+pub use function_bodies::{AstFunctionBodyFingerprint, AstFunctionBodyFingerprintKind};
 pub use functions::{
     AstCallableKind, AstFunctionOwner, AstFunctionParam, AstFunctionReceiver,
     AstFunctionReceiverKind, AstFunctionSignature, AstFunctionSignatureKind,
@@ -32,6 +34,7 @@ pub struct AstFacts {
     pub definitions: Vec<AstDefinition>,
     pub shape_hashes: Vec<AstShapeHash>,
     pub function_signatures: Vec<AstFunctionSignature>,
+    pub function_body_fingerprints: Vec<AstFunctionBodyFingerprint>,
     pub inline_patterns: Vec<AstInlinePattern>,
     pub impls: Vec<AstImplBlock>,
     pub use_trees: Vec<AstUseTree>,

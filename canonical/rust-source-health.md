@@ -115,6 +115,7 @@ forbidden unless this canonical file is amended with a migration reason.
 | file syntax collection | `collect_file_syntax(...)` | `src/analyzer/syntax.rs` |
 | single-pass syntax node dispatch | `collect_syntax_node(...)` | `src/analyzer/syntax/visit.rs` |
 | Rust record shape hash extraction | `collect_struct_shape_hash(...)` | `src/analyzer/syntax/items/shapes.rs` |
+| Rust function body fingerprint extraction | `collect_function_body_fingerprint(...)` | `src/analyzer/syntax/items/function_bodies.rs` |
 | Rust inline statement pattern extraction | `collect_inline_patterns(...)` | `src/analyzer/syntax/items/inline_patterns.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
@@ -150,6 +151,16 @@ Canonical JSON fields:
   `where` clause are not emitted until those qualifiers and bounds are
   represented in the normalized payload; Rust must refuse the exact cue rather
   than hash an incomplete call surface.
+- `ast.functionBodyFingerprints[]`: Rust function-body fingerprint facts for
+  parsed top-level functions and `impl` methods. This is the Rust analogue of
+  `_lib/function-clone-artifact.mjs` facts with
+  `kind = "function-body-fingerprint"`. The producer records exact compact body
+  hashes, normalized-exact body hashes, anonymized-structure body hashes,
+  qualifier fields, body/statement counts, call tokens, visibility, callable
+  kind, optional impl owner evidence, and source locations. These facts are
+  review evidence only. They do not claim semantic equivalence, auto-reuse, or
+  auto-fix safety, and they do not create function-clone groups until a Rust
+  grouping owner is documented.
 - `ast.inlinePatterns[]`: repeated-inline extraction occurrence facts for
   simple Rust statement lists. The producer is the Rust analogue of
   `_lib/inline-pattern-artifact.mjs`: it records syntax-only occurrences whose
@@ -588,6 +599,7 @@ Final artifacts must satisfy these counts:
 - `summary.definitions === sum(files[*].ast.definitions.length)`
 - `summary.shapeHashes === sum(files[*].ast.shapeHashes.length)`
 - `summary.functionSignatures === sum(files[*].ast.functionSignatures.length)`
+- `summary.functionBodyFingerprints === sum(files[*].ast.functionBodyFingerprints.length)`
 - `summary.inlinePatterns === sum(files[*].ast.inlinePatterns.length)`
 - `summary.implBlocks === sum(files[*].ast.impls.length)`
 - `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`

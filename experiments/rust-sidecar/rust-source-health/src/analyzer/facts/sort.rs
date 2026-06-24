@@ -32,6 +32,17 @@ pub(in crate::analyzer) fn sort_ast_facts(facts: &mut AstFacts) {
             .then(left.name.cmp(&right.name))
             .then(left.hash.cmp(&right.hash))
     });
+    facts.function_body_fingerprints.sort_by(|left, right| {
+        left.location
+            .byte_start
+            .cmp(&right.location.byte_start)
+            .then(left.callable_kind.cmp(&right.callable_kind))
+            .then(left.name.cmp(&right.name))
+            .then(
+                left.normalized_structure_hash
+                    .cmp(&right.normalized_structure_hash),
+            )
+    });
     facts.inline_patterns.sort_by(|left, right| {
         left.location
             .byte_start

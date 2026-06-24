@@ -1,12 +1,14 @@
 use crate::locations::LineIndex;
 use crate::protocol::{
-    AstCallableKind, AstFunctionOwner, AstFunctionSignature, AstImplBlock, AstImplMethod,
+    AstCallableKind, AstFunctionBodyFingerprint, AstFunctionOwner, AstFunctionSignature,
+    AstImplBlock, AstImplMethod,
 };
 use ra_ap_syntax::{
     ast::{self, HasName, HasVisibility},
     AstNode, SyntaxNode,
 };
 
+use super::function_bodies::collect_function_body_fingerprint;
 use super::functions::function_signature;
 use crate::analyzer::facts::{syntax_text, visibility_for};
 use crate::analyzer::location::ast_location;
@@ -30,8 +32,10 @@ pub(in crate::analyzer::syntax) fn collect_impl(
             .trait_()
             .map(|trait_path| syntax_text(trait_path.syntax())),
     };
-    let (methods, signatures) = impl_methods_and_signatures(&impl_block, &owner, line_index);
+    let (methods, signatures, fingerprints) =
+        impl_methods_and_signatures(&impl_block, &owner, line_index);
     syntax.ast.function_signatures.extend(signatures);
+    syntax.ast.function_body_fingerprints.extend(fingerprints);
     syntax.ast.impls.push(AstImplBlock {
         target: owner.target,
         trait_path: owner.trait_path,
@@ -44,12 +48,17 @@ fn impl_methods_and_signatures(
     impl_block: &ast::Impl,
     owner: &AstFunctionOwner,
     line_index: &LineIndex,
-) -> (Vec<AstImplMethod>, Vec<AstFunctionSignature>) {
+) -> (
+    Vec<AstImplMethod>,
+    Vec<AstFunctionSignature>,
+    Vec<AstFunctionBodyFingerprint>,
+) {
     let Some(items) = impl_block.assoc_item_list() else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let mut methods = Vec::new();
     let mut signatures = Vec::new();
+    let mut fingerprints = Vec::new();
     for item in items.assoc_items() {
         match item {
             ast::AssocItem::Fn(function) => {
@@ -64,6 +73,14 @@ fn impl_methods_and_signatures(
                     line_index,
                 ) {
                     signatures.push(signature);
+                }
+                if let Some(fingerprint) = collect_function_body_fingerprint(
+                    &function,
+                    AstCallableKind::ImplMethod,
+                    Some(owner.clone()),
+                    line_index,
+                ) {
+                    fingerprints.push(fingerprint);
                 }
                 methods.push(AstImplMethod {
                     name: name.text().to_string(),
@@ -80,5 +97,5 @@ fn impl_methods_and_signatures(
             | ast::AssocItem::TypeAlias(_) => {}
         }
     }
-    (methods, signatures)
+    (methods, signatures, fingerprints)
 }

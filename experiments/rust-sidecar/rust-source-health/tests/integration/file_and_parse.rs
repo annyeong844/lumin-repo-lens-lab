@@ -56,6 +56,7 @@ impl Maybe {
             definitions: 4,
             shape_hashes: 1,
             function_signatures: 3,
+            function_body_fingerprints: 3,
             inline_patterns: 0,
             impl_blocks: 1,
             impl_methods: 2,

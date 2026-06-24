@@ -16,6 +16,8 @@ use crate::analyzer::facts::{collect_definition, function_is_unsafe, syntax_text
 use crate::analyzer::location::{ast_location, line_span};
 use crate::analyzer::syntax::FileSyntax;
 
+use super::function_bodies::collect_function_body_fingerprint;
+
 pub(in crate::analyzer::syntax) fn collect_function(
     node: &SyntaxNode,
     line_index: &LineIndex,
@@ -39,6 +41,11 @@ pub(in crate::analyzer::syntax) fn collect_function(
     };
     if function_is_nested_or_associated(node) {
         return;
+    }
+    if let Some(fingerprint) =
+        collect_function_body_fingerprint(&function, AstCallableKind::Function, None, line_index)
+    {
+        syntax.ast.function_body_fingerprints.push(fingerprint);
     }
     if let Some(signature) = function_signature(
         &function,
