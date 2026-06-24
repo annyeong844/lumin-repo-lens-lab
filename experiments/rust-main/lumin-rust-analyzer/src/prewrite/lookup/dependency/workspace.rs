@@ -12,16 +12,15 @@ pub(super) fn workspace_member_manifest_paths(
     root: &Path,
     value: &TomlValue,
 ) -> Result<Vec<PathBuf>> {
-    let Some(members) = value
-        .get("workspace")
-        .and_then(|workspace| workspace.get("members"))
-        .and_then(TomlValue::as_array)
-    else {
+    let Some(workspace) = workspace_table(value)? else {
         return Ok(Vec::new());
     };
-    let excludes = workspace_exclude_patterns(value);
+    let Some(members) = workspace_string_array(workspace, "members")? else {
+        return Ok(Vec::new());
+    };
+    let excludes = workspace_exclude_patterns(workspace)?;
     let mut paths = BTreeSet::new();
-    for member in members.iter().filter_map(TomlValue::as_str) {
+    for member in members {
         if member.starts_with('!') {
             bail!(
                 "blocked-prewrite-dependency-manifest: workspace.members does not support negated member '{member}'; use workspace.exclude"
@@ -34,14 +33,46 @@ pub(super) fn workspace_member_manifest_paths(
     Ok(paths.into_iter().collect())
 }
 
-fn workspace_exclude_patterns(value: &TomlValue) -> Vec<String> {
-    value
-        .get("workspace")
-        .and_then(|workspace| workspace.get("exclude"))
-        .and_then(TomlValue::as_array)
+fn workspace_exclude_patterns(
+    workspace: &toml::map::Map<String, TomlValue>,
+) -> Result<Vec<String>> {
+    Ok(workspace_string_array(workspace, "exclude")?
+        .unwrap_or_default()
         .into_iter()
-        .flatten()
-        .filter_map(TomlValue::as_str)
         .map(str::to_string)
-        .collect()
+        .collect())
+}
+
+fn workspace_table(value: &TomlValue) -> Result<Option<&toml::map::Map<String, TomlValue>>> {
+    let Some(workspace) = value.get("workspace") else {
+        return Ok(None);
+    };
+    let Some(table) = workspace.as_table() else {
+        bail!("blocked-prewrite-dependency-manifest: workspace must be a table");
+    };
+    Ok(Some(table))
+}
+
+fn workspace_string_array<'a>(
+    workspace: &'a toml::map::Map<String, TomlValue>,
+    field: &str,
+) -> Result<Option<Vec<&'a str>>> {
+    let Some(value) = workspace.get(field) else {
+        return Ok(None);
+    };
+    let Some(entries) = value.as_array() else {
+        bail!(
+            "blocked-prewrite-dependency-manifest: workspace.{field} must be an array of strings"
+        );
+    };
+    let mut strings = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let Some(text) = entry.as_str() else {
+            bail!(
+                "blocked-prewrite-dependency-manifest: workspace.{field}[{index}] must be a string"
+            );
+        };
+        strings.push(text);
+    }
+    Ok(Some(strings))
 }

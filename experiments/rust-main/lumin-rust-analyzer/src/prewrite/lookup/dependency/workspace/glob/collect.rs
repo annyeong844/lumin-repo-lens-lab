@@ -134,6 +134,19 @@ fn collect_recursive_member_manifests(
     current: &Path,
     paths: &mut Vec<PathBuf>,
 ) -> Result<()> {
+    for child in child_directories(current)? {
+        collect_recursive_member_candidate(root, excludes, matched_member_roots, &child, paths)?;
+    }
+    Ok(())
+}
+
+fn collect_recursive_member_candidate(
+    root: &Path,
+    excludes: &[Vec<String>],
+    matched_member_roots: &mut usize,
+    current: &Path,
+    paths: &mut Vec<PathBuf>,
+) -> Result<()> {
     *matched_member_roots += 1;
     if excludes
         .iter()
@@ -144,9 +157,14 @@ fn collect_recursive_member_manifests(
     let manifest = current.join("Cargo.toml");
     if manifest.is_file() {
         paths.push(manifest);
+    } else {
+        bail!(
+            "blocked-prewrite-dependency-manifest: workspace member directory {} does not contain Cargo.toml",
+            current.display()
+        );
     }
     for child in child_directories(current)? {
-        collect_recursive_member_manifests(root, excludes, matched_member_roots, &child, paths)?;
+        collect_recursive_member_candidate(root, excludes, matched_member_roots, &child, paths)?;
     }
     Ok(())
 }

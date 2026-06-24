@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use toml::Value as TomlValue;
 
 mod observations;
@@ -22,11 +22,7 @@ impl CargoManifest {
     pub(super) fn read(root: &Path) -> Result<Self> {
         let path = root.join("Cargo.toml");
         let value = parse_manifest(&path)?;
-        let workspace_dependencies = value
-            .get("workspace")
-            .and_then(|workspace| workspace.get("dependencies"))
-            .and_then(TomlValue::as_table)
-            .cloned();
+        let workspace_dependencies = workspace_dependencies(&value)?;
         let mut scopes = vec![CargoManifestScope::root(root, &path, &value)];
         for member_manifest in workspace_member_manifest_paths(root, &value)? {
             if member_manifest == path {
@@ -83,4 +79,20 @@ fn parse_manifest(path: &Path) -> Result<TomlValue> {
             path.display()
         )
     })
+}
+
+fn workspace_dependencies(value: &TomlValue) -> Result<Option<toml::map::Map<String, TomlValue>>> {
+    let Some(workspace) = value.get("workspace") else {
+        return Ok(None);
+    };
+    let Some(workspace) = workspace.as_table() else {
+        bail!("blocked-prewrite-dependency-manifest: workspace must be a table");
+    };
+    let Some(dependencies) = workspace.get("dependencies") else {
+        return Ok(None);
+    };
+    let Some(table) = dependencies.as_table() else {
+        bail!("blocked-prewrite-dependency-manifest: workspace.dependencies must be a table");
+    };
+    Ok(Some(table.clone()))
 }
