@@ -2,21 +2,6 @@ use anyhow::Result;
 
 use crate::support::prewrite::{citations, dependency_lookup, PreWriteRepo};
 
-#[cfg(unix)]
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
-
-#[cfg(unix)]
-struct PermissionRestore {
-    path: PathBuf,
-}
-
-#[cfg(unix)]
-impl Drop for PermissionRestore {
-    fn drop(&mut self) {
-        let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(0o700));
-    }
-}
-
 #[test]
 fn prewrite_dependency_lane_skips_excluded_glob_matches_without_manifests() -> Result<()> {
     let repo = PreWriteRepo::new()?;
@@ -63,14 +48,13 @@ serde = "1"
 }
 
 #[test]
-#[cfg(unix)]
 fn prewrite_dependency_lane_does_not_descend_into_excluded_recursive_member_roots() -> Result<()> {
     let repo = PreWriteRepo::new()?;
     repo.write_bytes(
         "Cargo.toml",
         br#"[workspace]
 members = ["crates/**"]
-exclude = ["crates/generated"]
+exclude = ["crates/app/src", "crates/generated"]
 "#,
     )?;
     repo.write_bytes(
@@ -89,10 +73,10 @@ serde = "1"
         b"pub fn decode(_: serde::de::IgnoredAny) {}\n",
     )?;
 
-    let blocked = repo.root_path().join("crates/generated/blocked");
-    fs::create_dir_all(blocked.join("nested"))?;
-    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000))?;
-    let _restore = PermissionRestore { path: blocked };
+    repo.write_bytes(
+        "crates/generated/blocked/src/lib.rs",
+        b"pub fn generated() {}\n",
+    )?;
 
     let artifact = repo.run_json(
         r#"{
