@@ -4,7 +4,7 @@ mod coverage;
 mod cues;
 #[path = "prewrite/dependencies.rs"]
 mod dependencies;
-#[path = "prewrite/dependency_errors.rs"]
+#[path = "prewrite/dependency_errors/mod.rs"]
 mod dependency_errors;
 #[path = "prewrite/dependency_graph.rs"]
 mod dependency_graph;
@@ -24,7 +24,7 @@ mod file_symlinks;
 mod files;
 #[path = "prewrite/intent_lanes.rs"]
 mod intent_lanes;
-#[path = "prewrite/local_operations.rs"]
+#[path = "prewrite/local_operations/mod.rs"]
 mod local_operations;
 #[path = "prewrite/service_cues.rs"]
 mod service_cues;
