@@ -136,7 +136,9 @@ then semantic oracles only where the syntax surface is opaque.
 Rust source health also emits a top-level `functionCloneGroups` object. It is
 the Rust analogue of `_lib/function-clone-artifact.mjs` group evidence built
 from `files[*].ast.functionBodyFingerprints[]` and
-`files[*].ast.functionSignatures[]`. The owner is `src/function_clones.rs`.
+`files[*].ast.functionSignatures[]`. The owner is `src/function_clones.rs`;
+its `src/function_clones/` submodules are implementation details of that
+owner.
 Current review surfaces are `exactBodyGroups`, `structureGroups`,
 `signatureGroups`, and `nearFunctionCandidates`; all are deterministic review
 evidence only and carry the same caveat as the TS/JS function clone artifact:
