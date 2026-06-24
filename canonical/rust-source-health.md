@@ -147,6 +147,9 @@ members into `AstFunctionCloneGroup`.
 orchestration; its `src/analyzer/syntax/items/function_bodies/` submodules are
 implementation details for body normalization, numeric literal canonicalization,
 call-token extraction, and local metrics.
+`src/analyzer/syntax/items/functions.rs` owns top-level function AST fact
+orchestration; its `functions/signature.rs` submodule owns exact Rust function
+signature fact normalization and hashing.
 Current review surfaces are `exactBodyGroups`, `structureGroups`,
 `signatureGroups`, and `nearFunctionCandidates`; all are deterministic review
 evidence only and carry the same caveat as the TS/JS function clone artifact:
