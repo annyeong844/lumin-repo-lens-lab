@@ -775,6 +775,11 @@ stdin compatibility mode emits no skipped-file evidence.
   `astSummary` must publish `reviewOpaqueSurfaceSampleLimit` beside the capped
   example array so the artifact shows that truncation is a projection choice,
   not an analysis cap.
+  `src/wrapper/cli/compact.rs` owns compact artifact orchestration. Its
+  `compact/` submodules are implementation details: `file.rs` projects
+  per-file compact health, `ast_summary.rs` projects per-file AST counts and
+  review opaque examples, and `function_clone_groups.rs` projects compact
+  clone-group counts and examples.
 - Output `files` keys are sorted by path.
 - `signals` are sorted by `location.byteStart`, then `kind`.
 - `parse.errors` are sorted by `location.byteStart`, then `message`.
