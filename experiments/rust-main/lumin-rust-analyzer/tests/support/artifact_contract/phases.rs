@@ -29,6 +29,7 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
         artifact["phases"]["syntax"]["summary"]["functionCloneNearCandidates"],
         0
     );
+    assert_eq!(artifact["phases"]["syntax"]["summary"]["inlinePatterns"], 3);
     assert!(artifact["phases"]["syntax"]["summary"]
         .get("signalsByKind")
         .is_none());

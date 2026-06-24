@@ -161,10 +161,10 @@ suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
 review candidates.
 The unified Rust analyzer product artifact follows the TS/JS
 `audit-summary` / `audit-review-pack` measured-cue surface by projecting the
-function body fingerprint and clone-group counts into the top-level product
-summary and the syntax phase brief. It does not embed the raw
-`functionCloneGroups` arrays; those remain owned by the Rust source-health
-artifact.
+function body fingerprint, clone-group, and inline-pattern occurrence counts
+into the top-level product summary and the syntax phase brief. It does not
+embed the raw `functionCloneGroups` arrays or raw `inlinePatterns[]` facts;
+those remain owned by the Rust source-health artifact.
 
 Canonical JSON fields:
 
