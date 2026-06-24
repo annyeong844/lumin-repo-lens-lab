@@ -1,10 +1,12 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
+
+mod entries;
 
 use super::pattern::{component_contains_glob, glob_component_matches};
 use super::workspace_member_root_is_excluded;
+use entries::{child_directories, child_entries};
 
 pub(super) fn collect_glob_member_manifests(
     root: &Path,
@@ -124,64 +126,4 @@ impl GlobMemberCollector<'_> {
         *self.matched_member_roots += 1;
         true
     }
-}
-struct ChildEntry {
-    path: PathBuf,
-    is_dir: bool,
-}
-
-impl ChildEntry {
-    fn file_name(&self) -> Option<&std::ffi::OsStr> {
-        self.path.file_name()
-    }
-
-    fn is_dir(&self) -> bool {
-        self.is_dir
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-fn child_entries(parent: &Path) -> Result<Vec<ChildEntry>> {
-    if !parent.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut children = Vec::new();
-    for entry in fs::read_dir(parent).with_context(|| {
-        format!(
-            "blocked-prewrite-dependency-manifest: failed to read workspace member directory {}",
-            parent.display()
-        )
-    })? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        children.push(ChildEntry {
-            path: entry.path(),
-            is_dir: file_type.is_dir(),
-        });
-    }
-    children.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(children)
-}
-
-fn child_directories(parent: &Path) -> Result<Vec<PathBuf>> {
-    if !parent.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut children = Vec::new();
-    for entry in fs::read_dir(parent).with_context(|| {
-        format!(
-            "blocked-prewrite-dependency-manifest: failed to read workspace member directory {}",
-            parent.display()
-        )
-    })? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            children.push(entry.path());
-        }
-    }
-    children.sort();
-    Ok(children)
 }

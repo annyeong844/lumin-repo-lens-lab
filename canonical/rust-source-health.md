@@ -508,13 +508,16 @@ Rust pre-write lookup helpers have canonical owners:
   package handling, and manifest-key-to-code-root mapping.
 - `lumin-rust-analyzer/src/prewrite/lookup/dependency/workspace.rs` owns Cargo
   workspace member expansion and `workspace.exclude` path handling. Its `glob`
-  submodules own Cargo member glob expansion only; exclude entries remain
-  literal path prefixes. Declared workspace members that Cargo cannot resolve
-  to member `Cargo.toml` files are hard-stop manifest mismatches, not empty
-  scopes. `workspace.exclude` applies to glob-expanded members before manifest
-  lookup, so excluded glob matches do not need `Cargo.toml`; an explicitly
-  listed member remains explicit Cargo input. If every matched glob member is
-  excluded, the declaration scope is empty rather than a hard-stop.
+  submodules own Cargo member glob expansion only: `glob/collect.rs` owns glob
+  traversal and manifest hard-stop decisions, `glob/collect/entries.rs` owns
+  deterministic child entry enumeration, and `glob/pattern.rs` owns Cargo-style
+  member glob component matching. Exclude entries remain literal path prefixes.
+  Declared workspace members that Cargo cannot resolve to member `Cargo.toml`
+  files are hard-stop manifest mismatches, not empty scopes.
+  `workspace.exclude` applies to glob-expanded members before manifest lookup,
+  so excluded glob matches do not need `Cargo.toml`; an explicitly listed member
+  remains explicit Cargo input. If every matched glob member is excluded, the
+  declaration scope is empty rather than a hard-stop.
 - `lumin-rust-analyzer/src/prewrite/lookup/dependency/scope.rs` and
   `lumin-rust-analyzer/src/prewrite/lookup/dependency/targets.rs` own package
   scope matching, including explicit Cargo target paths outside a member
