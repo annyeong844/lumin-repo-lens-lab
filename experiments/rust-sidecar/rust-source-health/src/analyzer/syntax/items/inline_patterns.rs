@@ -13,7 +13,7 @@ use ra_ap_syntax::{
     AstNode, SyntaxKind, SyntaxNode,
 };
 
-use normalize::normalize_statement;
+use self::normalize::normalize_statement;
 
 pub(in crate::analyzer::syntax) fn collect_inline_patterns(
     node: &SyntaxNode,
