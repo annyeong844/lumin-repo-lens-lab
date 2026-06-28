@@ -189,7 +189,10 @@ arrays: generated-only clone groups stay in raw evidence but do not increment
 the review count fields, and `nearFunctionCandidateCount` is the review-visible
 total before `nearFunctionCandidates[]` is projected to
 `nearFunctionCandidateProjectionLimit`. This cap is an artifact projection
-choice, not an analysis cap.
+choice, not an analysis cap. Rust may maintain only the projected top-N
+candidate array while streaming pair evaluation, but it must still evaluate
+eligible pairs deterministically, report the uncapped review-visible count, and
+preserve the same ordering as a full score-and-sort projection.
 The group policy must expose both body and signature normalizer provenance:
 `functionCloneGroups.policy.normalizedVersion` is the function-body normalizer,
 and `functionCloneGroups.policy.functionSignatureNormalizedVersion` is the

@@ -3,9 +3,13 @@ mod model;
 mod scoring;
 mod tokens;
 
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::protocol::{AstFunctionCloneGroup, FileHealth, RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES};
+use crate::protocol::{
+    AstFunctionCloneGroup, AstNearFunctionCandidate, FileHealth,
+    RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
+};
 
 use model::{NearFact, NearFunctionCandidateProjection};
 
@@ -46,13 +50,16 @@ pub(super) fn build_near_function_candidates(
         }
     }
 
-    let mut pair_keys = BTreeSet::<(usize, usize)>::new();
+    let mut review_visible_count = 0;
     let mut candidates = Vec::new();
-    for bucket in by_call_token.values() {
+    for (call_token, bucket) in &by_call_token {
         for (left_offset, left_index) in bucket.iter().enumerate() {
             for right_index in bucket.iter().skip(left_offset + 1) {
-                let pair_key = (*left_index, *right_index);
-                if !pair_keys.insert(pair_key) {
+                if has_earlier_shared_call_token(
+                    &eligible[*left_index].significant_call_tokens,
+                    &eligible[*right_index].significant_call_tokens,
+                    call_token,
+                ) {
                     continue;
                 }
                 if let Some(candidate) = candidate::near_candidate_from_pair(
@@ -60,28 +67,60 @@ pub(super) fn build_near_function_candidates(
                     &eligible[*right_index],
                     &token_idfs,
                 ) {
-                    candidates.push(candidate);
+                    if !candidate.generated_only {
+                        review_visible_count += 1;
+                    }
+                    push_projected_candidate(&mut candidates, candidate);
                 }
             }
         }
     }
 
-    let review_visible_count = candidates
-        .iter()
-        .filter(|candidate| !candidate.generated_only)
-        .count();
-
-    candidates.sort_by(|left, right| {
-        left.generated_only
-            .cmp(&right.generated_only)
-            .then_with(|| right.score.total_cmp(&left.score))
-            .then_with(|| left.identities.join("|").cmp(&right.identities.join("|")))
-    });
-    candidates.truncate(RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES);
     NearFunctionCandidateProjection {
         review_visible_count,
         candidates,
     }
+}
+
+fn has_earlier_shared_call_token(left: &[String], right: &[String], current_token: &str) -> bool {
+    left.iter()
+        .take_while(|token| token.as_str() < current_token)
+        .any(|token| right.binary_search(token).is_ok())
+}
+
+fn push_projected_candidate(
+    candidates: &mut Vec<AstNearFunctionCandidate>,
+    candidate: AstNearFunctionCandidate,
+) {
+    if candidates.len() < RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES {
+        candidates.push(candidate);
+        sort_projected_candidates(candidates);
+        return;
+    }
+
+    if let Some(worst) = candidates.last() {
+        if near_candidate_order(&candidate, worst) != Ordering::Less {
+            return;
+        }
+    }
+
+    candidates.pop();
+    candidates.push(candidate);
+    sort_projected_candidates(candidates);
+}
+
+fn sort_projected_candidates(candidates: &mut [AstNearFunctionCandidate]) {
+    candidates.sort_by(near_candidate_order);
+}
+
+fn near_candidate_order(
+    left: &AstNearFunctionCandidate,
+    right: &AstNearFunctionCandidate,
+) -> Ordering {
+    left.generated_only
+        .cmp(&right.generated_only)
+        .then_with(|| right.score.total_cmp(&left.score))
+        .then_with(|| left.identities.join("|").cmp(&right.identities.join("|")))
 }
 
 fn grouped_identity_set(

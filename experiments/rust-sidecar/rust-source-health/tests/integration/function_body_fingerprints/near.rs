@@ -314,6 +314,48 @@ pub fn update_user_beta(input: usize) -> usize {
 }
 
 #[test]
+fn function_body_near_candidates_count_multi_token_pairs_once() {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub fn update_user_alpha(input: usize) -> usize {
+    let value = unwrap_value(convert_usize(input));
+    if value > 10 {
+        return value + 1;
+    }
+    value + 2
+}
+
+pub fn update_user_beta(input: usize) -> usize {
+    let value = unwrap_value(convert_usize(input));
+    if value < 20 {
+        return value + 3;
+    }
+    value + 4
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 66);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 1);
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidateCount"],
+        1
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidates"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+}
+
+#[test]
 fn function_body_near_candidates_expose_shared_idf_sum_and_saturation() -> Result<()> {
     let mut source = String::new();
     for index in 0..64 {
