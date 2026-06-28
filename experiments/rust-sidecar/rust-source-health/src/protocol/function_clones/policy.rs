@@ -18,7 +18,8 @@ use crate::protocol::{
     RUST_FUNCTION_CLONE_NEAR_REQUIRED_MATCHING_QUALIFIERS,
     RUST_FUNCTION_CLONE_NEAR_STATEMENT_COUNT_WEIGHT,
     RUST_FUNCTION_CLONE_NEAR_SUPPRESSED_GENERIC_CALL_TOKENS,
-    RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC, RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS,
+    RUST_FUNCTION_CLONE_SIGNATURE_MIN_DOMAIN_IDF, RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC,
+    RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS, RUST_FUNCTION_SIGNATURE_GENERIC_TYPE_TOKENS,
     RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
 };
 
@@ -34,6 +35,8 @@ pub struct AstFunctionCloneGroupsPolicy {
     pub exact_min_statements: usize,
     pub structure_min_body_loc: usize,
     pub structure_min_statements: usize,
+    pub signature_min_domain_idf: f64,
+    pub signature_generic_type_tokens: &'static [&'static str],
     pub near_candidate_policy: AstNearFunctionCandidatePolicy,
     pub caveat: &'static str,
 }
@@ -50,6 +53,8 @@ impl Default for AstFunctionCloneGroupsPolicy {
             exact_min_statements: RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS,
             structure_min_body_loc: RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC,
             structure_min_statements: RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS,
+            signature_min_domain_idf: RUST_FUNCTION_CLONE_SIGNATURE_MIN_DOMAIN_IDF,
+            signature_generic_type_tokens: RUST_FUNCTION_SIGNATURE_GENERIC_TYPE_TOKENS,
             near_candidate_policy: AstNearFunctionCandidatePolicy::default(),
             caveat: "Function clone groups and near candidates are deterministic review evidence. They do not prove semantic equivalence, auto-reuse, auto-fix safety, or a merge recommendation.",
         }

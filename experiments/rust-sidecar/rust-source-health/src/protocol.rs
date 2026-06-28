@@ -50,12 +50,18 @@ pub const RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION: &str =
     "rust-function-signature.normalized.v1";
 pub const RUST_FUNCTION_BODY_NORMALIZED_VERSION: &str = "rust-function-body.normalized.v3";
 pub const RUST_FUNCTION_CLONE_GROUP_POLICY_ID: &str = "rust-function-clone-group-policy";
-pub const RUST_FUNCTION_CLONE_GROUP_POLICY_VERSION: &str = "rust-function-clone-group-policy.v2";
+pub const RUST_FUNCTION_CLONE_GROUP_POLICY_VERSION: &str = "rust-function-clone-group-policy.v3";
 pub const RUST_FUNCTION_CLONE_MIN_GROUP_SIZE: usize = 2;
 pub const RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC: usize = 1;
 pub const RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS: usize = 1;
 pub const RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC: usize = 3;
 pub const RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS: usize = 2;
+pub const RUST_FUNCTION_CLONE_SIGNATURE_MIN_DOMAIN_IDF: f64 = 2.0;
+pub const RUST_FUNCTION_SIGNATURE_GENERIC_TYPE_TOKENS: &[&str] = &[
+    "alloc", "anyhow", "bool", "Box", "char", "core", "dyn", "f32", "f64", "i8", "i16", "i32",
+    "i64", "i128", "impl", "io", "isize", "mut", "Option", "ref", "Result", "self", "Self",
+    "static", "std", "str", "String", "u8", "u16", "u32", "u64", "u128", "usize", "Vec",
+];
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_ID: &str = "function-clone-near-policy";
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_VERSION: &str = "function-clone-near-policy-v1";
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_CLASS: &str = "review";

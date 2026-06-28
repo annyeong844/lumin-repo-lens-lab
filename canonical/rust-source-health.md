@@ -163,7 +163,16 @@ implicit unit-return functions, but `fn foo()` / `fn bar()` style facts must not
 be promoted into review-visible signature groups; this mirrors the TS/JS
 signature producer, which refuses function signatures without explicit return
 type evidence instead of filling review surfaces with broad `fn()`/`() => void`
-noise. The checked thresholds mirror TS/JS
+noise. Rust adds a deterministic signature-domain IDF gate before promoting
+signature groups into review-visible evidence: `signatureDomainIdfSum` is the
+sum of repository-local IDF values for non-generic type tokens in the normalized
+signature, and groups below `signatureMinDomainIdf = 2.0` are serialized as raw
+evidence with `risk = "muted"` and `reviewVisible = false`. This keeps broad
+generic signatures such as `fn(&self) -> bool` and `fn() -> String` out of
+review counts while preserving domain signatures such as
+`fn(&self, FlagValue, &mut LowArgs) -> anyhow::Result<()>`. Raw
+`signatureGroups[]` must retain muted groups so consumers can audit the
+demotion. The checked thresholds mirror TS/JS
 `function-clone-near-policy`: exact groups use `minBodyLoc = 1`,
 `minStatements = 1`, and `minGroupSize = 2`; structure groups use
 `minBodyLocForGrouping = 3`, `minStatementsForGrouping = 2`, and
@@ -186,7 +195,9 @@ The group policy must expose both body and signature normalizer provenance:
 and `functionCloneGroups.policy.functionSignatureNormalizedVersion` is the
 function-signature normalizer. Compact artifacts may omit raw
 `files[*].ast.functionSignatures[]`, so signature group hashes must carry their
-normalizer version on the group surface.
+normalizer version on the group surface. The group policy also exposes
+`signatureMinDomainIdf` and `signatureGenericTypeTokens`, because signature
+review visibility depends on repository-local domain type-token evidence.
 Rust near candidates use the TS/JS policy but calibrate generic call-token
 suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
 `collect`, plus ubiquitous Rust constructor, macro, and method tokens such as

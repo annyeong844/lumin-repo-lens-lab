@@ -30,6 +30,8 @@ pub struct AstFunctionSignatureGroup {
     pub size: usize,
     pub risk: FunctionCloneRisk,
     pub generated_only: bool,
+    pub review_visible: bool,
+    pub signature_domain_idf_sum: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
     pub identities: Vec<String>,
@@ -93,5 +95,6 @@ pub enum AstNearFunctionCandidateKind {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FunctionCloneRisk {
+    Muted,
     ReviewOnly,
 }

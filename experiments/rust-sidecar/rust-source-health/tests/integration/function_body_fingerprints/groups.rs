@@ -42,7 +42,7 @@ pub fn structure_b(value: &str) -> usize {
     assert_eq!(artifact["summary"]["functionBodyFingerprints"], 4);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 1);
     assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 2);
-    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 2);
+    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 0);
     assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
 
     let groups = &artifact["functionCloneGroups"];
@@ -101,7 +101,7 @@ pub fn structure_b(value: &str) -> usize {
         .as_str()
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
 
-    assert_eq!(groups["signatureGroupCount"], 2);
+    assert_eq!(groups["signatureGroupCount"], 0);
     let signature_groups = groups["signatureGroups"]
         .as_array()
         .context("signature clone groups")?;
@@ -112,14 +112,16 @@ pub fn structure_b(value: &str) -> usize {
         signature["normalizedVersion"],
         "rust-function-signature.normalized.v1"
     );
-    assert_eq!(signature["risk"], "review-only");
+    assert_eq!(signature["risk"], "muted");
     assert_eq!(signature["generatedOnly"], false);
+    assert_eq!(signature["reviewVisible"], false);
+    assert_eq!(signature["signatureDomainIdfSum"], 0.0);
     assert_eq!(signature["signature"], "fn() -> usize");
     assert!(identity_list_contains(signature, "src/a.rs::exact_a"));
     assert!(identity_list_contains(signature, "src/b.rs::exact_b"));
     assert!(signature["reason"]
         .as_str()
-        .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
+        .is_some_and(|reason| reason.contains("raw evidence only")));
 
     Ok(())
 }
@@ -231,6 +233,128 @@ pub fn second() {
             .map(Vec::len),
         Some(0)
     );
+
+    Ok(())
+}
+
+#[test]
+fn signature_groups_demote_generic_bool_method_groups() -> Result<()> {
+    let artifact = stdout_json(run_sidecar(request(vec![file(
+        "src/generic.rs",
+        r#"
+pub struct Flags;
+
+impl Flags {
+    pub fn is_ready(&self) -> bool {
+        true
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        false
+    }
+}
+"#,
+    )])));
+
+    assert_eq!(artifact["summary"]["functionSignatures"], 2);
+    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 0);
+
+    let signature_groups = artifact["functionCloneGroups"]["signatureGroups"]
+        .as_array()
+        .context("signature groups")?;
+    assert_eq!(signature_groups.len(), 1);
+    let group = &signature_groups[0];
+    assert_eq!(group["signature"], "fn(&self) -> bool");
+    assert_eq!(group["risk"], "muted");
+    assert_eq!(group["reviewVisible"], false);
+    assert_eq!(group["signatureDomainIdfSum"], 0.0);
+    assert!(group["reason"]
+        .as_str()
+        .is_some_and(|reason| reason.contains("raw evidence only")));
+
+    Ok(())
+}
+
+#[test]
+fn signature_groups_keep_domain_type_signatures_review_visible() -> Result<()> {
+    let mut source = String::from(
+        r#"
+pub struct CustomType;
+
+pub fn domain_alpha(value: CustomType) -> CustomType {
+    value
+}
+
+pub fn domain_beta(value: CustomType) -> CustomType {
+    value
+}
+"#,
+    );
+    for index in 0..32 {
+        source.push_str(&format!("pub fn generic_{index}() -> bool {{ true }}\n"));
+    }
+
+    let artifact = stdout_json(run_sidecar(request(vec![file("src/domain.rs", &source)])));
+
+    assert_eq!(artifact["summary"]["functionSignatures"], 34);
+    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 1);
+    assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 1);
+
+    let signature_groups = artifact["functionCloneGroups"]["signatureGroups"]
+        .as_array()
+        .context("signature groups")?;
+    let group = group_with_identity(signature_groups, "src/domain.rs::domain_alpha")
+        .context("domain signature group")?;
+    assert_eq!(group["signature"], "fn(CustomType) -> CustomType");
+    assert_eq!(group["risk"], "review-only");
+    assert_eq!(group["reviewVisible"], true);
+    assert!(group["signatureDomainIdfSum"]
+        .as_f64()
+        .is_some_and(|idf| idf >= 2.0));
+    assert!(group["reason"]
+        .as_str()
+        .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
+
+    Ok(())
+}
+
+#[test]
+fn signature_groups_demote_domain_type_signatures_below_idf_threshold() -> Result<()> {
+    let artifact = stdout_json(run_sidecar(request(vec![file(
+        "src/edge.rs",
+        r#"
+pub struct EdgeType;
+
+pub fn edge_alpha(value: EdgeType) -> EdgeType {
+    value
+}
+
+pub fn edge_beta(value: EdgeType) -> EdgeType {
+    value
+}
+
+pub fn generic() -> bool {
+    true
+}
+"#,
+    )])));
+
+    assert_eq!(artifact["summary"]["functionSignatures"], 3);
+    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 0);
+
+    let signature_groups = artifact["functionCloneGroups"]["signatureGroups"]
+        .as_array()
+        .context("signature groups")?;
+    let group = group_with_identity(signature_groups, "src/edge.rs::edge_alpha")
+        .context("edge signature group")?;
+    assert_eq!(group["signature"], "fn(EdgeType) -> EdgeType");
+    assert_eq!(group["risk"], "muted");
+    assert_eq!(group["reviewVisible"], false);
+    assert!(group["signatureDomainIdfSum"]
+        .as_f64()
+        .is_some_and(|idf| idf > 0.0 && idf < 2.0));
 
     Ok(())
 }
