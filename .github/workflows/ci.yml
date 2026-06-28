@@ -1,37 +1,96 @@
-name: Public Package CI
+name: CI
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+  push:
+    branches: [main, master]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
-  package-smoke:
-    name: Package Smoke (Node ${{ matrix.node }})
+  changes:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    name: Detect changed surfaces
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['20.x', '22.x']
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-          cache-dependency-path: skills/lumin-repo-lens-lab/package-lock.json
-      - name: Install packaged skill dependencies
-        working-directory: skills/lumin-repo-lens-lab
-        run: npm ci
-      - name: Smoke packaged audit CLI
-        working-directory: skills/lumin-repo-lens-lab
-        run: npm run smoke
-      - name: Verify packaged CLI help
-        run: node skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --help
-      - name: Smoke packaged hook runners
+          fetch-depth: 0
+      - id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          printf '{ bad json' | node hooks/pre-tool-use.mjs
-          node -e "process.stdout.write(JSON.stringify({cwd: process.cwd(), session_id: 'sid_public_smoke', tool_name: 'Read', tool_input: {}}))" | node hooks/pre-tool-use.mjs
-          node -e "process.stdout.write(JSON.stringify({cwd: process.cwd(), session_id: 'sid_public_smoke', tool_calls: []}))" | node hooks/post-tool-batch.mjs
-          node -e "process.stdout.write(JSON.stringify({cwd: process.cwd(), session_id: 'sid_public_smoke', last_assistant_message: ''}))" | node hooks/stop.mjs
-          node -e "process.stdout.write(JSON.stringify({cwd: process.cwd(), session_id: 'sid_public_smoke'}))" | node hooks/user-prompt-submit.mjs
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base="$PR_BASE_SHA"
+            head="$PR_HEAD_SHA"
+          else
+            base="$BEFORE_SHA"
+            head="$HEAD_SHA"
+          fi
+
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            base="$(git rev-parse "${head}^" 2>/dev/null || true)"
+          fi
+
+          if [[ -z "$base" ]]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git diff --name-only "$base" "$head" > changed-files.txt
+
+          rust=false
+
+          if [[ ! -s changed-files.txt ]]; then
+            rust=true
+          fi
+
+          while IFS= read -r file; do
+            case "$file" in
+              .github/workflows/ci.yml)
+                rust=true
+                ;;
+              experiments/Cargo.toml|experiments/Cargo.lock|experiments/.cargo/*|experiments/rust-common/*|experiments/rust-main/*|experiments/rust-sidecar/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
+                rust=true
+                ;;
+            esac
+          done < changed-files.txt
+
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+
+  rust:
+    needs: changes
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && needs.changes.outputs.rust == 'true' }}
+    name: Test (Rust)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Check Rust formatting
+        working-directory: experiments
+        run: cargo lumin-fmt
+      - name: Lint unified Rust analyzer
+        working-directory: experiments
+        run: cargo lumin-clippy
+      - name: Test unified Rust analyzer
+        working-directory: experiments
+        run: cargo lumin-test

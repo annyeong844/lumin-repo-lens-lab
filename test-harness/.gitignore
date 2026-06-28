@@ -1,0 +1,5 @@
+# Verifier scratch / synthetic logs
+_test/
+# Live test output (paths are absolute under /tmp by default, but in case of redirection)
+runs/
+*.stream.json

@@ -1,5 +1,5 @@
 {
-  "name": "annyeong844-lumin-lab-marketplace",
+  "name": "annyeong844-marketplace",
   "owner": {
     "name": "annyeong844"
   },
@@ -11,7 +11,7 @@
     {
       "name": "lumin-repo-lens-lab",
       "source": "./",
-      "description": "Lumin Repo Lens Lab: isolated performance and Rust sidecar experiments."
+      "description": "Lumin Repo Lens Lab: repo structure lens for isolated performance and Rust sidecar experiments."
     }
   ]
 }

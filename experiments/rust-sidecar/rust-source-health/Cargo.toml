@@ -1,0 +1,25 @@
+[package]
+name = "lumin-rust-source-health"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lumin-rust-source-health"
+path = "src/main.rs"
+test = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+lumin-rust-common = { workspace = true, features = ["hash", "json"] }
+ra_ap_syntax = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+time = { workspace = true, features = ["formatting"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

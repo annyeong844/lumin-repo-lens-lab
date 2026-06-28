@@ -1,0 +1,24 @@
+[package]
+name = "lumin-rust-cargo-oracle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lumin-rust-cargo-oracle"
+path = "src/main.rs"
+test = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+lumin-rust-common = { workspace = true, features = ["hash", "json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+time = { workspace = true, features = ["formatting"] }
+toml = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

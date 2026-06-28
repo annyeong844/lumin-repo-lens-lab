@@ -1,0 +1,2 @@
+    Checking macro-expansion-error v0.1.0 (C:\Users\endof\Downloads\lumin-perf-lab\review\m7-cargo-json-diagnostic-capture-v2-20260617-024134\fixtures\macro-expansion-error)
+error: could not compile `macro-expansion-error` (lib) due to 1 previous error

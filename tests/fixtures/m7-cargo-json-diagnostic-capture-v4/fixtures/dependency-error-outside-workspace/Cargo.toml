@@ -1,0 +1,7 @@
+[package]
+name = "dependency-error-outside-workspace"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bad_dep = { path = "bad_dep" }

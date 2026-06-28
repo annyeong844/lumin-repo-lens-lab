@@ -34,7 +34,7 @@ Real evidence from your actual repo, not guesses.
 
 ```
 /plugin marketplace add annyeong844/lumin-repo-lens-lab
-/plugin install lumin-repo-lens-lab@annyeong844-lumin-lab-marketplace
+/plugin install lumin-repo-lens-lab@annyeong844-marketplace
 /reload-plugins
 ```
 

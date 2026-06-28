@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "lumin-behavior-corpus.v1",
+  "description": "Saved-answer fixtures for offline behavior checks. This corpus does not call a model.",
+  "cases": [
+    {
+      "id": "plain-answer-keeps-cold-words-behind-the-answer",
+      "answer": "answers/plain-answer-good.md",
+      "forbidJargon": true,
+      "maxNonEmptyLines": 14,
+      "mustMatch": [
+        "4-file cycle",
+        "scan range",
+        "next step"
+      ]
+    },
+    {
+      "id": "plain-answer-jargon-leak-regression",
+      "answer": "answers/plain-answer-jargon-leak.md",
+      "expectPass": false,
+      "forbidJargon": true
+    },
+    {
+      "id": "review-only-dead-export-stays-caveated",
+      "answer": "answers/review-only-dead-export-good.md",
+      "forbidJargon": true,
+      "mustMatch": [
+        "candidate",
+        "confirm|check"
+      ],
+      "mustNotMatch": [
+        "\\bdefinitely dead\\b",
+        "\\bauto(?:matically)? delete\\b",
+        "\\bsafe to remove\\b"
+      ]
+    },
+    {
+      "id": "review-only-dead-export-overclaim-regression",
+      "answer": "answers/review-only-dead-export-overclaim.md",
+      "expectPass": false,
+      "forbidJargon": true,
+      "mustNotMatch": [
+        "\\bdefinitely dead\\b",
+        "\\bauto(?:matically)? delete\\b",
+        "\\bsafe to remove\\b"
+      ]
+    },
+    {
+      "id": "summary-order-is-not-final-answer-authority",
+      "answer": "answers/summary-order-inheritance-bad.md",
+      "expectPass": false,
+      "forbidJargon": true,
+      "mustNotMatch": [
+        "audit-summary\\.latest\\.md says",
+        "Worth Smoothing Next #?1"
+      ]
+    },
+    {
+      "id": "cycle-claim-read-trace-covers-topology",
+      "answer": "answers/cycle-claim-trace-good.md",
+      "trace": "traces/cycle-claim-trace-good.txt",
+      "forbidJargon": true,
+      "mustMatch": [
+        "4-file cycle",
+        "scan range"
+      ],
+      "mustReadArtifacts": [
+        "manifest.json",
+        "topology.json"
+      ]
+    },
+    {
+      "id": "cycle-claim-missing-topology-read-regression",
+      "answer": "answers/cycle-claim-trace-missing-topology.md",
+      "trace": "traces/cycle-claim-trace-missing-topology.txt",
+      "expectPass": false,
+      "forbidJargon": true,
+      "mustMatch": [
+        "4-file cycle"
+      ],
+      "mustReadArtifacts": [
+        "topology.json"
+      ]
+    },
+    {
+      "id": "dead-export-claim-read-trace-covers-fix-plan",
+      "answer": "answers/dead-export-trace-good.md",
+      "trace": "traces/dead-export-trace-good.txt",
+      "forbidJargon": true,
+      "mustMatch": [
+        "review-only export candidate",
+        "confirm"
+      ],
+      "mustNotMatch": [
+        "\\bdefinitely dead\\b",
+        "\\bauto(?:matically)? delete\\b",
+        "\\bsafe to remove\\b"
+      ],
+      "mustReadArtifacts": [
+        "fix-plan.json",
+        "dead-classify.json"
+      ]
+    },
+    {
+      "id": "dead-export-claim-missing-fix-plan-read-regression",
+      "answer": "answers/dead-export-trace-missing-fix-plan.md",
+      "trace": "traces/dead-export-trace-missing-fix-plan.txt",
+      "expectPass": false,
+      "forbidJargon": true,
+      "mustMatch": [
+        "review-only export candidate"
+      ],
+      "mustReadArtifacts": [
+        "fix-plan.json"
+      ]
+    },
+    {
+      "id": "any-contamination-claim-read-trace-covers-symbols",
+      "answer": "answers/any-contamination-trace-good.md",
+      "trace": "traces/any-contamination-trace-good.txt",
+      "forbidJargon": true,
+      "mustMatch": [
+        "reuse needs caution",
+        "measurement is concrete"
+      ],
+      "mustReadArtifacts": [
+        "symbols.json"
+      ]
+    },
+    {
+      "id": "any-contamination-claim-missing-symbols-read-regression",
+      "answer": "answers/any-contamination-trace-missing-symbols.md",
+      "trace": "traces/any-contamination-trace-missing-symbols.txt",
+      "expectPass": false,
+      "forbidJargon": true,
+      "mustMatch": [
+        "reuse needs caution"
+      ],
+      "mustReadArtifacts": [
+        "symbols.json"
+      ]
+    }
+  ]
+}

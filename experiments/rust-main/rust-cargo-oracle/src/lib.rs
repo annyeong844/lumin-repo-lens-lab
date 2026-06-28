@@ -1,0 +1,30 @@
+mod artifact;
+mod cargo_json;
+mod classify;
+mod command;
+mod config;
+mod driver;
+mod environment;
+mod input_hash;
+mod metadata;
+mod options;
+mod oracle_plan;
+mod ownership;
+mod path_util;
+pub mod protocol;
+mod rustc_diagnostic;
+mod rustc_span;
+mod scope;
+mod target_selection;
+mod toolchain;
+mod util;
+
+pub use driver::run_oracle;
+pub(crate) use lumin_rust_common::usage_error;
+pub use options::{parse_args, OracleOptions};
+pub use protocol::{CargoCheckMode, CargoTargetDirMode};
+
+pub const SEMANTIC_HEALTH_SCHEMA_VERSION: &str = "semantic-health.v1";
+pub const EVIDENCE_POLICY_VERSION: &str = "evidence-ladder.v1";
+pub const ORACLE_REGISTRY_VERSION: &str = "oracle-registry.v1";
+pub const DIAGNOSTIC_POLICY_VERSION: &str = "m7-cargo-diagnostic-classifier.v1";

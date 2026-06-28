@@ -1,0 +1,160 @@
+[
+  {
+    "name": "borrow-error-e0502",
+    "fixture": "borrow-error-e0502",
+    "path": "fixtures/borrow-error-e0502",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "borrow-error-e0502.stdout.jsonl",
+    "stderr": "borrow-error-e0502.stderr.txt"
+  },
+  {
+    "name": "build-script-failure",
+    "fixture": "build-script-failure",
+    "path": "fixtures/build-script-failure",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "build-script-failure.stdout.jsonl",
+    "stderr": "build-script-failure.stderr.txt"
+  },
+  {
+    "name": "compile-error-codeless",
+    "fixture": "compile-error-codeless",
+    "path": "fixtures/compile-error-codeless",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "compile-error-codeless.stdout.jsonl",
+    "stderr": "compile-error-codeless.stderr.txt"
+  },
+  {
+    "name": "deny-lint-error",
+    "fixture": "deny-lint-error",
+    "path": "fixtures/deny-lint-error",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "deny-lint-error.stdout.jsonl",
+    "stderr": "deny-lint-error.stderr.txt"
+  },
+  {
+    "name": "dependency-error-outside-workspace",
+    "fixture": "dependency-error-outside-workspace",
+    "path": "fixtures/dependency-error-outside-workspace",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "dependency-error-outside-workspace.stdout.jsonl",
+    "stderr": "dependency-error-outside-workspace.stderr.txt"
+  },
+  {
+    "name": "feature-gated-error-default",
+    "fixture": "feature-gated-error",
+    "path": "fixtures/feature-gated-error",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 0,
+    "stdout": "feature-gated-error-default.stdout.jsonl",
+    "stderr": "feature-gated-error-default.stderr.txt"
+  },
+  {
+    "name": "feature-gated-error-features-bad",
+    "fixture": "feature-gated-error",
+    "path": "fixtures/feature-gated-error",
+    "cargoArgs": [
+      "check",
+      "--message-format=json",
+      "--features",
+      "bad"
+    ],
+    "exitCode": 101,
+    "stdout": "feature-gated-error-features-bad.stdout.jsonl",
+    "stderr": "feature-gated-error-features-bad.stderr.txt"
+  },
+  {
+    "name": "macro-expansion-error",
+    "fixture": "macro-expansion-error",
+    "path": "fixtures/macro-expansion-error",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "macro-expansion-error.stdout.jsonl",
+    "stderr": "macro-expansion-error.stderr.txt"
+  },
+  {
+    "name": "name-resolution-e0425",
+    "fixture": "name-resolution-e0425",
+    "path": "fixtures/name-resolution-e0425",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "name-resolution-e0425.stdout.jsonl",
+    "stderr": "name-resolution-e0425.stderr.txt"
+  },
+  {
+    "name": "parse-error-codeless",
+    "fixture": "parse-error-codeless",
+    "path": "fixtures/parse-error-codeless",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "parse-error-codeless.stdout.jsonl",
+    "stderr": "parse-error-codeless.stderr.txt"
+  },
+  {
+    "name": "success-clean",
+    "fixture": "success-clean",
+    "path": "fixtures/success-clean",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 0,
+    "stdout": "success-clean.stdout.jsonl",
+    "stderr": "success-clean.stderr.txt"
+  },
+  {
+    "name": "type-error-e0308",
+    "fixture": "type-error-e0308",
+    "path": "fixtures/type-error-e0308",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 101,
+    "stdout": "type-error-e0308.stdout.jsonl",
+    "stderr": "type-error-e0308.stderr.txt"
+  },
+  {
+    "name": "warning-only",
+    "fixture": "warning-only",
+    "path": "fixtures/warning-only",
+    "cargoArgs": [
+      "check",
+      "--message-format=json"
+    ],
+    "exitCode": 0,
+    "stdout": "warning-only.stdout.jsonl",
+    "stderr": "warning-only.stderr.txt"
+  }
+]

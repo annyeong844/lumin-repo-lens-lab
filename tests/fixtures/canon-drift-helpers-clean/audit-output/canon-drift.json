@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "tool": "check-canon.mjs",
+    "generated": "2026-04-21T16:47:38.536Z",
+    "root": "<repo>\\tests\\fixtures\\canon-drift-helpers-clean",
+    "canonDir": "<repo>\\tests\\fixtures\\canon-drift-helpers-clean\\canonical",
+    "scope": "fresh-ast",
+    "strict": false
+  },
+  "summary": {
+    "sourcesRequested": 1,
+    "sourcesChecked": 1,
+    "sourcesSkipped": 0,
+    "driftCount": 0
+  },
+  "perSource": {
+    "helper-registry": {
+      "status": "clean",
+      "driftCount": 0,
+      "diagnostics": [
+        {
+          "kind": "helper-contamination-enrichment-unavailable",
+          "reason": "symbols.helperOwnersByIdentity absent — fresh-side contamination detection disabled; contamination transitions downgrade to label-changed"
+        }
+      ],
+      "reportPath": "<repo>\\tests\\fixtures\\canon-drift-helpers-clean\\audit-output\\canon-drift.helper-registry.md"
+    }
+  },
+  "drifts": []
+}

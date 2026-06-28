@@ -1,0 +1,1 @@
+`createViewModel` is a cleanup candidate because the scan only found file-local use. Before changing it, confirm it is not part of the intended public surface, then demote the export and rerun the audit.

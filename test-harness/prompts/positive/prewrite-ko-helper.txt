@@ -1,0 +1,1 @@
+test-harness/fixtures/tiny-ts-repo 에다가 ISO 날짜를 yyyy-MM-dd 로 포매팅하는 helper 함수 추가해줘.

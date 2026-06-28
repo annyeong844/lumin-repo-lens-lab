@@ -1,0 +1,1 @@
+test-harness/fixtures/tiny-ts-repo 리뷰 체크리스트로 한 번 봐줘.

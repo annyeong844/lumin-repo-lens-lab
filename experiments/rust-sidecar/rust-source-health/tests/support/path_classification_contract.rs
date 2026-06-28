@@ -1,0 +1,83 @@
+use crate::cli::{run_sidecar, stdout_json};
+use crate::request::{file, request};
+use serde_json::json;
+
+pub fn assert_source_paths_with_policy_words_stay_source() {
+    let artifact = stdout_json(run_sidecar(request(vec![
+        file("src/notgenerated.rs", "fn source() {}"),
+        file("src/contest.rs", "fn contest() {}"),
+        file(
+            "src/generated_at_marker.rs",
+            "// maintained by @generated_at tooling\nfn source() {}",
+        ),
+        file(
+            "src/auto_generated_at_marker.rs",
+            "// auto-generated_at is not a generated-file marker\nfn source() {}",
+        ),
+    ])));
+
+    for path in [
+        "src/notgenerated.rs",
+        "src/contest.rs",
+        "src/generated_at_marker.rs",
+        "src/auto_generated_at_marker.rs",
+    ] {
+        assert_eq!(
+            artifact["files"][path]["path"]["classifications"],
+            json!(["source"])
+        );
+    }
+}
+
+pub fn assert_generated_paths_do_not_use_substring_matching() {
+    let artifact = stdout_json(run_sidecar(request(vec![
+        file("generated/bindings.rs", "fn generated_segment() {}"),
+        file("__generated__/bindings.rs", "fn generated_dunder() {}"),
+        file("src/bindings.gen.rs", "fn generated_suffix() {}"),
+        file("src/model.generated.rs", "fn generated_word_suffix() {}"),
+        file(
+            "src/header_marker.rs",
+            "// @generated\nfn generated_header() {}",
+        ),
+    ])));
+
+    for path in [
+        "generated/bindings.rs",
+        "__generated__/bindings.rs",
+        "src/bindings.gen.rs",
+        "src/model.generated.rs",
+        "src/header_marker.rs",
+    ] {
+        assert_eq!(
+            artifact["files"][path]["path"]["classifications"],
+            json!(["generated"])
+        );
+    }
+}
+
+pub fn assert_test_like_paths_are_classified_as_test() {
+    let artifact = stdout_json(run_sidecar(request(vec![
+        file("tests/integration.rs", "fn integration() {}"),
+        file("src/migrate/tests.rs", "fn module_tests() {}"),
+        file("src/migrate/client_tests.rs", "fn client_tests() {}"),
+        file("fixtures/sample.rs", "fn fixture() {}"),
+        file("src/__mocks__/client.rs", "fn mock_client() {}"),
+        file("examples/demo.rs", "fn example() {}"),
+        file("benches/walk.rs", "fn bench() {}"),
+    ])));
+
+    for path in [
+        "tests/integration.rs",
+        "src/migrate/tests.rs",
+        "src/migrate/client_tests.rs",
+        "fixtures/sample.rs",
+        "src/__mocks__/client.rs",
+        "examples/demo.rs",
+        "benches/walk.rs",
+    ] {
+        assert_eq!(
+            artifact["files"][path]["path"]["classifications"],
+            json!(["test"])
+        );
+    }
+}

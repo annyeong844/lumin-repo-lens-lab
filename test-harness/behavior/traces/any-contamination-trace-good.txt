@@ -1,0 +1,2 @@
+read manifest.json
+read symbols.json

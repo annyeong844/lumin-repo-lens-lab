@@ -1,11 +1,11 @@
 {
   "name": "lumin-repo-lens-lab",
   "version": "0.0.0-lab.0",
-  "description": "Lumin Repo Lens Lab: isolated performance and Rust sidecar experiments.",
+  "description": "Lumin Repo Lens Lab: repo structure lens for isolated performance and Rust sidecar experiments.",
   "author": {
     "name": "annyeong844"
   },
-  "repository": "https://github.com/annyeong844/lumin_lab",
+  "repository": "https://github.com/annyeong844/lumin-repo-lens-lab",
   "license": "MIT",
   "keywords": [
     "repo-lens",

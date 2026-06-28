@@ -1,0 +1,194 @@
+canonical/rust-debt.txt
+
+Role: Rust debt checklist for this repository.
+Owner: this file.
+Status: M6 support canon.
+Last updated: 2026-06-16
+
+Read this before Rust, Rayon, sidecar, or rust-source-health work.
+
+The point is not to ban Rust features. The point is to stop convenient local
+choices from hardening into a codebase nobody wants to touch at 2am.
+
+1. Unjustified clone debt
+
+The worst Rust debt is a clone that hides an ownership design problem.
+
+Allowed:
+- cheap enum/string-kind clone where cost and intent are obvious
+- Arc clone when shared ownership is the explicit design
+- owned data crossing a thread boundary
+- final artifact materialization
+
+Debt:
+- clone because the borrow checker was annoying
+- clone of file text, AST, Vec, map, or graph state during analysis
+- clone before measuring whether ownership is actually needed
+- repeated to_string/to_owned just to avoid lifetime design
+
+Rule: every new non-trivial clone must have an obvious structural reason. If
+the reason is not visible from the surrounding code, review rejects it.
+
+2. Owned API debt
+
+APIs that take or return owned String, Vec, HashMap, or full structs too early
+force callers to allocate and clone forever.
+
+Prefer borrowed input for analysis helpers. Own data at boundaries: stdin
+request, thread jobs, and final JSON artifact.
+
+3. Thread boundary confusion
+
+Rayon work should own small per-file jobs and return project-owned file results.
+Do not move shared ASTs, parser internals, or mutable global state through worker
+closures.
+
+4. Global pool debt
+
+Do not use Rayon build_global for this track. Use a local pool with explicit
+thread count and worker stack policy.
+
+5. Arc<Mutex<T>> as duct tape
+
+Arc<Mutex<T>> is not a design. Use it only when shared mutable state is the
+actual model. If it appears in analysis code, assume it is guilty until proven
+otherwise.
+
+6. Third-party type leakage
+
+ra_ap_syntax is an implementation detail. Protocol structs, JSON artifacts, JS
+validators, and public module exports must use project-owned types.
+
+Debt:
+- pub use ra_ap_syntax from a public module
+- protocol fields typed as parser nodes, tokens, ranges, syntax kinds, or errors
+- JSON fields named after third-party crate internals
+
+7. Shape clone debt
+
+Signal, ParseError, Location, Summary, runtime metadata, and final artifact
+metadata have canonical owners. Do not hand-build them in random modules.
+
+Use:
+- review_signal
+- syntax_parse_error
+- LineIndex::location
+- summarize
+- analyze_request
+- wrapper::run_cli
+
+8. String vocabulary drift
+
+Kinds, reasons, modes, claims, and statuses are APIs. Do not invent near-miss
+strings.
+
+Debt:
+- unwrapCall vs unwrap-call
+- syntaxOnly vs syntax-only
+- invalidUtf8 vs invalid-utf8
+- blocked_invalid_json vs blocked-invalid-json
+
+9. Error swallowing
+
+Lab Rust tools should fail loudly when a hard contract fails. Silent fallback is
+debugging debt.
+
+Allowed data-level findings:
+- parse error in a Rust file
+- invalid UTF-8 recorded as skipped-file when that is the documented wrapper
+  behavior
+
+Hard failures:
+- invalid sidecar stdout
+- unsupported request schema
+- missing or invalid sidecar binary
+- timeout
+- non-zero sidecar exit
+- final artifact invariant failure
+
+10. Filesystem surface creep
+
+The wrapper owns walking, path policy, hashing, UTF-8 decode, skipped files, and
+artifact writes. The sidecar reads stdin JSON and writes stdout JSON.
+
+Debt:
+- sidecar walks the repo
+- sidecar accepts output paths
+- sidecar follows symlinks
+- path policy duplicated in Rust and JS
+
+11. Nondeterministic artifact debt
+
+HashMap iteration order, worker completion order, and filesystem order must not
+leak into artifacts.
+
+Required:
+- BTreeMap or explicit sort for file keys
+- signals sorted by byteStart, then kind
+- parse errors sorted by byteStart, then message
+- skipped files sorted by path
+
+12. Weak provenance
+
+Evidence without provenance rots.
+
+Record:
+- schemaVersion
+- policy version and thresholds
+- parser kind/version/edition policy
+- sidecar source commit
+- sidecar binary sha256
+- runtime thread count and worker stack bytes
+- file sha256
+
+13. God module debt
+
+main.rs should not become the place where parsing, signal construction, summary,
+parallelism, and IO all meet.
+
+Canonical split:
+- protocol.rs owns shapes
+- locations.rs owns locations
+- signals.rs owns signal/error construction
+- summary.rs owns summary
+- parallel.rs owns Rayon runtime
+- analyzer.rs owns syntax traversal
+- main.rs owns stdin/stdout and exit behavior
+
+14. Syntax vs semantic claim collapse
+
+M6 syntax health does not prove type, trait, borrow-check, macro expansion, or
+runtime behavior.
+
+Debt:
+- clone-call means expensive clone
+- unwrap-call means panic-capable receiver
+- unsafe means unsound
+- macro-call means expanded behavior known
+
+Say what was observed: syntax only.
+
+15. Panic-path laziness
+
+unwrap and expect inside tool infrastructure are debt unless they sit in tests
+or process startup code where failure should abort with a clear message.
+
+Analysis paths return structured errors or findings. They do not panic because a
+fixture was inconvenient.
+
+16. Stack and recursion debt
+
+Large syntax trees need explicit stack policy. Worker stack size is part of the
+runtime contract, not an implementation accident.
+
+17. "Small helper for now" debt
+
+Small local helpers become permanent. Before adding one, check
+canonical/rust-source-health.md. If the concept is new, add the canonical owner
+there first.
+
+Review rule:
+
+If a Rust change introduces clone-heavy code, a new helper family, a public
+third-party type leak, a global Rayon pool, silent fallback, or nondeterministic
+artifact ordering, stop and redesign before implementation continues.
