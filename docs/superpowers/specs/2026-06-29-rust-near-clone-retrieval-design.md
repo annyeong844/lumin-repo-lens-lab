@@ -84,7 +84,8 @@ stronger grouping lanes.
 
 Build small, explicit indexes from eligible facts:
 
-- call-token index: token -> function indexes
+- call-token retrieval postings:
+  token -> compatibility key -> function indexes
 - name-token index: token -> function indexes
 - body-size band index
 - statement-count band index
@@ -92,6 +93,19 @@ Build small, explicit indexes from eligible facts:
 The first implementation should only make call-token buckets bounded, because
 that is where the measured blow-up occurs. Name and size indexes can remain
 supporting filters until the call-token retrieval model is stable.
+
+The call-token retrieval posting key must include deterministic compatibility
+dimensions that can be checked before pair enumeration:
+
+- qualifier signature: async/unsafe/const
+- parameter-count band
+- body LOC band
+- statement-count band
+
+Pair loops operate only inside compatible postings or explicitly allowed
+adjacent bands. This keeps "cheap guards" out of the post-pair filter path. The
+retrieval model should avoid opening a full retained token bucket and then
+rejecting most of its `O(k^2)` pairs.
 
 ### 4. Low-Discrimination Bucket Exclusion
 
@@ -110,20 +124,27 @@ generation, where it belongs.
 
 ### 5. Candidate Generation
 
-For every retained bucket:
+For every retained call-token compatibility posting:
 
-1. iterate deterministic function pairs
-2. skip a pair if an earlier retained shared token already generated it
-3. apply cheap pre-score guards:
-   - matching async/unsafe/const qualifiers
-   - parameter count delta
-   - body LOC similarity band
-   - statement-count similarity band
-4. score the candidate with existing near-candidate scoring
+1. iterate deterministic function pairs inside compatible postings only
+2. skip a pair unless this token is the earliest retained shared call token for
+   that pair
+3. score the candidate with existing near-candidate scoring
 
 The pair dedupe must not use an unbounded `Set` of all pair keys. Dedupe should
 be derived from deterministic token order and each pair's shared retained
 tokens.
+
+Pair dedupe invariant:
+
+```text
+generator_token == min(shared_retained_call_tokens(left, right))
+```
+
+A pair is generated only from the earliest retained shared call token under
+deterministic token order. When generated, the score is computed from the full
+retained shared-token set, not only from the generator token. Deterministic
+token order is a dedupe mechanism, not a ranking input.
 
 ### 6. Streaming Projection
 
@@ -151,26 +172,53 @@ Add a machine-readable diagnostics surface under function clone groups:
 {
   "candidateGenerationPolicy": {
     "mode": "bounded-retrieval",
+    "retrievalContractVersion": "function-clone-near-retrieval.v1",
     "bucketMinIdf": 3.0,
+    "candidateCountScope": "scored-candidates-from-retained-retrieval-evidence",
     "pairDedupe": "ordered-shared-retained-token",
     "projection": "streaming-top-n"
+  },
+  "candidateGenerationSummary": {
+    "eligibleFunctionCount": 12345,
+    "retainedCallTokenBucketCount": 420,
+    "retainedRawPairEstimate": 850000,
+    "generatedUniquePairCount": 24000,
+    "scoredPairCount": 3100,
+    "compatibilitySkippedRawPairEstimateByReason": {
+      "qualifierMismatch": 12000,
+      "parameterCountDelta": 3000,
+      "bodyLocBandMismatch": 5000,
+      "statementCountBandMismatch": 900
+    },
+    "compatibilitySkippedPairEstimateKind": "raw-partition-estimate-does-not-enumerate-rejected-pairs",
+    "nearFunctionCandidateCountScope": "bounded-retrieval-retained-evidence"
   },
   "skippedLowDiscriminationBuckets": [
     {
       "token": "assert",
       "idf": 2.6,
       "functionCount": 1234,
-      "estimatedPairCount": 760761,
+      "rawPairEstimate": 760761,
       "reason": "below-min-single-token-idf"
     }
   ],
   "skippedLowDiscriminationBucketCount": 16,
-  "skippedLowDiscriminationPairEstimate": 3900000
+  "skippedLowDiscriminationRawPairEstimate": 3900000,
+  "skippedLowDiscriminationPairEstimateKind": "raw-bucket-pairs-may-double-count-pairs-shared-by-multiple-skipped-tokens"
 }
 ```
 
 The example array should be capped for artifact size, but the count and pair
 estimate must remain uncapped.
+
+Diagnostics must distinguish raw bucket-pair estimates from unique pair counts.
+Skipped low-discrimination estimates are raw sums of `C(functionCount, 2)` per
+bucket and may double-count pairs that share multiple skipped tokens. They are
+work estimates, not unique omitted-pair counts.
+
+Retained-side rejection diagnostics must follow the same rule. Any field that
+describes pairs avoided by compatibility partitioning is an estimate computed
+from posting sizes, not an exact count gathered by enumerating rejected pairs.
 
 ## Policy And Versioning
 
@@ -186,11 +234,17 @@ rust-function-clone-near-calibration.v6
 
 The policy should expose:
 
+- `retrievalContractVersion = "function-clone-near-retrieval.v1"`
 - `candidateGenerationMode = "bounded-retrieval"`
+- `candidateCountScope = "scored-candidates-from-retained-retrieval-evidence"`
 - `bucketMinIdf = minSingleTokenIdf`
 - `skippedLowDiscriminationBucketSampleLimit`
 - `pairDedupe = "ordered-shared-retained-token"`
 - `projection = "streaming-top-n"`
+
+`nearFunctionCandidateCount` is not the count of all possible near clones in the
+complete pair universe. It is the uncapped count of candidates that passed from
+retained retrieval evidence into review-worthy near scoring.
 
 ## TS/JS Relationship
 
@@ -223,6 +277,13 @@ Required Rust tests:
    `nearFunctionCandidates.length <= nearFunctionCandidateProjectionLimit`.
 5. Skipped-bucket counts and pair estimates remain visible even when examples
    are capped.
+6. A large retained high-IDF token bucket is partitioned before pair
+   enumeration, so incompatible LOC/statement bands do not force full-bucket
+   `O(k^2)` pair loops.
+7. Generator-token order does not change ranking or score for a pair sharing
+   multiple retained tokens.
+8. Skipped pair estimates are exposed as raw estimates, including the estimate
+   kind that says they may double-count pairs shared by multiple skipped tokens.
 
 Large-repo dogfood should measure:
 
@@ -240,6 +301,9 @@ Large-repo dogfood should measure:
 - Do not turn skipped low-discrimination buckets into absence claims.
 - Do not rewrite exact, structure, or signature grouping in this slice.
 - Do not implement the TS/JS backport in the first Rust implementation slice.
+- Do not implement WAND-style upper-bound pruning, LSH, or ANN retrieval in the
+  first slice. Those may be future lanes after the bounded-retrieval contract is
+  stable and measurable.
 
 ## Implementation Shape
 
