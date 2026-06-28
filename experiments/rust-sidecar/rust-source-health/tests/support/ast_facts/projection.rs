@@ -65,7 +65,7 @@ pub fn assert_core_ast_fact_projection(artifact: &Value, path: &str) {
     assert_eq!(ast["functionBodyFingerprints"][0]["visibility"], "public");
     assert_eq!(
         ast["functionBodyFingerprints"][0]["normalizedVersion"],
-        "rust-function-body.normalized.v2"
+        "rust-function-body.normalized.v3"
     );
     assert!(ast["functionBodyFingerprints"][0]["exactBodyHash"]
         .as_str()

@@ -156,8 +156,14 @@ evidence only and carry the same caveat as the TS/JS function clone artifact:
 they do not prove semantic equivalence, auto-reuse, auto-fix safety, or a merge
 recommendation. Signature groups mirror TS/JS `groupSignatureFacts`: functions
 with the same normalized function type signature are grouped as review-only
-cues, generated-only groups stay in raw evidence, and only non-generated groups
-increment review-visible count fields. The checked thresholds mirror TS/JS
+cues only when the normalized signature has explicit return-type evidence,
+generated-only groups stay in raw evidence, and only non-generated groups
+increment review-visible count fields. Rust raw signature facts may preserve
+implicit unit-return functions, but `fn foo()` / `fn bar()` style facts must not
+be promoted into review-visible signature groups; this mirrors the TS/JS
+signature producer, which refuses function signatures without explicit return
+type evidence instead of filling review surfaces with broad `fn()`/`() => void`
+noise. The checked thresholds mirror TS/JS
 `function-clone-near-policy`: exact groups use `minBodyLoc = 1`,
 `minStatements = 1`, and `minGroupSize = 2`; structure groups use
 `minBodyLocForGrouping = 3`, `minStatementsForGrouping = 2`, and
@@ -266,14 +272,22 @@ Canonical JSON fields:
   `_lib/function-clone-artifact.mjs` facts with
   `kind = "function-body-fingerprint"`. The producer records token-compacted
   exact body hashes that preserve literal token text, normalized-exact body
-  hashes with identifier anonymization and canonical numeric literal values,
-  anonymized-structure body hashes, qualifier fields, body/statement counts
-  including tail expressions, call tokens, visibility, callable kind, optional
-  impl owner evidence, and source locations. These facts are review evidence
-  only. They do not claim semantic equivalence, auto-reuse, or auto-fix safety.
-  Exact body groups must group by `exactBodyHash` only. Bodies that collide only
-  after identifier anonymization are structure-equivalent review evidence, not
-  `exact-function-body-group` evidence.
+  hashes, anonymized-structure body hashes, qualifier fields, body/statement
+  counts including tail expressions, call tokens, visibility, callable kind,
+  optional impl owner evidence, and source locations. These facts are review
+  evidence only. They do not claim semantic equivalence, auto-reuse, or
+  auto-fix safety. Rust exact body groups mirror the checked TS/JS
+  `_lib/function-clone-artifact.mjs` contract: `exactBodyHash` is retained as
+  token-compacted raw-body provenance, while `exactBodyGroups[]` groups by
+  `normalizedExactHash`. Both normalized body layers preserve
+  path/member/record-field key identifiers and anonymize local identifier names.
+  The normalized-exact layer preserves literal values; the structure layer
+  groups by `normalizedStructureHash`, which also anonymizes literal values.
+  Therefore bodies that differ only by local variable names may share an
+  `exact-function-body-group`, while bodies that differ by a preserved
+  path/member/key such as `Category::Output` versus `Category::Search` must not.
+  This Rust normalizer semantics is published as
+  `rust-function-body.normalized.v3`.
 - `ast.inlinePatterns[]`: repeated-inline extraction occurrence facts for
   simple Rust statement lists. The producer is the Rust analogue of
   `_lib/inline-pattern-artifact.mjs`: it records syntax-only occurrences whose

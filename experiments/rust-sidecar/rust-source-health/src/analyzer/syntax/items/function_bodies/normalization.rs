@@ -1,4 +1,4 @@
-use ra_ap_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
+use ra_ap_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 use super::numeric::canonical_numeric_literal;
 
@@ -14,7 +14,7 @@ pub(super) fn normalize_body(body: &SyntaxNode, literal_policy: LiteralPolicy) -
         let SyntaxElement::Token(token) = element else {
             continue;
         };
-        let Some(normalized) = normalize_token(token.kind(), token.text(), literal_policy) else {
+        let Some(normalized) = normalize_token(&token, literal_policy) else {
             continue;
         };
         tokens.push(normalized);
@@ -34,10 +34,19 @@ pub(super) fn compact_token_source(body: &SyntaxNode) -> String {
         .join(" ")
 }
 
-fn normalize_token(kind: SyntaxKind, text: &str, literal_policy: LiteralPolicy) -> Option<String> {
+fn normalize_token(token: &SyntaxToken, literal_policy: LiteralPolicy) -> Option<String> {
+    let kind = token.kind();
+    let text = token.text();
     match kind {
         SyntaxKind::WHITESPACE | SyntaxKind::COMMENT => None,
-        SyntaxKind::IDENT | SyntaxKind::LIFETIME_IDENT => Some("<id>".to_string()),
+        SyntaxKind::IDENT | SyntaxKind::LIFETIME_IDENT => Some(
+            if should_preserve_identifier(token) {
+                text
+            } else {
+                "<id>"
+            }
+            .to_string(),
+        ),
         SyntaxKind::INT_NUMBER | SyntaxKind::FLOAT_NUMBER => Some(match literal_policy {
             LiteralPolicy::PreserveValues => canonical_numeric_literal(kind, text),
             LiteralPolicy::AnonymizeValues => "<number>".to_string(),
@@ -56,4 +65,39 @@ fn normalize_token(kind: SyntaxKind, text: &str, literal_policy: LiteralPolicy) 
         }),
         _ => Some(text.to_string()),
     }
+}
+
+fn should_preserve_identifier(token: &SyntaxToken) -> bool {
+    previous_non_trivia_token(token).is_some_and(|previous| matches!(previous.text(), "." | "::"))
+        || is_record_field_key(token)
+}
+
+fn is_record_field_key(token: &SyntaxToken) -> bool {
+    let Some(name_node) = token.parent() else {
+        return false;
+    };
+    if !matches!(name_node.kind(), SyntaxKind::NAME | SyntaxKind::NAME_REF) {
+        return false;
+    }
+    name_node.parent().is_some_and(|parent| {
+        matches!(
+            parent.kind(),
+            SyntaxKind::RECORD_EXPR_FIELD | SyntaxKind::RECORD_PAT_FIELD | SyntaxKind::RECORD_FIELD
+        )
+    })
+}
+
+fn previous_non_trivia_token(token: &SyntaxToken) -> Option<SyntaxToken> {
+    let mut previous = token.prev_token();
+    while let Some(candidate) = previous {
+        if !is_trivia(candidate.kind()) {
+            return Some(candidate);
+        }
+        previous = candidate.prev_token();
+    }
+    None
+}
+
+fn is_trivia(kind: SyntaxKind) -> bool {
+    matches!(kind, SyntaxKind::WHITESPACE | SyntaxKind::COMMENT)
 }

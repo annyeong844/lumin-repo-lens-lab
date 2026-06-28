@@ -61,7 +61,7 @@ pub fn structure_b(value: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["normalizedVersion"],
-        "rust-function-body.normalized.v2"
+        "rust-function-body.normalized.v3"
     );
     assert_eq!(
         groups["policy"]["functionSignatureNormalizedVersion"],
@@ -80,7 +80,7 @@ pub fn structure_b(value: &str) -> usize {
     assert!(identity_list_contains(exact, "src/b.rs::exact_b"));
     assert_eq!(
         exact["reason"],
-        "same token-compacted function body; review cue only, not proof of semantic equivalence"
+        "same normalized function body; verify domain ownership before merging"
     );
 
     let structure_groups = groups["structureGroups"]
@@ -125,6 +125,44 @@ pub fn structure_b(value: &str) -> usize {
 }
 
 #[test]
+fn exact_body_groups_merge_local_identifier_renames_like_ts_normalized_exact() -> Result<()> {
+    let artifact = stdout_json(run_sidecar(request(vec![file(
+        "src/local_names.rs",
+        r#"
+pub fn left(input: usize) -> usize {
+    let left_value = input + 1;
+    left_value * 2
+}
+
+pub fn right(input: usize) -> usize {
+    let right_value = input + 1;
+    right_value * 2
+}
+"#,
+    )])));
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 1);
+
+    let groups = artifact["functionCloneGroups"]["exactBodyGroups"]
+        .as_array()
+        .context("exact clone groups")?;
+    let exact = group_with_identity(groups, "src/local_names.rs::left")
+        .context("left exact clone group")?;
+    assert_eq!(exact["kind"], "exact-function-body-group");
+    assert_eq!(exact["size"], 2);
+    assert_eq!(exact["exactHashCount"], 2);
+    assert!(identity_list_contains(exact, "src/local_names.rs::left"));
+    assert!(identity_list_contains(exact, "src/local_names.rs::right"));
+    assert_eq!(
+        exact["reason"],
+        "same normalized function body; verify domain ownership before merging"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn exact_body_groups_do_not_merge_identifier_anonymized_bodies() -> Result<()> {
     let artifact = stdout_json(run_sidecar(request(vec![file(
         "src/category.rs",
@@ -148,30 +186,51 @@ pub fn is_search(category: Category) -> bool {
 
     assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
     assert_eq!(artifact["functionCloneGroups"]["exactBodyGroupCount"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["structureGroupCount"], 0);
     assert_eq!(
         artifact["functionCloneGroups"]["exactBodyGroups"]
             .as_array()
             .map(Vec::len),
         Some(0)
     );
+    assert_eq!(
+        artifact["functionCloneGroups"]["structureGroups"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
 
-    let structure_groups = artifact["functionCloneGroups"]["structureGroups"]
-        .as_array()
-        .context("structure clone groups")?;
-    let structure = group_with_identity(structure_groups, "src/category.rs::is_output")
-        .context("is_output structure group")?;
-    assert_eq!(structure["kind"], "function-body-structure-group");
-    assert_eq!(structure["size"], 2);
-    assert_eq!(structure["exactHashCount"], 2);
-    assert!(identity_list_contains(
-        structure,
-        "src/category.rs::is_output"
-    ));
-    assert!(identity_list_contains(
-        structure,
-        "src/category.rs::is_search"
-    ));
+    Ok(())
+}
+
+#[test]
+fn signature_groups_skip_implicit_unit_return_signatures() -> Result<()> {
+    let artifact = stdout_json(run_sidecar(request(vec![file(
+        "src/unit.rs",
+        r#"
+pub fn first() {
+    let value = 1;
+    let _ = value;
+}
+
+pub fn second() {
+    let value = 2;
+    let _ = value;
+}
+"#,
+    )])));
+
+    assert_eq!(artifact["summary"]["functionSignatures"], 2);
+    assert_eq!(artifact["summary"]["functionCloneSignatureGroups"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["signatureGroupCount"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["signatureGroups"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
 
     Ok(())
 }

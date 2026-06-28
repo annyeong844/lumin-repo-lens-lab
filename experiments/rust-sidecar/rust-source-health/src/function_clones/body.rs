@@ -21,8 +21,8 @@ pub(super) fn group_exact_body_groups(
         AstFunctionCloneGroupKind::ExactFunctionBodyGroup,
         RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC,
         RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS,
-        |fact| &fact.exact_body_hash,
-        "same token-compacted function body; review cue only, not proof of semantic equivalence",
+        |fact| &fact.normalized_exact_hash,
+        "same normalized function body; verify domain ownership before merging",
     )
 }
 

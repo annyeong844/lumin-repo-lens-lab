@@ -53,6 +53,12 @@ fn signature_group_from_members(
     if members.len() < RUST_FUNCTION_CLONE_MIN_GROUP_SIZE {
         return None;
     }
+    if members
+        .first()
+        .is_some_and(|member| member.fact.return_type.is_none())
+    {
+        return None;
+    }
     members.sort_by_key(signature_member_identity);
 
     let generated_only = members.iter().all(|member| member.generated);

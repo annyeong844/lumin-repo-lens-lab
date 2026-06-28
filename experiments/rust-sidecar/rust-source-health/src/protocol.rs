@@ -48,7 +48,7 @@ pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v9";
 pub const RUST_SHAPE_HASH_NORMALIZED_VERSION: &str = "rust-shape-hash.normalized.v1";
 pub const RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION: &str =
     "rust-function-signature.normalized.v1";
-pub const RUST_FUNCTION_BODY_NORMALIZED_VERSION: &str = "rust-function-body.normalized.v2";
+pub const RUST_FUNCTION_BODY_NORMALIZED_VERSION: &str = "rust-function-body.normalized.v3";
 pub const RUST_FUNCTION_CLONE_GROUP_POLICY_ID: &str = "rust-function-clone-group-policy";
 pub const RUST_FUNCTION_CLONE_GROUP_POLICY_VERSION: &str = "rust-function-clone-group-policy.v2";
 pub const RUST_FUNCTION_CLONE_MIN_GROUP_SIZE: usize = 2;

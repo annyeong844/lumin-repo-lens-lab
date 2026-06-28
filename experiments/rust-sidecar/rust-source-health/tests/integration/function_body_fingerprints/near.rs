@@ -56,7 +56,7 @@ pub fn load_user_settings(raw: &str) -> usize {
     assert_eq!(groups["supports"]["semanticEquivalence"], false);
     assert_eq!(
         groups["supports"]["normalizedVersion"],
-        "rust-function-body.normalized.v2"
+        "rust-function-body.normalized.v3"
     );
     assert_eq!(
         groups["supports"]["functionSignatureNormalizedVersion"],
