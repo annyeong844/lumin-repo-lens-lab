@@ -60,7 +60,7 @@ pub const RUST_FUNCTION_CLONE_NEAR_POLICY_ID: &str = "function-clone-near-policy
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_VERSION: &str = "function-clone-near-policy-v1";
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_CLASS: &str = "review";
 pub const RUST_FUNCTION_CLONE_NEAR_CALIBRATION_VERSION: &str =
-    "rust-function-clone-near-calibration.v2";
+    "rust-function-clone-near-calibration.v3";
 pub const RUST_FUNCTION_CLONE_NEAR_MIN_SIGNIFICANT_CALL_TOKEN_LEN: usize = 4;
 pub const RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA: usize = 1;
 pub const RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY: f64 = 0.34;
@@ -76,6 +76,16 @@ pub const RUST_FUNCTION_CLONE_NEAR_STATEMENT_COUNT_WEIGHT: f64 = 0.15;
 pub const RUST_FUNCTION_CLONE_NEAR_REQUIRED_MATCHING_QUALIFIERS: &[&str] =
     &["async", "unsafe", "const"];
 pub const RUST_FUNCTION_CLONE_NEAR_SUPPRESSED_GENERIC_CALL_TOKENS: &[&str] = &[
+    "Arc",
+    "Arc::new",
+    "Box",
+    "Box::new",
+    "Err",
+    "None",
+    "Ok",
+    "Rc",
+    "Rc::new",
+    "Some",
     "as_mut",
     "as_ref",
     "borrow",
@@ -112,6 +122,7 @@ pub const RUST_FUNCTION_CLONE_NEAR_SUPPRESSED_GENERIC_CALL_TOKENS: &[&str] = &[
     "unwrap",
     "unwrap_or",
     "unwrap_or_default",
+    "vec",
 ];
 pub const RUST_INLINE_PATTERN_NORMALIZED_VERSION: &str = "rust-inline-statement-normalizer-v1";
 pub const RUST_INLINE_PATTERN_MAX_STATEMENTS: usize = 2;

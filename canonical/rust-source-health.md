@@ -189,9 +189,10 @@ function-signature normalizer. Compact artifacts may omit raw
 normalizer version on the group surface.
 Rust near candidates use the TS/JS policy but calibrate generic call-token
 suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
-`collect`, plus ubiquitous Rust macro/method tokens such as `format` that
+`collect`, plus ubiquitous Rust constructor, macro, and method tokens such as
+`Some`, `None`, `Ok`, `Err`, `vec`, `Box`, `Rc`, `Arc`, and `format` that
 otherwise dominate review candidates. The calibration is serialized as
-`rust-function-clone-near-calibration.v2`, including
+`rust-function-clone-near-calibration.v3`, including
 `minSignificantCallTokenLen = 4`, the Rust generic-token suppression set, and
 the required matching callable qualifiers. Near candidates also require matching
 Rust callable qualifiers (`async`, `unsafe`, and `const`) before scoring; mixed

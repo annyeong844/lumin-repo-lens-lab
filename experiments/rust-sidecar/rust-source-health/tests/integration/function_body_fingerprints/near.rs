@@ -44,7 +44,7 @@ pub fn load_user_settings(raw: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["calibrationVersion"],
-        "rust-function-clone-near-calibration.v2"
+        "rust-function-clone-near-calibration.v3"
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["minSignificantCallTokenLen"],
@@ -68,6 +68,10 @@ pub fn load_user_settings(raw: &str) -> usize {
             .is_some_and(|tokens| tokens.iter().any(|token| token == "to_string")
                 && tokens.iter().any(|token| token == "unwrap")
                 && tokens.iter().any(|token| token == "collect")
+                && tokens.iter().any(|token| token == "Some")
+                && tokens.iter().any(|token| token == "None")
+                && tokens.iter().any(|token| token == "Ok")
+                && tokens.iter().any(|token| token == "Err")
                 && tokens.iter().any(|token| token == "format"))
     );
     assert!(
@@ -114,6 +118,40 @@ pub fn load_user_settings(raw: &str) -> usize {
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
 
     Ok(())
+}
+
+#[test]
+fn function_body_near_candidates_ignore_rust_option_constructor_tokens() {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+pub fn maybe_alpha(flag: bool, value: u8) -> Option<u8> {
+    if flag {
+        Some(value + 1)
+    } else {
+        Some(value + 2)
+    }
+}
+
+pub fn maybe_beta(flag: bool, value: u8) -> Option<u8> {
+    match flag {
+        true => Some(value + 3),
+        false => Some(value + 4),
+    }
+}
+"#,
+    );
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidates"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
 }
 
 #[test]
