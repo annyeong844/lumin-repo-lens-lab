@@ -23,6 +23,8 @@ The canonical spine defines **what must remain true** about this skill. Implemen
 | `classification-gates.md` | duplicate / single-identity classification ordering with fixed precedence | P3 (canon draft), P4 (shape duplication) |
 | `any-contamination.md` | how the skill handles `any`/`as any`/implicit-any; semantic vs structural analysis boundary | P1 (pre-write shape lookup), P3 (canon draft), P4 (shape duplication) |
 | `canon-drift.md` | formal drift categories, parser contract, `canon-drift.json` shape | P5 (check-canon drift detector) |
+| `evidence-ladder.md` | confidence / coverage / oracle authority contract across languages | any semantic, syntax-health, or cross-language evidence work |
+| `oracle-registry.json` | data source for language oracle slots and authority | any implementation that emits or renders oracle-backed evidence |
 
 ## 3. Reading order by goal
 
@@ -31,6 +33,7 @@ The canonical spine defines **what must remain true** about this skill. Implemen
 - **"I am implementing P3 canon draft"**: `invariants.md` → `fact-model.md` → `identity-and-alias.md` → `classification-gates.md` → `any-contamination.md`.
 - **"I am implementing P4 shape duplication"**: `invariants.md` → `fact-model.md` → `classification-gates.md` → `any-contamination.md` (critical — shape hash must exclude contaminated identities).
 - **"I am implementing P5 check-canon drift detector"**: `invariants.md` → `fact-model.md` §7 → `canon-drift.md` (category enum + parser contract + JSON shape) → `classification-gates.md` §9/§10.3/§11.4/§12.3 (label sets the parser validates against) → `identity-and-alias.md` §2 (identity format for type/helper drift).
+- **"I am implementing semantic oracle, syntax health, or cross-language evidence"**: `invariants.md` → `evidence-ladder.md` → `oracle-registry.json` → the language-specific canonical file (`any-contamination.md` for TS type escapes, future Rust/Python canon when promoted).
 - **"I am reviewing a spec"**: all of the above; they are each short by design.
 
 

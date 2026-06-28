@@ -1,0 +1,677 @@
+{
+  "schemaVersion": "oracle-registry.v1",
+  "policyVersion": "evidence-ladder.v1",
+  "artifactRequirements": {
+    "registryContentHash": "required",
+    "analysisInputSetHash": "required-for-semantic-cache-or-clean-claims"
+  },
+  "refutationPolicy": {
+    "default": "semantic-silence-refutes-nothing",
+    "rule": "A higher-tier oracle may refute a lower-tier candidate only when this registry lists an explicit refutesCandidateKinds entry for the candidate kind and scope relation."
+  },
+  "confidenceTiers": {
+    "verified": {
+      "claimPermission": "May make bounded factual claims inside the oracle authority.",
+      "requiresCoverage": "ran",
+      "staleBehavior": "downgrade-to-coverage-gap"
+    },
+    "rule-backed": {
+      "claimPermission": "May report deterministic rule evidence with rule class and provenance.",
+      "requiresCoverage": "ran",
+      "staleBehavior": "downgrade-to-coverage-gap"
+    },
+    "candidate": {
+      "claimPermission": "May ask review questions. Must not assert semantic truth.",
+      "requiresCoverage": "ran",
+      "staleBehavior": "downgrade-to-coverage-gap"
+    }
+  },
+  "coverageStatuses": {
+    "ran": {
+      "mayRepresentClean": true,
+      "description": "The oracle completed over the declared scope. Clean is scoped to this oracle, this authority, and this analysis input set."
+    },
+    "not-run": {
+      "mayRepresentClean": false,
+      "description": "The oracle was not requested for this scope."
+    },
+    "unavailable": {
+      "mayRepresentClean": false,
+      "description": "The oracle is supported, but could not complete because of environment, toolchain, dependency, configuration, or build conditions."
+    },
+    "unsupported": {
+      "mayRepresentClean": false,
+      "description": "The oracle does not support this language surface or analysis target."
+    }
+  },
+  "sourceKinds": {
+    "syntax": "Parser-owned structural evidence.",
+    "syntax-heuristic": "Parser or heuristic evidence that proposes review candidates.",
+    "semantic-oracle": "Language-owned semantic evidence.",
+    "rule-engine": "Rule-owned evidence that is not promoted to compiler truth."
+  },
+  "oracles": [
+    {
+      "id": "ts.oxc.syntax",
+      "language": "typescript-javascript",
+      "sourceKind": "syntax",
+      "confidence": "candidate",
+      "authorityIds": [
+        "ts.syntax.tree",
+        "ts.syntax.import-export-surface",
+        "ts.syntax.owner-use-candidate"
+      ],
+      "claimKinds": [
+        "candidate.syntax-surface",
+        "candidate.import-export-surface",
+        "candidate.owner-use"
+      ],
+      "candidateKinds": [
+        "ts.import-export.syntax",
+        "ts.owner-use.syntax"
+      ],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "syntax tree shape",
+        "literal import/export surfaces",
+        "syntax-owned owner and use candidates"
+      ],
+      "notAuthority": [
+        "type compatibility",
+        "implicit any",
+        "semantic deadness",
+        "safe reuse"
+      ],
+      "coverageScope": "file",
+      "analysisInputSet": [
+        "source bytes",
+        "root-relative path",
+        "parser policy version"
+      ],
+      "versionPolicy": "pinned-parser-version-required",
+      "status": "current",
+      "notes": "Fast candidate layer. Existing OXC-backed facts remain structural evidence unless paired with stronger oracle coverage."
+    },
+    {
+      "id": "ts.compiler.config",
+      "language": "typescript-javascript",
+      "sourceKind": "semantic-oracle",
+      "confidence": "verified",
+      "authorityIds": [
+        "ts.compiler.config-jsonc",
+        "ts.compiler.extends-resolution",
+        "ts.compiler.path-resolution",
+        "ts.compiler.root-out-dir-resolution"
+      ],
+      "claimKinds": [
+        "verified.tsconfig-resolution",
+        "verified.compiler-path-resolution"
+      ],
+      "candidateKinds": [],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "tsconfig JSONC parsing",
+        "extends chain resolution",
+        "baseUrl and paths interpretation",
+        "declarationDir and rootDir interpretation"
+      ],
+      "notAuthority": [
+        "runtime module loading",
+        "framework virtual imports outside TypeScript resolution"
+      ],
+      "coverageScope": "tsconfig-scope",
+      "analysisInputSet": [
+        "tsconfig file bytes",
+        "extends chain bytes",
+        "package boundary files that affect TypeScript resolution",
+        "typescript compiler version",
+        "compiler API mode"
+      ],
+      "versionPolicy": "typescript-version-recorded",
+      "status": "current",
+      "notes": "Implemented through the TypeScript compiler API, not hand-rolled JSONC or paths resolution."
+    },
+    {
+      "id": "rust.ra-ap-syntax",
+      "language": "rust",
+      "sourceKind": "syntax",
+      "confidence": "candidate",
+      "authorityIds": [
+        "rust.syntax.tree",
+        "rust.syntax.parse-error",
+        "rust.syntax.method-call-candidate",
+        "rust.syntax.macro-call-candidate",
+        "rust.syntax.counter"
+      ],
+      "claimKinds": [
+        "candidate.rust.parse-error",
+        "candidate.rust.method-call",
+        "candidate.rust.macro-call",
+        "candidate.rust.syntax-counter"
+      ],
+      "candidateKinds": [
+        "rust.parse-error.syntax",
+        "rust.unwrap-call.syntax",
+        "rust.expect-call.syntax",
+        "rust.clone-call.syntax",
+        "rust.panic-macro.syntax",
+        "rust.todo-macro.syntax",
+        "rust.unimplemented-macro.syntax",
+        "rust.unsafe-block.syntax"
+      ],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "Rust syntax tree",
+        "parse errors",
+        "syntax-only method and macro call candidates",
+        "syntax-only source health counters"
+      ],
+      "notAuthority": [
+        "name resolution",
+        "type inference",
+        "trait solving",
+        "borrow checking",
+        "macro expansion",
+        "semantic clone cost"
+      ],
+      "coverageScope": "file",
+      "analysisInputSet": [
+        "source bytes",
+        "root-relative path",
+        "fixed parser edition policy",
+        "ra_ap_syntax version",
+        "syntax policy version"
+      ],
+      "versionPolicy": "exact-ra-ap-syntax-version-pinned",
+      "status": "designed",
+      "notes": "M6 Rust source health layer. Candidate only."
+    },
+    {
+      "id": "rust.ra-hir",
+      "language": "rust",
+      "sourceKind": "semantic-oracle",
+      "confidence": "verified",
+      "authorityIds": [
+        "rust.ra.name-resolution",
+        "rust.ra.type-inference"
+      ],
+      "claimKinds": [
+        "verified.rust.ra-name-resolution",
+        "verified.rust.ra-type-inference"
+      ],
+      "candidateKinds": [],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "rust-analyzer HIR name resolution inside its loaded crate graph",
+        "rust-analyzer type inference inside its loaded crate graph"
+      ],
+      "notAuthority": [
+        "borrow checking",
+        "rustc MIR diagnostics",
+        "full proc-macro or build-script truth",
+        "unsafe soundness proof",
+        "cfg surfaces outside the loaded crate graph"
+      ],
+      "coverageScope": "ra-loaded-crate-graph",
+      "coverageDimensions": [
+        "workspace root",
+        "loaded crate graph",
+        "feature set",
+        "cfg set",
+        "target triple",
+        "rust-analyzer version"
+      ],
+      "analysisInputSet": [
+        "source bytes",
+        "Cargo.toml files",
+        "Cargo.lock when available",
+        "rust-toolchain files",
+        "selected package and feature flags",
+        "target triple",
+        "cfg set",
+        "rust-analyzer version",
+        "rust-project or cargo metadata input when used"
+      ],
+      "versionPolicy": "exact-rust-analyzer-api-version-pinned-before-use",
+      "status": "deferred",
+      "notes": "Reserved middle semantic tier for offline or unbuildable Rust repos. Not part of M7 implementation. If ra-hir and rustc disagree later, rustc/cargo-check is the ground-truth oracle."
+    },
+    {
+      "id": "rust.cargo-metadata",
+      "language": "rust",
+      "sourceKind": "semantic-oracle",
+      "confidence": "verified",
+      "authorityIds": [
+        "rust.cargo.workspace-graph",
+        "rust.cargo.package-target-discovery",
+        "rust.cargo.feature-surface"
+      ],
+      "claimKinds": [
+        "verified.rust.workspace-graph",
+        "verified.rust.package-target"
+      ],
+      "candidateKinds": [],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "workspace package graph",
+        "crate target discovery",
+        "manifest metadata",
+        "feature and target surface discovery"
+      ],
+      "notAuthority": [
+        "type correctness",
+        "borrow correctness",
+        "semantic diagnostic confirmation"
+      ],
+      "coverageScope": "workspace",
+      "coverageDimensions": [
+        "workspace root",
+        "selected package set",
+        "feature set",
+        "target triple",
+        "cargo version"
+      ],
+      "analysisInputSet": [
+        "Cargo.toml files",
+        "Cargo.lock",
+        "rust-toolchain files",
+        "selected workspace members",
+        "selected package and feature flags",
+        "target triple",
+        "cargo version",
+        "relevant cargo config"
+      ],
+      "versionPolicy": "cargo-version-recorded",
+      "status": "proposed-m7",
+      "notes": "First Rust semantic setup oracle. Required before cargo-check coverage can be interpreted."
+    },
+    {
+      "id": "rust.cargo-check",
+      "language": "rust",
+      "sourceKind": "semantic-oracle",
+      "confidence": "verified",
+      "authorityIds": [
+        "rust.rustc.error-diagnostic",
+        "rust.rustc.type-diagnostic",
+        "rust.rustc.borrow-diagnostic",
+        "rust.rustc.name-resolution-diagnostic",
+        "rust.rustc.cfg-expanded-diagnostic",
+        "rust.rustc.codeless-error-diagnostic"
+      ],
+      "claimKinds": [
+        "verified.rust.rustc-error-diagnostic",
+        "verified.rust.rustc-codeless-error-diagnostic",
+        "rule-backed.rust.rustc-lint-diagnostic",
+        "candidate.rust.unclassified-cargo-diagnostic"
+      ],
+      "reservedClaimKinds": [
+        "verified.rust.type-diagnostic",
+        "verified.rust.borrow-diagnostic",
+        "verified.rust.name-resolution-diagnostic",
+        "verified.rust.cfg-expanded-diagnostic"
+      ],
+      "candidateKinds": [],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "rustc type diagnostics",
+        "rustc borrow diagnostics",
+        "rustc name-resolution diagnostics",
+        "cfg-expanded crate diagnostics for analyzed targets"
+      ],
+      "notAuthority": [
+        "unsafe soundness proof",
+        "FFI contract proof",
+        "cfg-disabled code",
+        "style or convention linting",
+        "semantic confirmation of syntax candidates outside emitted diagnostics"
+      ],
+      "coverageScope": "crate-target-configuration",
+      "coverageDimensions": [
+        "package",
+        "target",
+        "feature set",
+        "target triple",
+        "cfg set",
+        "profile",
+        "cargo and rustc versions"
+      ],
+      "normalizedDiagnosticSchema": {
+        "codeNamespace": [
+          "rustc-codeless",
+          "rustc-error",
+          "rustc-non-ecode",
+          "unknown"
+        ],
+        "codeNamespaceDerivation": [
+          {
+            "when": "message.code === null",
+            "codeNamespace": "rustc-codeless",
+            "codeKind": "null-error-code"
+          },
+          {
+            "when": "message.code.code matches ^E[0-9]+$",
+            "codeNamespace": "rustc-error",
+            "codeKind": "rustc-error-code"
+          },
+          {
+            "when": "message.code.code is any other non-empty string",
+            "codeNamespace": "rustc-non-ecode",
+            "codeKind": "non-ecode-name"
+          },
+          {
+            "when": "message.code is missing or malformed",
+            "codeNamespace": "unknown",
+            "codeKind": "unknown"
+          }
+        ],
+        "primarySpan": [
+          "user-code",
+          "dependency",
+          "generated",
+          "unknown"
+        ]
+      },
+      "diagnosticClassification": [
+        {
+          "when": {
+            "messageFormat": "cargo-json",
+            "reason": "compiler-message",
+            "levelNotIn": [
+              "error",
+              "warning"
+            ]
+          },
+          "disposition": "non-finding",
+          "rule": "note-help-failure-note-are-not-findings",
+          "notes": "Cargo may emit note, help, and failure-note compiler-message entries as top-level events. They are attached context, not user-facing findings."
+        },
+        {
+          "when": {
+            "messageFormat": "cargo-json",
+            "reason": "compiler-message",
+            "primarySpan": "not-user-code",
+            "level": "error"
+          },
+          "disposition": "coverage-unavailable",
+          "rule": "non-user-primary-error-makes-absence-clean-unavailable",
+          "notes": "Dependency, generated, target, or unknown primary error diagnostics are not user-facing findings and prevent absence-clean claims for the selected user scope."
+        },
+        {
+          "when": {
+            "messageFormat": "cargo-json",
+            "reason": "compiler-message",
+            "primarySpan": "not-user-code"
+          },
+          "disposition": "non-finding",
+          "rule": "non-user-primary-diagnostics-are-not-user-facing-findings"
+        },
+        {
+          "when": {
+            "messageFormat": "cargo-json",
+            "reason": "compiler-message",
+            "primarySpan": "user-code",
+            "codeNamespace": "rustc-non-ecode"
+          },
+          "confidence": "rule-backed",
+          "claimKind": "rule-backed.rust.rustc-lint-diagnostic",
+          "rule": "non-ecode-code-name-treated-as-rule-backed-before-level",
+          "notes": "Denied lints may arrive as level:error. Non-E-code rustc diagnostics are rule-backed before level classification."
+        },
+        {
+          "when": {
+            "messageFormat": "cargo-json",
+            "reason": "compiler-message",
+            "level": "error",
+            "primarySpan": "user-code",
+            "codeNamespace": "rustc-error"
+          },
+          "confidence": "verified",
+          "authorityId": "rust.rustc.error-diagnostic",
+          "claimKind": "verified.rust.rustc-error-diagnostic",
+          "rule": "ecode-error-user-code-primary",
+          "notes": "M7 keeps rustc error diagnostics generic until code-family mapping is explicitly reviewed."
+        },
+        {
+          "when": {
+            "messageFormat": "cargo-json",
+            "reason": "compiler-message",
+            "level": "error",
+            "primarySpan": "user-code",
+            "codeNamespace": "rustc-codeless"
+          },
+          "confidence": "verified",
+          "authorityId": "rust.rustc.codeless-error-diagnostic",
+          "claimKind": "verified.rust.rustc-codeless-error-diagnostic",
+          "rule": "codeless-error-user-code-primary",
+          "notes": "Codeless rustc errors are verified only with a user-code primary span. Summary, note, help, and failure-note messages are not findings."
+        },
+        {
+          "when": {
+            "messageFormat": "cargo-json",
+            "reason": "compiler-message",
+            "levelIn": [
+              "error",
+              "warning"
+            ],
+            "primarySpan": "user-code"
+          },
+          "confidence": "candidate",
+          "claimKind": "candidate.rust.unclassified-cargo-diagnostic",
+          "rule": "fallback-real-warning-or-error-never-verified",
+          "notes": "Only remaining real user-code error or warning diagnostics may fall back to candidate. Non-finding messages are not promoted."
+        }
+      ],
+      "coverageKinds": [
+        {
+          "coverageKind": "cargo-event-stream",
+          "meaning": "cargo JSON event stream was captured and parsed"
+        },
+        {
+          "coverageKind": "absence-clean",
+          "cleanKind": "verified-rustc-error-absence",
+          "absenceOfClaimKinds": [
+            "verified.rust.rustc-error-diagnostic",
+            "verified.rust.rustc-codeless-error-diagnostic"
+          ],
+          "allowsConcurrentClaimKinds": [
+            "rule-backed.rust.rustc-lint-diagnostic",
+            "candidate.rust.unclassified-cargo-diagnostic"
+          ]
+        }
+      ],
+      "completionSignal": {
+        "requiredForClean": [
+          "cargo-json streamParseStatus complete",
+          "cargo-json invalidJsonLineCount 0",
+          "cargo-json build-finished event present",
+          "cargo-json build-finished success true"
+        ],
+        "emptyDiagnosticStreamIsClean": false
+      },
+      "userCodePrimarySpanDefinition": "Primary span resolved to a workspace member source file, excluding target and OUT_DIR generated files. Macro expansion chains resolve to the nearest user-written span; if no user-written span is available, the diagnostic is not user-code-primary for verified classification.",
+      "cacheReusePolicy": {
+        "default": "reuse-only-when-analysisInputSetHash-complete",
+        "buildScriptOrProcMacroInfluence": "no-reuse-unless-complete-influence-set-is-captured",
+        "fallback": "rerun-or-mark-coverage-unavailable"
+      },
+      "analysisInputSet": [
+        "local package Rust source bytes",
+        "Cargo.toml files",
+        "Cargo.lock",
+        "rust-toolchain files",
+        "selected package",
+        "selected target",
+        "selected feature flags",
+        "target triple",
+        "cfg set",
+        "profile",
+        "rustc version",
+        "cargo version",
+        "relevant cargo config",
+        "environment variables that affect compilation",
+        "build script and proc-macro influence set"
+      ],
+      "versionPolicy": "rustc-and-cargo-version-recorded",
+      "status": "proposed-m7",
+      "notes": "Consumes cargo/rustc JSON diagnostics. User-code primary error diagnostics may be verified findings even when target-wide absence coverage is unavailable. Rustc lint diagnostics from the same stream are rule-backed, not verified."
+    },
+    {
+      "id": "rust.clippy",
+      "language": "rust",
+      "sourceKind": "rule-engine",
+      "confidence": "rule-backed",
+      "authorityIds": [
+        "rust.clippy.lint-diagnostic"
+      ],
+      "claimKinds": [
+        "rule-backed.rust.clippy-lint"
+      ],
+      "candidateKinds": [],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "clippy rule diagnostics by lint class"
+      ],
+      "notAuthority": [
+        "general verified compiler truth",
+        "style-free semantic proof"
+      ],
+      "coverageScope": "crate-target",
+      "coverageDimensions": [
+        "package",
+        "target",
+        "feature set",
+        "target triple",
+        "cfg set",
+        "clippy lint configuration"
+      ],
+      "analysisInputSet": [
+        "cargo check analysis input set",
+        "clippy version",
+        "clippy lint configuration"
+      ],
+      "versionPolicy": "deferred-version-policy-required-before-use",
+      "status": "deferred",
+      "notes": "Not part of M7. Consider after rule-backed policy exists. Correctness lint priority is a rendering policy, not verified confidence."
+    },
+    {
+      "id": "python.vulture",
+      "language": "python",
+      "sourceKind": "syntax-heuristic",
+      "confidence": "candidate",
+      "authorityIds": [
+        "python.syntax.unused-code-candidate"
+      ],
+      "claimKinds": [
+        "candidate.python.unused-code"
+      ],
+      "candidateKinds": [
+        "python.unused-code.syntax"
+      ],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "candidate unused-code surfaces"
+      ],
+      "notAuthority": [
+        "runtime reachability",
+        "dynamic import resolution",
+        "monkeypatch behavior",
+        "type correctness"
+      ],
+      "coverageScope": "file-or-package",
+      "analysisInputSet": [
+        "source bytes",
+        "root-relative path",
+        "vulture version",
+        "candidate policy version"
+      ],
+      "versionPolicy": "version-recorded",
+      "status": "proposed",
+      "notes": "Python candidate collection layer. Never clean by itself."
+    },
+    {
+      "id": "python.ty",
+      "language": "python",
+      "sourceKind": "semantic-oracle",
+      "confidence": "verified",
+      "authorityIds": [
+        "python.ty.static-type-diagnostic"
+      ],
+      "claimKinds": [
+        "verified.python.static-type-diagnostic"
+      ],
+      "candidateKinds": [],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "static type diagnostics inside ty's configured analysis model"
+      ],
+      "notAuthority": [
+        "runtime reachability",
+        "dynamic import execution",
+        "monkeypatch behavior",
+        "untyped runtime contracts"
+      ],
+      "coverageScope": "package-or-module-scope",
+      "analysisInputSet": [
+        "source bytes",
+        "pyproject.toml",
+        "ty configuration",
+        "Python version",
+        "import roots",
+        "dependency and stub search paths",
+        "ty version"
+      ],
+      "versionPolicy": "exact-version-recorded-and-pinned-before-clean-claims",
+      "status": "proposed",
+      "notes": "Preferred Python semantic oracle slot because it is Rust-native and actively developed. Treat diagnostic code and format drift as a registry or policy change. Absence of ty errors means ty-clean only, not Python type-clean."
+    },
+    {
+      "id": "python.pyright",
+      "language": "python",
+      "sourceKind": "semantic-oracle",
+      "confidence": "verified",
+      "authorityIds": [
+        "python.pyright.static-type-diagnostic"
+      ],
+      "claimKinds": [
+        "verified.python.pyright-static-type-diagnostic"
+      ],
+      "candidateKinds": [],
+      "refutesCandidateKinds": [],
+      "authority": [
+        "static type diagnostics inside pyright's configured analysis model"
+      ],
+      "notAuthority": [
+        "runtime reachability",
+        "dynamic import execution",
+        "monkeypatch behavior",
+        "untyped runtime contracts"
+      ],
+      "coverageScope": "package-or-module-scope",
+      "analysisInputSet": [
+        "source bytes",
+        "pyproject.toml",
+        "pyright configuration",
+        "Python version",
+        "import roots",
+        "dependency and stub search paths",
+        "pyright version"
+      ],
+      "versionPolicy": "deferred-version-policy-required-before-use",
+      "status": "deferred",
+      "notes": "Reserved higher-conformance Python type oracle alternative. Not part of the initial ty lane."
+    }
+  ],
+  "invariants": [
+    "candidate-is-not-fact",
+    "verified-requires-ran-coverage",
+    "not-run-is-not-clean",
+    "unavailable-is-not-unsupported",
+    "unsupported-is-diagnostic-not-fake-fact",
+    "stale-evidence-is-not-verified",
+    "tool-name-is-provenance-not-claim-permission",
+    "lower-tier-cannot-promote-itself",
+    "oracle-authority-bounds-every-verified-claim",
+    "semantic-silence-refutes-only-registry-listed-candidates",
+    "analysis-input-set-hash-bounds-semantic-cache-reuse"
+  ]
+}

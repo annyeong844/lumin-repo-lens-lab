@@ -109,11 +109,13 @@ const RUNTIME_CANON_FILES = [
   'any-contamination.md',
   'canon-drift.md',
   'classification-gates.md',
+  'evidence-ladder.md',
   'fact-model.md',
   'identity-and-alias.md',
   'index.md',
   'invariants.md',
   'mode-contract.md',
+  'oracle-registry.json',
   'pre-write-gate.md',
 ];
 
