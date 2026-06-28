@@ -3,10 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::protocol::{
     AstFunctionCloneLine, AstNearFunctionCandidate, AstNearFunctionCandidateKind,
     FunctionCloneRisk, RUST_FUNCTION_CLONE_NEAR_BODY_LOC_WEIGHT,
-    RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT, RUST_FUNCTION_CLONE_NEAR_IDF_WEIGHTED_CALL_TOKENS,
-    RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA,
+    RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT, RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA,
     RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY,
-    RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_JACCARD,
+    RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_IDF_SCORE,
     RUST_FUNCTION_CLONE_NEAR_MIN_NAME_TOKEN_JACCARD_FALLBACK, RUST_FUNCTION_CLONE_NEAR_MIN_SCORE,
     RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF,
     RUST_FUNCTION_CLONE_NEAR_MIN_STATEMENT_COUNT_SIMILARITY,
@@ -15,8 +14,8 @@ use crate::protocol::{
 
 use super::model::NearFact;
 use super::scoring::{
-    format_score, jaccard, range_similarity, round_score, sorted_intersection, token_idf,
-    weighted_jaccard,
+    format_score, jaccard, range_similarity, round_score, saturated_call_token_idf_score,
+    shared_token_idf_sum, sorted_intersection, token_idf,
 };
 
 pub(super) fn near_candidate_from_pair(
@@ -58,16 +57,8 @@ pub(super) fn near_candidate_from_pair(
         &left.significant_call_tokens,
         &right.significant_call_tokens,
     );
-    let weighted_call_token_jaccard = weighted_jaccard(
-        &left.significant_call_tokens,
-        &right.significant_call_tokens,
-        token_idfs,
-    );
-    let call_token_similarity = if RUST_FUNCTION_CLONE_NEAR_IDF_WEIGHTED_CALL_TOKENS {
-        call_token_jaccard.max(weighted_call_token_jaccard)
-    } else {
-        call_token_jaccard
-    };
+    let shared_call_token_idf_sum = shared_token_idf_sum(&shared_call_tokens, token_idfs);
+    let call_token_idf_score = saturated_call_token_idf_score(shared_call_token_idf_sum);
     let shared_name_tokens = sorted_intersection(&left.name_tokens, &right.name_tokens);
     let name_token_jaccard = jaccard(&left.name_tokens, &right.name_tokens);
     let body_loc_similarity =
@@ -81,14 +72,14 @@ pub(super) fn near_candidate_from_pair(
     {
         return None;
     }
-    if call_token_similarity < RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_JACCARD
+    if call_token_idf_score < RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_IDF_SCORE
         && name_token_jaccard < RUST_FUNCTION_CLONE_NEAR_MIN_NAME_TOKEN_JACCARD_FALLBACK
     {
         return None;
     }
 
     let score = round_score(
-        (call_token_similarity * RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT)
+        (call_token_idf_score * RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT)
             + (name_token_jaccard * RUST_FUNCTION_CLONE_NEAR_NAME_TOKEN_WEIGHT)
             + (body_loc_similarity * RUST_FUNCTION_CLONE_NEAR_BODY_LOC_WEIGHT)
             + (statement_count_similarity * RUST_FUNCTION_CLONE_NEAR_STATEMENT_COUNT_WEIGHT),
@@ -121,8 +112,12 @@ pub(super) fn near_candidate_from_pair(
             shared_call_tokens.join(", ")
         ),
         format!(
-            "idf-weighted call-token similarity: {}",
-            format_score(weighted_call_token_jaccard)
+            "shared call-token IDF sum: {}",
+            format_score(shared_call_token_idf_sum)
+        ),
+        format!(
+            "call-token IDF score: {}",
+            format_score(call_token_idf_score)
         ),
         format!(
             "body size similarity: {}",
@@ -162,7 +157,8 @@ pub(super) fn near_candidate_from_pair(
         shared_call_tokens,
         shared_name_tokens,
         call_token_jaccard: round_score(call_token_jaccard),
-        weighted_call_token_jaccard: round_score(weighted_call_token_jaccard),
+        shared_call_token_idf_sum: round_score(shared_call_token_idf_sum),
+        call_token_idf_score: round_score(call_token_idf_score),
         name_token_jaccard: round_score(name_token_jaccard),
         body_loc_range: [
             body_locs.iter().copied().min().unwrap_or(0),

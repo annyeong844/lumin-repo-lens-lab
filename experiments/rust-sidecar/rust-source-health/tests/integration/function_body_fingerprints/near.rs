@@ -7,8 +7,11 @@ use super::helpers::identity_list_contains;
 
 #[test]
 fn function_body_clone_groups_include_ts_style_near_candidates() -> Result<()> {
-    let artifact = analyze_file(
-        "src/lib.rs",
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
         r#"
 pub fn load_user_profile(input: &str) -> usize {
     let parsed = input.trim();
@@ -28,8 +31,9 @@ pub fn load_user_settings(raw: &str) -> usize {
 }
 "#,
     );
+    let artifact = analyze_file("src/lib.rs", &source);
 
-    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 66);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
     assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
     assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 1);
@@ -45,7 +49,7 @@ pub fn load_user_settings(raw: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["calibrationVersion"],
-        "rust-function-clone-near-calibration.v4"
+        "rust-function-clone-near-calibration.v5"
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["minSignificantCallTokenLen"],
@@ -56,8 +60,12 @@ pub fn load_user_settings(raw: &str) -> usize {
         3.0
     );
     assert_eq!(
-        groups["policy"]["nearCandidatePolicy"]["idfWeightedCallTokens"],
-        true
+        groups["policy"]["nearCandidatePolicy"]["callIdfSaturation"],
+        6.0
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["minCallTokenIdfScore"],
+        0.5
     );
     assert_eq!(groups["supports"]["nearFunctionCandidates"], true);
     assert_eq!(groups["supports"]["functionSignatureGroups"], true);
@@ -113,7 +121,10 @@ pub fn load_user_settings(raw: &str) -> usize {
         .as_f64()
         .is_some_and(|score| score >= 0.62));
     assert_eq!(candidate["callTokenJaccard"], 1.0);
-    assert_eq!(candidate["weightedCallTokenJaccard"], 0.0);
+    assert!(candidate["sharedCallTokenIdfSum"]
+        .as_f64()
+        .is_some_and(|score| score >= 6.0));
+    assert_eq!(candidate["callTokenIdfScore"], 1.0);
     assert_eq!(candidate["nameTokenJaccard"], 0.5);
     assert!(candidate["sharedCallTokens"]
         .as_array()
@@ -170,17 +181,20 @@ fn function_body_near_candidates_keep_high_idf_single_token_pairs() -> Result<()
     }
     source.push_str(
         r#"
-pub fn parse_alpha(input: usize) -> usize {
+pub fn parse_user_alpha(input: usize) -> usize {
     let value = unwrap_switch(input);
-    value + 1
+    if value > 10 {
+        return value + 1;
+    }
+    value + 2
 }
 
-pub fn parse_beta(input: usize) -> usize {
+pub fn parse_user_beta(input: usize) -> usize {
     let value = unwrap_switch(input);
-    if value > 0 {
-        return value + 2;
+    if value < 20 {
+        return value + 3;
     }
-    value
+    value + 4
 }
 "#,
     );
@@ -190,8 +204,8 @@ pub fn parse_beta(input: usize) -> usize {
     let candidate = candidates
         .iter()
         .find(|candidate| {
-            identity_list_contains(candidate, "src/lib.rs::parse_alpha")
-                && identity_list_contains(candidate, "src/lib.rs::parse_beta")
+            identity_list_contains(candidate, "src/lib.rs::parse_user_alpha")
+                && identity_list_contains(candidate, "src/lib.rs::parse_user_beta")
         })
         .context("high-idf single-token near candidate")?;
 
@@ -206,13 +220,101 @@ pub fn parse_beta(input: usize) -> usize {
     assert!(candidate["sharedCallTokens"]
         .as_array()
         .is_some_and(|tokens| tokens.iter().any(|token| token == "unwrap_switch")));
-    assert_eq!(candidate["weightedCallTokenJaccard"], 1.0);
+    assert!(candidate["sharedCallTokenIdfSum"]
+        .as_f64()
+        .is_some_and(|score| score >= 3.0));
+    assert!(candidate["callTokenIdfScore"]
+        .as_f64()
+        .is_some_and(|score| (0.5..1.0).contains(&score)));
 
     Ok(())
 }
 
 #[test]
-fn function_body_near_candidates_expose_idf_weighted_call_similarity() -> Result<()> {
+fn function_body_near_candidates_rank_multi_rare_tokens_above_single_token_pairs() -> Result<()> {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub fn parse_user_alpha(input: usize) -> usize {
+    let value = unwrap_switch(input);
+    if value > 10 {
+        return value + 1;
+    }
+    value + 2
+}
+
+pub fn parse_user_beta(input: usize) -> usize {
+    let value = unwrap_switch(input);
+    if value < 20 {
+        return value + 3;
+    }
+    value + 4
+}
+
+pub fn update_user_alpha(input: usize) -> usize {
+    let value = unwrap_value(convert_usize(input));
+    if value > 10 {
+        return value + 1;
+    }
+    value + 2
+}
+
+pub fn update_user_beta(input: usize) -> usize {
+    let value = unwrap_value(convert_usize(input));
+    if value < 20 {
+        return value + 3;
+    }
+    value + 4
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let candidates = near_candidates(&artifact);
+    let single_token_candidate = candidates
+        .iter()
+        .find(|candidate| {
+            identity_list_contains(candidate, "src/lib.rs::parse_user_alpha")
+                && identity_list_contains(candidate, "src/lib.rs::parse_user_beta")
+        })
+        .context("single-token near candidate")?;
+    let multi_token_candidate = candidates
+        .iter()
+        .find(|candidate| {
+            identity_list_contains(candidate, "src/lib.rs::update_user_alpha")
+                && identity_list_contains(candidate, "src/lib.rs::update_user_beta")
+        })
+        .context("multi-token near candidate")?;
+
+    assert_eq!(
+        single_token_candidate["sharedCallTokens"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        multi_token_candidate["sharedCallTokens"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+    assert!(multi_token_candidate["sharedCallTokenIdfSum"]
+        .as_f64()
+        .zip(single_token_candidate["sharedCallTokenIdfSum"].as_f64())
+        .is_some_and(|(multi, single)| multi > single));
+    assert!(multi_token_candidate["score"]
+        .as_f64()
+        .zip(single_token_candidate["score"].as_f64())
+        .is_some_and(|(multi, single)| multi > single));
+
+    Ok(())
+}
+
+#[test]
+fn function_body_near_candidates_expose_shared_idf_sum_and_saturation() -> Result<()> {
     let mut source = String::new();
     for index in 0..64 {
         source.push_str(&format!(
@@ -241,22 +343,22 @@ pub fn update_beta(input: usize) -> usize {
             identity_list_contains(candidate, "src/lib.rs::update_alpha")
                 && identity_list_contains(candidate, "src/lib.rs::update_beta")
         })
-        .context("idf-weighted multi-token near candidate")?;
+        .context("shared-IDF multi-token near candidate")?;
 
     assert_eq!(artifact["summary"]["functionBodyFingerprints"], 66);
     assert!(candidate["sharedCallTokens"]
         .as_array()
         .is_some_and(|tokens| tokens.iter().any(|token| token == "convert_usize")
             && tokens.iter().any(|token| token == "unwrap_value")));
-    assert!(candidate["weightedCallTokenJaccard"]
+    assert!(candidate["sharedCallTokenIdfSum"]
         .as_f64()
-        .zip(candidate["callTokenJaccard"].as_f64())
-        .is_some_and(|(weighted, raw)| weighted > raw));
+        .is_some_and(|score| score >= 6.0));
+    assert_eq!(candidate["callTokenIdfScore"], 1.0);
     assert!(candidate["reasons"]
         .as_array()
         .is_some_and(|reasons| reasons.iter().any(|reason| reason
             .as_str()
-            .is_some_and(|reason| reason.contains("idf-weighted call-token similarity")))));
+            .is_some_and(|reason| reason.contains("shared call-token IDF sum")))));
 
     Ok(())
 }
@@ -305,6 +407,9 @@ fn near_candidates(artifact: &Value) -> &[Value] {
 #[test]
 fn function_body_near_candidate_count_reports_uncapped_review_visible_total() {
     let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
     for index in 0..11 {
         source.push_str(&format!(
             "pub fn load_user_{index}(input: &str) -> usize {{ sanitize(fetch_user(input.trim())).len() + {index} }}\n"
@@ -313,7 +418,7 @@ fn function_body_near_candidate_count_reports_uncapped_review_visible_total() {
 
     let artifact = analyze_file("src/lib.rs", &source);
 
-    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 11);
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 75);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
     assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
     assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 55);

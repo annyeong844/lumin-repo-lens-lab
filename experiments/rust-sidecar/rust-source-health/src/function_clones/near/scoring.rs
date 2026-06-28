@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::protocol::RUST_FUNCTION_CLONE_NEAR_CALL_IDF_SATURATION;
+
 use super::model::NearFact;
 
 pub(super) fn call_token_idfs(facts: &[NearFact<'_>]) -> BTreeMap<String, f64> {
@@ -40,30 +42,18 @@ pub(super) fn jaccard(left: &[String], right: &[String]) -> f64 {
     left.intersection(&right).count() as f64 / union as f64
 }
 
-pub(super) fn weighted_jaccard(
-    left: &[String],
-    right: &[String],
+pub(super) fn shared_token_idf_sum(
+    shared_tokens: &[String],
     token_idfs: &BTreeMap<String, f64>,
 ) -> f64 {
-    let left = left.iter().map(String::as_str).collect::<BTreeSet<_>>();
-    let right = right.iter().map(String::as_str).collect::<BTreeSet<_>>();
-    let union = left.union(&right).copied().collect::<BTreeSet<_>>();
-    if union.is_empty() {
-        return 0.0;
-    }
-
-    let shared_weight = left
-        .intersection(&right)
-        .map(|token| token_idf(token, token_idfs))
-        .sum::<f64>();
-    let union_weight = union
+    shared_tokens
         .iter()
         .map(|token| token_idf(token, token_idfs))
-        .sum::<f64>();
-    if union_weight == 0.0 {
-        return 0.0;
-    }
-    shared_weight / union_weight
+        .sum()
+}
+
+pub(super) fn saturated_call_token_idf_score(shared_idf_sum: f64) -> f64 {
+    (shared_idf_sum / RUST_FUNCTION_CLONE_NEAR_CALL_IDF_SATURATION).min(1.0)
 }
 
 pub(super) fn token_idf(token: &str, token_idfs: &BTreeMap<String, f64>) -> f64 {
