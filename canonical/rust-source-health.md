@@ -271,6 +271,9 @@ Canonical JSON fields:
   including tail expressions, call tokens, visibility, callable kind, optional
   impl owner evidence, and source locations. These facts are review evidence
   only. They do not claim semantic equivalence, auto-reuse, or auto-fix safety.
+  Exact body groups must group by `exactBodyHash` only. Bodies that collide only
+  after identifier anonymization are structure-equivalent review evidence, not
+  `exact-function-body-group` evidence.
 - `ast.inlinePatterns[]`: repeated-inline extraction occurrence facts for
   simple Rust statement lists. The producer is the Rust analogue of
   `_lib/inline-pattern-artifact.mjs`: it records syntax-only occurrences whose

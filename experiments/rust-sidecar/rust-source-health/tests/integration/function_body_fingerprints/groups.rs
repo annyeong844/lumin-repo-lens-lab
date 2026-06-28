@@ -80,7 +80,7 @@ pub fn structure_b(value: &str) -> usize {
     assert!(identity_list_contains(exact, "src/b.rs::exact_b"));
     assert_eq!(
         exact["reason"],
-        "same normalized function body; verify domain ownership before merging"
+        "same token-compacted function body; review cue only, not proof of semantic equivalence"
     );
 
     let structure_groups = groups["structureGroups"]
@@ -120,6 +120,58 @@ pub fn structure_b(value: &str) -> usize {
     assert!(signature["reason"]
         .as_str()
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
+
+    Ok(())
+}
+
+#[test]
+fn exact_body_groups_do_not_merge_identifier_anonymized_bodies() -> Result<()> {
+    let artifact = stdout_json(run_sidecar(request(vec![file(
+        "src/category.rs",
+        r#"
+pub enum Category {
+    Output,
+    Search,
+}
+
+pub fn is_output(category: Category) -> bool {
+    let expected = Category::Output;
+    category == expected
+}
+
+pub fn is_search(category: Category) -> bool {
+    let expected = Category::Search;
+    category == expected
+}
+"#,
+    )])));
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["functionCloneGroups"]["exactBodyGroupCount"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["exactBodyGroups"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
+
+    let structure_groups = artifact["functionCloneGroups"]["structureGroups"]
+        .as_array()
+        .context("structure clone groups")?;
+    let structure = group_with_identity(structure_groups, "src/category.rs::is_output")
+        .context("is_output structure group")?;
+    assert_eq!(structure["kind"], "function-body-structure-group");
+    assert_eq!(structure["size"], 2);
+    assert_eq!(structure["exactHashCount"], 2);
+    assert!(identity_list_contains(
+        structure,
+        "src/category.rs::is_output"
+    ));
+    assert!(identity_list_contains(
+        structure,
+        "src/category.rs::is_search"
+    ));
 
     Ok(())
 }
