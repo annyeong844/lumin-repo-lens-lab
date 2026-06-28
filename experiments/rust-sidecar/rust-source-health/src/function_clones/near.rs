@@ -17,20 +17,24 @@ pub(super) fn build_near_function_candidates(
     structure_groups: &[AstFunctionCloneGroup],
 ) -> NearFunctionCandidateProjection {
     let grouped = grouped_identity_set(exact_body_groups, structure_groups);
-    let mut eligible = function_members(files)
+    let mut all_facts = function_members(files)
         .into_iter()
-        .filter_map(|member| {
+        .map(|member| {
             let identity = member_identity(&member);
-            if grouped.contains(&identity) {
-                return None;
-            }
             let significant_call_tokens = tokens::significant_call_tokens(member.fact);
-            (!significant_call_tokens.is_empty()).then(|| NearFact {
+            NearFact {
                 name_tokens: tokens::name_tokens(&member.fact.name),
                 member,
                 identity,
                 significant_call_tokens,
-            })
+            }
+        })
+        .collect::<Vec<_>>();
+    let token_idfs = scoring::call_token_idfs(&all_facts);
+    let mut eligible = all_facts
+        .drain(..)
+        .filter(|fact| {
+            !grouped.contains(&fact.identity) && !fact.significant_call_tokens.is_empty()
         })
         .collect::<Vec<_>>();
     eligible.sort_by(|left, right| left.identity.cmp(&right.identity));
@@ -54,6 +58,7 @@ pub(super) fn build_near_function_candidates(
                 if let Some(candidate) = candidate::near_candidate_from_pair(
                     &eligible[*left_index],
                     &eligible[*right_index],
+                    &token_idfs,
                 ) {
                     candidates.push(candidate);
                 }

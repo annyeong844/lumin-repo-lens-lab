@@ -192,11 +192,22 @@ suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
 `collect`, plus ubiquitous Rust constructor, macro, and method tokens such as
 `Some`, `None`, `Ok`, `Err`, `vec`, `Box`, `Rc`, `Arc`, and `format` that
 otherwise dominate review candidates. The calibration is serialized as
-`rust-function-clone-near-calibration.v3`, including
-`minSignificantCallTokenLen = 4`, the Rust generic-token suppression set, and
-the required matching callable qualifiers. Near candidates also require matching
-Rust callable qualifiers (`async`, `unsafe`, and `const`) before scoring; mixed
-qualifier pairs are not review candidates.
+`rust-function-clone-near-calibration.v4`, including
+`minSignificantCallTokenLen = 4`, `minSingleTokenIdf = 3.0`,
+`idfWeightedCallTokens = true`, the Rust generic-token suppression set, and the
+required matching callable qualifiers. Rust computes IDF from the current
+analyzed repository's significant call tokens using
+`ln((functionCount + 1) / (documentFrequency + 1))`; single-token near
+candidates must meet `minSingleTokenIdf`, and call-token scoring uses the
+stronger of raw and IDF-weighted Jaccard while serializing both values for
+diagnostics. Raw Jaccard remains the floor so small repositories are not
+penalized when every observed token appears in every eligible function. This is
+a Rust-only calibration layer because Rust constructor and macro call tokens
+produce low-discrimination single-token buckets that TS/JS does not have; if it
+proves stable, the same deterministic IDF gate should be ported back to the
+TS/JS function clone scorer. Near candidates also require matching Rust callable
+qualifiers (`async`, `unsafe`, and `const`) before scoring; mixed qualifier pairs
+are not review candidates.
 `src/function_clones/near.rs` owns near-candidate orchestration; its
 `src/function_clones/near/` submodules are implementation details for candidate
 projection, token filtering, local scoring, and local model structs.

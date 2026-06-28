@@ -54,6 +54,7 @@ pub struct AstNearFunctionCandidate {
     pub shared_call_tokens: Vec<String>,
     pub shared_name_tokens: Vec<String>,
     pub call_token_jaccard: f64,
+    pub weighted_call_token_jaccard: f64,
     pub name_token_jaccard: f64,
     pub body_loc_range: [usize; 2],
     pub statement_count_range: [usize; 2],

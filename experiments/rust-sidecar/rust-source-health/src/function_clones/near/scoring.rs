@@ -1,4 +1,24 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::model::NearFact;
+
+pub(super) fn call_token_idfs(facts: &[NearFact<'_>]) -> BTreeMap<String, f64> {
+    let total_functions = facts.len() as f64;
+    let mut document_frequency = BTreeMap::<String, usize>::new();
+    for fact in facts {
+        for token in &fact.significant_call_tokens {
+            *document_frequency.entry(token.clone()).or_default() += 1;
+        }
+    }
+
+    document_frequency
+        .into_iter()
+        .map(|(token, count)| {
+            let idf = ((total_functions + 1.0) / (count as f64 + 1.0)).ln();
+            (token, idf)
+        })
+        .collect()
+}
 
 pub(super) fn sorted_intersection(left: &[String], right: &[String]) -> Vec<String> {
     let right = right.iter().map(String::as_str).collect::<BTreeSet<_>>();
@@ -18,6 +38,36 @@ pub(super) fn jaccard(left: &[String], right: &[String]) -> f64 {
         return 0.0;
     }
     left.intersection(&right).count() as f64 / union as f64
+}
+
+pub(super) fn weighted_jaccard(
+    left: &[String],
+    right: &[String],
+    token_idfs: &BTreeMap<String, f64>,
+) -> f64 {
+    let left = left.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    let right = right.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    let union = left.union(&right).copied().collect::<BTreeSet<_>>();
+    if union.is_empty() {
+        return 0.0;
+    }
+
+    let shared_weight = left
+        .intersection(&right)
+        .map(|token| token_idf(token, token_idfs))
+        .sum::<f64>();
+    let union_weight = union
+        .iter()
+        .map(|token| token_idf(token, token_idfs))
+        .sum::<f64>();
+    if union_weight == 0.0 {
+        return 0.0;
+    }
+    shared_weight / union_weight
+}
+
+pub(super) fn token_idf(token: &str, token_idfs: &BTreeMap<String, f64>) -> f64 {
+    token_idfs.get(token).copied().unwrap_or(0.0)
 }
 
 pub(super) fn range_similarity(left: usize, right: usize) -> f64 {

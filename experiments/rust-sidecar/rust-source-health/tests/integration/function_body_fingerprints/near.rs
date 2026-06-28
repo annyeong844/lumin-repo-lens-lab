@@ -1,4 +1,5 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use serde_json::Value;
 
 use crate::artifact::analyze_file;
 
@@ -44,11 +45,19 @@ pub fn load_user_settings(raw: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["calibrationVersion"],
-        "rust-function-clone-near-calibration.v3"
+        "rust-function-clone-near-calibration.v4"
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["minSignificantCallTokenLen"],
         4
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["minSingleTokenIdf"],
+        3.0
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["idfWeightedCallTokens"],
+        true
     );
     assert_eq!(groups["supports"]["nearFunctionCandidates"], true);
     assert_eq!(groups["supports"]["functionSignatureGroups"], true);
@@ -104,6 +113,7 @@ pub fn load_user_settings(raw: &str) -> usize {
         .as_f64()
         .is_some_and(|score| score >= 0.62));
     assert_eq!(candidate["callTokenJaccard"], 1.0);
+    assert_eq!(candidate["weightedCallTokenJaccard"], 0.0);
     assert_eq!(candidate["nameTokenJaccard"], 0.5);
     assert!(candidate["sharedCallTokens"]
         .as_array()
@@ -116,6 +126,137 @@ pub fn load_user_settings(raw: &str) -> usize {
     assert!(candidate["reason"]
         .as_str()
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
+
+    Ok(())
+}
+
+#[test]
+fn function_body_near_candidates_drop_low_idf_single_token_pairs() {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+pub fn verify_alpha(input: &str) -> usize {
+    assert!(input.len() > 0);
+    input.len()
+}
+
+pub fn verify_beta(input: &str) -> usize {
+    assert!(input.len() < 10);
+    if input.is_empty() {
+        return 0;
+    }
+    input.len()
+}
+"#,
+    );
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 2);
+    assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidates"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
+}
+
+#[test]
+fn function_body_near_candidates_keep_high_idf_single_token_pairs() -> Result<()> {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub fn parse_alpha(input: usize) -> usize {
+    let value = unwrap_switch(input);
+    value + 1
+}
+
+pub fn parse_beta(input: usize) -> usize {
+    let value = unwrap_switch(input);
+    if value > 0 {
+        return value + 2;
+    }
+    value
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let candidates = near_candidates(&artifact);
+    let candidate = candidates
+        .iter()
+        .find(|candidate| {
+            identity_list_contains(candidate, "src/lib.rs::parse_alpha")
+                && identity_list_contains(candidate, "src/lib.rs::parse_beta")
+        })
+        .context("high-idf single-token near candidate")?;
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 66);
+    assert!(artifact["summary"]["functionCloneNearCandidates"]
+        .as_u64()
+        .is_some_and(|count| count >= 1));
+    assert_eq!(
+        candidate["sharedCallTokens"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert!(candidate["sharedCallTokens"]
+        .as_array()
+        .is_some_and(|tokens| tokens.iter().any(|token| token == "unwrap_switch")));
+    assert_eq!(candidate["weightedCallTokenJaccard"], 1.0);
+
+    Ok(())
+}
+
+#[test]
+fn function_body_near_candidates_expose_idf_weighted_call_similarity() -> Result<()> {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!(
+            "pub fn filler_{index}() -> usize {{ common_noise() + {index} }}\n"
+        ));
+    }
+    source.push_str(
+        r#"
+pub fn update_alpha(input: usize) -> usize {
+    let value = unwrap_value(convert_usize(input));
+    value + common_noise()
+}
+
+pub fn update_beta(input: usize) -> usize {
+    let value = unwrap_value(convert_usize(input));
+    value + 1
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let candidates = near_candidates(&artifact);
+    let candidate = candidates
+        .iter()
+        .find(|candidate| {
+            identity_list_contains(candidate, "src/lib.rs::update_alpha")
+                && identity_list_contains(candidate, "src/lib.rs::update_beta")
+        })
+        .context("idf-weighted multi-token near candidate")?;
+
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 66);
+    assert!(candidate["sharedCallTokens"]
+        .as_array()
+        .is_some_and(|tokens| tokens.iter().any(|token| token == "convert_usize")
+            && tokens.iter().any(|token| token == "unwrap_value")));
+    assert!(candidate["weightedCallTokenJaccard"]
+        .as_f64()
+        .zip(candidate["callTokenJaccard"].as_f64())
+        .is_some_and(|(weighted, raw)| weighted > raw));
+    assert!(candidate["reasons"]
+        .as_array()
+        .is_some_and(|reasons| reasons.iter().any(|reason| reason
+            .as_str()
+            .is_some_and(|reason| reason.contains("idf-weighted call-token similarity")))));
 
     Ok(())
 }
@@ -152,6 +293,13 @@ pub fn maybe_beta(flag: bool, value: u8) -> Option<u8> {
             .map(Vec::len),
         Some(0)
     );
+}
+
+fn near_candidates(artifact: &Value) -> &[Value] {
+    artifact["functionCloneGroups"]["nearFunctionCandidates"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
 }
 
 #[test]
