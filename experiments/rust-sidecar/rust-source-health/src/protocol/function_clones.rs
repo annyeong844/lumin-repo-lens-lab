@@ -7,7 +7,9 @@ mod supports;
 pub use groups::{
     AstFunctionCloneGroup, AstFunctionCloneGroupKind, AstFunctionCloneLine,
     AstFunctionSignatureGroup, AstFunctionSignatureGroupKind, AstNearFunctionCandidate,
-    AstNearFunctionCandidateKind, FunctionCloneRisk,
+    AstNearFunctionCandidateGenerationPolicy, AstNearFunctionCandidateGenerationSummary,
+    AstNearFunctionCandidateKind, AstNearFunctionCompatibilitySkippedPairEstimates,
+    AstSkippedLowDiscriminationBucket, FunctionCloneRisk,
 };
 pub use policy::{
     AstFunctionCloneGroupsPolicy, AstNearFunctionCandidatePolicy, AstNearFunctionCandidateWeights,
@@ -27,6 +29,12 @@ pub struct AstFunctionCloneGroups {
     pub signature_group_count: usize,
     pub near_function_candidate_count: usize,
     pub near_function_candidate_projection_limit: usize,
+    pub candidate_generation_policy: AstNearFunctionCandidateGenerationPolicy,
+    pub candidate_generation_summary: AstNearFunctionCandidateGenerationSummary,
+    pub skipped_low_discrimination_buckets: Vec<AstSkippedLowDiscriminationBucket>,
+    pub skipped_low_discrimination_bucket_count: usize,
+    pub skipped_low_discrimination_raw_pair_estimate: usize,
+    pub skipped_low_discrimination_pair_estimate_kind: &'static str,
     pub generated_file_fact_count: usize,
     pub exact_body_groups: Vec<AstFunctionCloneGroup>,
     pub structure_groups: Vec<AstFunctionCloneGroup>,
@@ -48,6 +56,13 @@ impl Default for AstFunctionCloneGroups {
             near_function_candidate_count: 0,
             near_function_candidate_projection_limit:
                 super::RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
+            candidate_generation_policy: AstNearFunctionCandidateGenerationPolicy::default(),
+            candidate_generation_summary: AstNearFunctionCandidateGenerationSummary::default(),
+            skipped_low_discrimination_buckets: Vec::new(),
+            skipped_low_discrimination_bucket_count: 0,
+            skipped_low_discrimination_raw_pair_estimate: 0,
+            skipped_low_discrimination_pair_estimate_kind:
+                super::RUST_FUNCTION_CLONE_NEAR_SKIPPED_PAIR_ESTIMATE_KIND,
             generated_file_fact_count: 0,
             exact_body_groups: Vec::new(),
             structure_groups: Vec::new(),

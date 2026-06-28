@@ -190,9 +190,9 @@ the review count fields, and `nearFunctionCandidateCount` is the review-visible
 total before `nearFunctionCandidates[]` is projected to
 `nearFunctionCandidateProjectionLimit`. This cap is an artifact projection
 choice, not an analysis cap. Rust may maintain only the projected top-N
-candidate array while streaming pair evaluation, but it must still evaluate
-eligible pairs deterministically, report the uncapped review-visible count, and
-preserve the same ordering as a full score-and-sort projection.
+candidate array while streaming pair evaluation, but it must report the uncapped
+review-visible count for retained retrieval evidence and preserve the same
+ordering as a full score-and-sort projection over that retained evidence.
 The group policy must expose both body and signature normalizer provenance:
 `functionCloneGroups.policy.normalizedVersion` is the function-body normalizer,
 and `functionCloneGroups.policy.functionSignatureNormalizedVersion` is the
@@ -206,7 +206,7 @@ suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
 `collect`, plus ubiquitous Rust constructor, macro, and method tokens such as
 `Some`, `None`, `Ok`, `Err`, `vec`, `Box`, `Rc`, `Arc`, and `format` that
 otherwise dominate review candidates. The calibration is serialized as
-`rust-function-clone-near-calibration.v5`, including
+`rust-function-clone-near-calibration.v6`, including
 `minSignificantCallTokenLen = 4`, `minSingleTokenIdf = 3.0`,
 `callIdfSaturation = 6.0`, the Rust generic-token suppression set, and the
 required matching callable qualifiers. Rust computes IDF from the current
@@ -223,6 +223,20 @@ the same deterministic IDF gate should be ported back to the TS/JS function
 clone scorer. Near candidates also require matching Rust callable qualifiers
 (`async`, `unsafe`, and `const`) before scoring; mixed qualifier pairs are not
 review candidates.
+Rust near-function clone candidates use bounded retrieval for large repositories
+instead of exhaustive retained-token pair scans. Low-discrimination call-token
+buckets do not generate pairs, but pairs that also share retained
+higher-discrimination tokens remain eligible. Compatibility guards such as
+qualifiers, parameter count, body LOC, and statement count must be applied
+before pair enumeration where possible. The artifact exposes
+`retrievalContractVersion = "function-clone-near-retrieval.v1"`,
+`candidateGenerationMode = "bounded-retrieval"`, and
+`candidateCountScope = "scored-candidates-from-retained-retrieval-evidence"` so
+consumers do not treat `nearFunctionCandidateCount` as the count of all possible
+near clones in the complete pair universe. Skipped-bucket pair estimates are raw
+work estimates and may double-count pairs shared by multiple skipped tokens.
+They are transparency evidence only, not absence claims, timeouts, repository
+size caps, or permission to skip large repositories.
 `src/function_clones/near.rs` owns near-candidate orchestration; its
 `src/function_clones/near/` submodules are implementation details for candidate
 projection, token filtering, local scoring, and local model structs.

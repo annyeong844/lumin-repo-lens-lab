@@ -25,8 +25,11 @@ pub use function_clones::{
     AstFunctionCloneGroup, AstFunctionCloneGroupKind, AstFunctionCloneGroups,
     AstFunctionCloneGroupsPolicy, AstFunctionCloneGroupsSupports, AstFunctionCloneInputError,
     AstFunctionCloneLine, AstFunctionSignatureGroup, AstFunctionSignatureGroupKind,
-    AstNearFunctionCandidate, AstNearFunctionCandidateKind, AstNearFunctionCandidatePolicy,
-    AstNearFunctionCandidateWeights, FunctionCloneRisk,
+    AstNearFunctionCandidate, AstNearFunctionCandidateGenerationPolicy,
+    AstNearFunctionCandidateGenerationSummary, AstNearFunctionCandidateKind,
+    AstNearFunctionCandidatePolicy, AstNearFunctionCandidateWeights,
+    AstNearFunctionCompatibilitySkippedPairEstimates, AstSkippedLowDiscriminationBucket,
+    FunctionCloneRisk,
 };
 pub use location::Location;
 pub use meta::{
@@ -66,7 +69,14 @@ pub const RUST_FUNCTION_CLONE_NEAR_POLICY_ID: &str = "function-clone-near-policy
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_VERSION: &str = "function-clone-near-policy-v1";
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_CLASS: &str = "review";
 pub const RUST_FUNCTION_CLONE_NEAR_CALIBRATION_VERSION: &str =
-    "rust-function-clone-near-calibration.v5";
+    "rust-function-clone-near-calibration.v6";
+pub const RUST_FUNCTION_CLONE_NEAR_RETRIEVAL_CONTRACT_VERSION: &str =
+    "function-clone-near-retrieval.v1";
+pub const RUST_FUNCTION_CLONE_NEAR_CANDIDATE_GENERATION_MODE: &str = "bounded-retrieval";
+pub const RUST_FUNCTION_CLONE_NEAR_CANDIDATE_COUNT_SCOPE: &str =
+    "scored-candidates-from-retained-retrieval-evidence";
+pub const RUST_FUNCTION_CLONE_NEAR_PAIR_DEDUPE: &str = "ordered-shared-retained-token";
+pub const RUST_FUNCTION_CLONE_NEAR_PROJECTION: &str = "streaming-top-n";
 pub const RUST_FUNCTION_CLONE_NEAR_MIN_SIGNIFICANT_CALL_TOKEN_LEN: usize = 4;
 pub const RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF: f64 = 3.0;
 pub const RUST_FUNCTION_CLONE_NEAR_CALL_IDF_SATURATION: f64 = 6.0;
@@ -77,6 +87,12 @@ pub const RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_IDF_SCORE: f64 = 0.5;
 pub const RUST_FUNCTION_CLONE_NEAR_MIN_NAME_TOKEN_JACCARD_FALLBACK: f64 = 0.34;
 pub const RUST_FUNCTION_CLONE_NEAR_MIN_SCORE: f64 = 0.62;
 pub const RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES: usize = 50;
+pub const RUST_FUNCTION_CLONE_NEAR_SKIPPED_BUCKET_SAMPLE_LIMIT: usize =
+    RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES;
+pub const RUST_FUNCTION_CLONE_NEAR_SKIPPED_PAIR_ESTIMATE_KIND: &str =
+    "raw-bucket-pairs-may-double-count-pairs-shared-by-multiple-skipped-tokens";
+pub const RUST_FUNCTION_CLONE_NEAR_COMPATIBILITY_SKIPPED_PAIR_ESTIMATE_KIND: &str =
+    "raw-partition-estimate-does-not-enumerate-rejected-pairs";
 pub const RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT: f64 = 0.45;
 pub const RUST_FUNCTION_CLONE_NEAR_NAME_TOKEN_WEIGHT: f64 = 0.25;
 pub const RUST_FUNCTION_CLONE_NEAR_BODY_LOC_WEIGHT: f64 = 0.15;

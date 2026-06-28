@@ -49,7 +49,35 @@ pub fn load_user_settings(raw: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["calibrationVersion"],
-        "rust-function-clone-near-calibration.v5"
+        "rust-function-clone-near-calibration.v6"
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["retrievalContractVersion"],
+        "function-clone-near-retrieval.v1"
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["candidateGenerationMode"],
+        "bounded-retrieval"
+    );
+    assert_eq!(
+        groups["policy"]["nearCandidatePolicy"]["candidateCountScope"],
+        "scored-candidates-from-retained-retrieval-evidence"
+    );
+    assert_eq!(
+        groups["candidateGenerationPolicy"]["mode"],
+        "bounded-retrieval"
+    );
+    assert_eq!(
+        groups["candidateGenerationPolicy"]["retrievalContractVersion"],
+        "function-clone-near-retrieval.v1"
+    );
+    assert_eq!(
+        groups["candidateGenerationPolicy"]["candidateCountScope"],
+        "scored-candidates-from-retained-retrieval-evidence"
+    );
+    assert_eq!(
+        groups["candidateGenerationPolicy"]["pairDedupe"],
+        "ordered-shared-retained-token"
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["minSignificantCallTokenLen"],
@@ -171,6 +199,25 @@ pub fn verify_beta(input: &str) -> usize {
             .map(Vec::len),
         Some(0)
     );
+    assert_eq!(
+        artifact["functionCloneGroups"]["skippedLowDiscriminationBucketCount"],
+        1
+    );
+    assert!(
+        artifact["functionCloneGroups"]["skippedLowDiscriminationRawPairEstimate"]
+            .as_u64()
+            .is_some_and(|estimate| estimate > 0)
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["skippedLowDiscriminationPairEstimateKind"],
+        "raw-bucket-pairs-may-double-count-pairs-shared-by-multiple-skipped-tokens"
+    );
+    let skipped = &artifact["functionCloneGroups"]["skippedLowDiscriminationBuckets"][0];
+    assert_eq!(skipped["token"], "assert");
+    assert_eq!(skipped["reason"], "below-min-single-token-idf");
+    assert!(skipped["rawPairEstimate"]
+        .as_u64()
+        .is_some_and(|estimate| estimate > 0));
 }
 
 #[test]
@@ -226,6 +273,69 @@ pub fn parse_user_beta(input: usize) -> usize {
     assert!(candidate["callTokenIdfScore"]
         .as_f64()
         .is_some_and(|score| (0.5..1.0).contains(&score)));
+
+    Ok(())
+}
+
+#[test]
+fn function_body_near_candidates_keep_pairs_that_share_low_and_high_idf_tokens() -> Result<()> {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    for index in 0..64 {
+        source.push_str(&format!(
+            "pub fn assert_filler_{index}(input: usize) -> usize {{ assert!(input != {index}); input + {index} }}\n"
+        ));
+    }
+    source.push_str(
+        r#"
+pub fn parse_user_alpha(input: usize) -> usize {
+    assert!(input > 0);
+    let value = unwrap_switch(input);
+    if value > 10 {
+        return value + 1;
+    }
+    value + 2
+}
+
+pub fn parse_user_beta(input: usize) -> usize {
+    assert!(input < 100);
+    let value = unwrap_switch(input);
+    if value < 20 {
+        return value + 3;
+    }
+    value + 4
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let candidates = near_candidates(&artifact);
+    let candidate = candidates
+        .iter()
+        .find(|candidate| {
+            identity_list_contains(candidate, "src/lib.rs::parse_user_alpha")
+                && identity_list_contains(candidate, "src/lib.rs::parse_user_beta")
+        })
+        .context("high-idf retained token should still generate pair")?;
+
+    assert_eq!(
+        artifact["functionCloneGroups"]["skippedLowDiscriminationBucketCount"],
+        1
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["skippedLowDiscriminationBuckets"][0]["token"],
+        "assert"
+    );
+    assert_eq!(
+        candidate["sharedCallTokens"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert!(candidate["sharedCallTokens"]
+        .as_array()
+        .is_some_and(|tokens| tokens.iter().any(|token| token == "unwrap_switch")
+            && !tokens.iter().any(|token| token == "assert")));
 
     Ok(())
 }
@@ -356,6 +466,58 @@ pub fn update_user_beta(input: usize) -> usize {
 }
 
 #[test]
+fn function_body_near_candidates_score_from_all_retained_shared_tokens() -> Result<()> {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub fn compose_alpha(input: usize) -> usize {
+    let value = rare_second(rare_first(input));
+    if value > 10 {
+        return value + 1;
+    }
+    value + 2
+}
+
+pub fn compose_beta(input: usize) -> usize {
+    let value = rare_first(rare_second(input));
+    if value < 20 {
+        return value + 3;
+    }
+    value + 4
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let candidates = near_candidates(&artifact);
+    let candidate = candidates
+        .iter()
+        .find(|candidate| {
+            identity_list_contains(candidate, "src/lib.rs::compose_alpha")
+                && identity_list_contains(candidate, "src/lib.rs::compose_beta")
+        })
+        .context("multi-token candidate")?;
+
+    assert_eq!(
+        artifact["functionCloneGroups"]["nearFunctionCandidateCount"],
+        1
+    );
+    assert!(candidate["sharedCallTokens"]
+        .as_array()
+        .is_some_and(|tokens| tokens.iter().any(|token| token == "rare_first")
+            && tokens.iter().any(|token| token == "rare_second")));
+    assert!(candidate["sharedCallTokenIdfSum"]
+        .as_f64()
+        .is_some_and(|sum| sum >= 6.0));
+    assert_eq!(candidate["callTokenIdfScore"], 1.0);
+
+    Ok(())
+}
+
+#[test]
 fn function_body_near_candidates_expose_shared_idf_sum_and_saturation() -> Result<()> {
     let mut source = String::new();
     for index in 0..64 {
@@ -449,7 +611,7 @@ fn near_candidates(artifact: &Value) -> &[Value] {
 #[test]
 fn function_body_near_candidate_count_reports_uncapped_review_visible_total() {
     let mut source = String::new();
-    for index in 0..64 {
+    for index in 0..512 {
         source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
     }
     for index in 0..11 {
@@ -460,7 +622,7 @@ fn function_body_near_candidate_count_reports_uncapped_review_visible_total() {
 
     let artifact = analyze_file("src/lib.rs", &source);
 
-    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 75);
+    assert_eq!(artifact["summary"]["functionBodyFingerprints"], 523);
     assert_eq!(artifact["summary"]["functionCloneExactBodyGroups"], 0);
     assert_eq!(artifact["summary"]["functionCloneStructureGroups"], 0);
     assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 55);
@@ -570,5 +732,67 @@ pub unsafe fn refresh_cache_unchecked(raw: &str) -> usize {
             .as_array()
             .map(Vec::len),
         Some(0)
+    );
+}
+
+#[test]
+fn function_body_near_candidates_partition_retained_buckets_before_pair_generation() {
+    let mut source = String::new();
+    for index in 0..256 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub fn compatible_alpha(input: usize) -> usize {
+    let value = rare_bridge(input);
+    if value > 10 {
+        return value + 1;
+    }
+    value + 2
+}
+
+pub fn compatible_beta(input: usize) -> usize {
+    let value = rare_bridge(input);
+    if value < 20 {
+        return value + 3;
+    }
+    value + 4
+}
+
+pub unsafe fn unsafe_gamma(input: usize) -> usize {
+    let value = rare_bridge(input);
+    value + 5
+}
+
+pub fn param_delta(input: usize, extra: usize, more: usize) -> usize {
+    let value = rare_bridge(input + extra + more);
+    value + 6
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let groups = &artifact["functionCloneGroups"];
+    let summary = &groups["candidateGenerationSummary"];
+
+    assert!(summary["retainedRawPairEstimate"]
+        .as_u64()
+        .zip(summary["generatedUniquePairCount"].as_u64())
+        .is_some_and(|(raw, generated)| raw > generated));
+    assert_eq!(summary["generatedUniquePairCount"], 1);
+    assert_eq!(summary["scoredPairCount"], 1);
+    assert!(
+        summary["compatibilitySkippedRawPairEstimateByReason"]["qualifierMismatch"]
+            .as_u64()
+            .is_some_and(|count| count > 0)
+    );
+    assert!(
+        summary["compatibilitySkippedRawPairEstimateByReason"]["parameterCountDelta"]
+            .as_u64()
+            .is_some_and(|count| count > 0)
+    );
+    assert_eq!(
+        summary["compatibilitySkippedPairEstimateKind"],
+        "raw-partition-estimate-does-not-enumerate-rejected-pairs"
     );
 }

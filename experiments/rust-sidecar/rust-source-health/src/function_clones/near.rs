@@ -7,11 +7,18 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{
-    AstFunctionCloneGroup, AstNearFunctionCandidate, FileHealth,
-    RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
+    AstFunctionCloneGroup, AstNearFunctionCandidate, AstSkippedLowDiscriminationBucket, FileHealth,
+    RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES, RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA,
+    RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY,
+    RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF,
+    RUST_FUNCTION_CLONE_NEAR_MIN_STATEMENT_COUNT_SIMILARITY,
+    RUST_FUNCTION_CLONE_NEAR_SKIPPED_BUCKET_SAMPLE_LIMIT,
 };
 
-use model::{NearFact, NearFunctionCandidateProjection};
+use model::{
+    CandidateGenerationDiagnostics, CompatibilityKey, NearFact, NearFunctionCandidateProjection,
+    QualifierSignature,
+};
 
 use super::common::{function_members, member_identity};
 
@@ -42,35 +49,118 @@ pub(super) fn build_near_function_candidates(
         })
         .collect::<Vec<_>>();
     eligible.sort_by(|left, right| left.identity.cmp(&right.identity));
+    let eligible_function_count = eligible.len();
 
-    let mut by_call_token = BTreeMap::<&str, Vec<usize>>::new();
+    let mut all_by_call_token = BTreeMap::<String, Vec<usize>>::new();
     for (index, fact) in eligible.iter().enumerate() {
         for token in &fact.significant_call_tokens {
-            by_call_token.entry(token.as_str()).or_default().push(index);
+            all_by_call_token
+                .entry(token.clone())
+                .or_default()
+                .push(index);
         }
     }
 
+    let mut skipped_low_discrimination_buckets = Vec::new();
+    for (token, bucket) in &all_by_call_token {
+        if scoring::token_idf(token, &token_idfs) >= RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF {
+            continue;
+        }
+        let raw_pair_estimate = raw_pair_estimate(bucket.len());
+        if raw_pair_estimate == 0 {
+            continue;
+        }
+        skipped_low_discrimination_buckets.push(AstSkippedLowDiscriminationBucket {
+            token: token.clone(),
+            idf: scoring::round_score(scoring::token_idf(token, &token_idfs)),
+            function_count: bucket.len(),
+            raw_pair_estimate,
+            reason: "below-min-single-token-idf",
+        });
+    }
+    let skipped_low_discrimination_bucket_count = skipped_low_discrimination_buckets.len();
+    let skipped_low_discrimination_raw_pair_estimate = skipped_low_discrimination_buckets
+        .iter()
+        .map(|bucket| bucket.raw_pair_estimate)
+        .sum();
+    skipped_low_discrimination_buckets.sort_by(|left, right| {
+        right
+            .raw_pair_estimate
+            .cmp(&left.raw_pair_estimate)
+            .then_with(|| left.token.cmp(&right.token))
+    });
+    skipped_low_discrimination_buckets
+        .truncate(RUST_FUNCTION_CLONE_NEAR_SKIPPED_BUCKET_SAMPLE_LIMIT);
+
+    for fact in &mut eligible {
+        fact.significant_call_tokens.retain(|token| {
+            scoring::token_idf(token, &token_idfs) >= RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF
+        });
+    }
+    eligible.retain(|fact| !fact.significant_call_tokens.is_empty());
+
+    let mut retained = BTreeMap::<String, BTreeMap<CompatibilityKey, Vec<usize>>>::new();
+    for (index, fact) in eligible.iter().enumerate() {
+        let key = compatibility_key(fact);
+        for token in &fact.significant_call_tokens {
+            retained
+                .entry(token.clone())
+                .or_default()
+                .entry(key.clone())
+                .or_default()
+                .push(index);
+        }
+    }
+
+    let mut diagnostics = CandidateGenerationDiagnostics {
+        eligible_function_count,
+        retained_call_token_bucket_count: retained.len(),
+        skipped_low_discrimination_buckets,
+        skipped_low_discrimination_bucket_count,
+        skipped_low_discrimination_raw_pair_estimate,
+        ..CandidateGenerationDiagnostics::default()
+    };
+
     let mut review_visible_count = 0;
     let mut candidates = Vec::new();
-    for (call_token, bucket) in &by_call_token {
-        for (left_offset, left_index) in bucket.iter().enumerate() {
-            for right_index in bucket.iter().skip(left_offset + 1) {
-                if has_earlier_shared_call_token(
-                    &eligible[*left_index].significant_call_tokens,
-                    &eligible[*right_index].significant_call_tokens,
-                    call_token,
-                ) {
-                    continue;
-                }
-                if let Some(candidate) = candidate::near_candidate_from_pair(
-                    &eligible[*left_index],
-                    &eligible[*right_index],
-                    &token_idfs,
-                ) {
-                    if !candidate.generated_only {
-                        review_visible_count += 1;
+    {
+        let mut generation = CandidateGenerationState {
+            eligible: &eligible,
+            token_idfs: &token_idfs,
+            diagnostics: &mut diagnostics,
+            review_visible_count: &mut review_visible_count,
+            candidates: &mut candidates,
+        };
+        for (call_token, postings) in &retained {
+            update_retained_pair_estimates(postings, generation.diagnostics);
+            let posting_entries = postings.iter().collect::<Vec<_>>();
+            for (left_posting_offset, (left_key, left_bucket)) in posting_entries.iter().enumerate()
+            {
+                for (right_key, right_bucket) in posting_entries.iter().skip(left_posting_offset) {
+                    if !compatibility_keys_match(left_key, right_key) {
+                        continue;
                     }
-                    push_projected_candidate(&mut candidates, candidate);
+                    if left_key == right_key {
+                        for (left_offset, left_index) in left_bucket.iter().enumerate() {
+                            for right_index in left_bucket.iter().skip(left_offset + 1) {
+                                generation.generate_candidate_from_pair(
+                                    *left_index,
+                                    *right_index,
+                                    call_token,
+                                );
+                            }
+                        }
+                        continue;
+                    }
+                    for left_index in left_bucket.iter() {
+                        for right_index in right_bucket.iter() {
+                            generation.generate_candidate_from_pair(
+                                *left_index,
+                                *right_index,
+                                call_token,
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -79,7 +169,149 @@ pub(super) fn build_near_function_candidates(
     NearFunctionCandidateProjection {
         review_visible_count,
         candidates,
+        diagnostics,
     }
+}
+
+struct CandidateGenerationState<'facts, 'state> {
+    eligible: &'state [NearFact<'facts>],
+    token_idfs: &'state BTreeMap<String, f64>,
+    diagnostics: &'state mut CandidateGenerationDiagnostics,
+    review_visible_count: &'state mut usize,
+    candidates: &'state mut Vec<AstNearFunctionCandidate>,
+}
+
+impl<'facts, 'state> CandidateGenerationState<'facts, 'state> {
+    fn generate_candidate_from_pair(
+        &mut self,
+        left_index: usize,
+        right_index: usize,
+        call_token: &str,
+    ) {
+        if has_earlier_shared_call_token(
+            &self.eligible[left_index].significant_call_tokens,
+            &self.eligible[right_index].significant_call_tokens,
+            call_token,
+        ) {
+            return;
+        }
+
+        self.diagnostics.generated_unique_pair_count += 1;
+        if let Some(candidate) = candidate::near_candidate_from_pair(
+            &self.eligible[left_index],
+            &self.eligible[right_index],
+            self.token_idfs,
+        ) {
+            self.diagnostics.scored_pair_count += 1;
+            if !candidate.generated_only {
+                *self.review_visible_count += 1;
+            }
+            push_projected_candidate(self.candidates, candidate);
+        }
+    }
+}
+
+fn compatibility_key(fact: &NearFact<'_>) -> CompatibilityKey {
+    CompatibilityKey {
+        qualifier_signature: QualifierSignature {
+            is_async: fact.member.fact.is_async,
+            is_unsafe: fact.member.fact.is_unsafe,
+            is_const: fact.member.fact.is_const,
+        },
+        param_count: fact.member.fact.param_count,
+        body_loc_band: range_band(
+            fact.member.fact.body_loc,
+            RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY,
+        ),
+        statement_count_band: range_band(
+            fact.member.fact.statement_count,
+            RUST_FUNCTION_CLONE_NEAR_MIN_STATEMENT_COUNT_SIMILARITY,
+        ),
+    }
+}
+
+fn range_band(value: usize, min_similarity: f64) -> usize {
+    if value == 0 {
+        return 0;
+    }
+    let base = 1.0 / min_similarity;
+    ((value as f64).ln() / base.ln()).floor() as usize + 1
+}
+
+fn compatibility_keys_match(left: &CompatibilityKey, right: &CompatibilityKey) -> bool {
+    left.qualifier_signature == right.qualifier_signature
+        && left.param_count.abs_diff(right.param_count)
+            <= RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA
+        && bands_compatible(left.body_loc_band, right.body_loc_band)
+        && bands_compatible(left.statement_count_band, right.statement_count_band)
+}
+
+fn bands_compatible(left: usize, right: usize) -> bool {
+    left.abs_diff(right) <= 1
+}
+
+fn update_retained_pair_estimates(
+    postings: &BTreeMap<CompatibilityKey, Vec<usize>>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+) {
+    let entries = postings
+        .iter()
+        .map(|(key, bucket)| (key, bucket.len()))
+        .collect::<Vec<_>>();
+    let total = raw_pair_estimate(entries.iter().map(|(_, count)| *count).sum());
+    let qualifier = estimate_pairs_matching(&entries, |left, right| {
+        left.qualifier_signature == right.qualifier_signature
+    });
+    let parameter = estimate_pairs_matching(&entries, |left, right| {
+        left.qualifier_signature == right.qualifier_signature
+            && left.param_count.abs_diff(right.param_count)
+                <= RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA
+    });
+    let body = estimate_pairs_matching(&entries, |left, right| {
+        left.qualifier_signature == right.qualifier_signature
+            && left.param_count.abs_diff(right.param_count)
+                <= RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA
+            && bands_compatible(left.body_loc_band, right.body_loc_band)
+    });
+    let statement = estimate_pairs_matching(&entries, compatibility_keys_match);
+
+    diagnostics.retained_raw_pair_estimate += total;
+    diagnostics
+        .compatibility_skipped_raw_pair_estimate_by_reason
+        .qualifier_mismatch += total.saturating_sub(qualifier);
+    diagnostics
+        .compatibility_skipped_raw_pair_estimate_by_reason
+        .parameter_count_delta += qualifier.saturating_sub(parameter);
+    diagnostics
+        .compatibility_skipped_raw_pair_estimate_by_reason
+        .body_loc_band_mismatch += parameter.saturating_sub(body);
+    diagnostics
+        .compatibility_skipped_raw_pair_estimate_by_reason
+        .statement_count_band_mismatch += body.saturating_sub(statement);
+}
+
+fn estimate_pairs_matching<F>(entries: &[(&CompatibilityKey, usize)], matches: F) -> usize
+where
+    F: Fn(&CompatibilityKey, &CompatibilityKey) -> bool,
+{
+    let mut total = 0usize;
+    for (left_offset, (left_key, left_count)) in entries.iter().enumerate() {
+        for (right_key, right_count) in entries.iter().skip(left_offset) {
+            if !matches(left_key, right_key) {
+                continue;
+            }
+            if left_key == right_key {
+                total += raw_pair_estimate(*left_count);
+            } else {
+                total += left_count * right_count;
+            }
+        }
+    }
+    total
+}
+
+fn raw_pair_estimate(count: usize) -> usize {
+    count.saturating_mul(count.saturating_sub(1)) / 2
 }
 
 fn has_earlier_shared_call_token(left: &[String], right: &[String], current_token: &str) -> bool {
