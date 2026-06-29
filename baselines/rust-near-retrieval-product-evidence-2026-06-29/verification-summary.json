@@ -32,6 +32,51 @@
     }
   ],
   "dogfoodBaselineSource": "canonical/rust-source-health.md, recorded from the 2026-06-29 review packet",
-  "dogfoodBaselineRerunInThisPacket": false,
+  "dogfoodBaselineRerunInThisPacket": true,
+  "dogfoodRerun": {
+    "summaryFile": "dogfood-rerun-2026-06-29.md",
+    "artifactDirectory": "C:\\Users\\endof\\Downloads\\lumin-perf-lab\\review\\rust-near-dogfood",
+    "nodeRun": false,
+    "targets": [
+      {
+        "name": "codex-rs",
+        "profile": "compact",
+        "files": 2406,
+        "signals": 30337,
+        "elapsed": "4:18.70",
+        "maxRssKb": 288496,
+        "artifactBytes": 16048614,
+        "nearFunctionCandidateCount": 1492287,
+        "generatedUniquePairCount": 4549852,
+        "scoredPairCount": 1492300,
+        "skippedLowDiscriminationRawPairEstimate": 48394249
+      },
+      {
+        "name": "codex-core",
+        "profile": "full",
+        "files": 496,
+        "signals": 9372,
+        "elapsed": "0:31.91",
+        "maxRssKb": 133804,
+        "artifactBytes": 54929759,
+        "nearFunctionCandidateCount": 159078,
+        "projectedCandidatesRetainingSkippedTokens": 3
+      },
+      {
+        "name": "ripgrep",
+        "profile": "full",
+        "files": 100,
+        "signals": 1234,
+        "elapsed": "0:04.31",
+        "maxRssKb": 43820,
+        "artifactBytes": 14548331,
+        "exactBodyGroupCount": 100,
+        "structureGroupCount": 63,
+        "signatureGroupCount": 188,
+        "nearFunctionCandidateCount": 8185,
+        "projectedCandidatesRetainingSkippedTokens": 15
+      }
+    ]
+  },
   "unrelatedDirtyFilesTouched": false
 }

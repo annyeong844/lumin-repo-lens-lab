@@ -57,6 +57,25 @@ Those dogfood runs were not rerun while creating this packet. This packet
 verifies the product contract and code paths around the already-recorded
 baseline.
 
+## Dogfood Rerun
+
+The follow-up rerun in `dogfood-rerun-2026-06-29.md` validates the same bounded
+retrieval behavior against local `codex-rs` and `ripgrep` checkouts after the
+shared-token evidence fix:
+
+- full `codex-rs`: 2406 files, 30337 signals, completed in 4:18.70 with
+  288496 KB max RSS
+- `codex-core`: projected candidates retain skipped low-IDF tokens such as
+  `Default::default` and `assert_eq` in shared evidence
+- `ripgrep`: exact groups 100, structure groups 63, signature groups 188, near
+  candidates 8185; projected candidates retain skipped `assert` evidence
+
+The large JSON artifacts remain outside the product repository under:
+
+```text
+C:\Users\endof\Downloads\lumin-perf-lab\review\rust-near-dogfood
+```
+
 ## Verification
 
 Fresh commands run before the latest commit:
@@ -88,6 +107,7 @@ Node was not run.
 - `cached-diff-check.txt`: output from `git diff --cached --check`
 - `artifact-field-map.md`: product artifact fields added or preserved
 - `verification-summary.json`: machine-readable verification summary
+- `dogfood-rerun-2026-06-29.md`: local codex/ripgrep dogfood rerun summary
 
 The external review zip also contains `tracked.patch` and `git-status.txt`.
 The committed baseline omits the generated patch because its verbatim diff
