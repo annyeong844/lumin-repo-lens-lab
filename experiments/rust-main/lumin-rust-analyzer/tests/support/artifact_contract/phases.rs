@@ -32,7 +32,7 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
     );
     assert_eq!(
         artifact["phases"]["syntax"]["summary"]["functionCloneSignatureGroups"],
-        2
+        0
     );
     assert_eq!(
         artifact["phases"]["syntax"]["summary"]["functionCloneNearCandidates"],
@@ -42,6 +42,28 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
         artifact["phases"]["syntax"]["summary"]["functionCloneNearCandidateProjectionLimit"],
         50
     );
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionCloneCandidateGenerationPolicy"]["mode"],
+        "bounded-retrieval"
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionCloneCandidateGenerationPolicy"]
+            ["retrievalContractVersion"],
+        "function-clone-near-retrieval.v1"
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]["functionCloneCandidateGenerationSummary"]
+            ["nearFunctionCandidateCountScope"],
+        "scored-candidates-from-retained-retrieval-evidence"
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["summary"]
+            ["functionCloneSkippedLowDiscriminationPairEstimateKind"],
+        "raw-bucket-pairs-may-double-count-pairs-shared-by-multiple-skipped-tokens"
+    );
+    assert!(artifact["phases"]["syntax"]["summary"]
+        ["functionCloneSkippedLowDiscriminationBuckets"]
+        .is_array());
     assert_eq!(artifact["phases"]["syntax"]["summary"]["inlinePatterns"], 3);
     assert!(artifact["phases"]["syntax"]["summary"]
         .get("signalsByKind")

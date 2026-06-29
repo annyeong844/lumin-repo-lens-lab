@@ -26,6 +26,12 @@ pub(super) struct ProductSyntaxSummary<'a> {
     syntax_function_clone_signature_groups: usize,
     syntax_function_clone_near_candidates: usize,
     syntax_function_clone_near_candidate_projection_limit: usize,
+    syntax_function_clone_near_candidate_count_scope: &'static str,
+    syntax_function_clone_candidate_generation_mode: &'static str,
+    syntax_function_clone_retrieval_contract_version: &'static str,
+    syntax_function_clone_skipped_low_discrimination_buckets: usize,
+    syntax_function_clone_skipped_low_discrimination_raw_pair_estimate: usize,
+    syntax_function_clone_skipped_low_discrimination_pair_estimate_kind: &'static str,
     syntax_inline_patterns: usize,
     syntax_impl_blocks: usize,
     syntax_impl_methods: usize,
@@ -71,6 +77,27 @@ impl<'a> ProductSyntaxSummary<'a> {
             syntax_function_clone_near_candidate_projection_limit: response
                 .function_clone_groups
                 .near_function_candidate_projection_limit,
+            syntax_function_clone_near_candidate_count_scope: response
+                .function_clone_groups
+                .candidate_generation_summary
+                .near_function_candidate_count_scope,
+            syntax_function_clone_candidate_generation_mode: response
+                .function_clone_groups
+                .candidate_generation_policy
+                .mode,
+            syntax_function_clone_retrieval_contract_version: response
+                .function_clone_groups
+                .candidate_generation_policy
+                .retrieval_contract_version,
+            syntax_function_clone_skipped_low_discrimination_buckets: response
+                .function_clone_groups
+                .skipped_low_discrimination_bucket_count,
+            syntax_function_clone_skipped_low_discrimination_raw_pair_estimate: response
+                .function_clone_groups
+                .skipped_low_discrimination_raw_pair_estimate,
+            syntax_function_clone_skipped_low_discrimination_pair_estimate_kind: response
+                .function_clone_groups
+                .skipped_low_discrimination_pair_estimate_kind,
             syntax_inline_patterns: summary.inline_patterns,
             syntax_impl_blocks: summary.impl_blocks,
             syntax_impl_methods: summary.impl_methods,

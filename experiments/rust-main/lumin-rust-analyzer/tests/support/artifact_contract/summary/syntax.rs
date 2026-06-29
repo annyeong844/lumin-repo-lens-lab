@@ -16,11 +16,27 @@ pub(super) fn assert_syntax_summary(artifact: &Value) {
     assert_eq!(artifact["summary"]["syntaxFunctionBodyFingerprints"], 10);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneExactBodyGroups"], 1);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneStructureGroups"], 1);
-    assert_eq!(artifact["summary"]["syntaxFunctionCloneSignatureGroups"], 2);
+    assert_eq!(artifact["summary"]["syntaxFunctionCloneSignatureGroups"], 0);
     assert_eq!(artifact["summary"]["syntaxFunctionCloneNearCandidates"], 0);
     assert_eq!(
         artifact["summary"]["syntaxFunctionCloneNearCandidateProjectionLimit"],
         50
+    );
+    assert_eq!(
+        artifact["summary"]["syntaxFunctionCloneNearCandidateCountScope"],
+        "scored-candidates-from-retained-retrieval-evidence"
+    );
+    assert_eq!(
+        artifact["summary"]["syntaxFunctionCloneCandidateGenerationMode"],
+        "bounded-retrieval"
+    );
+    assert_eq!(
+        artifact["summary"]["syntaxFunctionCloneRetrievalContractVersion"],
+        "function-clone-near-retrieval.v1"
+    );
+    assert_eq!(
+        artifact["summary"]["syntaxFunctionCloneSkippedLowDiscriminationPairEstimateKind"],
+        "raw-bucket-pairs-may-double-count-pairs-shared-by-multiple-skipped-tokens"
     );
     assert_eq!(artifact["summary"]["syntaxInlinePatterns"], 3);
     assert_eq!(artifact["summary"]["syntaxPathRefs"], 1);

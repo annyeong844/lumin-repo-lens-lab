@@ -64,6 +64,24 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
         artifact["functionCloneGroups"]["nearFunctionCandidateProjectionLimit"],
         50
     );
+    assert_eq!(
+        artifact["functionCloneGroups"]["candidateGenerationPolicy"]["mode"],
+        "bounded-retrieval"
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["candidateGenerationPolicy"]["retrievalContractVersion"],
+        "function-clone-near-retrieval.v1"
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["candidateGenerationSummary"]
+            ["nearFunctionCandidateCountScope"],
+        "scored-candidates-from-retained-retrieval-evidence"
+    );
+    assert_eq!(
+        artifact["functionCloneGroups"]["skippedLowDiscriminationPairEstimateKind"],
+        "raw-bucket-pairs-may-double-count-pairs-shared-by-multiple-skipped-tokens"
+    );
+    assert!(artifact["functionCloneGroups"]["skippedLowDiscriminationBucketExamples"].is_array());
     assert_eq!(artifact["functionCloneGroups"]["generatedFileFactCount"], 0);
     assert_eq!(artifact["functionCloneGroups"]["exampleLimit"], 10);
     assert_eq!(artifact["summary"]["signalsByKind"]["unwrap-call"], 1);

@@ -19,7 +19,7 @@ pub(in crate::product_artifact) struct SyntaxPhaseBrief<'a> {
     elapsed_ms: u128,
     schema_version: u32,
     meta: SyntaxPhaseMetaBrief<'a>,
-    summary: SyntaxPhaseSummaryBrief,
+    summary: SyntaxPhaseSummaryBrief<'a>,
     skipped_file_count: usize,
     skipped_file_examples: &'a [SkippedFile],
 }
