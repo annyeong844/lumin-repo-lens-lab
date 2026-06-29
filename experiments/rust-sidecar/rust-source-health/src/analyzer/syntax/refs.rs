@@ -1,5 +1,5 @@
 use crate::locations::LineIndex;
-use crate::protocol::{AstMethodCall, AstPathRef};
+use crate::protocol::{AstMethodCall, AstNameRef, AstPathRef};
 use ra_ap_syntax::{
     ast::{self, HasVisibility},
     AstNode, SyntaxNode,
@@ -62,6 +62,17 @@ pub(super) fn collect_type_path_ref(
         path: path_text,
         test_context: path_ref_is_in_test_context(node),
         location: ast_location(line_index, path_type.syntax().text_range()),
+    });
+}
+
+pub(super) fn collect_name_ref(node: &SyntaxNode, line_index: &LineIndex, syntax: &mut FileSyntax) {
+    let Some(name_ref) = ast::NameRef::cast(node.clone()) else {
+        return;
+    };
+    syntax.ast.name_refs.push(AstNameRef {
+        name: name_ref.text().to_string(),
+        test_context: path_ref_is_in_test_context(node),
+        location: ast_location(line_index, name_ref.syntax().text_range()),
     });
 }
 

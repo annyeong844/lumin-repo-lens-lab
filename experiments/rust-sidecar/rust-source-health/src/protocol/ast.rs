@@ -12,7 +12,7 @@ mod shapes;
 
 pub use definitions::{
     AstDefinition, AstDefinitionAttribute, AstDefinitionAttributeKind, AstDefinitionKind,
-    AstVisibility,
+    AstDefinitionOwner, AstVisibility,
 };
 pub use function_bodies::{AstFunctionBodyFingerprint, AstFunctionBodyFingerprintKind};
 pub use functions::{
@@ -25,7 +25,7 @@ pub use opaque::{
     AstCfgGate, AstMacroCall, AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface,
     AstOpaqueSurfaceKind, AstOpaqueSurfaceVisibility, AstOpaqueVisibility,
 };
-pub use refs::{AstMethodCall, AstPathRef, AstUseTree};
+pub use refs::{AstMethodCall, AstNameRef, AstPathRef, AstUseTree};
 pub use shapes::{
     AstShapeConfidence, AstShapeField, AstShapeFieldKind, AstShapeHash, AstShapeHashKind,
     AstShapeKind,
@@ -42,6 +42,7 @@ pub struct AstFacts {
     pub impls: Vec<AstImplBlock>,
     pub use_trees: Vec<AstUseTree>,
     pub path_refs: Vec<AstPathRef>,
+    pub name_refs: Vec<AstNameRef>,
     pub method_call_counts: BTreeMap<String, usize>,
     pub method_calls: Vec<AstMethodCall>,
     pub macro_calls: Vec<AstMacroCall>,

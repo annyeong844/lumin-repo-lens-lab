@@ -8,6 +8,8 @@ pub struct AstDefinition {
     pub kind: AstDefinitionKind,
     pub name: String,
     pub visibility: AstVisibility,
+    pub owner: AstDefinitionOwner,
+    pub test_context: bool,
     pub attributes: Vec<AstDefinitionAttribute>,
     pub location: Location,
 }
@@ -40,6 +42,15 @@ pub enum AstDefinitionKind {
     Const,
     Static,
     TypeAlias,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AstDefinitionOwner {
+    Module,
+    Trait,
+    TraitImpl,
+    InherentImpl,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]

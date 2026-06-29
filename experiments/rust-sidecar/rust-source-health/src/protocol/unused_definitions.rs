@@ -35,6 +35,8 @@ pub struct RustUnusedDefinitionSummary {
     pub blocked_derive_surface_count: usize,
     pub blocked_cfg_count: usize,
     pub blocked_ffi_count: usize,
+    pub blocked_generated_count: usize,
+    pub blocked_entrypoint_count: usize,
     pub test_only_support_count: usize,
 }
 

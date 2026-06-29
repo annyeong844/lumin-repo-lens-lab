@@ -306,7 +306,10 @@ owns usage text.
 Canonical JSON fields:
 
 - `ast.definitions[]`: named Rust item definitions with `kind`, `name`,
-  `visibility`, and `location`.
+  `visibility`, `owner`, `testContext`, attributes, and `location`. `owner`
+  separates module-owned definitions from trait and impl contract surfaces.
+  `testContext` is required by the unused-definition lane so private helpers
+  inside `#[cfg(test)]` modules do not become production remove candidates.
 - `ast.shapeHashes[]`: exact Rust AST shape-hash facts for supported
   non-generic named-field structs. The normalized form is Rust-owned and
   includes record field names, field visibility, and compacted Rust type text.
@@ -368,6 +371,10 @@ Canonical JSON fields:
 - `ast.pathRefs[]`: qualified expression- and type-position path references
   with raw path text, terminal name, and `location`. Local variable refs and
   constructor-like single-segment paths are not emitted as raw path facts.
+- `ast.nameRefs[]`: unqualified and qualified name-reference tokens with name,
+  `testContext`, and `location`. Dependency lookup must not use this surface as
+  crate-root evidence. It exists so unused-definition analysis can see local
+  calls such as `helper()` without widening `pathRefs`.
 - `ast.methodCallCounts`: per-file method-name counts for all observed method
   call sites.
 - `ast.methodCalls[]`: review-relevant method call observations with method
@@ -447,6 +454,10 @@ The Rust dead-export false-positive gate namespace is `RUST-FP`:
 - `RUST-FP-G` test-only reachability: references observed only in
   `cfg(test)`/`#[test]` contexts are serialized as test support and do not
   produce product-safe cleanup.
+- `RUST-FP-H` generated source: generated Rust files are muted rather than
+  promoted into remove candidates.
+- `RUST-FP-I` Rust entrypoints: Cargo build scripts and `main.rs` entrypoints
+  are callable by Cargo or the binary runtime and are not dead from local refs.
 
 The first implementation slice must emit no `SAFE_FIX` for this lane. It may
 emit raw `unusedDefinitionAnalysis` evidence with `remove-candidate`,
@@ -457,8 +468,14 @@ serialized in `actionBlockers`; unsupported scope must be serialized in
 `degradedScopes` or candidate evidence, not silently ignored.
 
 Candidate counts in this lane mean "observed references in supported Rust
-syntax scopes." They are not grounded absence claims for external crates,
-macros, cfg branches, skipped files, or unresolved package scopes.
+syntax scopes." The current supported local scope is
+`crate-local-name-and-qualified-path-refs`, combining `ast.nameRefs[]` and
+qualified `ast.pathRefs[]` without changing the dependency graph meaning of
+`pathRefs`. Counts are not grounded absence claims for external crates, macros,
+cfg branches, skipped files, or unresolved package scopes.
+The first private positive candidate scope is intentionally limited to
+module-owned functions, consts, and statics. Module, trait, impl, type, struct,
+and enum cleanup require later owner-specific proof instead of silent widening.
 
 ### 7.2 Rust Pre-Write Consumer
 
@@ -885,6 +902,7 @@ Final artifacts must satisfy these counts:
 - `summary.implMethods === sum(files[*].ast.impls[*].methods.length)`
 - `summary.useTrees === sum(files[*].ast.useTrees.length)`
 - `summary.pathRefs === sum(files[*].ast.pathRefs.length)`
+- `summary.nameRefs === sum(files[*].ast.nameRefs.length)`
 - `summary.methodCallSites === sum(files[*].ast.methodCallCounts values)`
 - `summary.methodCalls === sum(files[*].ast.methodCalls.length)`
 - `summary.macroCalls === sum(files[*].ast.macroCalls.length)`

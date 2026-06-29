@@ -27,6 +27,7 @@ pub struct Summary {
     pub impl_methods: usize,
     pub use_trees: usize,
     pub path_refs: usize,
+    pub name_refs: usize,
     pub method_call_sites: usize,
     pub method_calls: usize,
     pub macro_calls: usize,

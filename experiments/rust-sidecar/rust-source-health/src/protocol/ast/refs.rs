@@ -29,6 +29,14 @@ pub struct AstPathRef {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AstNameRef {
+    pub name: String,
+    pub test_context: bool,
+    pub location: Location,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AstMethodCall {
     pub method: String,
     pub receiver: String,

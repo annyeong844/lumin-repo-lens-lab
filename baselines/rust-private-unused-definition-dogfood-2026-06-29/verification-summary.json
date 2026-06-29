@@ -1,0 +1,63 @@
+{
+  "date": "2026-06-29",
+  "toolchain": "Rust 1.95.0 offline basepack",
+  "nodeCommandsRun": false,
+  "targets": {
+    "ripgrep": {
+      "root": "C:\\Users\\endof\\Downloads\\repo\\Util\\ripgrep-master",
+      "artifact": "C:\\Users\\endof\\Downloads\\lumin-perf-lab\\review\\rust-private-unused-definition-dogfood\\ripgrep-rust-health.json",
+      "files": 100,
+      "skippedFiles": 0,
+      "definitions": 3379,
+      "candidateCount": 0,
+      "findingsLen": 0,
+      "excludedCandidatesLen": 1437,
+      "gates": {
+        "RUST-FP-A": 3,
+        "RUST-FP-B": 985,
+        "RUST-FP-C": 185,
+        "RUST-FP-E": 1,
+        "RUST-FP-F": 110,
+        "RUST-FP-G": 151,
+        "RUST-FP-I": 2
+      },
+      "blockedGeneratedCount": 0,
+      "blockedEntrypointCount": 2,
+      "testOnlySupportCount": 151,
+      "unsafeFindingCount": 0,
+      "safeActionCount": 0,
+      "nameRefs": 46929,
+      "pathRefs": 3233,
+      "elapsed": "0:02.82",
+      "maxRssKb": 37680
+    },
+    "codexCore": {
+      "root": "C:\\Users\\endof\\Downloads\\repo\\suyeonevo\\codex-main\\codex-rs\\core",
+      "artifact": "C:\\Users\\endof\\Downloads\\lumin-perf-lab\\review\\rust-private-unused-definition-dogfood\\codex-core-rust-health.json",
+      "files": 496,
+      "skippedFiles": 0,
+      "definitions": 9567,
+      "candidateCount": 33,
+      "findingsLen": 33,
+      "excludedCandidatesLen": 4460,
+      "gates": {
+        "RUST-FP-A": 25,
+        "RUST-FP-B": 668,
+        "RUST-FP-C": 138,
+        "RUST-FP-E": 1,
+        "RUST-FP-F": 8,
+        "RUST-FP-G": 3612,
+        "RUST-FP-H": 8
+      },
+      "blockedGeneratedCount": 8,
+      "blockedEntrypointCount": 0,
+      "testOnlySupportCount": 3612,
+      "unsafeFindingCount": 0,
+      "safeActionCount": 0,
+      "nameRefs": 304727,
+      "pathRefs": 22584,
+      "elapsed": "0:23.34",
+      "maxRssKb": 126844
+    }
+  }
+}

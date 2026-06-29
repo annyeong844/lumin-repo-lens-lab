@@ -77,6 +77,12 @@ pub(in crate::analyzer) fn sort_ast_facts(facts: &mut AstFacts) {
             .cmp(&right.location.byte_start)
             .then(left.path.cmp(&right.path))
     });
+    facts.name_refs.sort_by(|left, right| {
+        left.location
+            .byte_start
+            .cmp(&right.location.byte_start)
+            .then(left.name.cmp(&right.name))
+    });
     facts.method_calls.sort_by(|left, right| {
         left.location
             .byte_start

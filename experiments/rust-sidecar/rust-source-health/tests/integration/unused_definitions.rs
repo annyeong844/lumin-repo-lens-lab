@@ -13,7 +13,9 @@ pub fn exported_builder() -> DecompressionMatcherBuilder {
     DecompressionMatcherBuilder
 }
 
-fn local_helper() {}
+pub(crate) fn crate_visible_builder() -> DecompressionMatcherBuilder {
+    DecompressionMatcherBuilder
+}
 "#,
     );
 
@@ -31,7 +33,7 @@ fn local_helper() {}
         .as_array()
         .context("excludedCandidates")?;
     assert_eq!(excluded.len(), 2);
-    for name in ["DecompressionMatcherBuilder", "exported_builder"] {
+    for name in ["exported_builder", "crate_visible_builder"] {
         let candidate = excluded
             .iter()
             .find(|candidate| candidate["definition"]["name"] == name)
@@ -47,9 +49,152 @@ fn local_helper() {}
         assert_eq!(candidate["observedReferences"]["production"], 0);
         assert_eq!(
             candidate["observedReferences"]["searchedScopes"][0],
-            "crate-local-qualified-path-refs"
+            "crate-local-name-and-qualified-path-refs"
         );
     }
+
+    Ok(())
+}
+
+#[test]
+fn private_zero_ref_definitions_become_raw_remove_candidates_without_safe_actions() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+fn truly_dead_private_helper() {}
+
+fn live_private_helper() {}
+
+fn caller() {
+    live_private_helper();
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 2);
+    assert_eq!(analysis["summary"]["blockedPublicSurfaceCount"], 0);
+    assert_eq!(analysis["summary"]["testOnlySupportCount"], 0);
+
+    let findings = analysis["findings"].as_array().context("findings")?;
+    assert_eq!(findings.len(), 2);
+    let candidate = findings
+        .iter()
+        .find(|candidate| candidate["definition"]["name"] == "truly_dead_private_helper")
+        .context("truly_dead_private_helper finding")?;
+    assert!(findings
+        .iter()
+        .all(|candidate| candidate["definition"]["name"] != "live_private_helper"));
+    assert_eq!(candidate["definition"]["visibility"], "private");
+    assert_eq!(candidate["tier"], "remove-candidate");
+    assert_eq!(candidate["action"], "remove-candidate");
+    assert_eq!(candidate["safeAction"], serde_json::Value::Null);
+    assert!(candidate["fpGates"].as_array().is_some_and(Vec::is_empty));
+    assert!(candidate["actionBlockers"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+    assert_eq!(candidate["observedReferences"]["production"], 0);
+    assert_eq!(candidate["observedReferences"]["testOnly"], 0);
+    assert_eq!(
+        candidate["observedReferences"]["searchedScopes"][0],
+        "crate-local-name-and-qualified-path-refs"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn private_test_context_definitions_are_blocked_instead_of_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+#[cfg(test)]
+mod tests {
+    fn test_only_helper() {}
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert_eq!(analysis["summary"]["testOnlySupportCount"], 1);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+
+    let candidate = find_excluded(analysis, "test_only_helper")?;
+    assert_eq!(candidate["definition"]["visibility"], "private");
+    assert_eq!(candidate["fpGates"][0], "RUST-FP-G");
+    assert_eq!(
+        candidate["actionBlockers"][0],
+        "rust-fp-g-test-only-reachability"
+    );
+    assert_eq!(candidate["safeAction"], serde_json::Value::Null);
+
+    Ok(())
+}
+
+#[test]
+fn private_test_path_definitions_are_blocked_instead_of_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "tests/helper.rs",
+        r#"
+fn helper_only_for_tests() {}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert_eq!(analysis["summary"]["testOnlySupportCount"], 1);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+
+    let candidate = find_excluded(analysis, "helper_only_for_tests")?;
+    assert_eq!(candidate["fpGates"][0], "RUST-FP-G");
+    assert_eq!(
+        candidate["actionBlockers"][0],
+        "rust-fp-g-test-only-reachability"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn generated_path_definitions_are_muted_instead_of_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/generated.rs",
+        r#"
+fn generated_helper() {}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert_eq!(analysis["summary"]["blockedGeneratedCount"], 1);
+
+    let candidate = find_excluded(analysis, "generated_helper")?;
+    assert_eq!(candidate["tier"], "muted");
+    assert_eq!(candidate["action"], "muted");
+    assert_eq!(candidate["fpGates"][0], "RUST-FP-H");
+    assert_eq!(candidate["actionBlockers"][0], "rust-fp-h-generated-source");
+
+    Ok(())
+}
+
+#[test]
+fn rust_entrypoint_main_is_blocked_instead_of_remove_candidate() -> Result<()> {
+    let artifact = analyze_file(
+        "build.rs",
+        r#"
+fn main() {}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert_eq!(analysis["summary"]["blockedEntrypointCount"], 1);
+
+    let candidate = find_excluded(analysis, "main")?;
+    assert_eq!(candidate["fpGates"][0], "RUST-FP-I");
+    assert_eq!(candidate["actionBlockers"][0], "rust-fp-i-rust-entrypoint");
+    assert_eq!(candidate["safeAction"], serde_json::Value::Null);
 
     Ok(())
 }
@@ -61,7 +206,7 @@ fn observed_qualified_refs_keep_public_definitions_out_of_excluded_dead_surface(
         r#"
 pub fn live() {}
 
-fn caller() {
+pub fn caller() {
     crate::live();
 }
 "#,
@@ -69,7 +214,7 @@ fn caller() {
 
     let analysis = &artifact["unusedDefinitionAnalysis"];
     assert_eq!(analysis["summary"]["candidateCount"], 0);
-    assert_eq!(analysis["summary"]["blockedPublicSurfaceCount"], 0);
+    assert_eq!(analysis["summary"]["blockedPublicSurfaceCount"], 1);
     assert!(analysis["excludedCandidates"]
         .as_array()
         .context("excludedCandidates")?
@@ -204,7 +349,7 @@ mod tests {
 
     let analysis = &artifact["unusedDefinitionAnalysis"];
     assert_eq!(analysis["summary"]["candidateCount"], 0);
-    assert_eq!(analysis["summary"]["testOnlySupportCount"], 1);
+    assert_eq!(analysis["summary"]["testOnlySupportCount"], 2);
 
     let candidate = find_excluded(analysis, "helper")?;
     assert_eq!(candidate["fpGates"][0], "RUST-FP-G");

@@ -1,12 +1,14 @@
 use crate::analyzer::location::ast_location;
+use crate::analyzer::signal_policy::test_context_mute_reason;
 use crate::locations::LineIndex;
 use crate::protocol::{
     AstDefinition, AstDefinitionAttribute, AstDefinitionAttributeKind, AstDefinitionKind,
+    AstDefinitionOwner,
 };
 
 use super::visibility_for;
 use ra_ap_syntax::{
-    ast::{HasAttrs, HasName, HasVisibility},
+    ast::{self, HasAttrs, HasName, HasVisibility},
     AstNode,
 };
 
@@ -28,9 +30,27 @@ pub(in crate::analyzer) fn collect_definition<T>(
         kind,
         name: name.text().to_string(),
         visibility: visibility_for(item.visibility()),
+        owner: definition_owner(item.syntax()),
+        test_context: test_context_mute_reason(item.syntax()).is_some(),
         attributes: definition_attributes(&item),
         location: ast_location(line_index, item.syntax().text_range()),
     });
+}
+
+fn definition_owner(node: &ra_ap_syntax::SyntaxNode) -> AstDefinitionOwner {
+    for ancestor in node.ancestors().skip(1) {
+        if ast::Trait::cast(ancestor.clone()).is_some() {
+            return AstDefinitionOwner::Trait;
+        }
+        if let Some(impl_block) = ast::Impl::cast(ancestor) {
+            return if impl_block.trait_().is_some() {
+                AstDefinitionOwner::TraitImpl
+            } else {
+                AstDefinitionOwner::InherentImpl
+            };
+        }
+    }
+    AstDefinitionOwner::Module
 }
 
 fn definition_attributes<T: HasAttrs>(item: &T) -> Vec<AstDefinitionAttribute> {

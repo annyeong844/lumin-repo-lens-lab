@@ -181,6 +181,26 @@ Action:
 - product action remains blocked
 - report test-only support separately from production support
 
+### RUST-FP-H: Generated Source
+
+Generated Rust files mirror the TS/JS generated-source exclusion: repeated or
+unreferenced generated helpers are not product cleanup candidates.
+
+Action:
+
+- mute generated-source candidates
+- keep the blocker visible as `rust-fp-h-generated-source`
+
+### RUST-FP-I: Rust Entrypoints
+
+Cargo build scripts and binary `main.rs` entrypoints are called by Cargo or the
+runtime without ordinary Rust path references.
+
+Action:
+
+- block remove for `build.rs` `main` and `main.rs` `main`
+- serialize `rust-fp-i-rust-entrypoint`
+
 ## Reachability Model
 
 Rust reachability must be separated by evidence scope:
@@ -216,6 +236,8 @@ these are true:
 - it is not an impl trait method or trait contract item
 - it has no FFI/linker/export attributes
 - it is not under cfg/test/generated/opaque syntax
+- it is not a Rust entrypoint such as `build.rs` `main` or `main.rs` `main`
+- it is a supported module-owned function, const, or static
 - the containing file parsed successfully
 - all skipped-file and package-scope limits are visible in the artifact
 - zero references are observed in the supported local scope
@@ -272,7 +294,7 @@ Candidate shape:
   "observedReferences": {
     "production": 0,
     "testOnly": 0,
-    "searchedScopes": ["same-file", "crate-local-path-refs"]
+    "searchedScopes": ["crate-local-name-and-qualified-path-refs"]
   },
   "fpGates": ["RUST-FP-A"],
   "actionBlockers": ["rust-fp-a-external-public-surface"],

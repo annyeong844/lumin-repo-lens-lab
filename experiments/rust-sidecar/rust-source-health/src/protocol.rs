@@ -14,13 +14,13 @@ mod unused_definitions;
 
 pub use ast::{
     AstCallableKind, AstCfgGate, AstDefinition, AstDefinitionAttribute, AstDefinitionAttributeKind,
-    AstDefinitionKind, AstFacts, AstFunctionBodyFingerprint, AstFunctionBodyFingerprintKind,
-    AstFunctionOwner, AstFunctionParam, AstFunctionReceiver, AstFunctionReceiverKind,
-    AstFunctionSignature, AstFunctionSignatureKind, AstImplBlock, AstImplMethod, AstInlinePattern,
-    AstInlinePatternKind, AstMacroCall, AstMethodCall, AstOpaqueMuteReason, AstOpaqueReason,
-    AstOpaqueSurface, AstOpaqueSurfaceKind, AstOpaqueSurfaceVisibility, AstOpaqueVisibility,
-    AstPathRef, AstShapeConfidence, AstShapeField, AstShapeFieldKind, AstShapeHash,
-    AstShapeHashKind, AstShapeKind, AstUseTree, AstVisibility,
+    AstDefinitionKind, AstDefinitionOwner, AstFacts, AstFunctionBodyFingerprint,
+    AstFunctionBodyFingerprintKind, AstFunctionOwner, AstFunctionParam, AstFunctionReceiver,
+    AstFunctionReceiverKind, AstFunctionSignature, AstFunctionSignatureKind, AstImplBlock,
+    AstImplMethod, AstInlinePattern, AstInlinePatternKind, AstMacroCall, AstMethodCall, AstNameRef,
+    AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface, AstOpaqueSurfaceKind,
+    AstOpaqueSurfaceVisibility, AstOpaqueVisibility, AstPathRef, AstShapeConfidence, AstShapeField,
+    AstShapeFieldKind, AstShapeHash, AstShapeHashKind, AstShapeKind, AstUseTree, AstVisibility,
 };
 pub use file::{Facts, FileHealth};
 pub use function_clones::{
@@ -186,7 +186,11 @@ pub const RUST_UNUSED_DEFINITION_CFG_GATE: &str = "RUST-FP-F";
 pub const RUST_UNUSED_DEFINITION_CFG_BLOCKER: &str = "rust-fp-f-cfg-gated-definition";
 pub const RUST_UNUSED_DEFINITION_TEST_ONLY_GATE: &str = "RUST-FP-G";
 pub const RUST_UNUSED_DEFINITION_TEST_ONLY_BLOCKER: &str = "rust-fp-g-test-only-reachability";
-pub const RUST_UNUSED_DEFINITION_QUALIFIED_PATH_REF_SCOPE: &str = "crate-local-qualified-path-refs";
+pub const RUST_UNUSED_DEFINITION_GENERATED_GATE: &str = "RUST-FP-H";
+pub const RUST_UNUSED_DEFINITION_GENERATED_BLOCKER: &str = "rust-fp-h-generated-source";
+pub const RUST_UNUSED_DEFINITION_ENTRYPOINT_GATE: &str = "RUST-FP-I";
+pub const RUST_UNUSED_DEFINITION_ENTRYPOINT_BLOCKER: &str = "rust-fp-i-rust-entrypoint";
+pub const RUST_UNUSED_DEFINITION_LOCAL_REF_SCOPE: &str = "crate-local-name-and-qualified-path-refs";
 pub const DEFAULT_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 pub const DEFAULT_INCLUDE: &[&str] = &["**/*.rs"];
 pub const DEFAULT_EXCLUDE: &[&str] = &["**/target/**", "**/vendor/**"];

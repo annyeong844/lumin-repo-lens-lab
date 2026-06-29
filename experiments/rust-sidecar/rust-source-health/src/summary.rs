@@ -30,6 +30,7 @@ pub(crate) fn summarize(files: &BTreeMap<String, FileHealth>) -> Summary {
             .sum::<usize>();
         summary.use_trees += file.ast.use_trees.len();
         summary.path_refs += file.ast.path_refs.len();
+        summary.name_refs += file.ast.name_refs.len();
         summary.method_call_sites += file.ast.method_call_counts.values().sum::<usize>();
         summary.method_calls += file.ast.method_calls.len();
         summary.macro_calls += file.ast.macro_calls.len();
