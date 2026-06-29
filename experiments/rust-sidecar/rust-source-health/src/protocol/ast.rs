@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod definitions;
 mod function_bodies;
@@ -48,4 +48,8 @@ pub struct AstFacts {
     pub macro_calls: Vec<AstMacroCall>,
     pub cfg_gates: Vec<AstCfgGate>,
     pub opaque_surfaces: Vec<AstOpaqueSurface>,
+    #[serde(skip)]
+    pub local_ref_names: BTreeSet<String>,
+    #[serde(skip)]
+    pub test_local_ref_names: BTreeSet<String>,
 }

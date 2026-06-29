@@ -2,7 +2,7 @@ mod attribute;
 
 use crate::locations::LineIndex;
 use crate::protocol::{
-    AstCfgGate, AstMacroCall, AstNameRef, AstOpaqueReason, AstOpaqueSurface, AstOpaqueSurfaceKind,
+    AstCfgGate, AstMacroCall, AstOpaqueReason, AstOpaqueSurface, AstOpaqueSurfaceKind,
     PathClassification,
 };
 use ra_ap_syntax::{ast, AstNode, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
@@ -36,7 +36,7 @@ pub(super) fn collect_macro_call(
         name: name.clone(),
         location: location.clone(),
     });
-    collect_macro_token_name_refs(call.syntax(), line_index, syntax);
+    collect_macro_token_name_refs(call.syntax(), syntax);
     syntax.ast.opaque_surfaces.push(AstOpaqueSurface {
         kind: AstOpaqueSurfaceKind::MacroExpansion,
         reason: AstOpaqueReason::MacroExpansionNotEvaluated,
@@ -46,23 +46,17 @@ pub(super) fn collect_macro_call(
     });
 }
 
-fn collect_macro_token_name_refs(
-    node: &SyntaxNode,
-    line_index: &LineIndex,
-    syntax: &mut FileSyntax,
-) {
+fn collect_macro_token_name_refs(node: &SyntaxNode, syntax: &mut FileSyntax) {
     let test_context = refs::syntax_is_in_test_context(node);
     for element in node.descendants_with_tokens() {
         let SyntaxElement::Token(token) = element else {
             continue;
         };
         match token.kind() {
-            SyntaxKind::IDENT => {
-                push_name_ref(syntax, token.text(), test_context, line_index, &token)
-            }
+            SyntaxKind::IDENT => refs::record_local_name_ref(syntax, token.text(), test_context),
             SyntaxKind::STRING => {
                 for name in format_capture_names(token.text()) {
-                    push_name_ref(syntax, &name, test_context, line_index, &token);
+                    refs::record_local_name_ref(syntax, &name, test_context);
                 }
             }
             _ => {}
@@ -79,7 +73,7 @@ pub(super) fn collect_attr(
     let Some(attr) = ast::Attr::cast(node.clone()) else {
         return;
     };
-    collect_attribute_string_name_refs(attr.syntax(), line_index, syntax);
+    collect_attribute_string_name_refs(attr.syntax(), syntax);
     if let Some(expr) = cfg_gate_expr(&attr) {
         collect_cfg_opaque_surface(&attr, line_index, classifications, syntax, expr);
         return;
@@ -102,11 +96,7 @@ pub(super) fn collect_attr(
     });
 }
 
-fn collect_attribute_string_name_refs(
-    node: &SyntaxNode,
-    line_index: &LineIndex,
-    syntax: &mut FileSyntax,
-) {
+fn collect_attribute_string_name_refs(node: &SyntaxNode, syntax: &mut FileSyntax) {
     let test_context = refs::syntax_is_in_test_context(node);
     for element in node.descendants_with_tokens() {
         let SyntaxElement::Token(token) = element else {
@@ -124,22 +114,8 @@ fn collect_attribute_string_name_refs(
         let Some(name) = terminal_path_name(body) else {
             continue;
         };
-        push_name_ref(syntax, name, test_context, line_index, &token);
+        refs::record_local_name_ref(syntax, name, test_context);
     }
-}
-
-fn push_name_ref(
-    syntax: &mut FileSyntax,
-    name: &str,
-    test_context: bool,
-    line_index: &LineIndex,
-    token: &SyntaxToken,
-) {
-    syntax.ast.name_refs.push(AstNameRef {
-        name: name.to_string(),
-        test_context,
-        location: ast_location(line_index, token.text_range()),
-    });
 }
 
 fn previous_attribute_key_is_reference_slot(token: &SyntaxToken) -> bool {

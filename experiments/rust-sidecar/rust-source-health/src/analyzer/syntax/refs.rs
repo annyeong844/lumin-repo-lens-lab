@@ -34,10 +34,13 @@ pub(super) fn collect_path_ref(node: &SyntaxNode, line_index: &LineIndex, syntax
     if !is_qualified_path_ref(&path_text) {
         return;
     }
+    let name = path_terminal_name(&path);
+    let test_context = syntax_is_in_test_context(node);
+    record_local_name_ref(syntax, &name, test_context);
     syntax.ast.path_refs.push(AstPathRef {
-        name: path_terminal_name(&path),
+        name,
         path: path_text,
-        test_context: syntax_is_in_test_context(node),
+        test_context,
         location: ast_location(line_index, expr.syntax().text_range()),
     });
 }
@@ -57,10 +60,13 @@ pub(super) fn collect_type_path_ref(
     if !is_qualified_path_ref(&path_text) {
         return;
     }
+    let name = path_terminal_name(&path);
+    let test_context = syntax_is_in_test_context(node);
+    record_local_name_ref(syntax, &name, test_context);
     syntax.ast.path_refs.push(AstPathRef {
-        name: path_terminal_name(&path),
+        name,
         path: path_text,
-        test_context: syntax_is_in_test_context(node),
+        test_context,
         location: ast_location(line_index, path_type.syntax().text_range()),
     });
 }
@@ -69,11 +75,22 @@ pub(super) fn collect_name_ref(node: &SyntaxNode, line_index: &LineIndex, syntax
     let Some(name_ref) = ast::NameRef::cast(node.clone()) else {
         return;
     };
+    let name = name_ref.text().to_string();
+    let test_context = syntax_is_in_test_context(node);
+    record_local_name_ref(syntax, &name, test_context);
     syntax.ast.name_refs.push(AstNameRef {
-        name: name_ref.text().to_string(),
-        test_context: syntax_is_in_test_context(node),
+        name,
+        test_context,
         location: ast_location(line_index, name_ref.syntax().text_range()),
     });
+}
+
+pub(super) fn record_local_name_ref(syntax: &mut FileSyntax, name: &str, test_context: bool) {
+    if test_context {
+        syntax.ast.test_local_ref_names.insert(name.to_string());
+    } else {
+        syntax.ast.local_ref_names.insert(name.to_string());
+    }
 }
 
 pub(super) fn collect_method_call(

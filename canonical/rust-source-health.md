@@ -469,14 +469,16 @@ serialized in `actionBlockers`; unsupported scope must be serialized in
 
 Candidate counts in this lane mean "observed references in supported Rust
 syntax scopes." The current supported local scope is
-`crate-local-name-and-qualified-path-refs`, combining `ast.nameRefs[]` and
-qualified `ast.pathRefs[]` without changing the dependency graph meaning of
-`pathRefs`. `ast.nameRefs[]` includes normal AST name references plus
-identifier tokens inside macro inputs, named format captures such as
-`format!("{MESSAGE}")`, and attribute string paths for reference-bearing slots
-such as `#[serde(default = "fallback")]`. Counts are not grounded absence
-claims for external crates, unobserved macro expansion output, cfg branches,
-skipped files, or unresolved package scopes.
+`crate-local-name-qualified-path-and-token-refs`, combining serialized
+`ast.nameRefs[]`, qualified `ast.pathRefs[]`, and internal per-file token refs
+for supported Rust-only syntax. The internal token refs cover identifier tokens
+inside macro inputs, named format captures such as `format!("{MESSAGE}")`, and
+attribute string paths for reference-bearing slots such as
+`#[serde(default = "fallback")]`. They are intentionally not serialized into
+`ast.nameRefs[]`, because dumping every macro token identifier into the public
+artifact is too noisy and too expensive for large repositories. Counts are not
+grounded absence claims for external crates, unobserved macro expansion output,
+cfg branches, skipped files, or unresolved package scopes.
 The first private positive candidate scope is intentionally limited to
 module-owned functions, consts, and statics. Module, trait, impl, type, struct,
 and enum cleanup require later owner-specific proof instead of silent widening.

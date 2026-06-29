@@ -26,7 +26,7 @@ In `classify_unused_definitions`, after existing public gate handling, route non
 
 - [x] **Step 3: Preserve action safety**
 
-Private candidates must keep `safeAction: null` and searched scope `crate-local-name-and-qualified-path-refs`. Do not add `SAFE_FIX`, edit spans, wall-time caps, or new Rust-only thresholds.
+Private candidates must keep `safeAction: null` and searched scope `crate-local-name-qualified-path-and-token-refs`. Do not add `SAFE_FIX`, edit spans, wall-time caps, or new Rust-only thresholds.
 
 - [x] **Step 4: Verify**
 

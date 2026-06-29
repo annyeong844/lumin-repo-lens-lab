@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::protocol::{
     AstDefinition, AstDefinitionAttributeKind, AstDefinitionKind, AstDefinitionOwner, AstImplBlock,
@@ -109,19 +109,13 @@ fn observed_qualified_path_ref_counts(
 ) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for health in files.values() {
-        let mut names_in_file = BTreeSet::new();
-        for path_ref in &health.ast.path_refs {
-            if path_ref.test_context == test_context {
-                names_in_file.insert(path_ref.name.clone());
-            }
-        }
-        for name_ref in &health.ast.name_refs {
-            if name_ref.test_context == test_context {
-                names_in_file.insert(name_ref.name.clone());
-            }
-        }
+        let names_in_file = if test_context {
+            &health.ast.test_local_ref_names
+        } else {
+            &health.ast.local_ref_names
+        };
         for name in names_in_file {
-            *counts.entry(name).or_insert(0) += 1;
+            *counts.entry(name.clone()).or_insert(0) += 1;
         }
     }
     counts

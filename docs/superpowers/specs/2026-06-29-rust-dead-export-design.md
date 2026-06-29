@@ -32,9 +32,11 @@ active branch.
 - `ast.definitions[]`: named item definitions with `kind`, `name`,
   `visibility`, and `location`
 - `ast.pathRefs[]`: qualified expression- and type-position path references
-- `ast.nameRefs[]`: AST name references plus supported Rust-only syntactic
-  references inside macro token inputs, named format captures, and attribute
-  string path slots such as `serde(default = "fallback")`
+- `ast.nameRefs[]`: serialized AST name references
+- internal local token refs: deduped per-file reference names observed inside
+  macro token inputs, named format captures, and attribute string path slots
+  such as `serde(default = "fallback")`; these feed dead-export reachability
+  without bloating the public AST artifact
 - `ast.useTrees[]`: import and re-export syntax
 - `ast.impls[]`: impl blocks, trait paths, and method owner evidence
 - `ast.macroCalls[]`, `ast.cfgGates[]`, and `ast.opaqueSurfaces[]`: places where
@@ -299,7 +301,7 @@ Candidate shape:
   "observedReferences": {
     "production": 0,
     "testOnly": 0,
-    "searchedScopes": ["crate-local-name-and-qualified-path-refs"]
+    "searchedScopes": ["crate-local-name-qualified-path-and-token-refs"]
   },
   "fpGates": ["RUST-FP-A"],
   "actionBlockers": ["rust-fp-a-external-public-surface"],

@@ -49,7 +49,7 @@ pub(crate) fn crate_visible_builder() -> DecompressionMatcherBuilder {
         assert_eq!(candidate["observedReferences"]["production"], 0);
         assert_eq!(
             candidate["observedReferences"]["searchedScopes"][0],
-            "crate-local-name-and-qualified-path-refs"
+            "crate-local-name-qualified-path-and-token-refs"
         );
     }
 
@@ -138,7 +138,7 @@ fn caller() {
     assert_eq!(candidate["observedReferences"]["testOnly"], 0);
     assert_eq!(
         candidate["observedReferences"]["searchedScopes"][0],
-        "crate-local-name-and-qualified-path-refs"
+        "crate-local-name-qualified-path-and-token-refs"
     );
 
     Ok(())
@@ -171,13 +171,6 @@ pub fn entry() {
         .context("excludedCandidates")?
         .iter()
         .all(|candidate| candidate["definition"]["name"] != "macro_live_helper"));
-
-    let name_refs = artifact["files"]["src/lib.rs"]["ast"]["nameRefs"]
-        .as_array()
-        .context("nameRefs")?;
-    assert!(name_refs
-        .iter()
-        .any(|name_ref| name_ref["name"] == "macro_live_helper"));
 
     Ok(())
 }
