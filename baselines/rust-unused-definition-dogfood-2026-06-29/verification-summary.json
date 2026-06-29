@@ -1,0 +1,82 @@
+{
+  "date": "2026-06-29",
+  "nodeRun": false,
+  "artifactDirectory": "C:\\Users\\endof\\Downloads\\lumin-perf-lab\\review\\rust-unused-definition-dogfood",
+  "commands": [
+    {
+      "command": "cargo fmt --all",
+      "status": "passed"
+    },
+    {
+      "command": "cargo check --offline --locked -p lumin-rust-source-health",
+      "status": "passed"
+    },
+    {
+      "command": "cargo test --offline --locked -p lumin-rust-source-health unused_definition -- --nocapture",
+      "status": "passed",
+      "passedTests": 9
+    },
+    {
+      "command": "cargo clippy --offline --locked -p lumin-rust-source-health --all-targets -- -D warnings",
+      "status": "passed"
+    }
+  ],
+  "targets": [
+    {
+      "name": "codex-rs",
+      "artifact": "codex-rs-rust-health.json",
+      "files": 2406,
+      "signals": 30337,
+      "elapsed": "4:26.11",
+      "maxRssKb": 313112,
+      "artifactBytes": 25373800,
+      "definitionCount": 49891,
+      "candidateCount": 0,
+      "findingsLen": 0,
+      "excludedCandidatesLen": 9233,
+      "blockedPublicSurfaceCount": 1901,
+      "blockedTraitImplCount": 2906,
+      "rustFpAUnsafeRemoveOrSafeActionCount": 0
+    },
+    {
+      "name": "codex-core",
+      "artifact": "codex-core-rust-health.json",
+      "files": 496,
+      "signals": 9372,
+      "elapsed": "0:30.88",
+      "maxRssKb": 87780,
+      "artifactBytes": 5971616,
+      "definitionCount": 9567,
+      "candidateCount": 0,
+      "findingsLen": 0,
+      "excludedCandidatesLen": 1416,
+      "blockedPublicSurfaceCount": 435,
+      "blockedTraitImplCount": 668,
+      "rustFpAUnsafeRemoveOrSafeActionCount": 0
+    },
+    {
+      "name": "ripgrep",
+      "artifact": "ripgrep-rust-health.json",
+      "files": 100,
+      "signals": 1234,
+      "elapsed": "0:04.20",
+      "maxRssKb": 31852,
+      "artifactBytes": 2180544,
+      "definitionCount": 3379,
+      "candidateCount": 0,
+      "findingsLen": 0,
+      "excludedCandidatesLen": 1413,
+      "blockedPublicSurfaceCount": 222,
+      "blockedTraitImplCount": 985,
+      "rustFpAUnsafeRemoveOrSafeActionCount": 0
+    }
+  ],
+  "correction": {
+    "reportedCount": 668,
+    "observedOn": "codex-core",
+    "actualGateForReportedCount": "RUST-FP-B",
+    "actualMeaning": "trait impl gate",
+    "publicSurfaceGate": "RUST-FP-A",
+    "publicSurfaceGateCountOnCodexCore": 435
+  }
+}
