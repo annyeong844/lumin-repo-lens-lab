@@ -84,6 +84,18 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     assert!(artifact["functionCloneGroups"]["skippedLowDiscriminationBucketExamples"].is_array());
     assert_eq!(artifact["functionCloneGroups"]["generatedFileFactCount"], 0);
     assert_eq!(artifact["functionCloneGroups"]["exampleLimit"], 10);
+    assert_eq!(
+        artifact["unusedDefinitionAnalysis"]["policy"]["policyId"],
+        "rust-unused-definition-policy-v1"
+    );
+    assert_eq!(
+        artifact["unusedDefinitionAnalysis"]["summary"]["candidateCount"],
+        0
+    );
+    assert_eq!(
+        artifact["unusedDefinitionAnalysis"]["summary"]["blockedPublicSurfaceCount"],
+        4
+    );
     assert_eq!(artifact["summary"]["signalsByKind"]["unwrap-call"], 1);
     assert!(artifact["files"]["src/lib.rs"].is_object());
     assert!(artifact["files"]["src/lib.rs"]["ast"].is_null());
@@ -142,6 +154,10 @@ pub fn assert_full_cli_artifact(output_path: &Path) -> Result<()> {
     assert!(artifact["functionCloneGroups"]["structureGroups"].is_array());
     assert!(artifact["functionCloneGroups"]["signatureGroups"].is_array());
     assert!(artifact["functionCloneGroups"]["nearFunctionCandidates"].is_array());
+    assert_eq!(
+        artifact["unusedDefinitionAnalysis"]["summary"]["blockedPublicSurfaceCount"],
+        4
+    );
     assert!(artifact["files"]["src/lib.rs"]["ast"]["definitions"].is_array());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["functionSignatures"].is_array());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["functionBodyFingerprints"].is_array());

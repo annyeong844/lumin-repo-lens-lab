@@ -8,7 +8,25 @@ pub struct AstDefinition {
     pub kind: AstDefinitionKind,
     pub name: String,
     pub visibility: AstVisibility,
+    pub attributes: Vec<AstDefinitionAttribute>,
     pub location: Location,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AstDefinitionAttribute {
+    pub kind: AstDefinitionAttributeKind,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AstDefinitionAttributeKind {
+    Cfg,
+    Derive,
+    FfiLinker,
+    Test,
+    Other,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]

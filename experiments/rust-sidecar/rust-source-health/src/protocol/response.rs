@@ -1,7 +1,10 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-use super::{AstFunctionCloneGroups, FileHealth, ResponseMeta, SkippedFile, Summary};
+use super::{
+    AstFunctionCloneGroups, FileHealth, ResponseMeta, RustUnusedDefinitionAnalysis, SkippedFile,
+    Summary,
+};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -10,6 +13,7 @@ pub struct HealthResponse {
     pub meta: ResponseMeta,
     pub summary: Summary,
     pub function_clone_groups: AstFunctionCloneGroups,
+    pub unused_definition_analysis: RustUnusedDefinitionAnalysis,
     pub skipped_files: Vec<SkippedFile>,
     pub files: BTreeMap<String, FileHealth>,
 }

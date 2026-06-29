@@ -10,7 +10,10 @@ mod opaque;
 mod refs;
 mod shapes;
 
-pub use definitions::{AstDefinition, AstDefinitionKind, AstVisibility};
+pub use definitions::{
+    AstDefinition, AstDefinitionAttribute, AstDefinitionAttributeKind, AstDefinitionKind,
+    AstVisibility,
+};
 pub use function_bodies::{AstFunctionBodyFingerprint, AstFunctionBodyFingerprintKind};
 pub use functions::{
     AstCallableKind, AstFunctionOwner, AstFunctionParam, AstFunctionReceiver,

@@ -88,6 +88,7 @@ The protocol owns its names. The parser is an implementation detail.
 | `src/summary.rs` | `summarize(...)` for `BTreeMap<String, FileHealth>` | signal construction, path policy |
 | `src/parallel.rs` | local Rayon `ThreadPool`, `RuntimeConfig`, stack/thread policy | AST storage, file analysis |
 | `src/analyzer.rs` / `src/analyzer/*.rs` | syntax traversal, file-level analysis, AST fact extraction, AST opaque surface detection | protocol schema changes, final artifact metadata |
+| `src/dead_exports.rs` / `src/dead_exports/*.rs` | Rust unused-definition and dead-export raw evidence aggregation, RUST-FP gate application, reachability summaries | syntax traversal, edit-action safety, product action tiers |
 | `src/lib.rs` / `src/driver/*.rs` | library phase entrypoint, stdin compatibility dispatch, request validation, pool install, exit behavior | parser traversal |
 | `src/main.rs` | thin compatibility CLI entrypoint that delegates to `src/lib.rs` | parser traversal, request validation |
 | `src/wrapper.rs` / `src/wrapper/*.rs` | Rust-main file discovery, path policy, hashing, UTF-8 decode, skipped-file evidence, final metadata, artifact write | parser traversal, signal construction |
@@ -119,6 +120,7 @@ forbidden unless this canonical file is amended with a migration reason.
 | Rust record shape hash extraction | `collect_struct_shape_hash(...)` | `src/analyzer/syntax/items/shapes.rs` |
 | Rust function body fingerprint extraction | `collect_function_body_fingerprint(...)` | `src/analyzer/syntax/items/function_bodies.rs` |
 | Rust function clone group aggregation | `group_function_body_fingerprints(...)` | `src/function_clones.rs` |
+| Rust unused-definition analysis | `classify_unused_definitions(...)` | `src/dead_exports.rs` |
 | Rust inline statement pattern extraction | `collect_inline_patterns(...)` | `src/analyzer/syntax/items/inline_patterns.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
@@ -406,6 +408,57 @@ attributes such as `serde`, `schemars`, `ts`, `prost`, `clap`, `arg`,
 standalone opaque expansion surfaces; the owning derive macro remains the
 review or muted surface. Non-test `cfg` gates remain `review` because AST-only
 analysis cannot know which branch is live.
+
+### 7.1.1 Rust Unused Definition And Dead Export Analysis
+
+Rust unused-definition analysis is the Rust analogue of the TS/JS
+`classify-dead-exports.mjs` plus `export-action-safety.mjs` split:
+reachability evidence and edit safety are separate. `rust-source-health` owns
+raw reachability and false-positive gate evidence. `lumin-rust-analyzer` owns
+product action tiers and must not recompute deadness from JSON path strings.
+
+The raw source-health owner is `src/dead_exports.rs`; any
+`src/dead_exports/` modules are implementation details of that owner. New
+unused-definition helper functions must live under that owner or this canonical
+file must be amended before they are introduced.
+
+Rust public visibility is not deadness evidence. A `pub` item with zero
+observed repository-local references may still be an external crate API, a
+re-exported surface, a trait contract, a macro-visible item, an FFI entrypoint,
+or a cfg-specific item. Therefore Rust `pub` items must not become remove
+candidates from syntax reachability alone. They may only become review or
+demotion evidence with explicit blockers until a typed public-surface and edit
+safety proof exists.
+
+The Rust dead-export false-positive gate namespace is `RUST-FP`:
+
+- `RUST-FP-A` external crate/public surface: public library targets, crate-root
+  exports, and `pub use` surfaces block removal.
+- `RUST-FP-B` trait impl and trait contract surface: trait impl methods and
+  unresolved impl method owner evidence block direct deadness claims.
+- `RUST-FP-C` macro and opaque syntax: review-visible macro/cfg opacity near a
+  definition degrades or blocks the claim.
+- `RUST-FP-D` FFI and linker surface: `no_mangle`, `export_name`, `link_name`,
+  `extern "C"`, and similar linker-facing attributes block removal.
+- `RUST-FP-E` derive and generated trait requirements: derive or trait-required
+  surfaces remain review-only unless cleared by a later semantic proof.
+- `RUST-FP-F` cfg-gated definitions: cfg/cfg_attr definitions are review or
+  degraded because this lane does not know every active build.
+- `RUST-FP-G` test-only reachability: references observed only in
+  `cfg(test)`/`#[test]` contexts are serialized as test support and do not
+  produce product-safe cleanup.
+
+The first implementation slice must emit no `SAFE_FIX` for this lane. It may
+emit raw `unusedDefinitionAnalysis` evidence with `remove-candidate`,
+`demote-to-restricted`, `review`, `degraded`, and `muted` tiers, but every
+candidate must keep `safeAction = null` until an edit-proof layer equivalent to
+TS/JS export action safety exists. Public Rust surface blockers must be
+serialized in `actionBlockers`; unsupported scope must be serialized in
+`degradedScopes` or candidate evidence, not silently ignored.
+
+Candidate counts in this lane mean "observed references in supported Rust
+syntax scopes." They are not grounded absence claims for external crates,
+macros, cfg branches, skipped files, or unresolved package scopes.
 
 ### 7.2 Rust Pre-Write Consumer
 
