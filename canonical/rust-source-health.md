@@ -241,6 +241,14 @@ near clones in the complete pair universe. Skipped-bucket pair estimates are raw
 work estimates and may double-count pairs shared by multiple skipped tokens.
 They are transparency evidence only, not absence claims, timeouts, repository
 size caps, or permission to skip large repositories.
+
+Near retrieval v9 dogfood baseline, recorded from the 2026-06-29 review packet:
+full `codex-rs` completed without the prior near-candidate OOM, while shared
+call-token IDF sums matched the pre-retrieval v7 baseline for the common top
+candidate pairs in `ripgrep` (50/50), `bytes` (50/50), `clap` (49/49), and
+`serde` (46/46). That baseline is the reason `significant_call_tokens` must
+remain the full scoring/evidence set and must not be mutated with `retain(...)`;
+`retained_call_tokens` is the only place for low-IDF generation filtering.
 `src/function_clones/near.rs` owns near-candidate orchestration; its
 `src/function_clones/near/` submodules are implementation details for candidate
 projection, token filtering, local scoring, and local model structs.
