@@ -13,13 +13,14 @@ mod summary;
 mod unused_definitions;
 
 pub use ast::{
-    AstCallableKind, AstCfgGate, AstDefinition, AstDefinitionKind, AstFacts,
-    AstFunctionBodyFingerprint, AstFunctionBodyFingerprintKind, AstFunctionOwner, AstFunctionParam,
-    AstFunctionReceiver, AstFunctionReceiverKind, AstFunctionSignature, AstFunctionSignatureKind,
-    AstImplBlock, AstImplMethod, AstInlinePattern, AstInlinePatternKind, AstMacroCall,
-    AstMethodCall, AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface, AstOpaqueSurfaceKind,
-    AstOpaqueSurfaceVisibility, AstOpaqueVisibility, AstPathRef, AstShapeConfidence, AstShapeField,
-    AstShapeFieldKind, AstShapeHash, AstShapeHashKind, AstShapeKind, AstUseTree, AstVisibility,
+    AstCallableKind, AstCfgGate, AstDefinition, AstDefinitionAttribute, AstDefinitionAttributeKind,
+    AstDefinitionKind, AstFacts, AstFunctionBodyFingerprint, AstFunctionBodyFingerprintKind,
+    AstFunctionOwner, AstFunctionParam, AstFunctionReceiver, AstFunctionReceiverKind,
+    AstFunctionSignature, AstFunctionSignatureKind, AstImplBlock, AstImplMethod, AstInlinePattern,
+    AstInlinePatternKind, AstMacroCall, AstMethodCall, AstOpaqueMuteReason, AstOpaqueReason,
+    AstOpaqueSurface, AstOpaqueSurfaceKind, AstOpaqueSurfaceVisibility, AstOpaqueVisibility,
+    AstPathRef, AstShapeConfidence, AstShapeField, AstShapeFieldKind, AstShapeHash,
+    AstShapeHashKind, AstShapeKind, AstUseTree, AstVisibility,
 };
 pub use file::{Facts, FileHealth};
 pub use function_clones::{
@@ -173,6 +174,14 @@ pub const RUST_UNUSED_DEFINITION_CANDIDATE_COUNT_SCOPE: &str =
 pub const RUST_UNUSED_DEFINITION_SAFE_ACTION_SCOPE: &str = "none-without-edit-proof";
 pub const RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_GATE: &str = "RUST-FP-A";
 pub const RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_BLOCKER: &str = "rust-fp-a-external-public-surface";
+pub const RUST_UNUSED_DEFINITION_TRAIT_IMPL_GATE: &str = "RUST-FP-B";
+pub const RUST_UNUSED_DEFINITION_TRAIT_IMPL_BLOCKER: &str = "rust-fp-b-trait-impl-contract";
+pub const RUST_UNUSED_DEFINITION_FFI_GATE: &str = "RUST-FP-D";
+pub const RUST_UNUSED_DEFINITION_FFI_BLOCKER: &str = "rust-fp-d-ffi-linker-surface";
+pub const RUST_UNUSED_DEFINITION_CFG_GATE: &str = "RUST-FP-F";
+pub const RUST_UNUSED_DEFINITION_CFG_BLOCKER: &str = "rust-fp-f-cfg-gated-definition";
+pub const RUST_UNUSED_DEFINITION_TEST_ONLY_GATE: &str = "RUST-FP-G";
+pub const RUST_UNUSED_DEFINITION_TEST_ONLY_BLOCKER: &str = "rust-fp-g-test-only-reachability";
 pub const RUST_UNUSED_DEFINITION_QUALIFIED_PATH_REF_SCOPE: &str = "crate-local-qualified-path-refs";
 pub const DEFAULT_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 pub const DEFAULT_INCLUDE: &[&str] = &["**/*.rs"];

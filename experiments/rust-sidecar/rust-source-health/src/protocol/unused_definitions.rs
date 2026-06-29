@@ -91,6 +91,7 @@ pub struct RustUnusedDefinitionDefinition {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RustUnusedDefinitionOwner {
+    TraitImpl,
     Module,
     Unknown,
 }

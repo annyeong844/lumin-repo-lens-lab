@@ -23,6 +23,7 @@ pub struct AstUseTree {
 pub struct AstPathRef {
     pub path: String,
     pub name: String,
+    pub test_context: bool,
     pub location: Location,
 }
 

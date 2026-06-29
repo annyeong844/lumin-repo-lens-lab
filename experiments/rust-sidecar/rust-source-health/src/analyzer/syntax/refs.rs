@@ -6,6 +6,7 @@ use ra_ap_syntax::{
 };
 
 use super::FileSyntax;
+use crate::analyzer::attrs::{has_direct_cfg_test_attr, has_direct_test_attr};
 use crate::analyzer::facts::{
     collect_use_tree_facts, is_qualified_path_ref, is_review_method_call, path_ref_text,
     path_terminal_name, syntax_text, visibility_for,
@@ -36,6 +37,7 @@ pub(super) fn collect_path_ref(node: &SyntaxNode, line_index: &LineIndex, syntax
     syntax.ast.path_refs.push(AstPathRef {
         name: path_terminal_name(&path),
         path: path_text,
+        test_context: path_ref_is_in_test_context(node),
         location: ast_location(line_index, expr.syntax().text_range()),
     });
 }
@@ -58,6 +60,7 @@ pub(super) fn collect_type_path_ref(
     syntax.ast.path_refs.push(AstPathRef {
         name: path_terminal_name(&path),
         path: path_text,
+        test_context: path_ref_is_in_test_context(node),
         location: ast_location(line_index, path_type.syntax().text_range()),
     });
 }
@@ -92,4 +95,15 @@ pub(super) fn collect_method_call(
         receiver,
         location: ast_location(line_index, call.syntax().text_range()),
     });
+}
+
+fn path_ref_is_in_test_context(node: &SyntaxNode) -> bool {
+    node.ancestors().any(|ancestor| {
+        ast::Fn::cast(ancestor.clone()).is_some_and(|function| {
+            has_direct_test_attr(&function) || has_direct_cfg_test_attr(&function)
+        }) || ast::Module::cast(ancestor.clone())
+            .is_some_and(|module| has_direct_cfg_test_attr(&module))
+            || ast::Impl::cast(ancestor)
+                .is_some_and(|impl_block| has_direct_cfg_test_attr(&impl_block))
+    })
 }
