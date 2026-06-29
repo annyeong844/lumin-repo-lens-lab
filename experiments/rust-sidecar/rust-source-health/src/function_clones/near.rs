@@ -38,10 +38,22 @@ pub(super) fn build_near_function_candidates(
                 member,
                 identity,
                 significant_call_tokens,
+                retained_call_tokens: Vec::new(),
             }
         })
         .collect::<Vec<_>>();
     let token_idfs = scoring::call_token_idfs(&all_facts);
+    for fact in &mut all_facts {
+        fact.retained_call_tokens = fact
+            .significant_call_tokens
+            .iter()
+            .filter(|token| {
+                scoring::token_idf(token, &token_idfs)
+                    >= RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF
+            })
+            .cloned()
+            .collect();
+    }
     let mut eligible = all_facts
         .drain(..)
         .filter(|fact| {
@@ -92,17 +104,10 @@ pub(super) fn build_near_function_candidates(
     skipped_low_discrimination_buckets
         .truncate(RUST_FUNCTION_CLONE_NEAR_SKIPPED_BUCKET_SAMPLE_LIMIT);
 
-    for fact in &mut eligible {
-        fact.significant_call_tokens.retain(|token| {
-            scoring::token_idf(token, &token_idfs) >= RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF
-        });
-    }
-    eligible.retain(|fact| !fact.significant_call_tokens.is_empty());
-
     let mut retained = BTreeMap::<String, BTreeMap<CompatibilityKey, Vec<usize>>>::new();
     for (index, fact) in eligible.iter().enumerate() {
         let key = compatibility_key(fact);
-        for token in &fact.significant_call_tokens {
+        for token in &fact.retained_call_tokens {
             retained
                 .entry(token.clone())
                 .or_default()
@@ -189,8 +194,8 @@ impl<'facts, 'state> CandidateGenerationState<'facts, 'state> {
         call_token: &str,
     ) {
         if has_earlier_shared_call_token(
-            &self.eligible[left_index].significant_call_tokens,
-            &self.eligible[right_index].significant_call_tokens,
+            &self.eligible[left_index].retained_call_tokens,
+            &self.eligible[right_index].retained_call_tokens,
             call_token,
         ) {
             return;

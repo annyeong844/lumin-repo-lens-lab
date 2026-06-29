@@ -330,12 +330,12 @@ pub fn parse_user_beta(input: usize) -> usize {
     );
     assert_eq!(
         candidate["sharedCallTokens"].as_array().map(Vec::len),
-        Some(1)
+        Some(2)
     );
     assert!(candidate["sharedCallTokens"]
         .as_array()
         .is_some_and(|tokens| tokens.iter().any(|token| token == "unwrap_switch")
-            && !tokens.iter().any(|token| token == "assert")));
+            && tokens.iter().any(|token| token == "assert")));
 
     Ok(())
 }

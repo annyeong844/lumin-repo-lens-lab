@@ -16,6 +16,7 @@ pub(super) struct NearFact<'a> {
     pub(super) member: GroupMember<'a>,
     pub(super) identity: String,
     pub(super) significant_call_tokens: Vec<String>,
+    pub(super) retained_call_tokens: Vec<String>,
     pub(super) name_tokens: Vec<String>,
 }
 

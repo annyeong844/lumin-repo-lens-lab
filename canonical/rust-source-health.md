@@ -228,7 +228,11 @@ instead of exhaustive retained-token pair scans. Low-discrimination call-token
 buckets do not generate pairs, but pairs that also share retained
 higher-discrimination tokens remain eligible. Compatibility guards such as
 qualifiers, parameter count, body LOC, and statement count must be applied
-before pair enumeration where possible. The artifact exposes
+before pair enumeration where possible. Retained tokens are only generation and
+dedupe keys; once a pair is generated, shared-token evidence, IDF sums, and
+scores are computed from the full significant call-token set so
+low-discrimination evidence remains visible on candidates that were surfaced by
+retained tokens. The artifact exposes
 `retrievalContractVersion = "function-clone-near-retrieval.v1"`,
 `candidateGenerationMode = "bounded-retrieval"`, and
 `candidateCountScope = "scored-candidates-from-retained-retrieval-evidence"` so
