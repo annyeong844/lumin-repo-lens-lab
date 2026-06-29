@@ -57,6 +57,47 @@ pub(crate) fn crate_visible_builder() -> DecompressionMatcherBuilder {
 }
 
 #[test]
+fn public_inherent_impl_methods_are_excluded_by_rust_public_surface_gate() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+pub struct Runner;
+
+impl Runner {
+    pub fn run(&self) {}
+
+    pub fn new() -> Self {
+        Runner
+    }
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert_eq!(analysis["summary"]["blockedPublicSurfaceCount"], 2);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+
+    for name in ["run", "new"] {
+        let candidate = find_excluded(analysis, name)?;
+        assert_eq!(candidate["definition"]["owner"], "inherent-impl");
+        assert_eq!(candidate["fpGates"][0], "RUST-FP-A");
+        assert_eq!(
+            candidate["actionBlockers"][0],
+            "rust-fp-a-external-public-surface"
+        );
+        assert_eq!(candidate["safeAction"], serde_json::Value::Null);
+    }
+    assert!(analysis["excludedCandidates"]
+        .as_array()
+        .context("excludedCandidates")?
+        .iter()
+        .all(|candidate| candidate["definition"]["name"] != "Runner"));
+
+    Ok(())
+}
+
+#[test]
 fn private_zero_ref_definitions_become_raw_remove_candidates_without_safe_actions() -> Result<()> {
     let artifact = analyze_file(
         "src/lib.rs",

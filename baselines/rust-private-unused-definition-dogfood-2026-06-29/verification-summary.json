@@ -11,25 +11,25 @@
       "definitions": 3379,
       "candidateCount": 0,
       "findingsLen": 0,
-      "excludedCandidatesLen": 1437,
+      "excludedCandidatesLen": 1466,
       "gates": {
-        "RUST-FP-A": 3,
+        "RUST-FP-A": 18,
         "RUST-FP-B": 985,
-        "RUST-FP-C": 185,
+        "RUST-FP-C": 194,
         "RUST-FP-E": 1,
-        "RUST-FP-F": 110,
-        "RUST-FP-G": 151,
+        "RUST-FP-F": 114,
+        "RUST-FP-G": 152,
         "RUST-FP-I": 2
       },
       "blockedGeneratedCount": 0,
       "blockedEntrypointCount": 2,
-      "testOnlySupportCount": 151,
+      "testOnlySupportCount": 152,
       "unsafeFindingCount": 0,
       "safeActionCount": 0,
       "nameRefs": 46929,
       "pathRefs": 3233,
-      "elapsed": "0:02.82",
-      "maxRssKb": 37680
+      "elapsed": "0:04.07",
+      "maxRssKb": 37000
     },
     "codexCore": {
       "root": "C:\\Users\\endof\\Downloads\\repo\\suyeonevo\\codex-main\\codex-rs\\core",
@@ -39,25 +39,25 @@
       "definitions": 9567,
       "candidateCount": 33,
       "findingsLen": 33,
-      "excludedCandidatesLen": 4460,
+      "excludedCandidatesLen": 4556,
       "gates": {
-        "RUST-FP-A": 25,
+        "RUST-FP-A": 58,
         "RUST-FP-B": 668,
-        "RUST-FP-C": 138,
+        "RUST-FP-C": 160,
         "RUST-FP-E": 1,
-        "RUST-FP-F": 8,
-        "RUST-FP-G": 3612,
+        "RUST-FP-F": 23,
+        "RUST-FP-G": 3638,
         "RUST-FP-H": 8
       },
       "blockedGeneratedCount": 8,
       "blockedEntrypointCount": 0,
-      "testOnlySupportCount": 3612,
+      "testOnlySupportCount": 3638,
       "unsafeFindingCount": 0,
       "safeActionCount": 0,
       "nameRefs": 304727,
       "pathRefs": 22584,
-      "elapsed": "0:23.34",
-      "maxRssKb": 126844
+      "elapsed": "0:35.47",
+      "maxRssKb": 127648
     }
   }
 }

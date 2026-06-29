@@ -110,8 +110,9 @@ Rust gates use a separate namespace from TS gates.
 ### RUST-FP-A: External Crate Public Surface
 
 Any externally reachable `pub` item is not a remove candidate. This includes
-crate-root exports, `pub use` re-exports, public library targets, and package
-surface that may be consumed outside the current repository.
+crate-root exports, `pub use` re-exports, public library targets, public
+inherent impl methods, and package surface that may be consumed outside the
+current repository.
 
 Action:
 
@@ -127,7 +128,8 @@ resolution, and downstream crates without a direct `pathRef` to the method name.
 Action:
 
 - block remove for trait impl methods
-- review inherent impl methods until owner and method-call evidence are complete
+- review inherent impl methods that are not already blocked by public-surface
+  visibility until owner and method-call evidence are complete
 - include trait path and impl target evidence when present
 
 ### RUST-FP-C: Macro And Opaque Syntax

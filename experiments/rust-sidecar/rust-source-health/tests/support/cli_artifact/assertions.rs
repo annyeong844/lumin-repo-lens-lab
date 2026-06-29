@@ -94,7 +94,7 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
     );
     assert_eq!(
         artifact["unusedDefinitionAnalysis"]["summary"]["blockedPublicSurfaceCount"],
-        4
+        3
     );
     assert_eq!(artifact["summary"]["signalsByKind"]["unwrap-call"], 1);
     assert!(artifact["files"]["src/lib.rs"].is_object());
@@ -156,7 +156,7 @@ pub fn assert_full_cli_artifact(output_path: &Path) -> Result<()> {
     assert!(artifact["functionCloneGroups"]["nearFunctionCandidates"].is_array());
     assert_eq!(
         artifact["unusedDefinitionAnalysis"]["summary"]["blockedPublicSurfaceCount"],
-        4
+        3
     );
     assert!(artifact["files"]["src/lib.rs"]["ast"]["definitions"].is_array());
     assert!(artifact["files"]["src/lib.rs"]["ast"]["functionSignatures"].is_array());

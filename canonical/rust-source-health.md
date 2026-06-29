@@ -440,7 +440,7 @@ safety proof exists.
 The Rust dead-export false-positive gate namespace is `RUST-FP`:
 
 - `RUST-FP-A` external crate/public surface: public library targets, crate-root
-  exports, and `pub use` surfaces block removal.
+  exports, public inherent impl methods, and `pub use` surfaces block removal.
 - `RUST-FP-B` trait impl and trait contract surface: trait impl methods and
   unresolved impl method owner evidence block direct deadness claims.
 - `RUST-FP-C` macro and opaque syntax: review-visible macro/cfg opacity near a

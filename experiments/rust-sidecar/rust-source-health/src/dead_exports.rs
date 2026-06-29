@@ -1,25 +1,26 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{
-    AstDefinition, AstDefinitionAttributeKind, AstDefinitionKind, AstImplBlock, AstImplMethod,
-    AstOpaqueSurface, AstOpaqueVisibility, AstVisibility, FileHealth, PathClassification,
-    RustUnusedDefinitionAction, RustUnusedDefinitionAnalysis, RustUnusedDefinitionCandidate,
-    RustUnusedDefinitionCandidateKind, RustUnusedDefinitionDefinition,
-    RustUnusedDefinitionDegradedScope, RustUnusedDefinitionEvidence,
-    RustUnusedDefinitionObservedReferences, RustUnusedDefinitionOwner, RustUnusedDefinitionPolicy,
-    RustUnusedDefinitionSummary, RustUnusedDefinitionTier,
-    RUST_UNUSED_DEFINITION_CANDIDATE_COUNT_SCOPE, RUST_UNUSED_DEFINITION_CFG_BLOCKER,
-    RUST_UNUSED_DEFINITION_CFG_GATE, RUST_UNUSED_DEFINITION_DERIVE_BLOCKER,
-    RUST_UNUSED_DEFINITION_DERIVE_GATE, RUST_UNUSED_DEFINITION_ENTRYPOINT_BLOCKER,
-    RUST_UNUSED_DEFINITION_ENTRYPOINT_GATE, RUST_UNUSED_DEFINITION_FFI_BLOCKER,
-    RUST_UNUSED_DEFINITION_FFI_GATE, RUST_UNUSED_DEFINITION_FP_GATE_NAMESPACE,
-    RUST_UNUSED_DEFINITION_GENERATED_BLOCKER, RUST_UNUSED_DEFINITION_GENERATED_GATE,
-    RUST_UNUSED_DEFINITION_LOCAL_REF_SCOPE, RUST_UNUSED_DEFINITION_OPAQUE_BLOCKER,
-    RUST_UNUSED_DEFINITION_OPAQUE_GATE, RUST_UNUSED_DEFINITION_POLICY_ID,
-    RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_BLOCKER, RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_GATE,
-    RUST_UNUSED_DEFINITION_SAFE_ACTION_SCOPE, RUST_UNUSED_DEFINITION_TEST_ONLY_BLOCKER,
-    RUST_UNUSED_DEFINITION_TEST_ONLY_GATE, RUST_UNUSED_DEFINITION_TRAIT_IMPL_BLOCKER,
-    RUST_UNUSED_DEFINITION_TRAIT_IMPL_GATE, RUST_UNUSED_DEFINITION_TS_MODEL,
+    AstDefinition, AstDefinitionAttributeKind, AstDefinitionKind, AstDefinitionOwner, AstImplBlock,
+    AstImplMethod, AstOpaqueSurface, AstOpaqueVisibility, AstVisibility, FileHealth,
+    PathClassification, RustUnusedDefinitionAction, RustUnusedDefinitionAnalysis,
+    RustUnusedDefinitionCandidate, RustUnusedDefinitionCandidateKind,
+    RustUnusedDefinitionDefinition, RustUnusedDefinitionDegradedScope,
+    RustUnusedDefinitionEvidence, RustUnusedDefinitionObservedReferences,
+    RustUnusedDefinitionOwner, RustUnusedDefinitionPolicy, RustUnusedDefinitionSummary,
+    RustUnusedDefinitionTier, RUST_UNUSED_DEFINITION_CANDIDATE_COUNT_SCOPE,
+    RUST_UNUSED_DEFINITION_CFG_BLOCKER, RUST_UNUSED_DEFINITION_CFG_GATE,
+    RUST_UNUSED_DEFINITION_DERIVE_BLOCKER, RUST_UNUSED_DEFINITION_DERIVE_GATE,
+    RUST_UNUSED_DEFINITION_ENTRYPOINT_BLOCKER, RUST_UNUSED_DEFINITION_ENTRYPOINT_GATE,
+    RUST_UNUSED_DEFINITION_FFI_BLOCKER, RUST_UNUSED_DEFINITION_FFI_GATE,
+    RUST_UNUSED_DEFINITION_FP_GATE_NAMESPACE, RUST_UNUSED_DEFINITION_GENERATED_BLOCKER,
+    RUST_UNUSED_DEFINITION_GENERATED_GATE, RUST_UNUSED_DEFINITION_LOCAL_REF_SCOPE,
+    RUST_UNUSED_DEFINITION_OPAQUE_BLOCKER, RUST_UNUSED_DEFINITION_OPAQUE_GATE,
+    RUST_UNUSED_DEFINITION_POLICY_ID, RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_BLOCKER,
+    RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_GATE, RUST_UNUSED_DEFINITION_SAFE_ACTION_SCOPE,
+    RUST_UNUSED_DEFINITION_TEST_ONLY_BLOCKER, RUST_UNUSED_DEFINITION_TEST_ONLY_GATE,
+    RUST_UNUSED_DEFINITION_TRAIT_IMPL_BLOCKER, RUST_UNUSED_DEFINITION_TRAIT_IMPL_GATE,
+    RUST_UNUSED_DEFINITION_TS_MODEL,
 };
 
 pub fn classify_unused_definitions(
@@ -52,10 +53,10 @@ pub fn classify_unused_definitions(
                 .get(&definition.name)
                 .copied()
                 .unwrap_or_default();
-            if definition.owner != crate::protocol::AstDefinitionOwner::Module {
-                continue;
-            }
-            if is_public_surface_visibility(definition.visibility) && production_refs == 0 {
+            if is_public_surface_owner(definition.owner)
+                && is_public_surface_visibility(definition.visibility)
+                && production_refs == 0
+            {
                 push_public_definition_candidate(
                     file,
                     health,
@@ -64,7 +65,10 @@ pub fn classify_unused_definitions(
                     &mut summary,
                     &mut excluded_candidates,
                 );
-            } else if definition.visibility == AstVisibility::Private && production_refs == 0 {
+            } else if definition.owner == AstDefinitionOwner::Module
+                && definition.visibility == AstVisibility::Private
+                && production_refs == 0
+            {
                 push_private_definition_candidate(
                     file,
                     health,
@@ -395,7 +399,7 @@ fn remove_candidate(file: &str, definition: &AstDefinition) -> RustUnusedDefinit
             name: definition.name.clone(),
             kind: definition.kind,
             visibility: definition.visibility,
-            owner: RustUnusedDefinitionOwner::Module,
+            owner: unused_definition_owner(definition.owner),
             location: definition.location.clone(),
         },
         observed_references: RustUnusedDefinitionObservedReferences {
@@ -426,7 +430,7 @@ fn definition_candidate(
             name: definition.name.clone(),
             kind: definition.kind,
             visibility: definition.visibility,
-            owner: RustUnusedDefinitionOwner::Module,
+            owner: unused_definition_owner(definition.owner),
             location: definition.location.clone(),
         },
         observed_references: RustUnusedDefinitionObservedReferences {
@@ -494,6 +498,22 @@ fn is_public_surface_visibility(visibility: AstVisibility) -> bool {
         visibility,
         AstVisibility::Public | AstVisibility::Crate | AstVisibility::Restricted
     )
+}
+
+fn is_public_surface_owner(owner: AstDefinitionOwner) -> bool {
+    matches!(
+        owner,
+        AstDefinitionOwner::Module | AstDefinitionOwner::InherentImpl
+    )
+}
+
+fn unused_definition_owner(owner: AstDefinitionOwner) -> RustUnusedDefinitionOwner {
+    match owner {
+        AstDefinitionOwner::Module => RustUnusedDefinitionOwner::Module,
+        AstDefinitionOwner::InherentImpl => RustUnusedDefinitionOwner::InherentImpl,
+        AstDefinitionOwner::TraitImpl => RustUnusedDefinitionOwner::TraitImpl,
+        AstDefinitionOwner::Trait => RustUnusedDefinitionOwner::Unknown,
+    }
 }
 
 fn is_supported_private_candidate_kind(kind: AstDefinitionKind) -> bool {

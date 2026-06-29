@@ -19,6 +19,8 @@ Key result:
   actions.
 - Public, trait, generated, test-only, and entrypoint surfaces stayed in
   `excludedCandidates[]` with RUST-FP blockers.
+- Public inherent impl methods are included in the RUST-FP-A public-surface
+  blocker lane instead of silently falling out of the analysis.
 
 This confirms the intended split: Rust source-health may now report raw private
 unused-definition evidence, but it still does not emit `SAFE_FIX` or edit
