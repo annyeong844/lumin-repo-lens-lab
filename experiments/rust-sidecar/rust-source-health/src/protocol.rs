@@ -10,6 +10,7 @@ mod request;
 mod response;
 mod signal;
 mod summary;
+mod unused_definitions;
 
 pub use ast::{
     AstCallableKind, AstCfgGate, AstDefinition, AstDefinitionKind, AstFacts,
@@ -45,6 +46,13 @@ pub use signal::{
     Claim, Severity, Signal, SignalKind, SignalMuteReason, SignalVisibility, SignalVisibilityState,
 };
 pub use summary::Summary;
+pub use unused_definitions::{
+    RustUnusedDefinitionAction, RustUnusedDefinitionAnalysis, RustUnusedDefinitionCandidate,
+    RustUnusedDefinitionCandidateKind, RustUnusedDefinitionDefinition,
+    RustUnusedDefinitionDegradedScope, RustUnusedDefinitionEvidence,
+    RustUnusedDefinitionObservedReferences, RustUnusedDefinitionOwner, RustUnusedDefinitionPolicy,
+    RustUnusedDefinitionSafeAction, RustUnusedDefinitionSummary, RustUnusedDefinitionTier,
+};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const POLICY_VERSION: &str = "m6-rust-source-health-syntax-v9";
@@ -157,6 +165,15 @@ pub const PARSER_EDITION_POLICY: ParserEditionPolicy = ParserEditionPolicy::Fixe
 pub const PARSER_EDITION_SOURCE: ParserEditionSource = ParserEditionSource::M6PolicyDefault;
 pub const SIGNAL_POLICY_ID: &str = "rust-source-health-signal-policy";
 pub const SIGNAL_POLICY_VERSION: &str = "rust-source-health-signal-policy.v2";
+pub const RUST_UNUSED_DEFINITION_POLICY_ID: &str = "rust-unused-definition-policy-v1";
+pub const RUST_UNUSED_DEFINITION_TS_MODEL: &str = "dead-export-reachability-plus-action-safety";
+pub const RUST_UNUSED_DEFINITION_FP_GATE_NAMESPACE: &str = "RUST-FP";
+pub const RUST_UNUSED_DEFINITION_CANDIDATE_COUNT_SCOPE: &str =
+    "observed-references-in-supported-rust-syntax-scopes";
+pub const RUST_UNUSED_DEFINITION_SAFE_ACTION_SCOPE: &str = "none-without-edit-proof";
+pub const RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_GATE: &str = "RUST-FP-A";
+pub const RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_BLOCKER: &str = "rust-fp-a-external-public-surface";
+pub const RUST_UNUSED_DEFINITION_QUALIFIED_PATH_REF_SCOPE: &str = "crate-local-qualified-path-refs";
 pub const DEFAULT_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 pub const DEFAULT_INCLUDE: &[&str] = &["**/*.rs"];
 pub const DEFAULT_EXCLUDE: &[&str] = &["**/target/**", "**/vendor/**"];

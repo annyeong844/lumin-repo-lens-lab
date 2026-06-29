@@ -6,7 +6,9 @@ mod ast_summary;
 mod file;
 mod function_clone_groups;
 
-use crate::protocol::{HealthResponse, ResponseMeta, SkippedFile, Summary};
+use crate::protocol::{
+    HealthResponse, ResponseMeta, RustUnusedDefinitionAnalysis, SkippedFile, Summary,
+};
 use file::CompactFileHealth;
 use function_clone_groups::CompactFunctionCloneGroups;
 
@@ -18,6 +20,7 @@ pub(super) struct CompactHealthResponse<'a> {
     meta: &'a ResponseMeta,
     summary: &'a Summary,
     function_clone_groups: CompactFunctionCloneGroups<'a>,
+    unused_definition_analysis: &'a RustUnusedDefinitionAnalysis,
     skipped_files: &'a [SkippedFile],
     files: BTreeMap<&'a str, CompactFileHealth<'a>>,
 }
@@ -38,6 +41,7 @@ impl<'a> CompactHealthResponse<'a> {
             function_clone_groups: CompactFunctionCloneGroups::from_groups(
                 &response.function_clone_groups,
             ),
+            unused_definition_analysis: &response.unused_definition_analysis,
             skipped_files: &response.skipped_files,
             files,
         }

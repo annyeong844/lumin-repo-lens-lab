@@ -59,3 +59,5 @@ mod opaque_surfaces;
 mod path_visibility;
 #[path = "integration/syntax_signals.rs"]
 mod syntax_signals;
+#[path = "integration/unused_definitions.rs"]
+mod unused_definitions;

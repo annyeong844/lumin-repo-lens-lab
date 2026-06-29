@@ -1,4 +1,5 @@
 mod analyzer;
+mod dead_exports;
 mod driver;
 mod function_clones;
 mod locations;

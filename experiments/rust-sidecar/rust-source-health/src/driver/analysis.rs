@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::analyzer::analyze_files;
+use crate::dead_exports::classify_unused_definitions;
 use crate::function_clones::group_function_body_fingerprints;
 use crate::parallel::{build_pool, RuntimeConfig};
 use crate::protocol::{
@@ -26,6 +27,7 @@ pub fn analyze_request(
     let pool = build_pool(runtime_config)?;
     let files = pool.install(|| analyze_files(&request.files, &request.parser))?;
     let function_clone_groups = group_function_body_fingerprints(&files, &skipped_files);
+    let unused_definition_analysis = classify_unused_definitions(&files);
     let mut summary = summarize(&files);
     summary.skipped_files = skipped_files.len();
     summary.function_clone_exact_body_groups = function_clone_groups.exact_body_group_count;
@@ -70,6 +72,7 @@ pub fn analyze_request(
         },
         summary,
         function_clone_groups,
+        unused_definition_analysis,
         skipped_files,
         files,
     })
