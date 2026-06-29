@@ -2,19 +2,22 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{
     AstDefinition, AstDefinitionAttributeKind, AstDefinitionKind, AstImplBlock, AstImplMethod,
-    AstVisibility, FileHealth, RustUnusedDefinitionAction, RustUnusedDefinitionAnalysis,
-    RustUnusedDefinitionCandidate, RustUnusedDefinitionCandidateKind,
+    AstOpaqueSurface, AstOpaqueVisibility, AstVisibility, FileHealth, RustUnusedDefinitionAction,
+    RustUnusedDefinitionAnalysis, RustUnusedDefinitionCandidate, RustUnusedDefinitionCandidateKind,
     RustUnusedDefinitionDefinition, RustUnusedDefinitionDegradedScope,
-    RustUnusedDefinitionObservedReferences, RustUnusedDefinitionOwner, RustUnusedDefinitionPolicy,
-    RustUnusedDefinitionSummary, RustUnusedDefinitionTier,
-    RUST_UNUSED_DEFINITION_CANDIDATE_COUNT_SCOPE, RUST_UNUSED_DEFINITION_CFG_BLOCKER,
-    RUST_UNUSED_DEFINITION_CFG_GATE, RUST_UNUSED_DEFINITION_FFI_BLOCKER,
-    RUST_UNUSED_DEFINITION_FFI_GATE, RUST_UNUSED_DEFINITION_FP_GATE_NAMESPACE,
-    RUST_UNUSED_DEFINITION_POLICY_ID, RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_BLOCKER,
-    RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_GATE, RUST_UNUSED_DEFINITION_QUALIFIED_PATH_REF_SCOPE,
-    RUST_UNUSED_DEFINITION_SAFE_ACTION_SCOPE, RUST_UNUSED_DEFINITION_TEST_ONLY_BLOCKER,
-    RUST_UNUSED_DEFINITION_TEST_ONLY_GATE, RUST_UNUSED_DEFINITION_TRAIT_IMPL_BLOCKER,
-    RUST_UNUSED_DEFINITION_TRAIT_IMPL_GATE, RUST_UNUSED_DEFINITION_TS_MODEL,
+    RustUnusedDefinitionEvidence, RustUnusedDefinitionObservedReferences,
+    RustUnusedDefinitionOwner, RustUnusedDefinitionPolicy, RustUnusedDefinitionSummary,
+    RustUnusedDefinitionTier, RUST_UNUSED_DEFINITION_CANDIDATE_COUNT_SCOPE,
+    RUST_UNUSED_DEFINITION_CFG_BLOCKER, RUST_UNUSED_DEFINITION_CFG_GATE,
+    RUST_UNUSED_DEFINITION_DERIVE_BLOCKER, RUST_UNUSED_DEFINITION_DERIVE_GATE,
+    RUST_UNUSED_DEFINITION_FFI_BLOCKER, RUST_UNUSED_DEFINITION_FFI_GATE,
+    RUST_UNUSED_DEFINITION_FP_GATE_NAMESPACE, RUST_UNUSED_DEFINITION_OPAQUE_BLOCKER,
+    RUST_UNUSED_DEFINITION_OPAQUE_GATE, RUST_UNUSED_DEFINITION_POLICY_ID,
+    RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_BLOCKER, RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_GATE,
+    RUST_UNUSED_DEFINITION_QUALIFIED_PATH_REF_SCOPE, RUST_UNUSED_DEFINITION_SAFE_ACTION_SCOPE,
+    RUST_UNUSED_DEFINITION_TEST_ONLY_BLOCKER, RUST_UNUSED_DEFINITION_TEST_ONLY_GATE,
+    RUST_UNUSED_DEFINITION_TRAIT_IMPL_BLOCKER, RUST_UNUSED_DEFINITION_TRAIT_IMPL_GATE,
+    RUST_UNUSED_DEFINITION_TS_MODEL,
 };
 
 pub fn classify_unused_definitions(
@@ -49,6 +52,7 @@ pub fn classify_unused_definitions(
             if definition.visibility == AstVisibility::Public && production_refs == 0 {
                 push_public_definition_candidate(
                     file,
+                    health,
                     definition,
                     test_only_refs,
                     &mut summary,
@@ -100,6 +104,7 @@ fn observed_qualified_path_ref_counts(
 
 fn push_public_definition_candidate(
     file: &str,
+    health: &FileHealth,
     definition: &AstDefinition,
     test_only_refs: usize,
     summary: &mut RustUnusedDefinitionSummary,
@@ -117,6 +122,7 @@ fn push_public_definition_candidate(
                 RUST_UNUSED_DEFINITION_FFI_BLOCKER,
             ),
             test_only_refs,
+            Vec::new(),
         ));
     } else if has_attribute_kind(definition, AstDefinitionAttributeKind::Cfg) {
         summary.blocked_cfg_count += 1;
@@ -131,6 +137,41 @@ fn push_public_definition_candidate(
                 RUST_UNUSED_DEFINITION_CFG_BLOCKER,
             ),
             test_only_refs,
+            Vec::new(),
+        ));
+    } else if has_attribute_kind(definition, AstDefinitionAttributeKind::Derive) {
+        summary.blocked_derive_surface_count += 1;
+        excluded_candidates.push(definition_candidate(
+            file,
+            definition,
+            CandidateGate::new(
+                RustUnusedDefinitionTier::Review,
+                RustUnusedDefinitionAction::Review,
+                RUST_UNUSED_DEFINITION_DERIVE_GATE,
+                RUST_UNUSED_DEFINITION_DERIVE_BLOCKER,
+            ),
+            test_only_refs,
+            definition_attribute_evidence(definition, AstDefinitionAttributeKind::Derive),
+        ));
+    } else if let Some(surface) = review_opaque_surface(&health.ast.opaque_surfaces) {
+        summary.blocked_opaque_count += 1;
+        excluded_candidates.push(definition_candidate(
+            file,
+            definition,
+            CandidateGate::new(
+                RustUnusedDefinitionTier::Review,
+                RustUnusedDefinitionAction::Review,
+                RUST_UNUSED_DEFINITION_OPAQUE_GATE,
+                RUST_UNUSED_DEFINITION_OPAQUE_BLOCKER,
+            ),
+            test_only_refs,
+            vec![RustUnusedDefinitionEvidence {
+                kind: "review-opaque-surface".to_string(),
+                message: format!(
+                    "review-visible opaque syntax '{}' prevents grounded dead-export absence claims",
+                    surface.detail
+                ),
+            }],
         ));
     } else if test_only_refs > 0 {
         summary.test_only_support_count += 1;
@@ -144,6 +185,7 @@ fn push_public_definition_candidate(
                 RUST_UNUSED_DEFINITION_TEST_ONLY_BLOCKER,
             ),
             test_only_refs,
+            Vec::new(),
         ));
     } else {
         summary.blocked_public_surface_count += 1;
@@ -157,6 +199,7 @@ fn push_public_definition_candidate(
                 RUST_UNUSED_DEFINITION_PUBLIC_SURFACE_BLOCKER,
             ),
             0,
+            Vec::new(),
         ));
     }
 }
@@ -183,6 +226,7 @@ fn definition_candidate(
     definition: &AstDefinition,
     gate: CandidateGate<'_>,
     test_only_refs: usize,
+    evidence: Vec<RustUnusedDefinitionEvidence>,
 ) -> RustUnusedDefinitionCandidate {
     RustUnusedDefinitionCandidate {
         kind: RustUnusedDefinitionCandidateKind::RustUnusedDefinition,
@@ -204,7 +248,7 @@ fn definition_candidate(
         fp_gates: vec![gate.gate.to_string()],
         action_blockers: vec![gate.blocker.to_string()],
         safe_action: None,
-        evidence: Vec::new(),
+        evidence,
     }
 }
 
@@ -261,4 +305,31 @@ fn has_attribute_kind(definition: &AstDefinition, kind: AstDefinitionAttributeKi
         .attributes
         .iter()
         .any(|attribute| attribute.kind == kind)
+}
+
+fn definition_attribute_evidence(
+    definition: &AstDefinition,
+    kind: AstDefinitionAttributeKind,
+) -> Vec<RustUnusedDefinitionEvidence> {
+    definition
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.kind == kind)
+        .map(|attribute| RustUnusedDefinitionEvidence {
+            kind: "definition-attribute".to_string(),
+            message: format!(
+                "definition attribute '{}' prevents grounded dead-export absence claims",
+                attribute
+                    .text
+                    .trim_start_matches("#[")
+                    .trim_end_matches(']')
+            ),
+        })
+        .collect()
+}
+
+fn review_opaque_surface(surfaces: &[AstOpaqueSurface]) -> Option<&AstOpaqueSurface> {
+    surfaces
+        .iter()
+        .find(|surface| surface.visibility.visibility() == AstOpaqueVisibility::Review)
 }

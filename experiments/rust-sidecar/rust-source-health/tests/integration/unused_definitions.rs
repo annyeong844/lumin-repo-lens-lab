@@ -218,6 +218,64 @@ mod tests {
     Ok(())
 }
 
+#[test]
+fn review_opaque_surfaces_block_dead_export_absence_claims() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+pub fn macro_visible() {}
+
+custom_macro!(macro_visible);
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert_eq!(analysis["summary"]["blockedOpaqueCount"], 1);
+
+    let candidate = find_excluded(analysis, "macro_visible")?;
+    assert_eq!(candidate["fpGates"][0], "RUST-FP-C");
+    assert_eq!(
+        candidate["actionBlockers"][0],
+        "rust-fp-c-review-opaque-syntax"
+    );
+    assert!(candidate["evidence"][0]["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("custom_macro")));
+
+    Ok(())
+}
+
+#[test]
+fn derive_surfaces_block_dead_export_absence_claims_before_public_surface_gate() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+#[derive(Debug)]
+pub struct WireShape {
+    value: String,
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert_eq!(analysis["summary"]["blockedDeriveSurfaceCount"], 1);
+    assert_eq!(analysis["summary"]["blockedPublicSurfaceCount"], 0);
+
+    let candidate = find_excluded(analysis, "WireShape")?;
+    assert_eq!(candidate["fpGates"][0], "RUST-FP-E");
+    assert_eq!(
+        candidate["actionBlockers"][0],
+        "rust-fp-e-derive-trait-requirement"
+    );
+    assert!(candidate["evidence"][0]["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("derive(Debug)")));
+
+    Ok(())
+}
+
 fn find_excluded<'a>(analysis: &'a serde_json::Value, name: &str) -> Result<&'a serde_json::Value> {
     analysis["excludedCandidates"]
         .as_array()
