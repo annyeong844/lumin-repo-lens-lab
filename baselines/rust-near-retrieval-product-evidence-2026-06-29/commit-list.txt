@@ -1,0 +1,5 @@
+1cee71a Plan Rust near clone bounded retrieval
+239fade Bound Rust near clone retrieval
+4a2c57a Preserve near clone shared token evidence
+d584c7f Record Rust near retrieval dogfood baseline
+4911e3b Expose Rust near retrieval evidence in product artifacts

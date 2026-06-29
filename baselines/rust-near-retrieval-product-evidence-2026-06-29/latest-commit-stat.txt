@@ -1,0 +1,9 @@
+4911e3b (HEAD -> main, origin/main, origin/HEAD) Expose Rust near retrieval evidence in product artifacts
+ .../src/product_artifact/phases/syntax.rs          |  2 +-
+ .../src/product_artifact/phases/syntax/summary.rs  | 43 ++++++++++++++++------
+ .../src/product_summary/syntax.rs                  | 27 ++++++++++++++
+ .../tests/support/artifact_contract/phases.rs      | 24 +++++++++++-
+ .../support/artifact_contract/summary/syntax.rs    | 18 ++++++++-
+ .../wrapper/cli/compact/function_clone_groups.rs   | 21 ++++++++++-
+ .../tests/support/cli_artifact/assertions.rs       | 18 +++++++++
+ 7 files changed, 137 insertions(+), 16 deletions(-)

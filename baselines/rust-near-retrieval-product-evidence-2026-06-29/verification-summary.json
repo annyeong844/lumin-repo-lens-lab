@@ -1,0 +1,37 @@
+{
+  "reviewedRange": "1cee71a^..4911e3b",
+  "head": "4911e3b",
+  "headSubject": "Expose Rust near retrieval evidence in product artifacts",
+  "nodeRun": false,
+  "commands": [
+    {
+      "command": "cargo fmt --all",
+      "status": "passed"
+    },
+    {
+      "command": "cargo check --offline --locked -p lumin-rust-source-health -p lumin-rust-analyzer",
+      "status": "passed"
+    },
+    {
+      "command": "cargo test --offline --locked -p lumin-rust-source-health --test integration -- --nocapture",
+      "status": "passed",
+      "passedTests": 68
+    },
+    {
+      "command": "cargo test --offline --locked -p lumin-rust-analyzer --test integration artifact_contract -- --nocapture",
+      "status": "passed",
+      "passedTests": 6
+    },
+    {
+      "command": "cargo clippy --offline --locked -p lumin-rust-source-health -p lumin-rust-analyzer --all-targets -- -D warnings",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "dogfoodBaselineSource": "canonical/rust-source-health.md, recorded from the 2026-06-29 review packet",
+  "dogfoodBaselineRerunInThisPacket": false,
+  "unrelatedDirtyFilesTouched": false
+}
