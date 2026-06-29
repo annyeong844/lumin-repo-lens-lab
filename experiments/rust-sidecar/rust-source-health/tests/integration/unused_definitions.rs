@@ -145,6 +145,105 @@ fn caller() {
 }
 
 #[test]
+fn private_references_inside_macro_inputs_block_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+fn macro_live_helper() -> &'static str {
+    "live"
+}
+
+fn caller() {
+    let _tags = vec![("kind", macro_live_helper().to_string())];
+}
+
+pub fn entry() {
+    caller();
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+    assert!(analysis["excludedCandidates"]
+        .as_array()
+        .context("excludedCandidates")?
+        .iter()
+        .all(|candidate| candidate["definition"]["name"] != "macro_live_helper"));
+
+    let name_refs = artifact["files"]["src/lib.rs"]["ast"]["nameRefs"]
+        .as_array()
+        .context("nameRefs")?;
+    assert!(name_refs
+        .iter()
+        .any(|name_ref| name_ref["name"] == "macro_live_helper"));
+
+    Ok(())
+}
+
+#[test]
+fn private_references_inside_format_captures_block_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+const FORMAT_MESSAGE: &str = "ready";
+
+fn render() -> String {
+    format!("{FORMAT_MESSAGE}")
+}
+
+pub fn entry() -> String {
+    render()
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+    assert!(analysis["excludedCandidates"]
+        .as_array()
+        .context("excludedCandidates")?
+        .iter()
+        .all(|candidate| candidate["definition"]["name"] != "FORMAT_MESSAGE"));
+
+    Ok(())
+}
+
+#[test]
+fn private_references_inside_attribute_string_paths_block_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+fn default_limit() -> usize {
+    25
+}
+
+struct Args {
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+pub fn entry() {
+    let _ = core::mem::size_of::<Args>();
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+    assert!(analysis["excludedCandidates"]
+        .as_array()
+        .context("excludedCandidates")?
+        .iter()
+        .all(|candidate| candidate["definition"]["name"] != "default_limit"));
+
+    Ok(())
+}
+
+#[test]
 fn private_test_context_definitions_are_blocked_instead_of_remove_candidates() -> Result<()> {
     let artifact = analyze_file(
         "src/lib.rs",
@@ -411,7 +510,7 @@ fn review_opaque_surfaces_block_dead_export_absence_claims() -> Result<()> {
         r#"
 pub fn macro_visible() {}
 
-custom_macro!(macro_visible);
+custom_macro!(external_symbol);
 "#,
     );
 

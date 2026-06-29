@@ -471,8 +471,12 @@ Candidate counts in this lane mean "observed references in supported Rust
 syntax scopes." The current supported local scope is
 `crate-local-name-and-qualified-path-refs`, combining `ast.nameRefs[]` and
 qualified `ast.pathRefs[]` without changing the dependency graph meaning of
-`pathRefs`. Counts are not grounded absence claims for external crates, macros,
-cfg branches, skipped files, or unresolved package scopes.
+`pathRefs`. `ast.nameRefs[]` includes normal AST name references plus
+identifier tokens inside macro inputs, named format captures such as
+`format!("{MESSAGE}")`, and attribute string paths for reference-bearing slots
+such as `#[serde(default = "fallback")]`. Counts are not grounded absence
+claims for external crates, unobserved macro expansion output, cfg branches,
+skipped files, or unresolved package scopes.
 The first private positive candidate scope is intentionally limited to
 module-owned functions, consts, and statics. Module, trait, impl, type, struct,
 and enum cleanup require later owner-specific proof instead of silent widening.

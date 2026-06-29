@@ -37,7 +37,7 @@ pub(super) fn collect_path_ref(node: &SyntaxNode, line_index: &LineIndex, syntax
     syntax.ast.path_refs.push(AstPathRef {
         name: path_terminal_name(&path),
         path: path_text,
-        test_context: path_ref_is_in_test_context(node),
+        test_context: syntax_is_in_test_context(node),
         location: ast_location(line_index, expr.syntax().text_range()),
     });
 }
@@ -60,7 +60,7 @@ pub(super) fn collect_type_path_ref(
     syntax.ast.path_refs.push(AstPathRef {
         name: path_terminal_name(&path),
         path: path_text,
-        test_context: path_ref_is_in_test_context(node),
+        test_context: syntax_is_in_test_context(node),
         location: ast_location(line_index, path_type.syntax().text_range()),
     });
 }
@@ -71,7 +71,7 @@ pub(super) fn collect_name_ref(node: &SyntaxNode, line_index: &LineIndex, syntax
     };
     syntax.ast.name_refs.push(AstNameRef {
         name: name_ref.text().to_string(),
-        test_context: path_ref_is_in_test_context(node),
+        test_context: syntax_is_in_test_context(node),
         location: ast_location(line_index, name_ref.syntax().text_range()),
     });
 }
@@ -108,7 +108,7 @@ pub(super) fn collect_method_call(
     });
 }
 
-fn path_ref_is_in_test_context(node: &SyntaxNode) -> bool {
+pub(super) fn syntax_is_in_test_context(node: &SyntaxNode) -> bool {
     node.ancestors().any(|ancestor| {
         ast::Fn::cast(ancestor.clone()).is_some_and(|function| {
             has_direct_test_attr(&function) || has_direct_cfg_test_attr(&function)

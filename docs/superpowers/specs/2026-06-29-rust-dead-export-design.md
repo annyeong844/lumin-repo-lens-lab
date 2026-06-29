@@ -32,6 +32,9 @@ active branch.
 - `ast.definitions[]`: named item definitions with `kind`, `name`,
   `visibility`, and `location`
 - `ast.pathRefs[]`: qualified expression- and type-position path references
+- `ast.nameRefs[]`: AST name references plus supported Rust-only syntactic
+  references inside macro token inputs, named format captures, and attribute
+  string path slots such as `serde(default = "fallback")`
 - `ast.useTrees[]`: import and re-export syntax
 - `ast.impls[]`: impl blocks, trait paths, and method owner evidence
 - `ast.macroCalls[]`, `ast.cfgGates[]`, and `ast.opaqueSurfaces[]`: places where
