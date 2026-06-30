@@ -191,6 +191,7 @@ Add a machine-readable diagnostics surface under function clone groups:
       "statementCountBandMismatch": 900
     },
     "debugFormatterBoilerplateSkippedPairCount": 120,
+    "displayFormatterBoilerplateSkippedPairCount": 12,
     "compatibilitySkippedPairEstimateKind": "raw-partition-estimate-does-not-enumerate-rejected-pairs",
     "nearFunctionCandidateCountScope": "bounded-retrieval-retained-evidence"
   },
@@ -230,6 +231,14 @@ global token blacklist: those same call tokens remain valid evidence outside
 `debugFormatterBoilerplateSkippedPairCount` counts those generated-owner
 boilerplate pairs.
 
+Sink-only `Display#fmt` pairs use a narrower pair-level rule. If both sides are
+`fmt` methods owned by a `Display` trait implementation and their shared
+significant call-token evidence is only formatter sinks such as `write` and `write_str`,
+the pair is not a near-clone review candidate. The gate must not suppress all
+Display implementations: Display pairs that share domain calls remain eligible.
+The summary field `displayFormatterBoilerplateSkippedPairCount` counts these
+sink-only formatter pairs.
+
 ## Policy And Versioning
 
 The near policy remains `function-clone-near-policy-v1` unless the scoring
@@ -239,7 +248,7 @@ The Rust calibration version should bump because candidate generation semantics
 change:
 
 ```text
-rust-function-clone-near-calibration.v7
+rust-function-clone-near-calibration.v8
 ```
 
 The policy should expose:

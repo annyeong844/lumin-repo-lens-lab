@@ -36,6 +36,7 @@ pub(super) fn build_near_function_candidates(
             NearFact {
                 name_tokens: tokens::name_tokens(&member.fact.name),
                 is_debug_formatter_boilerplate: tokens::is_debug_formatter_boilerplate(member.fact),
+                is_display_formatter: tokens::is_display_formatter(member.fact),
                 member,
                 identity,
                 significant_call_tokens,
@@ -207,6 +208,17 @@ impl<'facts, 'state> CandidateGenerationState<'facts, 'state> {
         {
             self.diagnostics
                 .debug_formatter_boilerplate_skipped_pair_count += 1;
+            return;
+        }
+        if self.eligible[left_index].is_display_formatter
+            && self.eligible[right_index].is_display_formatter
+            && tokens::shared_tokens_are_only_display_formatter_sinks(
+                &self.eligible[left_index].significant_call_tokens,
+                &self.eligible[right_index].significant_call_tokens,
+            )
+        {
+            self.diagnostics
+                .display_formatter_boilerplate_skipped_pair_count += 1;
             return;
         }
 

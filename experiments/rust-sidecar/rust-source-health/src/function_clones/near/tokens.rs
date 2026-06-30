@@ -17,6 +17,8 @@ const DEBUG_FORMATTER_CALL_TOKENS: &[&str] = &[
     "finish_non_exhaustive",
 ];
 
+const DISPLAY_FORMATTER_SINK_CALL_TOKENS: &[&str] = &["write", "write_str"];
+
 pub(super) fn significant_call_tokens(fact: &AstFunctionBodyFingerprint) -> Vec<String> {
     fact.call_tokens
         .iter()
@@ -33,16 +35,44 @@ pub(super) fn significant_call_tokens(fact: &AstFunctionBodyFingerprint) -> Vec<
 
 pub(super) fn is_debug_formatter_boilerplate(fact: &AstFunctionBodyFingerprint) -> bool {
     fact.name == "fmt"
-        && fact
-            .owner
-            .as_ref()
-            .and_then(|owner| owner.trait_path.as_deref())
-            .and_then(path_terminal_name)
-            == Some("Debug")
+        && trait_terminal_name(fact) == Some("Debug")
         && fact
             .call_tokens
             .iter()
             .any(|token| DEBUG_FORMATTER_CALL_TOKENS.contains(&token.as_str()))
+}
+
+pub(super) fn is_display_formatter(fact: &AstFunctionBodyFingerprint) -> bool {
+    fact.name == "fmt"
+        && trait_terminal_name(fact) == Some("Display")
+        && fact
+            .call_tokens
+            .iter()
+            .any(|token| DISPLAY_FORMATTER_SINK_CALL_TOKENS.contains(&token.as_str()))
+}
+
+pub(super) fn shared_tokens_are_only_display_formatter_sinks(
+    left: &[String],
+    right: &[String],
+) -> bool {
+    let mut has_sink = false;
+    let mut left_index = 0usize;
+    let mut right_index = 0usize;
+    while left_index < left.len() && right_index < right.len() {
+        match left[left_index].cmp(&right[right_index]) {
+            std::cmp::Ordering::Less => left_index += 1,
+            std::cmp::Ordering::Greater => right_index += 1,
+            std::cmp::Ordering::Equal => {
+                if !DISPLAY_FORMATTER_SINK_CALL_TOKENS.contains(&left[left_index].as_str()) {
+                    return false;
+                }
+                has_sink = true;
+                left_index += 1;
+                right_index += 1;
+            }
+        }
+    }
+    has_sink
 }
 
 pub(super) fn name_tokens(name: &str) -> Vec<String> {
@@ -63,6 +93,13 @@ pub(super) fn name_tokens(name: &str) -> Vec<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+fn trait_terminal_name(fact: &AstFunctionBodyFingerprint) -> Option<&str> {
+    fact.owner
+        .as_ref()
+        .and_then(|owner| owner.trait_path.as_deref())
+        .and_then(path_terminal_name)
 }
 
 fn path_terminal_name(path: &str) -> Option<&str> {

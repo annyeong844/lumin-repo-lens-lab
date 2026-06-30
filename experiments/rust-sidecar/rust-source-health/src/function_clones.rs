@@ -58,6 +58,8 @@ pub(crate) fn group_function_body_fingerprints(
                 },
             debug_formatter_boilerplate_skipped_pair_count: near_diagnostics
                 .debug_formatter_boilerplate_skipped_pair_count,
+            display_formatter_boilerplate_skipped_pair_count: near_diagnostics
+                .display_formatter_boilerplate_skipped_pair_count,
             compatibility_skipped_pair_estimate_kind: near_diagnostics
                 .compatibility_skipped_pair_estimate_kind(),
             near_function_candidate_count_scope: near_diagnostics

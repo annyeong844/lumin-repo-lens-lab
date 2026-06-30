@@ -208,7 +208,7 @@ suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
 `collect`, plus ubiquitous Rust constructor, macro, and method tokens such as
 `Some`, `None`, `Ok`, `Err`, `vec`, `Box`, `Rc`, `Arc`, and `format` that
 otherwise dominate review candidates. The calibration is serialized as
-`rust-function-clone-near-calibration.v7`, including
+`rust-function-clone-near-calibration.v8`, including
 `minSignificantCallTokenLen = 4`, `minSingleTokenIdf = 3.0`,
 `callIdfSaturation = 6.0`, the Rust generic-token suppression set, and the
 required matching callable qualifiers. Rust computes IDF from the current
@@ -236,6 +236,14 @@ formatter pairs are counted in
 so the artifact distinguishes owner-aware boilerplate suppression from absence
 of near evidence. TS/JS does not need this exact guard because it does not have
 Rust's trait-owned `Debug#fmt` formatter pattern.
+Rust also skips sink-only `Display#fmt` pairs when both sides are `fmt` methods
+owned by a `Display` trait implementation and their shared significant call
+tokens are only formatter sinks such as `write` and `write_str`. This is a narrower
+pair-level guard than the Debug formatter guard: `Display#fmt` pairs that share
+domain calls remain review candidates, because Display implementations can
+carry real domain formatting logic. The skipped sink-only Display pairs are
+counted in
+`functionCloneGroups.candidateGenerationSummary.displayFormatterBoilerplateSkippedPairCount`.
 Rust near-function clone candidates use bounded retrieval for large repositories
 instead of exhaustive retained-token pair scans. Low-discrimination call-token
 buckets do not generate pairs, but pairs that also share retained

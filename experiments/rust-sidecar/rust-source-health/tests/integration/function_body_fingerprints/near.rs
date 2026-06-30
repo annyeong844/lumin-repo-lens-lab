@@ -49,7 +49,7 @@ pub fn load_user_settings(raw: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["calibrationVersion"],
-        "rust-function-clone-near-calibration.v7"
+        "rust-function-clone-near-calibration.v8"
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["retrievalContractVersion"],
@@ -269,6 +269,125 @@ pub fn project_beta(input: &Domain) -> usize {
         .as_array()
         .is_some_and(|tokens| tokens.iter().any(|token| token == "field")
             && tokens.iter().any(|token| token == "finish_non_exhaustive")));
+
+    Ok(())
+}
+
+#[test]
+fn function_body_near_candidates_skip_display_formatter_sink_only_pairs() {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub enum RequestId {
+    String(String),
+    Integer(i64),
+}
+
+impl std::fmt::Display for RequestId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::String(value) => formatter.write_str(value),
+            Self::Integer(value) => write!(formatter, "{value}"),
+        }
+    }
+}
+
+pub enum FileSystemImplementation {
+    Local,
+    Remote,
+}
+
+impl std::fmt::Display for FileSystemImplementation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local => formatter.write_str("local"),
+            Self::Remote => write!(formatter, "remote"),
+        }
+    }
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let groups = &artifact["functionCloneGroups"];
+
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
+    assert_eq!(
+        groups["candidateGenerationSummary"]["displayFormatterBoilerplateSkippedPairCount"],
+        1
+    );
+    assert_eq!(
+        groups["candidateGenerationSummary"]["debugFormatterBoilerplateSkippedPairCount"],
+        0
+    );
+}
+
+#[test]
+fn function_body_near_candidates_keep_display_pairs_with_shared_domain_calls() -> Result<()> {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub struct Alpha {
+    id: usize,
+}
+
+impl Alpha {
+    fn value(&self) -> usize { self.id }
+}
+
+impl std::fmt::Display for Alpha {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = render_domain_label(self.value());
+        if text.is_empty() {
+            return formatter.write_str("empty");
+        }
+        formatter.write_str(text.as_str())
+    }
+}
+
+pub struct Beta {
+    id: usize,
+}
+
+impl Beta {
+    fn value(&self) -> usize { self.id }
+}
+
+impl std::fmt::Display for Beta {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = render_domain_label(self.value());
+        formatter.write_str(text.as_str())
+    }
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let candidate = near_candidates(&artifact)
+        .iter()
+        .find(|candidate| {
+            identity_list_contains(candidate, "src/lib.rs::Alpha as std::fmt::Display#fmt")
+                && identity_list_contains(candidate, "src/lib.rs::Beta as std::fmt::Display#fmt")
+        })
+        .context("Display fmt pair with shared domain call")?;
+
+    assert_eq!(
+        artifact["functionCloneGroups"]["candidateGenerationSummary"]
+            ["displayFormatterBoilerplateSkippedPairCount"],
+        0
+    );
+    assert!(candidate["sharedCallTokens"]
+        .as_array()
+        .is_some_and(
+            |tokens| tokens.iter().any(|token| token == "render_domain_label")
+                && tokens.iter().any(|token| token == "write_str")
+        ));
 
     Ok(())
 }

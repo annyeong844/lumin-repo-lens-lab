@@ -19,6 +19,7 @@ pub(super) struct NearFact<'a> {
     pub(super) retained_call_tokens: Vec<String>,
     pub(super) name_tokens: Vec<String>,
     pub(super) is_debug_formatter_boilerplate: bool,
+    pub(super) is_display_formatter: bool,
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -46,6 +47,7 @@ pub(in crate::function_clones) struct CandidateGenerationDiagnostics {
     pub(in crate::function_clones) compatibility_skipped_raw_pair_estimate_by_reason:
         CompatibilitySkippedPairEstimates,
     pub(in crate::function_clones) debug_formatter_boilerplate_skipped_pair_count: usize,
+    pub(in crate::function_clones) display_formatter_boilerplate_skipped_pair_count: usize,
     pub(in crate::function_clones) skipped_low_discrimination_buckets:
         Vec<AstSkippedLowDiscriminationBucket>,
     pub(in crate::function_clones) skipped_low_discrimination_bucket_count: usize,
