@@ -237,6 +237,66 @@ describe("audit-repo blind-zone and confidence split track", () => {
     }
   });
 
+  it("B2e. reused output dirs do not report stale Rust analyzer artifacts as produced", () => {
+    const repo = mkdtempSync(path.join(tmpdir(), "lumin-rust-stale-artifact-"));
+    const output = path.join(repo, ".audit");
+    try {
+      mkdirSync(output, { recursive: true });
+      write(
+        repo,
+        "package.json",
+        JSON.stringify({ name: "rust-stale-artifact-fixture", type: "module" }),
+      );
+      write(repo, "src/lib.rs", "pub fn live() {}\n");
+      write(
+        output,
+        "rust-analyzer-health.latest.json",
+        JSON.stringify({
+          schemaVersion: "lumin-rust-analyzer.v1",
+          policyVersion: "lumin-rust-analyzer-policy.v1",
+          meta: {
+            producer: "lumin-rust-analyzer",
+            mode: "rust-main",
+            input: { root: repo },
+          },
+          summary: { files: 1 },
+        }),
+      );
+
+      const result = runAudit([
+        "--root",
+        repo,
+        "--output",
+        output,
+        "--profile",
+        "quick",
+        "--production",
+      ]);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+
+      const manifest = readJson(path.join(output, "manifest.json"));
+      const summary = readFileSync(
+        path.join(output, "audit-summary.latest.md"),
+        "utf8",
+      );
+      expect(manifest.rustAnalysis).toMatchObject({
+        requested: false,
+        ran: false,
+        status: "not-requested",
+        artifact: "rust-analyzer-health.latest.json",
+        artifactStatus: "complete",
+      });
+      expect(manifest.artifactsProduced).not.toContain(
+        "rust-analyzer-health.latest.json",
+      );
+      expect(summary).not.toContain(
+        "`rust-analyzer-health.latest.json`: Rust-owned",
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it("B2b. mirrors symbol parse-error warnings into manifest confidence", () => {
     const repo = mkdtempSync(path.join(tmpdir(), "lumin-parse-confidence-"));
     try {

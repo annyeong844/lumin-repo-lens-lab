@@ -730,11 +730,21 @@ function maxObservedRss(entries) {
   return max;
 }
 
-function collectArtifactSizeSummary() {
+function rustAnalysisArtifactUsable(rustAnalysis) {
+  return rustAnalysis?.status === 'complete' && rustAnalysis?.available === true;
+}
+
+function collectManifestProducedArtifacts(rustAnalysis) {
+  const artifacts = collectProducedArtifacts(OUT);
+  if (rustAnalysisArtifactUsable(rustAnalysis)) return artifacts;
+  return artifacts.filter((name) => name !== 'rust-analyzer-health.latest.json');
+}
+
+function collectArtifactSizeSummary(artifacts = collectProducedArtifacts(OUT)) {
   const byName = Object.create(null);
   let totalBytes = 0;
 
-  for (const name of collectProducedArtifacts(OUT)) {
+  for (const name of artifacts) {
     const artifactPath = path.join(OUT, name);
     try {
       const stats = statSync(artifactPath);
@@ -760,7 +770,7 @@ function collectArtifactSizeSummary() {
   };
 }
 
-function buildProducerPerformanceArtifact(generated) {
+function buildProducerPerformanceArtifact(generated, artifactsProduced) {
   let phaseSupportCount = 0;
   const producers = commandsRun.map((entry) => {
     const phaseTiming = readProducerPhaseTiming(OUT, entry.step, {
@@ -783,7 +793,7 @@ function buildProducerPerformanceArtifact(generated) {
     reason: entry.reason ?? null,
   }));
   const totalWallMs = sumCommandWallMs(commandsRun);
-  const artifacts = collectArtifactSizeSummary();
+  const artifacts = collectArtifactSizeSummary(artifactsProduced);
   const artifactReads = artifactReadMetrics.summary();
   const maxObservedOrchestratorRssBytes = maxObservedRss(commandsRun);
 
@@ -1189,6 +1199,7 @@ if (!RUN_BASE_PIPELINE) {
 // ─── Build manifest ───────────────────────────────────────
 const initialEvidence = buildManifestEvidence(manifestEvidenceOptions());
 
+const initialRustAnalysis = mergeRustAnalysisBlocks(initialEvidence.rustAnalysis, rustAnalysisRun);
 const manifest = {
   meta: {
     generated: new Date().toISOString(),
@@ -1203,10 +1214,10 @@ const manifest = {
   scanRange: initialEvidence.scanRange,
   confidence: initialEvidence.confidence,
   blindZones: initialEvidence.blindZones,
-  rustAnalysis: mergeRustAnalysisBlocks(initialEvidence.rustAnalysis, rustAnalysisRun),
+  rustAnalysis: initialRustAnalysis,
   generatedArtifacts: initialEvidence.generatedArtifacts,
   livingAudit: initialEvidence.livingAudit,
-  artifactsProduced: collectProducedArtifacts(OUT),
+  artifactsProduced: collectManifestProducedArtifacts(initialRustAnalysis),
 };
 
 // ─── P1-3: pre-write opt-in step ──────────────────────────
@@ -1540,7 +1551,7 @@ if (topologyArtifact) {
     source: 'topology.json',
     use: 'human visual companion; topology.json remains authoritative for exact citations',
   };
-  manifest.artifactsProduced = collectProducedArtifacts(OUT);
+  manifest.artifactsProduced = collectManifestProducedArtifacts(manifest.rustAnalysis);
 }
 const SHOULD_WRITE_SUMMARY = (
   RUN_BASE_PIPELINE ||
@@ -1592,13 +1603,16 @@ if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
     use: 'main assistant reads lanes as artifact briefs; if using built-in reviewer subagents, translate lanes into focused codebase-reading tasks with file:line evidence; the engine never calls external APIs',
   };
 }
-const producerPerformance = buildProducerPerformanceArtifact(manifest.meta.generated);
+const producerPerformance = buildProducerPerformanceArtifact(
+  manifest.meta.generated,
+  collectManifestProducedArtifacts(manifest.rustAnalysis)
+);
 atomicWrite(
   path.join(OUT, 'producer-performance.json'),
   JSON.stringify(producerPerformance, null, 2)
 );
 manifest.performance = summarizeProducerPerformance(producerPerformance);
-manifest.artifactsProduced = collectProducedArtifacts(OUT);
+manifest.artifactsProduced = collectManifestProducedArtifacts(manifest.rustAnalysis);
 
 const manifestPath = path.join(OUT, 'manifest.json');
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
