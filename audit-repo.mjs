@@ -1420,7 +1420,9 @@ if (values['pre-write'] && values['post-write']) {
           (delta.entries ?? []).filter((e) => e.label === 'silent-new').length;
         postWriteBlock.baselineStatus = delta.baseline?.status ?? 'missing';
         postWriteBlock.scanRangeParity = delta.scanRangeParity?.status ?? 'baseline-missing';
-        postWriteBlock.afterComplete = delta.inventoryCompleteness?.afterComplete ?? false;
+        postWriteBlock.typeEscapeDeltaStatus = delta.typeEscapeDelta?.status ?? 'computed';
+        postWriteBlock.afterComplete = delta.inventoryCompleteness?.afterComplete ??
+          (postWriteBlock.typeEscapeDeltaStatus === 'not-applicable' ? null : false);
         postWriteBlock.fileDeltaStatus = delta.fileDelta?.status ?? 'missing';
         postWriteBlock.unexpectedNewFileCount = delta.fileDelta?.summary?.unexpectedNew ?? 0;
         postWriteBlock.plannedMissingFileCount = delta.fileDelta?.summary?.plannedMissing ?? 0;
@@ -1503,6 +1505,9 @@ if (values['strict-post-write'] && postWriteBlock?.ran === false && finalExitCod
 
 function postWriteConfidenceLimited(block) {
   if (!block?.ran) return false;
+  if (block.typeEscapeDeltaStatus === 'not-applicable') {
+    return block.fileDeltaStatus !== 'computed';
+  }
   return block.baselineStatus !== 'available' ||
     block.scanRangeParity !== 'ok' ||
     block.afterComplete !== true;
@@ -1513,6 +1518,7 @@ if (values['strict-post-write-confidence'] && postWriteConfidenceLimited(postWri
     `[audit-repo] --strict-post-write-confidence: post-write delta confidence limited ` +
     `(baseline=${postWriteBlock.baselineStatus ?? 'unknown'}, ` +
     `scanRange=${postWriteBlock.scanRangeParity ?? 'unknown'}, ` +
+    `typeEscapeDelta=${postWriteBlock.typeEscapeDeltaStatus ?? 'unknown'}, ` +
     `afterComplete=${postWriteBlock.afterComplete === true}); escalating to exit 2\n`
   );
   finalExitCode = 2;

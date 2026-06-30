@@ -150,6 +150,20 @@ function buildInventoryCompleteness(before, after, baselineAvailable) {
   };
 }
 
+function typeEscapeDeltaNotApplicable(preWriteAdvisory) {
+  if (preWriteAdvisory?.capabilities?.postWriteTypeEscapes === 'not-applicable') return true;
+  if (preWriteAdvisory?.capabilities?.language === 'rust') return true;
+  if (preWriteAdvisory?.intent?.language === 'rust') return true;
+  return Boolean(preWriteAdvisory?.rustPreWrite);
+}
+
+function notApplicableTypeEscapeDelta(reason) {
+  return {
+    status: 'not-applicable',
+    reason,
+  };
+}
+
 // ── Planned-match step ──────────────────────────────────────
 //
 // Emits 'planned' and 'planned-not-observed' entries. Returns a Map from
@@ -381,6 +395,37 @@ export function computeDelta({ preWriteAdvisory, beforeInventory, afterInventory
   const preWriteInvocationId = preWriteAdvisory?.invocationId ?? '';
   const intentHash = preWriteAdvisory?.intentHash ?? '';
   const anyInventoryPath = preWriteAdvisory?.preWrite?.anyInventoryPath ?? null;
+  const typeEscapeNotApplicableReason =
+    'Rust pre-write advisory has no TS any-equivalent post-write lane';
+
+  if (typeEscapeDeltaNotApplicable(preWriteAdvisory)) {
+    return {
+      preWriteInvocationId,
+      deltaInvocationId,
+      intentHash,
+      baseline: {
+        status: 'not-applicable',
+        source: anyInventoryPath,
+        reason: typeEscapeNotApplicableReason,
+      },
+      capabilityParity: {
+        status: 'not-applicable',
+        mismatchDetail: typeEscapeNotApplicableReason,
+      },
+      scanRangeParity: {
+        status: 'not-applicable',
+      },
+      inventoryCompleteness: {
+        afterComplete: null,
+        beforeComplete: null,
+        filesWithParseErrors: [],
+      },
+      typeEscapeDelta: notApplicableTypeEscapeDelta(typeEscapeNotApplicableReason),
+      entries: [],
+      summary: summarize([]),
+      capabilityFailures: [],
+    };
+  }
 
   // ── Capability parity ──
   // capabilityFailures is scoped to capability-gate failures only. Other
@@ -407,6 +452,10 @@ export function computeDelta({ preWriteAdvisory, beforeInventory, afterInventory
       capabilityParity: capCheck.capabilityParity,
       scanRangeParity: { status: 'baseline-missing' },
       inventoryCompleteness: buildInventoryCompleteness(beforeInventory, afterInventory, false),
+      typeEscapeDelta: {
+        status: 'unavailable',
+        reason: 'capability gate failed — see capabilityParity',
+      },
       entries: [],
       summary: summarize([]),
       capabilityFailures,
@@ -485,6 +534,10 @@ export function computeDelta({ preWriteAdvisory, beforeInventory, afterInventory
     capabilityParity: capCheck.capabilityParity,
     scanRangeParity: srCheck.scanRangeParity,
     inventoryCompleteness,
+    typeEscapeDelta: {
+      status: 'computed',
+      source: 'any-inventory.json',
+    },
     entries,
     summary: summarize(entries),
     capabilityFailures,

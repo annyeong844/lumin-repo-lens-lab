@@ -72,8 +72,10 @@ Run after writing code to compare the pre-write `any` inventory snapshot
 with a fresh after-inventory, and to compare the pre-write file inventory
 plus `intent.files` with the current scanned file set.
 For Rust pre-write advisories, the file inventory comparison still applies.
-The TS `any` inventory comparison is not Rust source-health evidence and may be
-missing or confidence-limited because Rust has no TS `any` equivalent.
+The TS `any` inventory comparison is not Rust source-health evidence. The
+post-write engine skips `any-inventory` for Rust advisories and reports
+`typeEscapeDelta.status: "not-applicable"` instead of treating the missing
+TS baseline as a confidence failure.
 
 ```bash
 node scripts/audit-repo.mjs --root . --output ./output --post-write --pre-write-advisory ./output/pre-write-advisory.<invocationId>.json

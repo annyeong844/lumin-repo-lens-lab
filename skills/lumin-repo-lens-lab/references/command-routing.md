@@ -357,8 +357,9 @@ lane you checked supports that claim; name the remaining limits.
 
 Rust pre-write advisories are valid inputs here, but Rust has no TS `any`
 equivalent. In that route, post-write's language-neutral file delta remains
-useful; type-escape baseline fields may be missing or not applicable and must
-not be interpreted as Rust source-health evidence.
+useful. The TS type-escape lane is skipped and reported as
+`typeEscapeDelta.status: "not-applicable"`; do not reinterpret missing
+`any-inventory` baselines as Rust source-health evidence.
 
 ### canon-draft
 

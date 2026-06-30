@@ -71,9 +71,18 @@ let preWriteAdvisory;
 try { preWriteAdvisory = JSON.parse(readFileSync(advisoryPath, 'utf8')); }
 catch (e) { die(`advisory parse failed: ${e.message}`); }
 
+function typeEscapeDeltaNotApplicable(advisory) {
+  return advisory?.capabilities?.postWriteTypeEscapes === 'not-applicable' ||
+    advisory?.capabilities?.language === 'rust' ||
+    advisory?.intent?.language === 'rust' ||
+    Boolean(advisory?.rustPreWrite);
+}
+
+const skipTypeEscapeDelta = typeEscapeDeltaNotApplicable(preWriteAdvisory);
+
 // ── Cold-cache spawn of any-inventory.mjs for after-snapshot ─
 
-if (!noFreshAudit) {
+if (!noFreshAudit && !skipTypeEscapeDelta) {
   const inventoryCli = path.join(SKILL_ROOT, 'any-inventory.mjs');
   const hookArgs = [inventoryCli, '--root', ROOT, '--output', OUTPUT];
   // Match pre-write hook convention: includeTests===false → --production flag.
@@ -97,7 +106,9 @@ if (!noFreshAudit) {
 
 // ── Load after-inventory ────────────────────────────────────
 
-const afterInventory = loadIfExists(OUTPUT, 'any-inventory.json', { tag: 'post-write' });
+const afterInventory = skipTypeEscapeDelta
+  ? null
+  : loadIfExists(OUTPUT, 'any-inventory.json', { tag: 'post-write' });
 
 // ── Load before-inventory via advisory.preWrite.anyInventoryPath ─
 
@@ -116,7 +127,7 @@ function uniqueTruthy(values) {
 
 let beforeInventory = null;
 const beforeRelPath = preWriteAdvisory?.preWrite?.anyInventoryPath;
-if (beforeRelPath) {
+if (!skipTypeEscapeDelta && beforeRelPath) {
   const beforeDirs = uniqueTruthy([
     path.dirname(advisoryPath),
     preWriteAdvisory?.scanRange?.output,
