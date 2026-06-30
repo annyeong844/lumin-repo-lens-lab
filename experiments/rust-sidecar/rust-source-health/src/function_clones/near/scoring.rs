@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::protocol::RUST_FUNCTION_CLONE_NEAR_CALL_IDF_SATURATION;
 
@@ -22,24 +22,42 @@ pub(super) fn call_token_idfs(facts: &[NearFact<'_>]) -> BTreeMap<String, f64> {
         .collect()
 }
 
-pub(super) fn sorted_intersection(left: &[String], right: &[String]) -> Vec<String> {
-    let right = right.iter().map(String::as_str).collect::<BTreeSet<_>>();
-    left.iter()
-        .filter(|entry| right.contains(entry.as_str()))
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+pub(super) struct TokenOverlap {
+    pub(super) shared_tokens: Vec<String>,
+    pub(super) jaccard: f64,
 }
 
-pub(super) fn jaccard(left: &[String], right: &[String]) -> f64 {
-    let left = left.iter().map(String::as_str).collect::<BTreeSet<_>>();
-    let right = right.iter().map(String::as_str).collect::<BTreeSet<_>>();
-    let union = left.union(&right).count();
-    if union == 0 {
-        return 0.0;
+pub(super) fn token_overlap(left: &[String], right: &[String]) -> TokenOverlap {
+    debug_assert_sorted_unique(left);
+    debug_assert_sorted_unique(right);
+
+    let mut shared_tokens = Vec::new();
+    let mut union = 0usize;
+    let mut left_index = 0usize;
+    let mut right_index = 0usize;
+    while left_index < left.len() && right_index < right.len() {
+        union += 1;
+        match left[left_index].cmp(&right[right_index]) {
+            std::cmp::Ordering::Less => left_index += 1,
+            std::cmp::Ordering::Greater => right_index += 1,
+            std::cmp::Ordering::Equal => {
+                shared_tokens.push(left[left_index].clone());
+                left_index += 1;
+                right_index += 1;
+            }
+        }
     }
-    left.intersection(&right).count() as f64 / union as f64
+    union += left.len().saturating_sub(left_index);
+    union += right.len().saturating_sub(right_index);
+    let jaccard = if union == 0 {
+        0.0
+    } else {
+        shared_tokens.len() as f64 / union as f64
+    };
+    TokenOverlap {
+        shared_tokens,
+        jaccard,
+    }
 }
 
 pub(super) fn shared_token_idf_sum(
@@ -79,4 +97,8 @@ pub(super) fn format_score(value: f64) -> String {
     } else {
         rounded.to_string()
     }
+}
+
+fn debug_assert_sorted_unique(tokens: &[String]) {
+    debug_assert!(tokens.windows(2).all(|pair| pair[0] < pair[1]));
 }

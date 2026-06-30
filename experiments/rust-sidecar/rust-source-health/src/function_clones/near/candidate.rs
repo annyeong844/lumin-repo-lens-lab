@@ -14,15 +14,28 @@ use crate::protocol::{
 
 use super::model::NearFact;
 use super::scoring::{
-    format_score, jaccard, range_similarity, round_score, saturated_call_token_idf_score,
-    shared_token_idf_sum, sorted_intersection, token_idf,
+    format_score, range_similarity, round_score, saturated_call_token_idf_score,
+    shared_token_idf_sum, token_idf, token_overlap,
 };
 
-pub(super) fn near_candidate_from_pair(
+pub(super) struct NearCandidateEvidence {
+    pub(super) score: f64,
+    pub(super) generated_only: bool,
+    shared_call_tokens: Vec<String>,
+    shared_name_tokens: Vec<String>,
+    call_token_jaccard: f64,
+    shared_call_token_idf_sum: f64,
+    call_token_idf_score: f64,
+    name_token_jaccard: f64,
+    body_loc_similarity: f64,
+    statement_count_similarity: f64,
+}
+
+pub(super) fn near_candidate_evidence_from_pair(
     left: &NearFact<'_>,
     right: &NearFact<'_>,
     token_idfs: &BTreeMap<String, f64>,
-) -> Option<AstNearFunctionCandidate> {
+) -> Option<NearCandidateEvidence> {
     if left.member.fact.is_async != right.member.fact.is_async
         || left.member.fact.is_unsafe != right.member.fact.is_unsafe
         || left.member.fact.is_const != right.member.fact.is_const
@@ -39,28 +52,24 @@ pub(super) fn near_candidate_from_pair(
         return None;
     }
 
-    let shared_call_tokens = sorted_intersection(
+    let call_token_overlap = token_overlap(
         &left.significant_call_tokens,
         &right.significant_call_tokens,
     );
-    if shared_call_tokens.is_empty() {
+    if call_token_overlap.shared_tokens.is_empty() {
         return None;
     }
-    if shared_call_tokens.len() == 1
-        && token_idf(&shared_call_tokens[0], token_idfs)
+    if call_token_overlap.shared_tokens.len() == 1
+        && token_idf(&call_token_overlap.shared_tokens[0], token_idfs)
             < RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF
     {
         return None;
     }
 
-    let call_token_jaccard = jaccard(
-        &left.significant_call_tokens,
-        &right.significant_call_tokens,
-    );
-    let shared_call_token_idf_sum = shared_token_idf_sum(&shared_call_tokens, token_idfs);
+    let shared_call_token_idf_sum =
+        shared_token_idf_sum(&call_token_overlap.shared_tokens, token_idfs);
     let call_token_idf_score = saturated_call_token_idf_score(shared_call_token_idf_sum);
-    let shared_name_tokens = sorted_intersection(&left.name_tokens, &right.name_tokens);
-    let name_token_jaccard = jaccard(&left.name_tokens, &right.name_tokens);
+    let name_token_overlap = token_overlap(&left.name_tokens, &right.name_tokens);
     let body_loc_similarity =
         range_similarity(left.member.fact.body_loc, right.member.fact.body_loc);
     let statement_count_similarity = range_similarity(
@@ -73,14 +82,14 @@ pub(super) fn near_candidate_from_pair(
         return None;
     }
     if call_token_idf_score < RUST_FUNCTION_CLONE_NEAR_MIN_CALL_TOKEN_IDF_SCORE
-        && name_token_jaccard < RUST_FUNCTION_CLONE_NEAR_MIN_NAME_TOKEN_JACCARD_FALLBACK
+        && name_token_overlap.jaccard < RUST_FUNCTION_CLONE_NEAR_MIN_NAME_TOKEN_JACCARD_FALLBACK
     {
         return None;
     }
 
     let score = round_score(
         (call_token_idf_score * RUST_FUNCTION_CLONE_NEAR_CALL_TOKEN_WEIGHT)
-            + (name_token_jaccard * RUST_FUNCTION_CLONE_NEAR_NAME_TOKEN_WEIGHT)
+            + (name_token_overlap.jaccard * RUST_FUNCTION_CLONE_NEAR_NAME_TOKEN_WEIGHT)
             + (body_loc_similarity * RUST_FUNCTION_CLONE_NEAR_BODY_LOC_WEIGHT)
             + (statement_count_similarity * RUST_FUNCTION_CLONE_NEAR_STATEMENT_COUNT_WEIGHT),
     );
@@ -88,6 +97,38 @@ pub(super) fn near_candidate_from_pair(
         return None;
     }
 
+    Some(NearCandidateEvidence {
+        score,
+        generated_only: left.member.generated && right.member.generated,
+        shared_call_tokens: call_token_overlap.shared_tokens,
+        shared_name_tokens: name_token_overlap.shared_tokens,
+        call_token_jaccard: call_token_overlap.jaccard,
+        shared_call_token_idf_sum,
+        call_token_idf_score,
+        name_token_jaccard: name_token_overlap.jaccard,
+        body_loc_similarity,
+        statement_count_similarity,
+    })
+}
+
+pub(super) fn near_pair_order_against_projected(
+    left: &NearFact<'_>,
+    right: &NearFact<'_>,
+    evidence: &NearCandidateEvidence,
+    projected: &AstNearFunctionCandidate,
+) -> std::cmp::Ordering {
+    evidence
+        .generated_only
+        .cmp(&projected.generated_only)
+        .then_with(|| projected.score.total_cmp(&evidence.score))
+        .then_with(|| pair_identity_key(left, right).cmp(&projected.identities.join("|")))
+}
+
+pub(super) fn build_near_candidate_from_evidence(
+    left: &NearFact<'_>,
+    right: &NearFact<'_>,
+    evidence: NearCandidateEvidence,
+) -> AstNearFunctionCandidate {
     let mut pair = [left, right];
     pair.sort_by(|a, b| a.identity.cmp(&b.identity));
     let lines = pair
@@ -109,33 +150,33 @@ pub(super) fn near_candidate_from_pair(
     let mut reasons = vec![
         format!(
             "shared significant call tokens: {}",
-            shared_call_tokens.join(", ")
+            evidence.shared_call_tokens.join(", ")
         ),
         format!(
             "shared call-token IDF sum: {}",
-            format_score(shared_call_token_idf_sum)
+            format_score(evidence.shared_call_token_idf_sum)
         ),
         format!(
             "call-token IDF score: {}",
-            format_score(call_token_idf_score)
+            format_score(evidence.call_token_idf_score)
         ),
         format!(
             "body size similarity: {}",
-            format_score(body_loc_similarity)
+            format_score(evidence.body_loc_similarity)
         ),
         format!(
             "statement-count similarity: {}",
-            format_score(statement_count_similarity)
+            format_score(evidence.statement_count_similarity)
         ),
     ];
-    if !shared_name_tokens.is_empty() {
+    if !evidence.shared_name_tokens.is_empty() {
         reasons.push(format!(
             "shared exported-name tokens: {}",
-            shared_name_tokens.join(", ")
+            evidence.shared_name_tokens.join(", ")
         ));
     }
 
-    Some(AstNearFunctionCandidate {
+    AstNearFunctionCandidate {
         kind: AstNearFunctionCandidateKind::NearFunctionCandidate,
         identities: pair.iter().map(|fact| fact.identity.clone()).collect(),
         owner_files: pair
@@ -151,15 +192,15 @@ pub(super) fn near_candidate_from_pair(
             .into_iter()
             .collect(),
         lines,
-        score,
+        score: evidence.score,
         risk: FunctionCloneRisk::ReviewOnly,
-        generated_only: pair.iter().all(|fact| fact.member.generated),
-        shared_call_tokens,
-        shared_name_tokens,
-        call_token_jaccard: round_score(call_token_jaccard),
-        shared_call_token_idf_sum: round_score(shared_call_token_idf_sum),
-        call_token_idf_score: round_score(call_token_idf_score),
-        name_token_jaccard: round_score(name_token_jaccard),
+        generated_only: evidence.generated_only,
+        shared_call_tokens: evidence.shared_call_tokens,
+        shared_name_tokens: evidence.shared_name_tokens,
+        call_token_jaccard: round_score(evidence.call_token_jaccard),
+        shared_call_token_idf_sum: round_score(evidence.shared_call_token_idf_sum),
+        call_token_idf_score: round_score(evidence.call_token_idf_score),
+        name_token_jaccard: round_score(evidence.name_token_jaccard),
         body_loc_range: [
             body_locs.iter().copied().min().unwrap_or(0),
             body_locs.iter().copied().max().unwrap_or(0),
@@ -170,5 +211,13 @@ pub(super) fn near_candidate_from_pair(
         ],
         reasons,
         reason: "near function cue only; source review required; not proof of semantic equivalence or an automatic merge",
-    })
+    }
+}
+
+fn pair_identity_key(left: &NearFact<'_>, right: &NearFact<'_>) -> String {
+    if left.identity <= right.identity {
+        format!("{}|{}", left.identity, right.identity)
+    } else {
+        format!("{}|{}", right.identity, left.identity)
+    }
 }

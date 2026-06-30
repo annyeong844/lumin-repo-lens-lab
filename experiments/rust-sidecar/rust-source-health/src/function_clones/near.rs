@@ -202,16 +202,28 @@ impl<'facts, 'state> CandidateGenerationState<'facts, 'state> {
         }
 
         self.diagnostics.generated_unique_pair_count += 1;
-        if let Some(candidate) = candidate::near_candidate_from_pair(
+        if let Some(evidence) = candidate::near_candidate_evidence_from_pair(
             &self.eligible[left_index],
             &self.eligible[right_index],
             self.token_idfs,
         ) {
             self.diagnostics.scored_pair_count += 1;
-            if !candidate.generated_only {
+            if !evidence.generated_only {
                 *self.review_visible_count += 1;
             }
-            push_projected_candidate(self.candidates, candidate);
+            if should_project_candidate(
+                self.candidates,
+                &self.eligible[left_index],
+                &self.eligible[right_index],
+                &evidence,
+            ) {
+                let candidate = candidate::build_near_candidate_from_evidence(
+                    &self.eligible[left_index],
+                    &self.eligible[right_index],
+                    evidence,
+                );
+                push_projected_candidate(self.candidates, candidate);
+            }
         }
     }
 }
@@ -344,6 +356,21 @@ fn push_projected_candidate(
     candidates.pop();
     candidates.push(candidate);
     sort_projected_candidates(candidates);
+}
+
+fn should_project_candidate(
+    candidates: &[AstNearFunctionCandidate],
+    left: &NearFact<'_>,
+    right: &NearFact<'_>,
+    evidence: &candidate::NearCandidateEvidence,
+) -> bool {
+    if candidates.len() < RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES {
+        return true;
+    }
+
+    candidates.last().is_some_and(|worst| {
+        candidate::near_pair_order_against_projected(left, right, evidence, worst) == Ordering::Less
+    })
 }
 
 fn sort_projected_candidates(candidates: &mut [AstNearFunctionCandidate]) {

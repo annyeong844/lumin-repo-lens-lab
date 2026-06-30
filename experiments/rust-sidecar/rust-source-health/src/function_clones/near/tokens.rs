@@ -34,5 +34,7 @@ pub(super) fn name_tokens(name: &str) -> Vec<String> {
         .map(str::trim)
         .filter(|token| token.len() >= 2)
         .map(str::to_ascii_lowercase)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect()
 }
