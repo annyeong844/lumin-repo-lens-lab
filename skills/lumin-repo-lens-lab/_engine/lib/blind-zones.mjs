@@ -121,6 +121,17 @@ function goZone(files, support) {
   };
 }
 
+function rustZone(files) {
+  return {
+    area: 'rust',
+    severity: 'scan-gap',
+    effect:
+      'Rust files were counted by triage, but the JS/TS symbol graph does not own Rust absence claims; ' +
+      'read the lumin-rust-analyzer artifact before making Rust findings.',
+    details: { files, reason: 'rust-owned-analysis-not-registered-in-this-audit-run' },
+  };
+}
+
 function sfcCountsFromTriage(triage) {
   const byLang = triage?.byLanguage ?? triage?.languages ?? triage?.summary?.byLanguage ?? null;
   const languages = {};
@@ -167,6 +178,7 @@ function detectShapeZones(triage, support) {
     (shape.jsFiles   ?? 0) +
     (shape.pyFiles   ?? 0) +
     (shape.goFiles   ?? 0) +
+    (shape.rustFiles ?? shape.rsFiles ?? 0) +
     (shape.sfcFiles  ?? 0);
   // Note: testFiles is a SUBSET of the others, so it's already counted.
   const unknown = shape.totalFiles - known;
@@ -184,6 +196,9 @@ function detectShapeZones(triage, support) {
 
   if ((shape.pyFiles ?? 0) > 0) zones.push(pythonZone(shape.pyFiles, support));
   if ((shape.goFiles ?? 0) > 0) zones.push(goZone(shape.goFiles, support));
+  if ((shape.rustFiles ?? shape.rsFiles ?? 0) > 0) {
+    zones.push(rustZone(shape.rustFiles ?? shape.rsFiles));
+  }
   return zones;
 }
 
@@ -197,6 +212,10 @@ function detectByLanguageZones(triage, support, existingZones) {
     if (n <= 0) continue;
     if (SFC_LANGS.has(lang)) continue;
     const allZones = [...existingZones, ...zones];
+    if (lang === 'rs') {
+      if (!hasArea(allZones, 'rust')) zones.push(rustZone(n));
+      continue;
+    }
     if (!SUPPORTED_LANGS.has(lang) && !hasArea(allZones, 'unclassified-files', lang)) {
       zones.push({
         area: lang,

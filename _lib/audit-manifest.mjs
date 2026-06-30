@@ -60,6 +60,7 @@ function languagesFromTriage(triage) {
   if ((shape.jsFiles ?? 0) > 0) languages.push('js');
   if ((shape.pyFiles ?? 0) > 0) languages.push('py');
   if ((shape.goFiles ?? 0) > 0) languages.push('go');
+  if ((shape.rustFiles ?? shape.rsFiles ?? 0) > 0) languages.push('rs');
   return languages.length > 0 ? languages : null;
 }
 

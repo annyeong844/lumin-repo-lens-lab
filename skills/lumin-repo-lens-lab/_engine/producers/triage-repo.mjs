@@ -32,7 +32,8 @@ const repoMode = detectRepoMode(root);
 // count, making dual-emit packages look half their actual size.
 const TS_LANGS = ['ts', 'tsx', 'mts', 'cts'];
 const JS_LANGS = JS_FAMILY_LANGS.filter((lang) => !TS_LANGS.includes(lang));
-const TRIAGE_LANGS = [...TS_LANGS, ...JS_LANGS, 'py', 'go', ...SFC_FAMILY_LANGS];
+const RUST_LANGS = ['rs'];
+const TRIAGE_LANGS = [...TS_LANGS, ...JS_LANGS, 'py', 'go', ...RUST_LANGS, ...SFC_FAMILY_LANGS];
 const allFiles = collectFiles(root, { languages: TRIAGE_LANGS, includeTests, exclude: cli.exclude });
 
 function filesForLanguages(files, languages) {
@@ -53,6 +54,7 @@ const tsFiles = filesForLanguages(allFiles, TS_LANGS);
 const jsFiles = filesForLanguages(allFiles, JS_LANGS);
 const pyFiles = filesForLanguages(allFiles, ['py']);
 const goFiles = filesForLanguages(allFiles, ['go']);
+const rustFiles = filesForLanguages(allFiles, RUST_LANGS);
 const sfcFiles = filesForLanguages(allFiles, SFC_FAMILY_LANGS);
 const byLanguage = countByLanguage(allFiles, TRIAGE_LANGS);
 const fileCollectionPerformance = {
@@ -65,11 +67,12 @@ const fileCollectionPerformance = {
     js: jsFiles.length,
     py: pyFiles.length,
     go: goFiles.length,
+    rust: rustFiles.length,
     sfc: sfcFiles.length,
   },
 };
 
-const sourceFiles = [...tsFiles, ...jsFiles, ...pyFiles, ...goFiles, ...sfcFiles];
+const sourceFiles = [...tsFiles, ...jsFiles, ...pyFiles, ...goFiles, ...rustFiles, ...sfcFiles];
 const totalFiles = sourceFiles.length;
 let totalLoc = 0;
 const loc = (f) => {
@@ -102,6 +105,10 @@ if (pkg) {
   else if (existsSync(path.join(root, 'package-lock.json'))) buildSystem.packageManager = 'npm';
 }
 if (existsSync(path.join(root, 'pyproject.toml'))) buildSystem.python = 'pyproject.toml';
+if (existsSync(path.join(root, 'Cargo.toml'))) {
+  if (buildSystem.type === 'unknown') buildSystem.type = 'cargo';
+  buildSystem.rust = 'Cargo.toml';
+}
 
 // ─── Config files ─────────────────────────────────────────
 const configs = {
@@ -209,6 +216,7 @@ const artifact = {
     jsFiles: jsFiles.length,
     pyFiles: pyFiles.length,
     goFiles: goFiles.length,
+    rustFiles: rustFiles.length,
     sfcFiles: sfcFiles.length,
     testFiles: testFiles.length,
     meanLocPerFile: Math.round(totalLoc / Math.max(totalFiles, 1)),
