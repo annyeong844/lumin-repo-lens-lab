@@ -114,6 +114,23 @@ function formatDependencyHygieneCue(summary) {
   return `Dependency hygiene: ${reviewUnused} review-only dependency ${plural(reviewUnused, 'declaration')} ${reviewVerb} inspection; ${muted} muted ${plural(muted, 'explanation')}${confidenceText}. Read \`manifest.json.unusedDependencies\` and \`unused-deps.json\` before changing package manifests.`;
 }
 
+function formatRustAnalysisCue(summary) {
+  if (!summary || typeof summary !== 'object') return null;
+  if (summary.status !== 'complete' || summary.available !== true) {
+    if (summary.requested) {
+      return `Rust analyzer: ${summary.status ?? 'not-run'}${summary.reason ? ` (${summary.reason})` : ''}. Do not use JS/TS artifacts for Rust absence claims.`;
+    }
+    return null;
+  }
+  const cloneParts = [
+    `exact ${n(summary.syntaxFunctionCloneExactBodyGroups)}`,
+    `structure ${n(summary.syntaxFunctionCloneStructureGroups)}`,
+    `signature ${n(summary.syntaxFunctionCloneSignatureGroups)}`,
+    `near ${n(summary.syntaxFunctionCloneNearCandidates)}`,
+  ].join(', ');
+  return `Rust analyzer: ${n(summary.files)} files, review signals ${n(summary.syntaxReviewSignals)}, opaque surfaces ${n(summary.syntaxReviewOpaqueSurfaces)}, clone cues ${cloneParts}. Read \`rust-analyzer-health.latest.json\` before making Rust findings.`;
+}
+
 function formatSfcEvidenceCue(summary) {
   if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return null;
   const byLane = summary.byLane && typeof summary.byLane === 'object'
@@ -379,6 +396,11 @@ function measuredCueLines({ manifest, checklistFacts, fixPlan, topology, discipl
     lines.push(`- ${sfcEvidenceCue}`);
   }
 
+  const rustAnalysisCue = formatRustAnalysisCue(manifest?.rustAnalysis);
+  if (rustAnalysisCue) {
+    lines.push(`- ${rustAnalysisCue}`);
+  }
+
   if (callGraph?.summary) {
     const semiDead = n(callGraph.summary.semiDead, Array.isArray(callGraph.semiDeadList) ? callGraph.semiDeadList.length : 0);
     lines.push(`- Call graph: semi-dead imports ${semiDead}. Read \`call-graph.json.semiDeadList\` and framework/test conventions before cleanup.`);
@@ -464,6 +486,9 @@ function artifactMapLines({ manifest, checklistFacts, fixPlan, topology, discipl
   }
   if (functionClones || produced.has('function-clones.json')) {
     lines.push('- `function-clones.json`: top-level exported and file-local function-body clone cues; candidates require source review before merge advice.');
+  }
+  if (manifest?.rustAnalysis?.status === 'complete' && manifest?.rustAnalysis?.available === true) {
+    lines.push('- `rust-analyzer-health.latest.json`: Rust-owned syntax, clone, unused-definition, and Cargo metadata evidence; use this for Rust files instead of JS/TS graph absence.');
   }
   if (produced.has('barrels.json')) {
     lines.push('- `barrels.json`: barrel discipline evidence for full-profile C7 review.');

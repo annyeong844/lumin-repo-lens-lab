@@ -139,6 +139,14 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --r
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --root . --output .audit --profile quick
 ```
 
+Do not add `--rust-analyzer` to default quick/full runs automatically. Add it
+only when the user explicitly asks for Rust-owned analyzer evidence or a Rust
+audit pass that needs syntax, clone, dead-definition, Cargo metadata, or Rust
+absence claims. When it runs successfully, read
+`.audit/rust-analyzer-health.latest.json` before making Rust findings. When it
+does not run or is unavailable, keep Rust claims limited to manifest blind-zone
+evidence.
+
 Then answer with `templates/REVIEW_CHECKLIST_SHORT.md` unless the user
 asked for full checklist output: what is already stable, at most three
 things worth smoothing next, confidence/scan range, likely

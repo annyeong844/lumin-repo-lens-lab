@@ -237,13 +237,24 @@ function deadSurfaceLane({ fixPlan, deadClassify, manifest, moduleReachability }
 function failureLane({ checklistFacts, manifest }) {
   const e2 = checklistFacts?.E2_silent_catch ?? {};
   const blindZones = arr(manifest?.blindZones);
+  const rustAnalysis = manifest?.rustAnalysis;
+  const rustArtifactAvailable = rustAnalysis?.status === 'complete' && rustAnalysis?.available === true;
+  const artifacts = [
+    'checklist-facts.json',
+    'manifest.json',
+    'discipline.json',
+    ...(rustArtifactAvailable ? ['rust-analyzer-health.latest.json'] : []),
+  ];
   return lane('Lane 4 — Failure Handling And Blind-Zone Review', renderLanePrompt({
     title: 'Failure-handling reviewer',
     mission: 'Check whether error-handling and measurement blind zones could make the main summary too optimistic.',
-    artifacts: ['checklist-facts.json', 'manifest.json', 'discipline.json'],
+    artifacts,
     checks: [
       `Silent catch count: ${n(e2.count)}; non-empty anonymous catches: ${n(e2.nonEmptyAnonymousCount)}; unused catch params: ${n(e2.unusedParamCount)}.`,
       `Blind zones recorded in manifest: ${blindZones.length}. Treat any blind zone as a limit on absence/removal claims.`,
+      rustArtifactAvailable
+        ? `Rust analyzer artifact available for ${n(rustAnalysis.files)} file(s). Read rust-analyzer-health.latest.json before making Rust syntax, clone, dead-definition, or absence claims.`
+        : `Rust analyzer artifact not available in this run${rustAnalysis?.requested ? ` (${rustAnalysis.status ?? 'not-run'})` : ''}; keep Rust findings limited to manifest blind-zone evidence.`,
       'If a catch pattern is intentional, recommend documenting the intent rather than changing behavior blindly.',
     ],
     report: 'Failure-handling strengths, one watch item if present, and exact limits on what this audit could not prove.',

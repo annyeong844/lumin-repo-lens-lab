@@ -35,6 +35,7 @@ const ARTIFACT_CANDIDATES = [
   'symbols.json', 'unused-deps.json', 'entry-surface.json', 'module-reachability.json',
   'dead-classify.json', 'runtime-evidence.json',
   'staleness.json', 'fix-plan.json', 'checklist-facts.json',
+  'rust-analyzer-health.latest.json',
   'producer-performance.json',
   'canon-drift.json', 'topology.mermaid.md', 'audit-summary.latest.md',
   'audit-review-pack.latest.md', 'lumin-repo-lens-lab.sarif',
@@ -519,6 +520,51 @@ function numberOrZero(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+function sameResolvedPath(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string') return false;
+  return path.resolve(left) === path.resolve(right);
+}
+
+function buildRustAnalysisSummary(artifact, { root }) {
+  if (!artifact || typeof artifact !== 'object') return null;
+  const artifactName = 'rust-analyzer-health.latest.json';
+  const artifactRoot = artifact.meta?.input?.root ?? null;
+  if (!sameResolvedPath(artifactRoot, root)) {
+    return {
+      artifact: artifactName,
+      status: 'root-mismatch',
+      available: false,
+      root: artifactRoot,
+    };
+  }
+  const summary = artifact.summary && typeof artifact.summary === 'object'
+    ? artifact.summary
+    : {};
+  return {
+    artifact: artifactName,
+    status: 'complete',
+    available: true,
+    schemaVersion: artifact.schemaVersion ?? null,
+    policyVersion: artifact.policyVersion ?? null,
+    producer: artifact.meta?.producer ?? 'lumin-rust-analyzer',
+    mode: artifact.meta?.mode ?? null,
+    sourceHealthProfile:
+      artifact.meta?.input?.effectiveSourceHealthProfile ??
+      artifact.meta?.input?.sourceHealthProfile ??
+      null,
+    semanticMode: artifact.meta?.input?.semanticMode ?? null,
+    files: numberOrZero(summary.files),
+    syntaxReviewSignals: numberOrZero(summary.syntaxReviewSignals),
+    syntaxReviewOpaqueSurfaces: numberOrZero(summary.syntaxReviewOpaqueSurfaces),
+    syntaxFunctionCloneExactBodyGroups: numberOrZero(summary.syntaxFunctionCloneExactBodyGroups),
+    syntaxFunctionCloneStructureGroups: numberOrZero(summary.syntaxFunctionCloneStructureGroups),
+    syntaxFunctionCloneSignatureGroups: numberOrZero(summary.syntaxFunctionCloneSignatureGroups),
+    syntaxFunctionCloneNearCandidates: numberOrZero(summary.syntaxFunctionCloneNearCandidates),
+    actionTierSummary: summary.actionTierSummary ?? null,
+    oracleBridgeStatus: summary.oracleBridgeStatus ?? null,
+  };
+}
+
 function buildSfcEvidenceSummary(symbols) {
   if (!symbols || typeof symbols !== 'object') return null;
   const uses = symbols.uses && typeof symbols.uses === 'object'
@@ -582,6 +628,7 @@ export function buildManifestEvidence({
   excludes = [],
   autoExcludes = [],
   generatedArtifactsMode = 'default',
+  rustAnalysisRun = null,
   onArtifactRead,
 }) {
   const triage = loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
@@ -593,6 +640,9 @@ export function buildManifestEvidence({
   const blockClones = loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
   const entrySurface = loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
   const deadClassify = loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
+  const rustAnalyzer = loadArtifact(outDir, 'rust-analyzer-health.latest.json', { onRead: onArtifactRead });
+  const rustAnalysis = buildRustAnalysisSummary(rustAnalyzer, { root });
+  const rustAnalysisForBlindZones = rustAnalysisRun?.ran === true ? rustAnalysis : null;
 
   const parseErrors = (() => {
     const w = (symbols?.meta?.warnings ?? []).find((x) =>
@@ -621,7 +671,15 @@ export function buildManifestEvidence({
       resolverCapabilities,
       resolverDiagnostics,
     }),
-    blindZones: detectBlindZones({ triage, symbols, deadClassify, entrySurface, resolverDiagnostics }),
+    blindZones: detectBlindZones({
+      triage,
+      symbols,
+      deadClassify,
+      entrySurface,
+      resolverDiagnostics,
+      rustAnalysis: rustAnalysisForBlindZones,
+    }),
+    rustAnalysis,
     generatedArtifacts: buildGeneratedArtifactsSummary(symbols, {
       root,
       includeTests,
@@ -642,6 +700,7 @@ export function refreshManifestEvidence(manifest, options) {
   manifest.confidence = evidence.confidence;
   manifest.resolverDiagnostics = evidence.resolverDiagnostics;
   manifest.blindZones = evidence.blindZones;
+  manifest.rustAnalysis = evidence.rustAnalysis;
   manifest.generatedArtifacts = evidence.generatedArtifacts;
   manifest.frameworkResourceSurfaces = evidence.frameworkResourceSurfaces;
   manifest.unusedDependencies = evidence.unusedDependencies;

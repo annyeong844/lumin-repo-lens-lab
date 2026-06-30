@@ -130,6 +130,7 @@ Flags:
                            clear this repo's incremental cache before supported producers run
   --generated-artifacts <mode>
                            default | present | prepared (diagnostic provenance only; does not run generators)
+  --rust-analyzer          opt in to the Rust-owned unified analyzer artifact when triage counts .rs files
   --no-self-audit-excludes do not auto-exclude maintainer lab/corpus mirrors
   --strict-post-write      exit 2 when post-write orchestration cannot run
   --strict-post-write-confidence
@@ -194,6 +195,7 @@ const CLI_OPTIONS = {
   'cache-root': { type: 'string' },
   'clear-incremental-cache': { type: 'boolean', default: false },
   'generated-artifacts': { type: 'string', default: 'default' },
+  'rust-analyzer': { type: 'boolean', default: false },
   exclude: { type: 'string', multiple: true, default: [] },
   // P2-2 follow-up: strict mode converts manifest.postWrite.ran === false
   // into exit code 2. Closes the "silent CI green on unreadable advisory"
@@ -320,6 +322,7 @@ if (values['clear-incremental-cache'] === true) {
 
 const commandsRun = [];
 const skipped = [];
+let rustAnalysisRun = { requested: values['rust-analyzer'] === true, ran: false, status: 'not-requested' };
 const INCREMENTAL_PRODUCER_STEPS = new Set([
   'measure-topology.mjs',
   'measure-staleness.mjs',
@@ -384,7 +387,7 @@ function rustAnalyzerInvocation() {
   const manifestPath = manifestCandidates.find((candidate) => existsSync(candidate));
   if (!manifestPath) {
     throw new Error(
-      'rust pre-write requested but no Rust analyzer was found; set LUMIN_RUST_ANALYZER_BIN or run from a maintainer checkout with experiments/Cargo.toml'
+      'rust analyzer requested but no Rust analyzer was found; set LUMIN_RUST_ANALYZER_BIN or run from a maintainer checkout with experiments/Cargo.toml'
     );
   }
 
@@ -401,6 +404,55 @@ function rustAnalyzerInvocation() {
     ],
     source: 'cargo:experiments',
     manifestPath,
+  };
+}
+
+function rustFileCountFromTriage(triage) {
+  const byLanguage = triage?.byLanguage ?? triage?.languages ?? triage?.summary?.byLanguage;
+  if (byLanguage && typeof byLanguage === 'object') {
+    const count = byLanguage.rs;
+    const n = typeof count === 'number' ? count : (count?.files ?? 0);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const shapeCount = triage?.shape?.rustFiles ?? triage?.shape?.rsFiles ?? 0;
+  return typeof shapeCount === 'number' && Number.isFinite(shapeCount) ? shapeCount : 0;
+}
+
+function forwardedRustAnalyzerArgs() {
+  const args = [];
+  if (values['no-incremental'] === true) args.push('--no-incremental');
+  if (values['cache-root']) args.push('--cache-root', path.resolve(values['cache-root']));
+  if (values['clear-incremental-cache'] === true) args.push('--clear-incremental-cache');
+  return args;
+}
+
+function mergeRustAnalysisBlocks(evidence, run) {
+  if (run?.requested === true) {
+    if (run.ran === true) {
+      if (evidence?.status !== 'complete') {
+        return {
+          ...run,
+          status: 'artifact-unavailable',
+          available: false,
+          artifactStatus: evidence?.status ?? 'missing',
+          ...(evidence?.artifact ? { artifact: evidence.artifact } : {}),
+        };
+      }
+      return {
+        ...evidence,
+        ...run,
+        status: 'complete',
+        available: true,
+      };
+    }
+    return run;
+  }
+  return {
+    requested: false,
+    ran: false,
+    status: 'not-requested',
+    rustFiles: run?.rustFiles ?? 0,
+    ...(evidence ? { artifact: evidence.artifact, artifactStatus: evidence.status } : {}),
   };
 }
 
@@ -612,6 +664,7 @@ function manifestEvidenceOptions() {
     excludes: EFFECTIVE_EXCLUDES,
     autoExcludes: AUTO_EXCLUDES,
     generatedArtifactsMode: GENERATED_ARTIFACTS_MODE,
+    rustAnalysisRun,
     onArtifactRead: artifactReadMetrics.observeRead,
   };
 }
@@ -890,6 +943,100 @@ function runStep(scriptRelPath, { required = false, precondition = null, reason 
   }
 }
 
+function runRustAnalyzerStep() {
+  const triage = loadIfExists('triage.json');
+  const rustFiles = rustFileCountFromTriage(triage);
+  if (values['rust-analyzer'] !== true) {
+    return { requested: false, ran: false, status: 'not-requested', rustFiles };
+  }
+  if (rustFiles <= 0) {
+    const reason = 'no Rust files counted by triage';
+    skipped.push({ step: 'lumin-rust-analyzer', reason });
+    console.log(`[audit-repo] skip  lumin-rust-analyzer  (${reason})`);
+    return { requested: true, ran: false, status: 'skipped', rustFiles, reason };
+  }
+
+  let invocation;
+  try {
+    invocation = rustAnalyzerInvocation();
+  } catch (error) {
+    const reason = error.message;
+    skipped.push({ step: 'lumin-rust-analyzer', reason });
+    console.log(`[audit-repo] skip  lumin-rust-analyzer  (${reason})`);
+    return { requested: true, ran: false, status: 'unavailable', rustFiles, reason };
+  }
+
+  const artifact = 'rust-analyzer-health.latest.json';
+  const artifactPath = path.join(OUT, artifact);
+  const sourceCommit = gitHeadCommit(ROOT);
+  const argv = [
+    ...invocation.prefixArgs,
+    '--root', ROOT,
+    '--source-commit', sourceCommit,
+    '--output', artifactPath,
+    '--source-health-profile', 'compact',
+    '--semantic-mode', 'metadata-only',
+    ...forwardedRustAnalyzerArgs(),
+  ];
+  const t0 = Date.now();
+  const memoryBefore = memorySnapshot();
+  try {
+    execFileSync(invocation.command, argv, {
+      stdio: values.verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8',
+    });
+    const ms = Date.now() - t0;
+    const memoryAfter = memorySnapshot();
+    const analyzerInvocation = {
+      source: invocation.source,
+      ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
+    };
+    commandsRun.push({
+      step: 'lumin-rust-analyzer',
+      status: 'ok',
+      ms,
+      artifact,
+      rustFiles,
+      analyzerInvocation,
+      memory: {
+        before: memoryBefore,
+        after: memoryAfter,
+        delta: memoryDelta(memoryBefore, memoryAfter),
+      },
+    });
+    console.log(`[audit-repo] ok    lumin-rust-analyzer  (${ms}ms)`);
+    return {
+      requested: true,
+      ran: true,
+      status: 'complete',
+      rustFiles,
+      artifact,
+      path: artifactPath,
+      sourceCommit,
+      producer: 'lumin-rust-analyzer',
+      analyzerInvocation,
+    };
+  } catch (e) {
+    const ms = Date.now() - t0;
+    const memoryAfter = memorySnapshot();
+    const reason = `lumin-rust-analyzer exited non-zero: ${e.message}`;
+    commandsRun.push({
+      step: 'lumin-rust-analyzer',
+      status: 'failed-optional',
+      ms,
+      rustFiles,
+      stderr: (e.stderr || e.message || '').toString().slice(0, 500),
+      memory: {
+        before: memoryBefore,
+        after: memoryAfter,
+        delta: memoryDelta(memoryBefore, memoryAfter),
+      },
+    });
+    console.log(`[audit-repo] warn  lumin-rust-analyzer  (${ms}ms) — optional, continuing`);
+    return { requested: true, ran: false, status: 'failed-optional', rustFiles, reason };
+  }
+}
+
 console.log(`[audit-repo] profile=${PROFILE}  root=${ROOT}  output=${OUT}`);
 
 if (!RUN_BASE_PIPELINE) {
@@ -904,6 +1051,9 @@ if (!RUN_BASE_PIPELINE) {
 } else {
   // ─── Step 1: triage (always) ──────────────────────────────
   runStep('triage-repo.mjs', { required: true });
+
+  // ─── Step 1a: Rust-owned analyzer artifact (explicit opt-in) ──
+  rustAnalysisRun = runRustAnalyzerStep();
 
   // ─── Step 1b: framework/resource surface inventory ─────────
   runStep('build-framework-resource-surfaces.mjs', { required: false });
@@ -1035,6 +1185,7 @@ const manifest = {
   scanRange: initialEvidence.scanRange,
   confidence: initialEvidence.confidence,
   blindZones: initialEvidence.blindZones,
+  rustAnalysis: mergeRustAnalysisBlocks(initialEvidence.rustAnalysis, rustAnalysisRun),
   generatedArtifacts: initialEvidence.generatedArtifacts,
   livingAudit: initialEvidence.livingAudit,
   artifactsProduced: collectProducedArtifacts(OUT),
@@ -1353,6 +1504,7 @@ if (values['strict-post-write-confidence'] && postWriteConfidenceLimited(postWri
 }
 
 refreshManifestEvidence(manifest, manifestEvidenceOptions());
+manifest.rustAnalysis = mergeRustAnalysisBlocks(manifest.rustAnalysis, rustAnalysisRun);
 const topologyArtifact = loadIfExists('topology.json');
 const moduleReachabilityArtifact = loadIfExists('module-reachability.json');
 if (topologyArtifact) {

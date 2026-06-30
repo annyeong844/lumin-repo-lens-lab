@@ -168,9 +168,14 @@ function sfcZone(triage) {
   };
 }
 
-function detectShapeZones(triage, support) {
+function rustAnalysisComplete(rustAnalysis) {
+  return rustAnalysis?.status === 'complete' && rustAnalysis?.available === true;
+}
+
+function detectShapeZones(triage, support, { rustAnalysis } = {}) {
   const shape = triage?.shape ?? null;
   if (!shape || typeof shape.totalFiles !== 'number') return [];
+  const rustOwnedAnalysisAvailable = rustAnalysisComplete(rustAnalysis);
 
   const zones = [];
   const known =
@@ -196,15 +201,16 @@ function detectShapeZones(triage, support) {
 
   if ((shape.pyFiles ?? 0) > 0) zones.push(pythonZone(shape.pyFiles, support));
   if ((shape.goFiles ?? 0) > 0) zones.push(goZone(shape.goFiles, support));
-  if ((shape.rustFiles ?? shape.rsFiles ?? 0) > 0) {
+  if (!rustOwnedAnalysisAvailable && (shape.rustFiles ?? shape.rsFiles ?? 0) > 0) {
     zones.push(rustZone(shape.rustFiles ?? shape.rsFiles));
   }
   return zones;
 }
 
-function detectByLanguageZones(triage, support, existingZones) {
+function detectByLanguageZones(triage, support, existingZones, { rustAnalysis } = {}) {
   const byLang = triage?.byLanguage ?? triage?.languages ?? triage?.summary?.byLanguage ?? null;
   if (!byLang || typeof byLang !== 'object') return [];
+  const rustOwnedAnalysisAvailable = rustAnalysisComplete(rustAnalysis);
 
   const zones = [];
   for (const [lang, count] of Object.entries(byLang)) {
@@ -213,7 +219,7 @@ function detectByLanguageZones(triage, support, existingZones) {
     if (SFC_LANGS.has(lang)) continue;
     const allZones = [...existingZones, ...zones];
     if (lang === 'rs') {
-      if (!hasArea(allZones, 'rust')) zones.push(rustZone(n));
+      if (!rustOwnedAnalysisAvailable && !hasArea(allZones, 'rust')) zones.push(rustZone(n));
       continue;
     }
     if (!SUPPORTED_LANGS.has(lang) && !hasArea(allZones, 'unclassified-files', lang)) {
@@ -497,7 +503,7 @@ function detectHtmlEntrySurfaceZone(entrySurface) {
  * silently skip their detection branch. Never invents blind zones
  * out of missing data — the whole point is honest reporting.
  *
- * @param {{triage?: object | null, symbols?: object | null, deadClassify?: object | null, entrySurface?: object | null, resolverDiagnostics?: object | null}} artifacts
+ * @param {{triage?: object | null, symbols?: object | null, deadClassify?: object | null, entrySurface?: object | null, resolverDiagnostics?: object | null, rustAnalysis?: object | null}} artifacts
  * @returns {BlindZone[]}
  */
 export function detectBlindZones({
@@ -506,15 +512,16 @@ export function detectBlindZones({
   deadClassify: _deadClassify,
   entrySurface,
   resolverDiagnostics,
+  rustAnalysis,
 }) {
   const support = languageSupportState(symbols);
   const zones = [
-    ...detectShapeZones(triage, support),
+    ...detectShapeZones(triage, support, { rustAnalysis }),
   ];
 
   const sfc = sfcZone(triage);
   if (sfc && !hasArea(zones, 'sfc-scan-gap')) zones.push(sfc);
-  zones.push(...detectByLanguageZones(triage, support, zones));
+  zones.push(...detectByLanguageZones(triage, support, zones, { rustAnalysis }));
   const resolverZone = detectResolverZone(symbols, resolverDiagnostics);
   if (resolverZone) zones.push(resolverZone);
   const parserZone = detectParserZone(symbols);

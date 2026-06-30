@@ -79,12 +79,16 @@ Supported in the generic audit route:
 - Cargo root detection through `triage.json.buildSystem.rust`
 - `manifest.json.blindZones[]` entry with `area: "rust"` when the Rust
   analyzer artifact is not registered for that audit run
+- opt-in `audit-repo.mjs --rust-analyzer`, which writes
+  `rust-analyzer-health.latest.json` and records `manifest.rustAnalysis`
 
 Boundary:
 
 - read the unified `lumin-rust-analyzer` artifact before making Rust
   syntax, semantic, dead-definition, clone, or absence claims
 - do not use JS/TS `symbols.json` absence as Rust evidence
+- if `manifest.rustAnalysis.status !== "complete"`, keep Rust claims at
+  scan-range/blind-zone level
 
 ## Other Languages
 

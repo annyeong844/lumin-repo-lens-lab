@@ -186,6 +186,14 @@ Checked source state:
   Generated packages must supply `LUMIN_RUST_ANALYZER_BIN` or run from a
   checkout that includes `experiments/Cargo.toml`; missing Rust
   analyzer support is a hard-stop, not permission to fall back to JS.
+- `audit-repo.mjs --rust-analyzer` is the explicit public audit route for
+  producing the unified Rust analyzer artifact from a normal audit run. It
+  runs only when requested and only after `triage.json` has counted Rust files,
+  writes `rust-analyzer-health.latest.json`, and records
+  `manifest.rustAnalysis`. The default audit route still counts Rust files and
+  records a Rust blind zone, but does not spend Cargo/Rust analyzer work unless
+  this flag is present. A missing or failing analyzer remains artifact-visible;
+  it is not a JS fallback.
 
 Result:
 
