@@ -34,9 +34,12 @@ active branch.
 - `ast.pathRefs[]`: qualified expression- and type-position path references
 - `ast.nameRefs[]`: serialized AST name references
 - internal local token refs: deduped per-file reference names observed inside
-  macro token inputs, named format captures, and attribute string path slots
-  such as `serde(default = "fallback")`; these feed dead-export reachability
-  without bloating the public AST artifact
+  macro token inputs, named format captures, named format width/precision
+  captures such as `format!("{:<NAME_WIDTH$}")`, attribute string path slots
+  such as `serde(default = "fallback")` and
+  `schemars(schema_with = "schema_fn")`, and screaming-snake pattern
+  identifiers that may be private const references; these feed dead-export
+  reachability without bloating the public AST artifact
 - `ast.useTrees[]`: import and re-export syntax
 - `ast.impls[]`: impl blocks, trait paths, and method owner evidence
 - `ast.macroCalls[]`, `ast.cfgGates[]`, and `ast.opaqueSurfaces[]`: places where
@@ -223,6 +226,11 @@ Rust reachability must be separated by evidence scope:
 The artifact must say which scopes were searched. A count of zero only means
 "zero observed references in searched scopes." It must not be phrased as
 "definitely unused" when external, macro, cfg, or trait scope is unavailable.
+
+Compact Rust source-health artifacts may project `excludedCandidates` to capped
+examples for size, but the summary counts remain uncapped and the artifact must
+publish `excludedCandidateProjection.totalCount`, `retainedCount`, and
+`exampleLimit`. This is a projection rule, not an analysis cap.
 
 ## First Implementation Slice
 
