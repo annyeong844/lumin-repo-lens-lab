@@ -164,6 +164,13 @@ Checked source state:
   pre-write source intents. It consumes typed `rust-source-health` in memory
   and owns Rust name, file, exact shape-hash, function-signature, Cargo
   dependency, inline-pattern, and planned-type-escape declaration lanes.
+- `lumin-rust-analyzer` unified product mode consumes typed Rust
+  `rust-source-health` evidence through `SyntaxPhase`. In metadata-only mode,
+  the default is the compact `analyze_root_compact` library response, not a
+  JS-shaped serialized source-health artifact. Full `HealthResponse` remains a
+  Rust diagnostic/compatibility mode and is still selected for Cargo semantic
+  modes when the current semantic targeting path needs full Rust syntax file
+  evidence.
 - `pre-write.mjs` / `audit-repo.mjs --pre-write` remain JS lifecycle
   orchestrators. They may continue to package JS/TS advisory output, but
   `symbols.json`, `shape-index.json`, and `function-clones.json` must not be
@@ -189,3 +196,20 @@ Result:
   pre-write output in the standard lifecycle advisory shape so post-write can
   consume the invocation/file-delta contract without treating JS artifacts as
   Rust absence evidence.
+- Rust source-health product routing has also moved past raw JS-shaped
+  artifact handoff for the unified analyzer: the checked default
+  metadata-only product path uses compact typed Rust evidence and the full
+  syntax artifact is kept as an explicit Rust diagnostic/semantic-targeting
+  compatibility path, not a JS/TS owner.
+
+Checked on 2026-07-01 without running Node:
+
+- `cargo fmt --package lumin-rust-source-health --package lumin-rust-analyzer --check`
+- `cargo check --locked -p lumin-rust-source-health -p lumin-rust-analyzer`
+- `cargo clippy --locked -p lumin-rust-source-health -p lumin-rust-analyzer --all-targets -- -D warnings`
+- `cargo test --locked -p lumin-rust-source-health --test integration -- --nocapture`
+  (`97 passed`)
+- `cargo test --locked -p lumin-rust-analyzer --test integration -- --nocapture`
+  (`112 passed`, including
+  `unified_cli_uses_compact_source_health_by_default_for_metadata_only` and
+  `unified_cli_preserves_full_source_health_diagnostic_mode`)
