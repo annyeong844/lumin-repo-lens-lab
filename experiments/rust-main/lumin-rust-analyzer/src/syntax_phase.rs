@@ -18,13 +18,6 @@ impl SyntaxPhaseOwned {
             Self::Compact(response) => SyntaxPhase::Compact(response),
         }
     }
-
-    pub(crate) fn full_response(&self) -> Option<&HealthResponse> {
-        match self {
-            Self::Full(response) => Some(response),
-            Self::Compact(_) => None,
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -76,10 +69,10 @@ impl<'a> SyntaxPhase<'a> {
         }
     }
 
-    pub(crate) fn full_file(self, path: &str) -> Option<&'a FileHealth> {
+    pub(crate) fn file(self, path: &str) -> Option<SyntaxFile<'a>> {
         match self {
-            Self::Full(response) => response.files.get(path),
-            Self::Compact(_) => None,
+            Self::Full(response) => response.files.get(path).map(SyntaxFile::Full),
+            Self::Compact(response) => response.files.get(path).map(SyntaxFile::Compact),
         }
     }
 }

@@ -165,12 +165,13 @@ Checked source state:
   and owns Rust name, file, exact shape-hash, function-signature, Cargo
   dependency, inline-pattern, and planned-type-escape declaration lanes.
 - `lumin-rust-analyzer` unified product mode consumes typed Rust
-  `rust-source-health` evidence through `SyntaxPhase`. In metadata-only mode,
-  the default is the compact `analyze_root_compact` library response, not a
-  JS-shaped serialized source-health artifact. Full `HealthResponse` remains a
-  Rust diagnostic/compatibility mode and is still selected for Cargo semantic
-  modes when the current semantic targeting path needs full Rust syntax file
-  evidence.
+  `rust-source-health` evidence through `SyntaxPhase`. Unless the caller
+  explicitly requests `--source-health-profile full`, the default is the
+  compact `analyze_root_compact` library response, not a JS-shaped serialized
+  source-health artifact. Compact syntax now carries an uncapped
+  compiler-oracle opacity count for targeted Cargo path selection. Full
+  `HealthResponse` remains a Rust diagnostic/compatibility mode for raw AST
+  inspection and precise semantic-finding opaque-overlap analysis.
 - `pre-write.mjs` / `audit-repo.mjs --pre-write` remain JS lifecycle
   orchestrators. They may continue to package JS/TS advisory output, but
   `symbols.json`, `shape-index.json`, and `function-clones.json` must not be
@@ -198,9 +199,9 @@ Result:
   Rust absence evidence.
 - Rust source-health product routing has also moved past raw JS-shaped
   artifact handoff for the unified analyzer: the checked default
-  metadata-only product path uses compact typed Rust evidence and the full
-  syntax artifact is kept as an explicit Rust diagnostic/semantic-targeting
-  compatibility path, not a JS/TS owner.
+  product path uses compact typed Rust evidence, including targeted Cargo
+  oracle path selection, and the full syntax artifact is kept as an explicit
+  Rust diagnostic compatibility path, not a JS/TS owner.
 
 Checked on 2026-07-01 without running Node:
 

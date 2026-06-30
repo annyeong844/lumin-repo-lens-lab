@@ -3,14 +3,13 @@ mod projection;
 mod support;
 mod taint;
 
-use lumin_rust_cargo_oracle::protocol::Finding;
-use lumin_rust_source_health::protocol::FileHealth;
-
 use super::{
     evidence::CoverageEvidence, semantic, span_overlap, ProductFileSemanticSummary,
     ProductPrimarySpanProjection, ProductSyntaxFileSummary,
 };
+use crate::syntax_phase::SyntaxFile;
 use bridge::FindingOracleBridgeProjection;
+use lumin_rust_cargo_oracle::protocol::Finding;
 pub(crate) use projection::ProductSemanticFindingProjection;
 use projection::{
     macro_expansion_span_count, macro_expansion_span_examples, ProductFindingConfidenceProjection,
@@ -23,12 +22,10 @@ const FINDING_ORACLE_BRIDGE_SCHEMA_VERSION: &str = "rust-finding-oracle-bridge.v
 
 pub(crate) fn product_semantic_finding<'a>(
     finding: &'a Finding,
-    syntax_file: Option<&'a FileHealth>,
+    syntax_file: Option<SyntaxFile<'a>>,
     coverage: &CoverageEvidence<'_>,
 ) -> ProductSemanticFinding<'a> {
-    let syntax_summary = syntax_file
-        .map(ProductSyntaxFileSummary::from_file)
-        .unwrap_or_else(ProductSyntaxFileSummary::missing);
+    let syntax_summary = syntax_summary_from_file(syntax_file);
     let parse_status = syntax_summary.parse_status();
     let parse_errors = syntax_summary.parse_errors();
     let action = semantic::finding_action(finding);
@@ -45,7 +42,10 @@ pub(crate) fn product_semantic_finding<'a>(
         is_candidate,
     );
     let local_review_opaque_surfaces = span_overlap::review_opaque_surfaces_touching_span(
-        syntax_file.map(|file| &file.ast),
+        syntax_file.and_then(|file| match file {
+            SyntaxFile::Full(file) => Some(&file.ast),
+            SyntaxFile::Compact(_) => None,
+        }),
         finding.span.as_ref(),
         &finding.primary_spans,
     );
@@ -100,6 +100,14 @@ pub(crate) fn product_semantic_finding<'a>(
                 local_review_opaque_surfaces.len(),
             ),
         },
+    }
+}
+
+fn syntax_summary_from_file(file: Option<SyntaxFile<'_>>) -> ProductSyntaxFileSummary {
+    match file {
+        Some(SyntaxFile::Full(file)) => ProductSyntaxFileSummary::from_file(file),
+        Some(SyntaxFile::Compact(file)) => ProductSyntaxFileSummary::from_compact_file(file),
+        None => ProductSyntaxFileSummary::missing(),
     }
 }
 

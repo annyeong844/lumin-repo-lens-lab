@@ -42,6 +42,12 @@ opaque-surface examples through typed Rust protocol fields. If a compact lane
 omits raw evidence, the product artifact must either expose the corresponding
 summary/example projection or mark the raw lane as available only through the
 compatibility CLI.
+Compact `AstSummary` also preserves an uncapped
+`compilerOracleOpaqueSurfaces` count. The unified analyzer uses that typed
+compact field to select targeted Cargo oracle paths, so Cargo semantic modes do
+not need to force the full raw AST lane merely to find macro/cfg opacity.
+Precise semantic-finding overlap with individual opaque surfaces remains a full
+diagnostic capability unless a compact typed overlap lane is added.
 
 ## 3. Naming Lowering
 

@@ -23,9 +23,7 @@ pub(crate) fn semantic_findings_with_oracle_provenance<'a>(
         .enumerate()
         .map(|(index, finding)| {
             let path = typed_finding_relative_path(root, finding);
-            let syntax_file = path
-                .as_deref()
-                .and_then(|path| syntax_phase.full_file(path));
+            let syntax_file = path.as_deref().and_then(|path| syntax_phase.file(path));
             let product_finding = product_semantic_finding(finding, syntax_file, coverage);
             ProductSemanticFindingEntry {
                 semantic_ref: SemanticFindingRef::from_index(index),

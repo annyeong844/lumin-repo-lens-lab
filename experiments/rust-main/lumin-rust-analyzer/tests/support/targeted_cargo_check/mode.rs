@@ -9,6 +9,11 @@ pub(super) fn assert_targeted_mode(artifact: &Value, plan: &Value) {
         artifact["phases"]["semantic"]["mode"],
         "targeted-cargo-check"
     );
+    assert_eq!(artifact["meta"]["input"]["sourceHealthProfile"], "compact");
+    assert_eq!(
+        artifact["meta"]["input"]["effectiveSourceHealthProfile"],
+        "compact"
+    );
     assert_eq!(plan["mode"], "targeted-cargo-check");
     assert_eq!(plan["status"], "ran");
     assert_eq!(plan["reason"], "review-syntax-evidence-package-scope");

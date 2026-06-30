@@ -3,7 +3,7 @@ use std::process;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use lumin_rust_cargo_oracle::{run_oracle, CargoCheckMode, OracleOptions};
+use lumin_rust_cargo_oracle::{run_oracle, OracleOptions};
 use lumin_rust_common::{
     atomic_write_json, canonical_existing_dir_usage, is_usage_error, CliAction,
 };
@@ -64,10 +64,8 @@ fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
     let effective_source_health_profile = effective_source_health_profile(&options);
     let syntax = analyze_syntax_phase(&options, &root, effective_source_health_profile)?;
     let syntax_ms = syntax_started.elapsed().as_millis();
-    let target_paths = syntax
-        .full_response()
-        .map(|syntax| oracle_targeting::targeted_oracle_paths(options.semantic_mode, syntax))
-        .unwrap_or_default();
+    let target_paths =
+        oracle_targeting::targeted_oracle_paths(options.semantic_mode, syntax.as_phase());
     let semantic_started = Instant::now();
     let semantic_artifact = run_oracle(OracleOptions {
         root: root.clone(),
@@ -117,12 +115,7 @@ fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
 }
 
 fn effective_source_health_profile(options: &cli::Options) -> cli::SourceHealthProfile {
-    match options.semantic_mode {
-        CargoCheckMode::MetadataOnly => options.source_health_profile,
-        CargoCheckMode::CargoCheck | CargoCheckMode::TargetedCargoCheck => {
-            cli::SourceHealthProfile::Full
-        }
-    }
+    options.source_health_profile
 }
 
 fn analyze_syntax_phase(

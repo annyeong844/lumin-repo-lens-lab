@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AstFacts, AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility, Facts, FileHealth,
-    FileSignalSummary, Location, ParseStatus, PathMeta, Severity, Signal, SignalKind,
-    SignalMuteReason, SignalVisibilityState,
+    AstFacts, AstOpaqueMuteReason, AstOpaqueReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility,
+    Facts, FileHealth, FileSignalSummary, Location, ParseStatus, PathMeta, Severity, Signal,
+    SignalKind, SignalMuteReason, SignalVisibilityState,
 };
 
 const REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT: usize = 10;
@@ -58,6 +58,7 @@ pub struct CompactAstSummary {
     pub cfg_gates: usize,
     pub opaque_surfaces: usize,
     pub review_opaque_surfaces: usize,
+    pub compiler_oracle_opaque_surfaces: usize,
     pub muted_opaque_surfaces: usize,
     pub muted_opaque_surfaces_by_reason: BTreeMap<AstOpaqueMuteReason, usize>,
     pub review_opaque_surface_sample_limit: usize,
@@ -67,6 +68,7 @@ pub struct CompactAstSummary {
 impl CompactAstSummary {
     pub(crate) fn from_ast(ast: &AstFacts) -> Self {
         let mut review_opaque_surfaces = 0;
+        let mut compiler_oracle_opaque_surfaces = 0;
         let mut muted_opaque_surfaces = 0;
         let mut muted_opaque_surfaces_by_reason = BTreeMap::new();
         let mut review_opaque_surface_examples = Vec::new();
@@ -75,6 +77,9 @@ impl CompactAstSummary {
             match surface.visibility {
                 AstOpaqueSurfaceVisibility::Review => {
                     review_opaque_surfaces += 1;
+                    if opaque_surface_needs_compiler_oracle(surface) {
+                        compiler_oracle_opaque_surfaces += 1;
+                    }
                     if review_opaque_surface_examples.len() < REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT {
                         review_opaque_surface_examples.push(surface.clone());
                     }
@@ -105,12 +110,21 @@ impl CompactAstSummary {
             cfg_gates: ast.counts.cfg_gates,
             opaque_surfaces: ast.counts.opaque_surfaces,
             review_opaque_surfaces,
+            compiler_oracle_opaque_surfaces,
             muted_opaque_surfaces,
             muted_opaque_surfaces_by_reason,
             review_opaque_surface_sample_limit: REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT,
             review_opaque_surface_examples,
         }
     }
+}
+
+fn opaque_surface_needs_compiler_oracle(surface: &AstOpaqueSurface) -> bool {
+    surface.visibility == AstOpaqueSurfaceVisibility::Review
+        && matches!(
+            surface.reason,
+            AstOpaqueReason::MacroExpansionNotEvaluated | AstOpaqueReason::CfgConditionNotEvaluated
+        )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
