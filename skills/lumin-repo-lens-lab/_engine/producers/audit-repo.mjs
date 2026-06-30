@@ -94,6 +94,7 @@ Stable capabilities:
 
   pre-write
     lumin-repo-lens-lab --root <repo> --output <dir> --pre-write --intent intent.json
+    lumin-repo-lens-lab --root <repo> --output <dir> --pre-write --rust-pre-write --intent intent.json
 
   post-write
     lumin-repo-lens-lab --root <repo> --output <dir> --post-write --pre-write-advisory advisory.json
@@ -126,6 +127,9 @@ Flags:
   --strict-post-write      exit 2 when post-write orchestration cannot run
   --strict-post-write-confidence
                            exit 2 when post-write delta confidence is limited
+  --pre-write-engine <js|rust>
+                           pre-write execution surface (default: js)
+  --rust-pre-write         alias for --pre-write-engine rust
   --strict-check-canon     escalate drift to exit 1, all-fail to exit 2
   --sources, --source      canon source CSV (alias; --sources wins)
   --canon-output <dir>     canon-draft proposal dir (default: <root>/canonical-draft)
@@ -170,6 +174,8 @@ const CLI_OPTIONS = {
   // P1-3: opt-in pre-write integration. Not in default profiles.
   'pre-write': { type: 'boolean', default: false },
   intent: { type: 'string' },
+  'pre-write-engine': { type: 'string', default: 'js' },
+  'rust-pre-write': { type: 'boolean', default: false },
   // P2-2: opt-in post-write integration. Mutually exclusive with --pre-write.
   'post-write': { type: 'boolean', default: false },
   'pre-write-advisory': { type: 'string' },
@@ -262,6 +268,7 @@ const PRE_WRITE_ONLY =
   !values['canon-draft'] &&
   !values['check-canon'] &&
   !EMIT_SARIF;
+const PRE_WRITE_ENGINE = values['rust-pre-write'] ? 'rust' : values['pre-write-engine'];
 const RUN_BASE_PIPELINE = !PRE_POST_MUTEX && !PRE_WRITE_ONLY;
 const AUTO_EXCLUDES = values['no-self-audit-excludes']
   ? []
@@ -289,6 +296,11 @@ if (OUTPUT_WAS_DEFAULT) {
 if (!['quick', 'full', 'ci'].includes(PROFILE)) {
   console.error(`[audit-repo] unknown profile: ${PROFILE}. Use quick|full|ci.`);
   process.exit(1);
+}
+
+if (!['js', 'rust'].includes(PRE_WRITE_ENGINE)) {
+  console.error(`[audit-repo] unknown --pre-write-engine: ${PRE_WRITE_ENGINE}. Use js|rust.`);
+  process.exit(2);
 }
 
 if (values['clear-incremental-cache'] === true) {
@@ -333,6 +345,56 @@ function forwardedGeneratedArtifactArgs(stepName) {
   return stepName === 'build-symbol-graph.mjs'
     ? ['--generated-artifacts', GENERATED_ARTIFACTS_MODE]
     : [];
+}
+
+function gitHeadCommit(root) {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+function rustAnalyzerInvocation() {
+  const configuredBinary = process.env.LUMIN_RUST_ANALYZER_BIN?.trim();
+  if (configuredBinary) {
+    return {
+      command: configuredBinary,
+      prefixArgs: [],
+      source: 'env:LUMIN_RUST_ANALYZER_BIN',
+    };
+  }
+
+  const manifestCandidates = [
+    path.join(__dirname, 'experiments', 'Cargo.toml'),
+    path.join(__dirname, '..', 'experiments', 'Cargo.toml'),
+    path.join(__dirname, '..', '..', '..', '..', 'experiments', 'Cargo.toml'),
+  ];
+  const manifestPath = manifestCandidates.find((candidate) => existsSync(candidate));
+  if (!manifestPath) {
+    throw new Error(
+      'rust pre-write requested but no Rust analyzer was found; set LUMIN_RUST_ANALYZER_BIN or run from a maintainer checkout with experiments/Cargo.toml'
+    );
+  }
+
+  return {
+    command: 'cargo',
+    prefixArgs: [
+      'run',
+      '--quiet',
+      '--manifest-path',
+      manifestPath,
+      '--package',
+      'lumin-rust-analyzer',
+      '--',
+    ],
+    source: 'cargo:experiments',
+    manifestPath,
+  };
 }
 
 function manifestEvidenceOptions() {
@@ -799,9 +861,70 @@ if (values['pre-write'] && values['post-write']) {
     preWriteBlock = {
       requested: true,
       ran: false,
+      engine: PRE_WRITE_ENGINE,
+      ...(PRE_WRITE_ENGINE === 'rust'
+        ? { language: 'rust', producer: 'lumin-rust-analyzer' }
+        : { language: 'js-ts', producer: 'pre-write.mjs' }),
       reason: '--intent missing',
     };
     finalExitCode = 2;
+  } else if (PRE_WRITE_ENGINE === 'rust') {
+    if (!INCLUDE_TESTS || EFFECTIVE_EXCLUDES.length > 0) {
+      const reason = 'rust pre-write does not support audit-repo scan-scope flags yet; rerun without --production/--exclude or use JS pre-write';
+      process.stderr.write(`[audit-repo] --pre-write requested but skipped: ${reason}\n`);
+      preWriteBlock = {
+        requested: true,
+        ran: false,
+        engine: 'rust',
+        language: 'rust',
+        producer: 'lumin-rust-analyzer',
+        reason,
+      };
+      finalExitCode = 2;
+    } else {
+      const { execFileSync: _exec } = await import('node:child_process');
+      const intentPath = values.intent === '-' ? '-' : path.resolve(values.intent);
+      const sourceCommit = gitHeadCommit(ROOT);
+      const latestAdvisoryPath = path.join(OUT, 'rust-pre-write-advisory.latest.json');
+      try {
+        const invocation = rustAnalyzerInvocation();
+        const preArgs = [
+          ...invocation.prefixArgs,
+          'pre-write',
+          '--root', ROOT,
+          '--source-commit', sourceCommit,
+          '--intent', intentPath,
+          '--output', latestAdvisoryPath,
+        ];
+        _exec(invocation.command, preArgs, {
+          stdio: [values.intent === '-' ? 'inherit' : 'ignore', 'inherit', 'inherit'],
+        });
+        preWriteBlock = {
+          requested: true,
+          ran: true,
+          engine: 'rust',
+          language: 'rust',
+          producer: 'lumin-rust-analyzer',
+          advisoryPath: latestAdvisoryPath,
+          latestAdvisoryPath,
+          sourceCommit,
+          analyzerInvocation: {
+            source: invocation.source,
+            ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
+          },
+        };
+      } catch (e) {
+        preWriteBlock = {
+          requested: true,
+          ran: false,
+          engine: 'rust',
+          language: 'rust',
+          producer: 'lumin-rust-analyzer',
+          reason: `lumin-rust-analyzer pre-write exited non-zero: ${e.message}`,
+        };
+        finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
+      }
+    }
   } else {
     const { execFileSync: _exec } = await import('node:child_process');
     const preWritePath = path.join(__dirname, 'pre-write.mjs');
@@ -835,6 +958,9 @@ if (values['pre-write'] && values['post-write']) {
       preWriteBlock = {
         requested: true,
         ran: true,
+        engine: 'js',
+        language: 'js-ts',
+        producer: 'pre-write.mjs',
         advisoryPath,
         latestAdvisoryPath,
         advisoryInvocationId,
@@ -844,6 +970,9 @@ if (values['pre-write'] && values['post-write']) {
       preWriteBlock = {
         requested: true,
         ran: false,
+        engine: 'js',
+        language: 'js-ts',
+        producer: 'pre-write.mjs',
         reason: `pre-write.mjs exited non-zero: ${e.message}`,
       };
       finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;

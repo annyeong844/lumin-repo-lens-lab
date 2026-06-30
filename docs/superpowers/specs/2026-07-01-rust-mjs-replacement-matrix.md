@@ -148,3 +148,38 @@ The repo should move from leaf Rust analyzers outward:
 
 This keeps the migration honest: Rust replaces behavior it actually owns, and
 JS/TS keeps behavior Rust cannot yet prove.
+
+## Current Handoff Audit: 2026-07-01
+
+Checked source state:
+
+- `build-function-clone-index.mjs` imports `JS_FAMILY_LANGS` from
+  `_lib/lang.mjs` and builds snapshots with `languages: JS_FAMILY_LANGS`.
+  `_lib/lang.mjs` defines `JS_FAMILY_LANGS` as
+  `ts, tsx, mts, cts, js, jsx, mjs, cjs`; `.rs` is not included.
+- `build-shape-index.mjs` uses the same `JS_FAMILY_LANGS` snapshot scope.
+  The root JS shape producer is therefore the JS/TS language owner, not a Rust
+  file owner.
+- `lumin-rust-analyzer pre-write` is the Rust execution surface for Rust
+  pre-write source intents. It consumes typed `rust-source-health` in memory
+  and owns Rust name, file, exact shape-hash, function-signature, Cargo
+  dependency, inline-pattern, and planned-type-escape declaration lanes.
+- `pre-write.mjs` / `audit-repo.mjs --pre-write` remain JS lifecycle
+  orchestrators. They may continue to package JS/TS advisory output, but
+  `symbols.json`, `shape-index.json`, and `function-clones.json` must not be
+  treated as Rust absence evidence.
+- `audit-repo.mjs --pre-write --rust-pre-write` is the explicit public route
+  for Rust source intents. It invokes `lumin-rust-analyzer pre-write` and
+  records `preWrite.producer = "lumin-rust-analyzer"` in `manifest.json`.
+  Generated packages must supply `LUMIN_RUST_ANALYZER_BIN` or run from a
+  checkout that includes `experiments/Cargo.toml`; missing Rust
+  analyzer support is a hard-stop, not permission to fall back to JS.
+
+Result:
+
+- No code deletion is justified for `build-function-clone-index.mjs` or
+  `build-shape-index.mjs`; they already scan JS-family inputs only.
+- The owner handoff gap has narrowed to automatic language selection. The
+  explicit Rust route exists; a later slice may infer Rust routing from a
+  language declaration only after the intent transport has a checked
+  language field.

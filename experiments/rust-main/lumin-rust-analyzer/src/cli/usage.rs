@@ -6,6 +6,6 @@ pub(super) fn print_analyze() {
 
 pub(super) fn print_pre_write() {
     eprintln!(
-        "Usage: lumin-rust-analyzer pre-write --root <path> --source-commit <sha> --intent <path> [--output <path>] [--threads <n>] [--worker-stack-bytes <bytes>]"
+        "Usage: lumin-rust-analyzer pre-write --root <path> --source-commit <sha> --intent <path|-> [--output <path>] [--threads <n>] [--worker-stack-bytes <bytes>]"
     );
 }

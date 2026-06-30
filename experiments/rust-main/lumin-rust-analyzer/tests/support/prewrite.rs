@@ -1,6 +1,8 @@
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::Output;
+use std::process::Stdio;
 
 use anyhow::{Context, Result};
 use lumin_rust_source_health::{
@@ -116,6 +118,33 @@ impl PreWriteRepo {
             .arg(self.output_path())
             .output()
             .context("run rust pre-write analyzer")
+    }
+
+    pub fn run_stdin(&self, intent: &str) -> Result<Output> {
+        let _ = fs::remove_file(self.output_path());
+        let mut child = unified_analyzer_command()
+            .arg("pre-write")
+            .arg("--root")
+            .arg(self.temp.path())
+            .arg("--source-commit")
+            .arg("test-source-commit")
+            .arg("--intent")
+            .arg("-")
+            .arg("--output")
+            .arg(self.output_path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("spawn rust pre-write analyzer")?;
+        let mut stdin = child.stdin.take().context("rust pre-write stdin")?;
+        stdin
+            .write_all(intent.as_bytes())
+            .context("write rust pre-write stdin")?;
+        drop(stdin);
+        child
+            .wait_with_output()
+            .context("run rust pre-write analyzer with stdin")
     }
 
     pub fn write_bytes(&self, relative_path: impl AsRef<Path>, bytes: &[u8]) -> Result<()> {

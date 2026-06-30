@@ -276,6 +276,20 @@ If `--intent` is provided, pass the arguments through. Run:
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write $ARGUMENTS
 ```
 
+For Rust source intents, use the Rust execution surface explicitly:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --rust-pre-write $ARGUMENTS
+```
+
+This routes to `lumin-rust-analyzer pre-write` instead of the JS/TS
+`pre-write.mjs` owner. The generated package must have
+`LUMIN_RUST_ANALYZER_BIN` set to a built analyzer binary, or a maintainer
+checkout with `experiments/Cargo.toml` available. Do not silently
+fall back to JS/TS pre-write for Rust source intents.
+Rust pre-write currently rejects JS audit scan-scope flags such as
+`--production` and `--exclude` instead of pretending they were applied.
+
 Intent files must follow `references/pre-write-intent-shape.md`. `--intent -`
 streams that same JSON through stdin. Before
 coding, read the invocation-specific advisory path printed in the

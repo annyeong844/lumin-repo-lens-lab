@@ -89,9 +89,66 @@ Claude may:
 
 The gate is advisory; Claude retains authorial authority.
 
+### Rust Lane Migration
+
+`lumin-rust-analyzer pre-write` is the Rust execution surface for Rust source
+intents. It consumes typed `rust-source-health` evidence in memory. It does not
+run Cargo metadata or Cargo check because the current cargo/rustc oracle can
+verify diagnostics and clean build scope but cannot prove that an unreferenced
+repository name, shape, file, inline pattern, or dependency consumer is absent.
+The public audit orchestrator enters this route only through explicit Rust
+selection, currently `audit-repo.mjs --pre-write --rust-pre-write`; automatic
+language inference is not part of this contract. JS audit scan-scope flags such
+as `--production` and `--exclude` are not silently applied to this route; until
+Rust owns equivalent scan-scope semantics, combining them with Rust pre-write is
+a hard-stop.
+
+The JS/TS pre-write owner remains the execution surface for JS/TS source
+intents. The Rust command replaces the corresponding lanes only for Rust source
+input:
+
+- name lookup;
+- file lookup;
+- exact shape-hash lookup;
+- function-signature lookup;
+- Cargo dependency declaration/import lookup;
+- inline extraction pattern lookup;
+- planned type-escape declaration preservation.
+
+The Rust command accepts the checked pre-write intent transport. Missing arrays
+default with warnings and malformed present fields hard-stop. `taskId` is the
+only typed transport extension. Unknown extra fields hard-stop instead of
+reopening a dynamic `Value` map at the Rust boundary. Planned type escapes are
+validated and preserved as intent evidence; Rust does not invent a TypeScript
+`any` equivalent or post-write type-escape extractor.
+
+Rust shape intent lookup follows the JS/TS P4 discipline with Rust-owned facts:
+exact `shape.hash` matches `rust-source-health.files[*].ast.shapeHashes[]`, and
+function-signature hashes match
+`rust-source-health.files[*].ast.functionSignatures[]`. Field-only shapes and
+TypeScript `typeLiteral` strings remain unavailable rather than guessed.
+Unmatched exact hashes are grounded `NOT_OBSERVED` only when the Rust syntax
+input is complete: no parse errors, no skipped files, and no review-visible
+opaque surfaces.
+
+Rust dependency intent lookup uses `Cargo.toml` declarations and
+`rust-source-health` Rust path evidence. Cargo declarations are package/member
+scoped. A dependency declared by one workspace member does not make another
+member's consumer `DEPENDENCY_AVAILABLE` unless that member declares or inherits
+the dependency itself. Missing or malformed root Cargo manifests hard-stop this
+lane because there is no grounded declaration source.
+
+Rust inline extraction lookup consumes
+`rust-source-health.files[*].ast.inlinePatterns[]`. Explicit
+`refactorSources[]` declarations can produce `INLINE_PATTERN_MATCH` or
+`NO_INLINE_PATTERN_MATCH` only when the requested source files are parsed; if a
+source is missing, skipped, or parse-failed, the lane emits unavailable
+evidence instead of an absence claim.
+
 ## 4. Minimum script subset for fresh audit
 
-When `<output>/` lacks recent artifacts, run only what the intent items require:
+When `<output>/` lacks recent artifacts for the JS/TS pre-write surface, run
+only what the JS/TS intent items require:
 
 - Name lookup → `build-symbol-graph.mjs` (alone; fastest ground state).
 - Shape lookup → `build-shape-index.mjs` when the intent includes shape entries. Grounded matches still require an exact `shape.hash` or supported `shape.typeLiteral`. If the intent has only loose field names, or if no validated `shape-index.json` is available, emit `[확인 불가]` rather than a fuzzy match.
@@ -102,6 +159,14 @@ When `<output>/` lacks recent artifacts, run only what the intent items require:
   graph is unavailable or lacks `meta.supports.dependencyImportConsumers`,
   report the import count as unavailable; never render it as `0 observed
 consumers`.
+
+For Rust pre-write, do not build `symbols.json`, `shape-index.json`, or
+`function-clones.json` to answer Rust source intents. Run
+`lumin-rust-analyzer pre-write`; it obtains Rust name, file, shape, signature,
+dependency, and inline evidence from typed Rust source-health facts in memory.
+The outer JS audit orchestrator may still own lifecycle dispatch and advisory
+packaging until the public command route is migrated, but it must not treat the
+JS/TS artifacts above as Rust absence evidence.
 
 Never run the full pipeline for a pre-write. Latency budget: < 5 seconds total in warm-cache case, < 30 seconds in cold-cache.
 
