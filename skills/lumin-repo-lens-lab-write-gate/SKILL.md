@@ -86,6 +86,9 @@ Read the invocation-specific advisory path printed by pre-write before
 coding during the same uninterrupted change transaction. It is also
 recorded as `artifactPaths.invocationSpecific` in the advisory JSON and
 as `manifest.preWrite.advisoryPath` when run through the orchestrator.
+For Rust source changes, the Rust-native lookup artifact is recorded beside
+the lifecycle advisory as `rust-pre-write-artifact.<invocationId>.json`; use the
+standard `pre-write-advisory.<invocationId>.json` for post-write.
 `pre-write-advisory.latest.json` is only a convenience pointer; use the
 explicit `pre-write-advisory.<invocationId>.json` path for post-write
 across session or task boundaries.
@@ -117,6 +120,10 @@ Check:
 - scan-range parity against the pre-write run
 - unexpected new files in the scan range outside `intent.files`
 - advisory failures plus baseline, capability, and scan-range confidence
+
+For Rust source changes, the file delta remains useful. TS `any`-escape delta
+is not Rust source-health evidence; report it as not applicable or confidence
+limited rather than as a Rust clean/dirty verdict.
 
 If post-write cannot find the advisory, say that the post-write check is
 `unknown` and name the missing file. Do not invent a clean result.

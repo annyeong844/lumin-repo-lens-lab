@@ -110,6 +110,13 @@ as `--production` and `--exclude` are not silently applied to this route; until
 Rust owns equivalent scan-scope semantics, combining them with Rust pre-write is
 a hard-stop.
 
+The Rust-native lookup artifact is not the lifecycle advisory. The analyzer
+writes `rust-pre-write-artifact.<invocationId>.json`; the audit orchestrator
+wraps that result in the standard `pre-write-advisory.<invocationId>.json`
+shape so post-write can reuse the checked invocation, scan-range,
+file-inventory, and planned-file delta contract. Post-write must receive the
+standard advisory path, not the native Rust artifact path.
+
 The JS/TS pre-write owner remains the execution surface for JS/TS source
 intents. The Rust command replaces the corresponding lanes only for Rust source
 input:

@@ -183,6 +183,9 @@ Result:
 
 - No code deletion is justified for `build-function-clone-index.mjs` or
   `build-shape-index.mjs`; they already scan JS-family inputs only.
-- The owner handoff gap has narrowed to default command selection. The explicit
-  Rust route exists, and `--pre-write-engine auto` can route from a checked
-  language declaration without guessing.
+- The owner handoff gap has narrowed past command selection. The explicit Rust
+  route exists, `--pre-write-engine auto` routes from a checked language
+  declaration without guessing, and the orchestrator wraps Rust-native
+  pre-write output in the standard lifecycle advisory shape so post-write can
+  consume the invocation/file-delta contract without treating JS artifacts as
+  Rust absence evidence.

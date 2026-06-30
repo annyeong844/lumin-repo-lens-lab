@@ -34,6 +34,10 @@ When run through `audit-repo.mjs`, `manifest.preWrite.advisoryPath`
 points at that invocation-specific file and `latestAdvisoryPath` keeps
 the convenience pointer separately. Use the invocation-specific path for
 post-write; `latest` can be overwritten by a later pre-write run.
+For Rust source intents, the orchestrator also records the native Rust lookup
+artifact as `rust-pre-write-artifact.<invocationId>.json`. That native artifact
+is proof for Rust lookup lanes, but it is not a post-write input; post-write
+still consumes the standard `pre-write-advisory.<invocationId>.json` wrapper.
 
 The intent JSON normalizes these five top-level keys: `names`, `shapes`,
 `files`, `dependencies`, and `plannedTypeEscapes`. See
@@ -62,6 +66,9 @@ Exit codes through the orchestrator:
 Run after writing code to compare the pre-write `any` inventory snapshot
 with a fresh after-inventory, and to compare the pre-write file inventory
 plus `intent.files` with the current scanned file set.
+For Rust pre-write advisories, the file inventory comparison still applies.
+The TS `any` inventory comparison is not Rust source-health evidence and may be
+missing or confidence-limited because Rust has no TS `any` equivalent.
 
 ```bash
 node scripts/audit-repo.mjs --root . --output ./output --post-write --pre-write-advisory ./output/pre-write-advisory.<invocationId>.json

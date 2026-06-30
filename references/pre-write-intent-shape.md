@@ -51,6 +51,8 @@ JSON as self-declaration evidence. Structured `names` also preserve
 
 ## Example
 
+JS/TS source intent:
+
 ```json
 {
   "language": "js-ts",
@@ -75,6 +77,37 @@ JSON as self-declaration evidence. Structured `names` also preserve
   ],
   "files": ["src/features/time/format-timestamp.ts"],
   "dependencies": [{ "specifier": "date-fns", "why": "timestamp formatting" }],
+  "plannedTypeEscapes": []
+}
+```
+
+Rust source intent:
+
+```json
+{
+  "language": "rust",
+  "names": [
+    {
+      "name": "FormatTimestamp",
+      "kind": "struct",
+      "why": "new display model",
+      "ownerFile": "src/features/time/format_timestamp.rs"
+    },
+    {
+      "name": "format_timestamp",
+      "kind": "function",
+      "why": "new display helper",
+      "ownerFile": "src/features/time/format_timestamp.rs"
+    }
+  ],
+  "shapes": [
+    {
+      "name": "FormatTimestamp",
+      "hash": "rust-shape-hash.normalized.v1:..."
+    }
+  ],
+  "files": ["src/features/time/format_timestamp.rs"],
+  "dependencies": [{ "specifier": "time", "why": "timestamp formatting" }],
   "plannedTypeEscapes": []
 }
 ```

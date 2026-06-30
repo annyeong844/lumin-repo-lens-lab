@@ -291,6 +291,11 @@ This routes to `lumin-rust-analyzer pre-write` instead of the JS/TS
 `LUMIN_RUST_ANALYZER_BIN` set to a built analyzer binary, or a maintainer
 checkout with `experiments/Cargo.toml` available. Do not silently
 fall back to JS/TS pre-write for Rust source intents.
+Rust pre-write writes the native Rust lookup artifact as
+`rust-pre-write-artifact.<invocationId>.json` and the orchestrator wraps it in
+the standard lifecycle advisory shape at
+`pre-write-advisory.<invocationId>.json`. Use `manifest.preWrite.advisoryPath`
+for post-write, not the native Rust artifact path.
 Rust pre-write currently rejects JS audit scan-scope flags such as
 `--production` and `--exclude` instead of pretending they were applied.
 
@@ -339,6 +344,11 @@ before closing the task. Use plain language first: "one new any-like
 escape appeared" or "one unplanned file appeared" is better than a raw
 delta dump. Do not say the whole change is clean unless every relevant
 lane you checked supports that claim; name the remaining limits.
+
+Rust pre-write advisories are valid inputs here, but Rust has no TS `any`
+equivalent. In that route, post-write's language-neutral file delta remains
+useful; type-escape baseline fields may be missing or not applicable and must
+not be interpreted as Rust source-health evidence.
 
 ### canon-draft
 

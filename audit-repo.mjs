@@ -78,6 +78,13 @@ import {
   clearProducerPhaseTiming,
   readProducerPhaseTiming,
 } from './_lib/producer-phase-timing.mjs';
+import { collectFiles } from './_lib/collect-files.mjs';
+import { repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
+import {
+  generateInvocationId,
+  hashIntent,
+  writeAdvisory,
+} from './_lib/pre-write-artifact.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HELP_TEXT = `
@@ -505,6 +512,94 @@ function childProcessOptionsForIntent(route, originalIntentFlag) {
   }
   return {
     stdio: [originalIntentFlag === '-' ? 'inherit' : 'ignore', 'inherit', 'inherit'],
+  };
+}
+
+function readJsonFileStrict(filePath, label) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`${label} parse failed: ${error.message}`);
+  }
+}
+
+function buildFileInventoryBlock(failures) {
+  try {
+    const files = repoRelativeFileList(ROOT, collectFiles(ROOT, {
+      includeTests: INCLUDE_TESTS,
+      exclude: EFFECTIVE_EXCLUDES,
+    }));
+    return {
+      status: 'available',
+      pathMode: 'repo-relative',
+      fileCount: files.length,
+      files,
+    };
+  } catch (error) {
+    const reason = error?.message?.slice(0, 400) ?? 'unknown';
+    failures.push({ kind: 'file-inventory-hook-failed', reason });
+    return { status: 'failed', reason };
+  }
+}
+
+function buildRustPreWriteLifecycleAdvisory({
+  rustArtifact,
+  rustArtifactPath,
+  invocationId,
+  sourceCommit,
+}) {
+  const intent = { ...(rustArtifact.intent ?? {}), language: 'rust' };
+  const failures = [];
+  return {
+    invocationId,
+    intentHash: hashIntent(intent),
+    artifactPaths: {
+      invocationSpecific: path.join(OUT, `pre-write-advisory.${invocationId}.json`),
+      latest: path.join(OUT, 'pre-write-advisory.latest.json'),
+      rustNative: rustArtifactPath,
+    },
+    scanRange: {
+      root: ROOT,
+      output: OUT,
+      includeTests: INCLUDE_TESTS,
+      production: INCLUDE_TESTS === false,
+      excludes: EFFECTIVE_EXCLUDES,
+    },
+    intent,
+    intentWarnings: rustArtifact.intentWarnings ?? [],
+    evidenceAvailability: {
+      status: 'available',
+      producer: 'lumin-rust-analyzer',
+      rustNativeArtifactPath: rustArtifactPath,
+    },
+    lookups: rustArtifact.lookups ?? [],
+    shapeLookups: rustArtifact.shapeLookups ?? [],
+    fileLookups: rustArtifact.fileLookups ?? [],
+    dependencyLookups: rustArtifact.dependencyLookups ?? [],
+    inlinePatternLookups: rustArtifact.inlinePatternLookups ?? [],
+    cueCards: rustArtifact.cueCards ?? [],
+    suppressedCues: rustArtifact.suppressedCues ?? [],
+    unavailableEvidence: rustArtifact.unavailableEvidence ?? [],
+    cuePolicy: null,
+    boundaryChecks: [],
+    drift: null,
+    preWrite: {
+      fileInventory: buildFileInventoryBlock(failures),
+      rustNativeArtifactPath: rustArtifactPath,
+      sourceCommit,
+    },
+    rustPreWrite: {
+      schemaVersion: rustArtifact.schemaVersion ?? null,
+      policyVersion: rustArtifact.policyVersion ?? null,
+      producer: rustArtifact.meta?.producer ?? 'lumin-rust-analyzer',
+      coverage: rustArtifact.coverage ?? null,
+    },
+    capabilities: {
+      language: 'rust',
+      producer: 'lumin-rust-analyzer',
+      postWriteTypeEscapes: 'not-applicable',
+    },
+    failures,
   };
 }
 
@@ -1012,7 +1107,9 @@ if (values['pre-write'] && values['post-write']) {
       } else {
         const { execFileSync: _exec } = await import('node:child_process');
         const sourceCommit = gitHeadCommit(ROOT);
-        const latestAdvisoryPath = path.join(OUT, 'rust-pre-write-advisory.latest.json');
+        const advisoryInvocationId = generateInvocationId();
+        const rustNativePath = path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`);
+        const rustNativeLatestPath = path.join(OUT, 'rust-pre-write-artifact.latest.json');
         try {
           const invocation = rustAnalyzerInvocation();
           const preArgs = [
@@ -1021,9 +1118,19 @@ if (values['pre-write'] && values['post-write']) {
             '--root', ROOT,
             '--source-commit', sourceCommit,
             '--intent', preWriteRoute.childIntentFlag,
-            '--output', latestAdvisoryPath,
+            '--output', rustNativePath,
           ];
           _exec(invocation.command, preArgs, childProcessOptionsForIntent(preWriteRoute, values.intent));
+          const rustNativeContent = readFileSync(rustNativePath, 'utf8');
+          atomicWrite(rustNativeLatestPath, rustNativeContent);
+          const rustArtifact = readJsonFileStrict(rustNativePath, 'rust pre-write artifact');
+          const advisory = buildRustPreWriteLifecycleAdvisory({
+            rustArtifact,
+            rustArtifactPath: rustNativePath,
+            invocationId: advisoryInvocationId,
+            sourceCommit,
+          });
+          const { latestPath, specificPath } = writeAdvisory(OUT, advisory);
           preWriteBlock = {
             requested: true,
             ran: true,
@@ -1031,8 +1138,11 @@ if (values['pre-write'] && values['post-write']) {
             language: 'rust',
             producer: 'lumin-rust-analyzer',
             engineSelection: preWriteRoute.engineSelection,
-            advisoryPath: latestAdvisoryPath,
-            latestAdvisoryPath,
+            advisoryPath: specificPath,
+            latestAdvisoryPath: latestPath,
+            advisoryInvocationId,
+            rustNativeArtifactPath: rustNativePath,
+            rustNativeLatestPath,
             sourceCommit,
             analyzerInvocation: {
               source: invocation.source,
