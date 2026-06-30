@@ -1092,7 +1092,7 @@ if (values['pre-write'] && values['post-write']) {
 
     if (preWriteRoute?.engine === 'rust') {
       if (!INCLUDE_TESTS || EFFECTIVE_EXCLUDES.length > 0) {
-        const reason = 'rust pre-write does not support audit-repo scan-scope flags yet; rerun without --production/--exclude or use JS pre-write';
+        const reason = 'rust pre-write does not support audit-repo scan-scope flags yet; rerun without --production/--exclude';
         process.stderr.write(`[audit-repo] --pre-write requested but skipped: ${reason}\n`);
         preWriteBlock = {
           requested: true,
