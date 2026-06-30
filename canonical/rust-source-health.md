@@ -208,7 +208,7 @@ suppression for Rust syntax names such as `to_string`, `unwrap`, `clone`, and
 `collect`, plus ubiquitous Rust constructor, macro, and method tokens such as
 `Some`, `None`, `Ok`, `Err`, `vec`, `Box`, `Rc`, `Arc`, and `format` that
 otherwise dominate review candidates. The calibration is serialized as
-`rust-function-clone-near-calibration.v6`, including
+`rust-function-clone-near-calibration.v7`, including
 `minSignificantCallTokenLen = 4`, `minSingleTokenIdf = 3.0`,
 `callIdfSaturation = 6.0`, the Rust generic-token suppression set, and the
 required matching callable qualifiers. Rust computes IDF from the current
@@ -225,6 +225,17 @@ the same deterministic IDF gate should be ported back to the TS/JS function
 clone scorer. Near candidates also require matching Rust callable qualifiers
 (`async`, `unsafe`, and `const`) before scoring; mixed qualifier pairs are not
 review candidates.
+Rust also treats repeated manual `impl Debug for ... { fn fmt(...) }`
+formatter-builder bodies as formatter boilerplate, not near-clone review
+evidence. This guard is owner-aware: tokens such as `debug_struct`, `field`,
+`entry`, `finish`, and `finish_non_exhaustive` are skipped only when both
+functions are `fmt` methods owned by a `Debug` trait implementation. Those
+tokens remain valid evidence in ordinary Rust functions. The skipped Debug
+formatter pairs are counted in
+`functionCloneGroups.candidateGenerationSummary.debugFormatterBoilerplateSkippedPairCount`
+so the artifact distinguishes owner-aware boilerplate suppression from absence
+of near evidence. TS/JS does not need this exact guard because it does not have
+Rust's trait-owned `Debug#fmt` formatter pattern.
 Rust near-function clone candidates use bounded retrieval for large repositories
 instead of exhaustive retained-token pair scans. Low-discrimination call-token
 buckets do not generate pairs, but pairs that also share retained

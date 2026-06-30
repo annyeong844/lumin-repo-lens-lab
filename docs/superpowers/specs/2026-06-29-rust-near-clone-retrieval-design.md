@@ -190,6 +190,7 @@ Add a machine-readable diagnostics surface under function clone groups:
       "bodyLocBandMismatch": 5000,
       "statementCountBandMismatch": 900
     },
+    "debugFormatterBoilerplateSkippedPairCount": 120,
     "compatibilitySkippedPairEstimateKind": "raw-partition-estimate-does-not-enumerate-rejected-pairs",
     "nearFunctionCandidateCountScope": "bounded-retrieval-retained-evidence"
   },
@@ -220,6 +221,15 @@ Retained-side rejection diagnostics must follow the same rule. Any field that
 describes pairs avoided by compatibility partitioning is an estimate computed
 from posting sizes, not an exact count gathered by enumerating rejected pairs.
 
+Rust owner-aware boilerplate skips must also be artifact-visible. Pairs where
+both sides are `fmt` methods owned by a `Debug` trait implementation and share
+formatter-builder calls such as `debug_struct`, `field`, `entry`, `finish`, or
+`finish_non_exhaustive` are not near-clone review candidates. The skip is not a
+global token blacklist: those same call tokens remain valid evidence outside
+`Debug#fmt`. The summary field
+`debugFormatterBoilerplateSkippedPairCount` counts those generated-owner
+boilerplate pairs.
+
 ## Policy And Versioning
 
 The near policy remains `function-clone-near-policy-v1` unless the scoring
@@ -229,7 +239,7 @@ The Rust calibration version should bump because candidate generation semantics
 change:
 
 ```text
-rust-function-clone-near-calibration.v6
+rust-function-clone-near-calibration.v7
 ```
 
 The policy should expose:

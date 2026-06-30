@@ -109,6 +109,7 @@ pub struct AstNearFunctionCandidateGenerationSummary {
     pub scored_pair_count: usize,
     pub compatibility_skipped_raw_pair_estimate_by_reason:
         AstNearFunctionCompatibilitySkippedPairEstimates,
+    pub debug_formatter_boilerplate_skipped_pair_count: usize,
     pub compatibility_skipped_pair_estimate_kind: &'static str,
     pub near_function_candidate_count_scope: &'static str,
 }
@@ -123,6 +124,7 @@ impl Default for AstNearFunctionCandidateGenerationSummary {
             scored_pair_count: 0,
             compatibility_skipped_raw_pair_estimate_by_reason:
                 AstNearFunctionCompatibilitySkippedPairEstimates::default(),
+            debug_formatter_boilerplate_skipped_pair_count: 0,
             compatibility_skipped_pair_estimate_kind:
                 RUST_FUNCTION_CLONE_NEAR_COMPATIBILITY_SKIPPED_PAIR_ESTIMATE_KIND,
             near_function_candidate_count_scope: RUST_FUNCTION_CLONE_NEAR_CANDIDATE_COUNT_SCOPE,

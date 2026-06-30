@@ -35,6 +35,7 @@ pub(super) fn build_near_function_candidates(
             let significant_call_tokens = tokens::significant_call_tokens(member.fact);
             NearFact {
                 name_tokens: tokens::name_tokens(&member.fact.name),
+                is_debug_formatter_boilerplate: tokens::is_debug_formatter_boilerplate(member.fact),
                 member,
                 identity,
                 significant_call_tokens,
@@ -198,6 +199,14 @@ impl<'facts, 'state> CandidateGenerationState<'facts, 'state> {
             &self.eligible[right_index].retained_call_tokens,
             call_token,
         ) {
+            return;
+        }
+
+        if self.eligible[left_index].is_debug_formatter_boilerplate
+            && self.eligible[right_index].is_debug_formatter_boilerplate
+        {
+            self.diagnostics
+                .debug_formatter_boilerplate_skipped_pair_count += 1;
             return;
         }
 

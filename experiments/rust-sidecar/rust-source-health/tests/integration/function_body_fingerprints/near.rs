@@ -49,7 +49,7 @@ pub fn load_user_settings(raw: &str) -> usize {
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["calibrationVersion"],
-        "rust-function-clone-near-calibration.v6"
+        "rust-function-clone-near-calibration.v7"
     );
     assert_eq!(
         groups["policy"]["nearCandidatePolicy"]["retrievalContractVersion"],
@@ -165,6 +165,110 @@ pub fn load_user_settings(raw: &str) -> usize {
     assert!(candidate["reason"]
         .as_str()
         .is_some_and(|reason| reason.contains("not proof of semantic equivalence")));
+
+    Ok(())
+}
+
+#[test]
+fn function_body_near_candidates_skip_debug_formatter_boilerplate_pairs() {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub struct Alpha {
+    id: usize,
+}
+
+impl std::fmt::Debug for Alpha {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Alpha")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+
+pub struct Beta {
+    id: usize,
+}
+
+impl std::fmt::Debug for Beta {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Beta")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let groups = &artifact["functionCloneGroups"];
+
+    assert_eq!(artifact["summary"]["functionCloneNearCandidates"], 0);
+    assert_eq!(
+        groups["candidateGenerationSummary"]["debugFormatterBoilerplateSkippedPairCount"],
+        1
+    );
+    assert!(near_candidates(&artifact).iter().all(|candidate| {
+        !candidate["identities"]
+            .as_array()
+            .is_some_and(|identities| {
+                identities.iter().all(|identity| {
+                    identity
+                        .as_str()
+                        .is_some_and(|identity| identity.contains("Debug#fmt"))
+                })
+            })
+    }));
+}
+
+#[test]
+fn function_body_near_candidates_keep_formatter_named_tokens_outside_debug_impls() -> Result<()> {
+    let mut source = String::new();
+    for index in 0..64 {
+        source.push_str(&format!("pub fn filler_{index}() -> usize {{ {index} }}\n"));
+    }
+    source.push_str(
+        r#"
+pub fn project_alpha(input: &Domain) -> usize {
+    let value = input.field("alpha");
+    let rendered = input.finish_non_exhaustive(value);
+    rendered.len()
+}
+
+pub fn project_beta(input: &Domain) -> usize {
+    let value = input.field("beta");
+    let rendered = input.finish_non_exhaustive(value);
+    if rendered.is_empty() {
+        return 0;
+    }
+    rendered.len()
+}
+"#,
+    );
+
+    let artifact = analyze_file("src/lib.rs", &source);
+    let candidate = near_candidates(&artifact)
+        .iter()
+        .find(|candidate| {
+            identity_list_contains(candidate, "src/lib.rs::project_alpha")
+                && identity_list_contains(candidate, "src/lib.rs::project_beta")
+        })
+        .context("formatter-named non-Debug near candidate")?;
+
+    assert_eq!(
+        artifact["functionCloneGroups"]["candidateGenerationSummary"]
+            ["debugFormatterBoilerplateSkippedPairCount"],
+        0
+    );
+    assert!(candidate["sharedCallTokens"]
+        .as_array()
+        .is_some_and(|tokens| tokens.iter().any(|token| token == "field")
+            && tokens.iter().any(|token| token == "finish_non_exhaustive")));
 
     Ok(())
 }

@@ -78,7 +78,7 @@ pub const RUST_FUNCTION_CLONE_NEAR_POLICY_ID: &str = "function-clone-near-policy
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_VERSION: &str = "function-clone-near-policy-v1";
 pub const RUST_FUNCTION_CLONE_NEAR_POLICY_CLASS: &str = "review";
 pub const RUST_FUNCTION_CLONE_NEAR_CALIBRATION_VERSION: &str =
-    "rust-function-clone-near-calibration.v6";
+    "rust-function-clone-near-calibration.v7";
 pub const RUST_FUNCTION_CLONE_NEAR_RETRIEVAL_CONTRACT_VERSION: &str =
     "function-clone-near-retrieval.v1";
 pub const RUST_FUNCTION_CLONE_NEAR_CANDIDATE_GENERATION_MODE: &str = "bounded-retrieval";
