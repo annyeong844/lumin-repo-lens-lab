@@ -135,6 +135,8 @@ try {
     existsSync(path.join(path.dirname(OUT), 'lumin-repo-lens-lab-canon/SKILL.md')) &&
     existsSync(path.join(OUT, 'README.md')) &&
     existsSync(path.join(OUT, 'canonical/index.md')) &&
+    existsSync(path.join(OUT, 'canonical/evidence-ladder.md')) &&
+    existsSync(path.join(OUT, 'canonical/oracle-registry.json')) &&
     existsSync(path.join(OUT, 'templates/README.md')) &&
     existsSync(path.join(OUT, 'templates/report-template.md')) &&
     existsSync(path.join(OUT, 'templates/refactor-plan-template.md')) &&
@@ -411,20 +413,25 @@ try {
   const packagedCanonFiles = readdirSync(path.join(OUT, 'canonical'))
     .filter((name) => name.endsWith('.md'))
     .sort();
+  const packagedCanonJsonFiles = readdirSync(path.join(OUT, 'canonical'))
+    .filter((name) => name.endsWith('.json'))
+    .sort();
   const selfAuditCanonFacts = ['helper-registry.md', 'naming.md', 'topology.md', 'type-ownership.md'];
   assert('SP9b. generated package excludes maintainer self-audit canonical fact snapshots',
-    packagedCanonFiles.length === 9 &&
+    packagedCanonFiles.length === 10 &&
     selfAuditCanonFacts.every((name) => !packagedCanonFiles.includes(name)) &&
     packagedCanonFiles.includes('index.md') &&
     packagedCanonFiles.includes('invariants.md') &&
     packagedCanonFiles.includes('mode-contract.md') &&
     packagedCanonFiles.includes('pre-write-gate.md') &&
+    packagedCanonFiles.includes('evidence-ladder.md') &&
     packagedCanonFiles.includes('fact-model.md') &&
     packagedCanonFiles.includes('identity-and-alias.md') &&
     packagedCanonFiles.includes('classification-gates.md') &&
     packagedCanonFiles.includes('any-contamination.md') &&
-    packagedCanonFiles.includes('canon-drift.md'),
-    JSON.stringify(packagedCanonFiles, null, 2));
+    packagedCanonFiles.includes('canon-drift.md') &&
+    JSON.stringify(packagedCanonJsonFiles) === JSON.stringify(['oracle-registry.json']),
+    JSON.stringify({ packagedCanonFiles, packagedCanonJsonFiles }, null, 2));
 
   const selfAuditOut = path.join(TMP, 'generated-self-audit');
   const selfCheck = spawnSync(NODE, [
