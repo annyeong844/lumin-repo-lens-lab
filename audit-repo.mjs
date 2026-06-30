@@ -136,7 +136,8 @@ Flags:
   --strict-post-write-confidence
                            exit 2 when post-write delta confidence is limited
   --pre-write-engine <js|rust|auto>
-                           pre-write execution surface (default: js)
+                         pre-write owner selection (default: auto)
+                           pre-write execution surface
   --rust-pre-write         alias for --pre-write-engine rust
   --strict-check-canon     escalate drift to exit 1, all-fail to exit 2
   --sources, --source      canon source CSV (alias; --sources wins)
@@ -182,7 +183,7 @@ const CLI_OPTIONS = {
   // P1-3: opt-in pre-write integration. Not in default profiles.
   'pre-write': { type: 'boolean', default: false },
   intent: { type: 'string' },
-  'pre-write-engine': { type: 'string', default: 'js' },
+  'pre-write-engine': { type: 'string', default: 'auto' },
   'rust-pre-write': { type: 'boolean', default: false },
   // P2-2: opt-in post-write integration. Mutually exclusive with --pre-write.
   'post-write': { type: 'boolean', default: false },
