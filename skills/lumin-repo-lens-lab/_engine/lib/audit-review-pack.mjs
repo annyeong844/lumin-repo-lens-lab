@@ -168,9 +168,12 @@ function typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symb
     'symbols.json',
     ...(rustArtifactAvailable ? ['rust-analyzer-health.latest.json'] : []),
   ];
+  const rustEvidenceMission = rustArtifactAvailable
+    ? 'Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.'
+    : 'Rust analyzer evidence is not available for this run; JS/TS clone and shape artifacts are not Rust evidence.';
   return lane('Lane 2 — Types, Shapes, And Contract Review', renderLanePrompt({
     title: 'Type and shape reviewer',
-    mission: 'Look for JS/TS type-boundary and helper-shape drift that requires semantic judgment: repeated exported shapes, same-structure and near-function clone cues, and concentrated any/ignore-style escapes. Use Rust analyzer evidence, not JS/TS clone or shape artifacts, for Rust files.',
+    mission: `Look for JS/TS type-boundary and helper-shape drift that requires semantic judgment: repeated exported shapes, same-structure and near-function clone cues, and concentrated any/ignore-style escapes. ${rustEvidenceMission}`,
     artifacts,
     checks: [
       `Type escape total to screen: ${escapeCount}. Prioritize clusters over scattered one-offs.`,

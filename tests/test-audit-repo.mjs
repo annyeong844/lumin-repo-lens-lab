@@ -200,8 +200,28 @@ function assert(label, ok, detail = '') {
   });
   assert('A0f. review pack Lane 2 reminds reviewer to inspect anyContamination owner maps',
     reviewPack.includes('Identity-level anyContamination: 0 severe type owners, 1 severe helper owner') &&
-    reviewPack.includes('Inspect symbols.json owner maps'),
+    reviewPack.includes('Inspect symbols.json owner maps') &&
+    reviewPack.includes('Rust analyzer evidence is not available for this run; JS/TS clone and shape artifacts are not Rust evidence.') &&
+    reviewPack.includes('Rust analyzer artifact not available in this run') &&
+    !reviewPack.includes('Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.'),
     reviewPack);
+  const reviewPackWithRustEvidence = renderAuditReviewPack({
+    manifest: {
+      scanRange: { files: 10, languages: ['ts', 'rs'], includeTests: true },
+      rustAnalysis: { status: 'complete', available: true, files: 2 },
+    },
+    discipline: { totals: { ':any': 41 } },
+    symbols: {
+      meta: { supports: { anyContamination: true } },
+      helperOwnersByIdentity: {},
+      typeOwnersByIdentity: {},
+    },
+  });
+  assert('A0f2. review pack only lists Rust analyzer artifact when manifest marks it available',
+    reviewPackWithRustEvidence.includes('Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.') &&
+    reviewPackWithRustEvidence.includes('Artifacts for the controller to inspect first: discipline.json, shape-index.json, function-clones.json, checklist-facts.json, symbols.json, rust-analyzer-health.latest.json') &&
+    reviewPackWithRustEvidence.includes('Rust analyzer artifact available for 2 file(s)'),
+    reviewPackWithRustEvidence);
   const reviewPackWithResolverHints = renderAuditReviewPack({
     manifest: {
       scanRange: { files: 10, languages: ['ts'], includeTests: true },
