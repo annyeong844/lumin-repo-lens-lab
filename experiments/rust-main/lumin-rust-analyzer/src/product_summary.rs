@@ -1,5 +1,4 @@
 use lumin_rust_cargo_oracle::protocol::Summary as SemanticSummary;
-use lumin_rust_source_health::protocol::HealthResponse;
 use serde::Serialize;
 
 mod actions;
@@ -11,12 +10,13 @@ use crate::policy::{
     OracleBridgeStatus,
 };
 use crate::product_files::{ProductFilesProjection, SemanticRefCounts};
+use crate::syntax_phase::SyntaxPhase;
 use actions::ProductSemanticActionSummary;
 use semantic::ProductSemanticSummary;
 use syntax::ProductSyntaxSummary;
 
 pub(crate) fn product_summary<'a>(
-    syntax_phase: &'a HealthResponse,
+    syntax_phase: SyntaxPhase<'a>,
     files: &ProductFilesProjection<'_>,
     semantic_summary: &'a SemanticSummary,
     action_policy: &ActionPolicyProjection<'_>,

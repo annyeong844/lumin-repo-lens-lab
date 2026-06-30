@@ -31,14 +31,14 @@ pub struct FinalMeta {
     pub input: InputMeta,
 }
 
-pub(crate) struct CompactAnalysisResponse {
-    pub(crate) schema_version: u32,
-    pub(crate) meta: ResponseMeta,
-    pub(crate) summary: Summary,
-    pub(crate) function_clone_groups: crate::protocol::AstFunctionCloneGroups,
-    pub(crate) unused_definition_analysis: RustUnusedDefinitionAnalysis,
-    pub(crate) skipped_files: Vec<SkippedFile>,
-    pub(crate) files: BTreeMap<String, CompactFileHealth>,
+pub struct CompactAnalysisResponse {
+    pub schema_version: u32,
+    pub meta: ResponseMeta,
+    pub summary: Summary,
+    pub function_clone_groups: crate::protocol::AstFunctionCloneGroups,
+    pub unused_definition_analysis: RustUnusedDefinitionAnalysis,
+    pub skipped_files: Vec<SkippedFile>,
+    pub files: BTreeMap<String, CompactFileHealth>,
 }
 
 #[derive(Debug, Clone, Copy)]

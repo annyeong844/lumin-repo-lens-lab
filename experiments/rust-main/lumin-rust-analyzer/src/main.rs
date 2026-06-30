@@ -3,12 +3,13 @@ use std::process;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use lumin_rust_cargo_oracle::{run_oracle, OracleOptions};
+use lumin_rust_cargo_oracle::{run_oracle, CargoCheckMode, OracleOptions};
 use lumin_rust_common::{
     atomic_write_json, canonical_existing_dir_usage, is_usage_error, CliAction,
 };
-use lumin_rust_source_health::{analyze_root, RustSourceHealthOptions};
+use lumin_rust_source_health::{analyze_root, analyze_root_compact, RustSourceHealthOptions};
 use product_artifact::{unified_artifact, PhaseTimings};
+use syntax_phase::SyntaxPhaseOwned;
 
 mod calibration;
 mod cli;
@@ -18,6 +19,7 @@ mod prewrite;
 mod product_artifact;
 mod product_files;
 mod product_summary;
+mod syntax_phase;
 
 fn main() {
     match cli::parse_args() {
@@ -59,20 +61,13 @@ fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
     let analyzer_started = Instant::now();
     let root = canonical_existing_dir_usage(&options.root, "--root")?;
     let syntax_started = Instant::now();
-    let syntax = analyze_root(RustSourceHealthOptions {
-        root: root.clone(),
-        source_commit: options.source_commit.clone(),
-        thread_count: options.thread_count,
-        worker_stack_bytes: options.worker_stack_bytes,
-        retain_raw_name_refs: false,
-        retain_raw_signals: true,
-        retain_raw_ast_lanes: true,
-        cache_root: None,
-        incremental_enabled: false,
-        clear_incremental_cache: false,
-    })?;
+    let effective_source_health_profile = effective_source_health_profile(&options);
+    let syntax = analyze_syntax_phase(&options, &root, effective_source_health_profile)?;
     let syntax_ms = syntax_started.elapsed().as_millis();
-    let target_paths = oracle_targeting::targeted_oracle_paths(options.semantic_mode, &syntax);
+    let target_paths = syntax
+        .full_response()
+        .map(|syntax| oracle_targeting::targeted_oracle_paths(options.semantic_mode, syntax))
+        .unwrap_or_default();
     let semantic_started = Instant::now();
     let semantic_artifact = run_oracle(OracleOptions {
         root: root.clone(),
@@ -95,8 +90,9 @@ fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
         calibration::load_adjudication(options.calibration_adjudication.as_deref())?;
     let artifact = unified_artifact(
         &options,
+        effective_source_health_profile,
         &root,
-        &syntax,
+        syntax.as_phase(),
         &semantic_artifact,
         calibration_adjudication.as_ref(),
         timings,
@@ -118,6 +114,52 @@ fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
     };
 
     Ok(RunResult { output, stdout })
+}
+
+fn effective_source_health_profile(options: &cli::Options) -> cli::SourceHealthProfile {
+    match options.semantic_mode {
+        CargoCheckMode::MetadataOnly => options.source_health_profile,
+        CargoCheckMode::CargoCheck | CargoCheckMode::TargetedCargoCheck => {
+            cli::SourceHealthProfile::Full
+        }
+    }
+}
+
+fn analyze_syntax_phase(
+    options: &cli::Options,
+    root: &std::path::Path,
+    effective_profile: cli::SourceHealthProfile,
+) -> Result<SyntaxPhaseOwned> {
+    match effective_profile {
+        cli::SourceHealthProfile::Compact => Ok(SyntaxPhaseOwned::Compact(analyze_root_compact(
+            RustSourceHealthOptions {
+                root: root.to_path_buf(),
+                source_commit: options.source_commit.clone(),
+                thread_count: options.thread_count,
+                worker_stack_bytes: options.worker_stack_bytes,
+                retain_raw_name_refs: false,
+                retain_raw_signals: false,
+                retain_raw_ast_lanes: false,
+                cache_root: options.source_health_cache_root.clone(),
+                incremental_enabled: options.source_health_incremental_enabled,
+                clear_incremental_cache: options.source_health_clear_incremental_cache,
+            },
+        )?)),
+        cli::SourceHealthProfile::Full => Ok(SyntaxPhaseOwned::Full(analyze_root(
+            RustSourceHealthOptions {
+                root: root.to_path_buf(),
+                source_commit: options.source_commit.clone(),
+                thread_count: options.thread_count,
+                worker_stack_bytes: options.worker_stack_bytes,
+                retain_raw_name_refs: false,
+                retain_raw_signals: true,
+                retain_raw_ast_lanes: true,
+                cache_root: None,
+                incremental_enabled: false,
+                clear_incremental_cache: false,
+            },
+        )?)),
+    }
 }
 
 fn run_pre_write(options: cli::PreWriteOptions) -> Result<RunResult> {

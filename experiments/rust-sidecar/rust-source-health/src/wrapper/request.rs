@@ -64,9 +64,7 @@ pub fn analyze_root(options: RustSourceHealthOptions) -> Result<HealthResponse> 
     )
 }
 
-pub(crate) fn analyze_root_compact(
-    options: RustSourceHealthOptions,
-) -> Result<CompactAnalysisResponse> {
+pub fn analyze_root_compact(options: RustSourceHealthOptions) -> Result<CompactAnalysisResponse> {
     let root = absolute_existing_dir(&options.root)?;
     let (files, skipped_files) = collect_rust_file_entries(&root)?;
     let path_policy = default_path_policy();

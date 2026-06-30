@@ -1,4 +1,4 @@
-use lumin_rust_source_health::protocol::{FileHealth, SignalVisibility};
+use lumin_rust_source_health::protocol::{CompactFileHealth, FileHealth, SignalVisibility};
 
 use crate::policy::FileParseStatus;
 
@@ -28,6 +28,17 @@ impl ProductSyntaxFileSummary {
 
     pub(in crate::policy) fn from_file(file: &FileHealth) -> Self {
         Self::from_file_with_opaque_surface_counts(file, ast_opaque_surface_counts(&file.ast))
+    }
+
+    pub(in crate::policy) fn from_compact_file(file: &CompactFileHealth) -> Self {
+        Self {
+            parse_status: compact_parse_status(file),
+            parse_errors: file.parse.errors.len(),
+            review_signals: file.signal_summary.review,
+            muted_signals: file.signal_summary.muted,
+            review_opaque_surfaces: file.ast_summary.review_opaque_surfaces,
+            muted_opaque_surfaces: file.ast_summary.muted_opaque_surfaces,
+        }
     }
 
     pub(in crate::policy::syntax) fn from_file_with_opaque_surface_counts(
@@ -82,6 +93,14 @@ impl ProductSyntaxFileSummary {
 }
 
 fn parse_status(file: &FileHealth) -> FileParseStatus {
+    if file.parse.ok && file.parse.errors.is_empty() {
+        FileParseStatus::Ok
+    } else {
+        FileParseStatus::Error
+    }
+}
+
+fn compact_parse_status(file: &CompactFileHealth) -> FileParseStatus {
     if file.parse.ok && file.parse.errors.is_empty() {
         FileParseStatus::Ok
     } else {

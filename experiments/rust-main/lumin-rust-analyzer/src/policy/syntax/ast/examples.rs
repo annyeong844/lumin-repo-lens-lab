@@ -1,10 +1,11 @@
 use lumin_rust_source_health::protocol::{
     AstFacts, AstOpaqueReason, AstOpaqueSurface, AstOpaqueSurfaceKind, AstOpaqueSurfaceVisibility,
-    HealthResponse,
+    CompactAstSummary,
 };
 use serde::Serialize;
 
 use crate::policy::{AST_SAMPLE_LIMIT, FILE_AST_SAMPLE_LIMIT};
+use crate::syntax_phase::{SyntaxFile, SyntaxPhase};
 
 use super::super::ProductLocation;
 
@@ -23,6 +24,19 @@ pub(in crate::policy::syntax) fn ast_examples_for_product<'a>(
     }
 
     None
+}
+
+pub(in crate::policy::syntax) fn ast_examples_for_compact_product<'a>(
+    ast_summary: &'a CompactAstSummary,
+    include_examples: bool,
+) -> Option<AstExampleSamples<'a>> {
+    include_examples.then(|| AstExampleSamples {
+        review_opaque_surfaces: ast_summary
+            .review_opaque_surface_examples
+            .iter()
+            .map(ReviewOpaqueSurfaceExample::from_surface)
+            .collect(),
+    })
 }
 
 fn ast_examples(ast: &AstFacts) -> AstExampleSamples<'_> {
@@ -79,24 +93,42 @@ pub(crate) struct SyntaxReviewOpaqueSurfaceExample<'a> {
 }
 
 pub(crate) fn syntax_review_opaque_surface_examples(
-    response: &HealthResponse,
+    syntax: SyntaxPhase<'_>,
 ) -> Vec<SyntaxReviewOpaqueSurfaceExample<'_>> {
-    response
-        .files
-        .iter()
-        .flat_map(|(path, file)| {
-            file.ast
-                .opaque_surfaces
-                .iter()
-                .filter(|surface| surface.visibility == AstOpaqueSurfaceVisibility::Review)
-                .map(|surface| SyntaxReviewOpaqueSurfaceExample {
-                    file: path,
-                    kind: surface.kind,
-                    reason: surface.reason,
-                    detail: &surface.detail,
-                    location: ProductLocation::from(&surface.location),
-                })
-        })
-        .take(AST_SAMPLE_LIMIT)
-        .collect()
+    let mut examples = Vec::new();
+    for (path, file) in syntax.files() {
+        match file {
+            SyntaxFile::Full(file) => {
+                examples.extend(
+                    file.ast
+                        .opaque_surfaces
+                        .iter()
+                        .filter(|surface| surface.visibility == AstOpaqueSurfaceVisibility::Review)
+                        .map(|surface| SyntaxReviewOpaqueSurfaceExample {
+                            file: path,
+                            kind: surface.kind,
+                            reason: surface.reason,
+                            detail: &surface.detail,
+                            location: ProductLocation::from(&surface.location),
+                        }),
+                );
+            }
+            SyntaxFile::Compact(file) => {
+                examples.extend(file.ast_summary.review_opaque_surface_examples.iter().map(
+                    |surface| SyntaxReviewOpaqueSurfaceExample {
+                        file: path,
+                        kind: surface.kind,
+                        reason: surface.reason,
+                        detail: &surface.detail,
+                        location: ProductLocation::from(&surface.location),
+                    },
+                ));
+            }
+        }
+        if examples.len() >= AST_SAMPLE_LIMIT {
+            examples.truncate(AST_SAMPLE_LIMIT);
+            break;
+        }
+    }
+    examples
 }

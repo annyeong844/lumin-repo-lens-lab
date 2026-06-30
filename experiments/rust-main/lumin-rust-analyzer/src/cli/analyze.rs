@@ -8,7 +8,10 @@ use lumin_rust_common::{
     take_string, usage_error, CliAction,
 };
 
-use super::{usage, Command, Options, DEFAULT_WORKER_STACK_BYTES, MIN_WORKER_STACK_BYTES};
+use super::{
+    usage, Command, Options, SourceHealthProfile, DEFAULT_WORKER_STACK_BYTES,
+    MIN_WORKER_STACK_BYTES,
+};
 
 pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<Command>> {
     let mut root: Option<PathBuf> = None;
@@ -23,6 +26,10 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
     let mut semantic_mode = CargoCheckMode::MetadataOnly;
     let mut cargo_target_dir_mode = CargoTargetDirMode::IsolatedTemp;
     let mut calibration_adjudication: Option<PathBuf> = None;
+    let mut source_health_profile = SourceHealthProfile::Compact;
+    let mut source_health_cache_root: Option<PathBuf> = None;
+    let mut source_health_incremental_enabled = true;
+    let mut source_health_clear_incremental_cache = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -46,6 +53,15 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
             "--calibration-adjudication" => {
                 calibration_adjudication = Some(take_path(&mut args, "--calibration-adjudication")?)
             }
+            "--source-health-profile" => {
+                let value = take_string(&mut args, "--source-health-profile")?;
+                source_health_profile = parse_enum(&value, "--source-health-profile")?;
+            }
+            "--cache-root" => {
+                source_health_cache_root = Some(take_path(&mut args, "--cache-root")?)
+            }
+            "--no-incremental" => source_health_incremental_enabled = false,
+            "--clear-incremental-cache" => source_health_clear_incremental_cache = true,
             "--cargo-check" => semantic_mode = CargoCheckMode::CargoCheck,
             "--targeted-cargo-check" => semantic_mode = CargoCheckMode::TargetedCargoCheck,
             "--threads" => {
@@ -85,6 +101,10 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
         semantic_mode,
         cargo_target_dir_mode,
         calibration_adjudication,
+        source_health_profile,
+        source_health_cache_root,
+        source_health_incremental_enabled,
+        source_health_clear_incremental_cache,
     })))
 }
 

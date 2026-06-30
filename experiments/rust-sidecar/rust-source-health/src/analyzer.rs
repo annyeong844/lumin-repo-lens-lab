@@ -157,15 +157,8 @@ pub(crate) fn analyze_source_file_entries_compact(
                     file.absolute_path.display()
                 )
             })?;
-            let (path, health) = analyze_file_text(
-                &file.path,
-                &file.sha256,
-                &text,
-                edition,
-                false,
-                false,
-                false,
-            )?;
+            let (path, health) =
+                analyze_file_text(&file.path, &file.sha256, &text, edition, false, true, false)?;
             Ok((path, compact_file_analysis_from_health(health)))
         })
         .collect::<Result<BTreeMap<_, _>>>()

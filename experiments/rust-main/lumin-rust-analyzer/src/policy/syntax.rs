@@ -3,7 +3,8 @@ mod signals;
 mod summary;
 
 use lumin_rust_source_health::protocol::{
-    Facts, FileHealth, Location, ParseError, ParseStatus, PathClassification, PathMeta,
+    CompactFileHealth, Facts, FileHealth, Location, ParseError, ParseStatus, PathClassification,
+    PathMeta,
 };
 use serde::Serialize;
 
@@ -12,8 +13,14 @@ pub(crate) use signals::{syntax_review_signal_examples, SyntaxReviewSignalExampl
 pub(crate) use summary::ProductSyntaxFileSummary;
 
 use super::{FILE_SIGNAL_SAMPLE_LIMIT, PARSE_ERROR_SAMPLE_LIMIT};
-use ast::{ast_examples_for_product, ast_summary, AstExampleSamples, AstSummary};
-use signals::{signal_summary, signals_for_product, ProductSignalExample, SignalSummary};
+use ast::{
+    ast_examples_for_compact_product, ast_examples_for_product, ast_summary,
+    ast_summary_from_compact, AstExampleSamples, AstSummary,
+};
+use signals::{
+    compact_signals_for_product, signal_summary, signal_summary_from_compact, signals_for_product,
+    ProductSignalExample, SignalSummary,
+};
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -72,6 +79,33 @@ pub(crate) fn product_syntax_file(file: &FileHealth) -> ProductSyntaxFile<'_> {
             muted_signals: signals_for_product(&muted_signals, FILE_SIGNAL_SAMPLE_LIMIT),
             ast_summary,
             ast_examples: ast_examples_for_product(&file.ast, include_ast_examples),
+        },
+        summary,
+    }
+}
+
+pub(crate) fn product_compact_syntax_file(file: &CompactFileHealth) -> ProductSyntaxFile<'_> {
+    let ast_summary = ast_summary_from_compact(&file.ast_summary);
+    let summary = ProductSyntaxFileSummary::from_compact_file(file);
+    let include_ast_examples = summary.review_opaque_surfaces() > 0;
+
+    ProductSyntaxFile {
+        projection: ProductSyntaxFileProjection {
+            sha256: &file.sha256,
+            facts: ProductFactsProjection::from_facts(&file.facts),
+            parse: ProductParseProjection::from_parse(&file.parse),
+            path: ProductPathProjection::from_path(&file.path),
+            signal_summary: signal_summary_from_compact(&file.signal_summary),
+            review_signals: compact_signals_for_product(
+                &file.signal_summary.review_signal_examples,
+                FILE_SIGNAL_SAMPLE_LIMIT,
+            ),
+            muted_signals: compact_signals_for_product(
+                &file.signal_summary.muted_signal_examples,
+                FILE_SIGNAL_SAMPLE_LIMIT,
+            ),
+            ast_summary,
+            ast_examples: ast_examples_for_compact_product(&file.ast_summary, include_ast_examples),
         },
         summary,
     }

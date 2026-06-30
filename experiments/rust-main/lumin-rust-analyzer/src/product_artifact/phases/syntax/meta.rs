@@ -1,5 +1,5 @@
 use lumin_rust_source_health::protocol::{
-    ParserEdition, ParserEditionPolicy, ParserEditionSource, ParserKind,
+    IncrementalMeta, ParserEdition, ParserEditionPolicy, ParserEditionSource, ParserKind,
     PolicyMeta as SyntaxPolicyMeta, ResponseMeta as SyntaxMeta, RuntimeMeta as SyntaxRuntimeMeta,
     SidecarMeta as SyntaxSidecarMeta, SignalPolicyMeta as SyntaxSignalPolicyMeta,
     SourceHealthLimit, SourceHealthMode, SourceHealthProducer,
@@ -17,6 +17,8 @@ pub(super) struct SyntaxPhaseMetaBrief<'a> {
     limits: [SourceHealthLimit; 4],
     #[serde(skip_serializing_if = "Option::is_none")]
     sidecar: Option<SyntaxPhaseSidecarBrief<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    incremental: Option<&'a IncrementalMeta>,
 }
 
 impl<'a> SyntaxPhaseMetaBrief<'a> {
@@ -32,6 +34,7 @@ impl<'a> SyntaxPhaseMetaBrief<'a> {
                 .sidecar
                 .as_ref()
                 .map(SyntaxPhaseSidecarBrief::from_meta),
+            incremental: meta.incremental.as_ref(),
         }
     }
 }

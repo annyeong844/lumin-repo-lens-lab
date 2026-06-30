@@ -1,14 +1,13 @@
 use std::collections::BTreeMap;
 
-use lumin_rust_source_health::protocol::FileHealth;
-
 use super::entry::ProductFileDraft;
 use super::projection::ProductFilesProjection;
 use super::{SemanticDiagnosticRef, SemanticFindingRef};
 use crate::policy::{
-    product_file_oracle_bridge, product_syntax_file, CoverageEvidence, OracleBridge,
-    ProductFileSemanticSummary,
+    product_compact_syntax_file, product_file_oracle_bridge, product_syntax_file, CoverageEvidence,
+    OracleBridge, ProductFileSemanticSummary,
 };
+use crate::syntax_phase::SyntaxFile;
 
 pub(in crate::product_files) struct ProductFiles<'a> {
     files: BTreeMap<String, ProductFileDraft<'a>>,
@@ -21,8 +20,11 @@ impl<'a> ProductFiles<'a> {
         }
     }
 
-    pub(in crate::product_files) fn insert_syntax(&mut self, path: &str, file: &'a FileHealth) {
-        let syntax_file = product_syntax_file(file);
+    pub(in crate::product_files) fn insert_syntax(&mut self, path: &str, file: SyntaxFile<'a>) {
+        let syntax_file = match file {
+            SyntaxFile::Full(file) => product_syntax_file(file),
+            SyntaxFile::Compact(file) => product_compact_syntax_file(file),
+        };
         let summary = syntax_file.summary();
         let projection = syntax_file.into_projection();
         self.files

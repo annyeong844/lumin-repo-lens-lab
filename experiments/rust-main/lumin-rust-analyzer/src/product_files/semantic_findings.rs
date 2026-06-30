@@ -1,20 +1,20 @@
 use std::path::Path;
 
 use lumin_rust_cargo_oracle::protocol::Finding;
-use lumin_rust_source_health::protocol::HealthResponse;
 use serde::Serialize;
 
 use crate::policy::{
     product_semantic_finding, CoverageEvidence, ProductFileSemanticSummary,
     ProductSemanticFindingProjection,
 };
+use crate::syntax_phase::SyntaxPhase;
 
 use super::model::{SemanticFindingRef, SemanticRefCounts};
 use super::path::typed_finding_relative_path;
 
 pub(crate) fn semantic_findings_with_oracle_provenance<'a>(
     root: &Path,
-    syntax_phase: &'a HealthResponse,
+    syntax_phase: SyntaxPhase<'a>,
     findings: &'a [Finding],
     coverage: &CoverageEvidence<'_>,
 ) -> ProductSemanticFindings<'a> {
@@ -25,7 +25,7 @@ pub(crate) fn semantic_findings_with_oracle_provenance<'a>(
             let path = typed_finding_relative_path(root, finding);
             let syntax_file = path
                 .as_deref()
-                .and_then(|path| syntax_phase.files.get(path));
+                .and_then(|path| syntax_phase.full_file(path));
             let product_finding = product_semantic_finding(finding, syntax_file, coverage);
             ProductSemanticFindingEntry {
                 semantic_ref: SemanticFindingRef::from_index(index),

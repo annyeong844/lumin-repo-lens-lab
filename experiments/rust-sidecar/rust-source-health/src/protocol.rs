@@ -23,7 +23,9 @@ pub use ast::{
     AstOpaqueSurfaceVisibility, AstOpaqueVisibility, AstPathRef, AstShapeConfidence, AstShapeField,
     AstShapeFieldKind, AstShapeHash, AstShapeHashKind, AstShapeKind, AstUseTree, AstVisibility,
 };
-pub use compact::{CompactAstSummary, CompactFileHealth, CompactSignalSummary};
+pub use compact::{
+    CompactAstSummary, CompactFileHealth, CompactSignalExample, CompactSignalSummary,
+};
 pub use file::{Facts, FileHealth, FileSignalSummary};
 pub use function_clones::{
     AstFunctionCloneGroup, AstFunctionCloneGroupKind, AstFunctionCloneGroups,

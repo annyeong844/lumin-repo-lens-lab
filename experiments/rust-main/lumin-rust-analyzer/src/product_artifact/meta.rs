@@ -2,6 +2,8 @@ use lumin_rust_cargo_oracle::protocol::CargoTargetDirPolicy;
 use lumin_rust_cargo_oracle::{CargoCheckMode, CargoTargetDirMode};
 use serde::Serialize;
 
+use crate::cli::SourceHealthProfile;
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize)]
 pub(super) enum ProductArtifactProducer {
     #[serde(rename = "lumin-rust-analyzer")]
@@ -49,6 +51,8 @@ pub(super) struct ProductArtifactInput {
     pub(super) cargo_target_dir_mode: CargoTargetDirMode,
     pub(super) cargo_target_dir_policy: CargoTargetDirPolicy,
     pub(super) cargo_target_dir: String,
+    pub(super) source_health_profile: SourceHealthProfile,
+    pub(super) effective_source_health_profile: SourceHealthProfile,
 }
 
 #[derive(Debug, Serialize)]

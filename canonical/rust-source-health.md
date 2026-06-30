@@ -33,6 +33,15 @@ defaults to a compact artifact that keeps summary, skipped-file evidence,
 per-file signal summaries, parse status, file facts, and per-file AST counts
 while omitting raw signal arrays and raw AST fact arrays. Full raw signal and
 AST facts are diagnostic evidence and require `--artifact-profile full`.
+`lumin-rust-analyzer` product mode consumes the compact Rust source-health
+library response by default. The full raw `HealthResponse` remains a diagnostic
+mode for compatibility and deep inspection only. Compact product mode must
+preserve product-visible syntax summaries, function clone summaries, unused
+definition summaries, parse/skipped evidence, signal summary evidence, and
+opaque-surface examples through typed Rust protocol fields. If a compact lane
+omits raw evidence, the product artifact must either expose the corresponding
+summary/example projection or mark the raw lane as available only through the
+compatibility CLI.
 
 ## 3. Naming Lowering
 

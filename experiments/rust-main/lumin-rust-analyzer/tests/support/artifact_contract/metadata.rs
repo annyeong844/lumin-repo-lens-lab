@@ -9,6 +9,11 @@ pub(super) fn assert_metadata_and_policy(artifact: &Value) -> Result<()> {
         artifact["meta"]["input"]["cargoTargetDirMode"],
         "isolated-temp"
     );
+    assert_eq!(artifact["meta"]["input"]["sourceHealthProfile"], "compact");
+    assert_eq!(
+        artifact["meta"]["input"]["effectiveSourceHealthProfile"],
+        "full"
+    );
     assert_eq!(
         artifact["meta"]["input"]["cargoTargetDirPolicy"]["repoTargetDirUsed"],
         false

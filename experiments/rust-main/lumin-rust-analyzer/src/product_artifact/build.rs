@@ -2,7 +2,6 @@ use std::path::Path;
 
 use anyhow::Result;
 use lumin_rust_cargo_oracle::protocol::SemanticHealthArtifact;
-use lumin_rust_source_health::protocol::HealthResponse;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use super::meta::{
@@ -14,7 +13,7 @@ use super::phases::{semantic_phase_brief, syntax_phase_brief, PhaseBriefs, Seman
 use super::refs::ArtifactRefs;
 use super::semantic::{coverage_projection, oracle_plan_projection};
 use crate::calibration::CalibrationAdjudication;
-use crate::cli::Options;
+use crate::cli::{Options, SourceHealthProfile};
 use crate::policy::{
     action_policy, oracle_bridge, policy_metadata, CoverageEvidence, POLICY_VERSION,
 };
@@ -22,13 +21,15 @@ use crate::product_files::{
     merged_files, semantic_diagnostics_with_paths, semantic_findings_with_oracle_provenance,
 };
 use crate::product_summary::product_summary;
+use crate::syntax_phase::SyntaxPhase;
 
 const SCHEMA_VERSION: &str = "rust-analyzer-health.v1";
 
 pub(crate) fn unified_artifact<'a>(
     options: &Options,
+    effective_source_health_profile: SourceHealthProfile,
     root: &Path,
-    syntax_phase: &'a HealthResponse,
+    syntax_phase: SyntaxPhase<'a>,
     semantic_phase: &'a SemanticHealthArtifact,
     calibration_adjudication: Option<&CalibrationAdjudication>,
     timings: PhaseTimings,
@@ -42,14 +43,14 @@ pub(crate) fn unified_artifact<'a>(
     );
     let semantic_diagnostics = semantic_diagnostics_with_paths(root, &semantic_phase.diagnostics);
     let action_policy = action_policy(
-        &syntax_phase.summary,
+        syntax_phase.summary(),
         &semantic_phase.summary,
         &coverage_evidence,
         &semantic_phase.coverage,
         &semantic_phase.findings,
     );
     let oracle_bridge = oracle_bridge(
-        &syntax_phase.summary,
+        syntax_phase.summary(),
         &semantic_phase.summary,
         &action_policy,
         &coverage_evidence,
@@ -89,6 +90,8 @@ pub(crate) fn unified_artifact<'a>(
                 cargo_target_dir_mode: options.cargo_target_dir_mode,
                 cargo_target_dir_policy: semantic_phase.meta.input.cargo_target_dir_policy.clone(),
                 cargo_target_dir: semantic_phase.meta.input.cargo_target_dir.clone(),
+                source_health_profile: options.source_health_profile,
+                effective_source_health_profile,
             },
             output: options
                 .output

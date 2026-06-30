@@ -4,10 +4,13 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AstFacts, AstOpaqueMuteReason, AstOpaqueSurface, AstOpaqueSurfaceVisibility, Facts, FileHealth,
-    FileSignalSummary, ParseStatus, PathMeta,
+    FileSignalSummary, Location, ParseStatus, PathMeta, Severity, Signal, SignalKind,
+    SignalMuteReason, SignalVisibilityState,
 };
 
 const REVIEW_OPAQUE_SURFACE_EXAMPLE_LIMIT: usize = 10;
+const REVIEW_SIGNAL_EXAMPLE_LIMIT: usize = 10;
+const MUTED_SIGNAL_EXAMPLE_LIMIT: usize = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,7 +29,10 @@ impl CompactFileHealth {
             sha256: file.sha256.clone(),
             facts: file.facts.clone(),
             ast_summary: CompactAstSummary::from_ast(&file.ast),
-            signal_summary: CompactSignalSummary::from_summary(&file.signal_summary),
+            signal_summary: CompactSignalSummary::from_signals_and_summary(
+                &file.signals,
+                &file.signal_summary,
+            ),
             parse: file.parse.clone(),
             path: file.path.clone(),
         }
@@ -113,14 +119,59 @@ pub struct CompactSignalSummary {
     pub total: usize,
     pub review: usize,
     pub muted: usize,
+    pub by_kind: BTreeMap<SignalKind, usize>,
+    pub muted_by_reason: BTreeMap<SignalMuteReason, usize>,
+    pub review_signal_sample_limit: usize,
+    pub review_signal_examples: Vec<CompactSignalExample>,
+    pub muted_signal_sample_limit: usize,
+    pub muted_signal_examples: Vec<CompactSignalExample>,
 }
 
 impl CompactSignalSummary {
-    pub(crate) fn from_summary(summary: &FileSignalSummary) -> Self {
+    pub(crate) fn from_signals_and_summary(
+        signals: &[Signal],
+        summary: &FileSignalSummary,
+    ) -> Self {
         Self {
             total: summary.total,
             review: summary.review,
             muted: summary.muted,
+            by_kind: summary.signals_by_kind.clone(),
+            muted_by_reason: summary.muted_signals_by_reason.clone(),
+            review_signal_sample_limit: REVIEW_SIGNAL_EXAMPLE_LIMIT,
+            review_signal_examples: signals
+                .iter()
+                .filter(|signal| signal.visibility == SignalVisibilityState::Review)
+                .take(REVIEW_SIGNAL_EXAMPLE_LIMIT)
+                .map(CompactSignalExample::from_signal)
+                .collect(),
+            muted_signal_sample_limit: MUTED_SIGNAL_EXAMPLE_LIMIT,
+            muted_signal_examples: signals
+                .iter()
+                .filter(|signal| signal.visibility.visibility() == super::SignalVisibility::Muted)
+                .take(MUTED_SIGNAL_EXAMPLE_LIMIT)
+                .map(CompactSignalExample::from_signal)
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactSignalExample {
+    pub kind: SignalKind,
+    pub severity: Severity,
+    pub mute_reason: Option<SignalMuteReason>,
+    pub location: Location,
+}
+
+impl CompactSignalExample {
+    fn from_signal(signal: &Signal) -> Self {
+        Self {
+            kind: signal.kind,
+            severity: signal.severity,
+            mute_reason: signal.visibility.mute_reason(),
+            location: signal.location.clone(),
         }
     }
 }
