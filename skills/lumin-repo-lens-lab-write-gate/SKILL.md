@@ -1,6 +1,6 @@
 ---
 name: lumin-repo-lens-lab-write-gate
-description: "Use before/after TS/JS code changes: add, edit, move, rename, refactor, make a helper/type/file/function, or ask if something already exists. Infer intent from plain language, run pre-write reuse screening, then post-write delta checks."
+description: "Use before/after JS/TS or Rust source code changes: add, edit, move, rename, refactor, make a helper/type/file/function, or ask if something already exists."
 ---
 
 # Lumin Repo Lens Write Gate
