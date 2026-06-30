@@ -5,12 +5,12 @@ use crate::protocol::{
     RUST_FUNCTION_CLONE_MIN_GROUP_SIZE,
 };
 
-use super::super::common::{member_identity, GroupMember};
+use super::super::common::{member_identity, FunctionBodyFactView, GroupMember};
 
-pub(super) fn group_from_members(
+pub(in crate::function_clones) fn group_from_members<B: FunctionBodyFactView>(
     kind: AstFunctionCloneGroupKind,
     hash: String,
-    mut members: Vec<GroupMember<'_>>,
+    mut members: Vec<GroupMember<'_, B>>,
     reason: &'static str,
 ) -> Option<AstFunctionCloneGroup> {
     if members.len() < RUST_FUNCTION_CLONE_MIN_GROUP_SIZE {
@@ -21,7 +21,7 @@ pub(super) fn group_from_members(
     let generated_only = members.iter().all(|member| member.generated);
     let exact_hash_count = members
         .iter()
-        .map(|member| member.fact.exact_body_hash.as_str())
+        .map(|member| member.fact.exact_body_hash())
         .collect::<BTreeSet<_>>()
         .len();
     let owner_files = members
@@ -32,26 +32,26 @@ pub(super) fn group_from_members(
         .collect::<Vec<_>>();
     let names = members
         .iter()
-        .map(|member| member.fact.name.clone())
+        .map(|member| member.fact.name().to_string())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
     let visibilities = members
         .iter()
-        .map(|member| member.fact.visibility)
+        .map(|member| member.fact.visibility())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
     let body_locs = members
         .iter()
-        .map(|member| member.fact.body_loc)
+        .map(|member| member.fact.body_loc())
         .collect::<Vec<_>>();
     let lines = members
         .iter()
         .map(|member| AstFunctionCloneLine {
             identity: member_identity(member),
             file: member.file.to_string(),
-            line: member.fact.location.line,
+            line: member.fact.line(),
         })
         .collect::<Vec<_>>();
     let shared_call_tokens = shared_call_tokens(&members);
@@ -77,24 +77,24 @@ pub(super) fn group_from_members(
     })
 }
 
-fn shared_call_tokens(members: &[GroupMember<'_>]) -> Vec<String> {
+fn shared_call_tokens<B: FunctionBodyFactView>(members: &[GroupMember<'_, B>]) -> Vec<String> {
     let Some((first, rest)) = members.split_first() else {
         return Vec::new();
     };
     let mut shared = first
         .fact
-        .call_tokens
+        .call_tokens()
         .iter()
-        .cloned()
+        .map(AsRef::as_ref)
         .collect::<BTreeSet<_>>();
     for member in rest {
         let tokens = member
             .fact
-            .call_tokens
+            .call_tokens()
             .iter()
-            .cloned()
+            .map(AsRef::as_ref)
             .collect::<BTreeSet<_>>();
-        shared = shared.intersection(&tokens).cloned().collect();
+        shared = shared.intersection(&tokens).copied().collect();
     }
-    shared.into_iter().collect()
+    shared.into_iter().map(str::to_string).collect()
 }

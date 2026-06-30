@@ -1,33 +1,32 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{
-    AstFunctionCloneLine, AstFunctionSignature, AstFunctionSignatureGroup,
-    AstFunctionSignatureGroupKind, AstVisibility, FileHealth, FunctionCloneRisk,
-    PathClassification, RUST_FUNCTION_CLONE_MIN_GROUP_SIZE,
+    AstFunctionCloneLine, AstFunctionSignatureGroup, AstFunctionSignatureGroupKind, AstVisibility,
+    FunctionCloneRisk, RUST_FUNCTION_CLONE_MIN_GROUP_SIZE,
     RUST_FUNCTION_CLONE_SIGNATURE_MIN_DOMAIN_IDF, RUST_FUNCTION_SIGNATURE_GENERIC_TYPE_TOKENS,
     RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
 };
 
-use super::common::{signature_member_identity, signature_text, SignatureMember};
+use super::common::{
+    signature_member_identity, signature_text, FunctionCloneFileView, FunctionSignatureFactView,
+    SignatureMember,
+};
 
-pub(super) fn group_signature_facts(
-    files: &BTreeMap<String, FileHealth>,
+pub(super) fn group_signature_facts<F: FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
 ) -> Vec<AstFunctionSignatureGroup> {
-    let mut by_hash = BTreeMap::<String, Vec<SignatureMember<'_>>>::new();
+    let mut by_hash = BTreeMap::<&str, Vec<SignatureMember<'_, F::SignatureFact>>>::new();
     let mut signature_count = 0usize;
     let mut document_frequency = BTreeMap::<String, usize>::new();
     for (file, health) in files {
-        let generated = health
-            .path
-            .classifications
-            .contains(&PathClassification::Generated);
-        for fact in &health.ast.function_signatures {
+        let generated = health.generated();
+        for fact in health.function_signatures() {
             signature_count += 1;
             for token in signature_domain_type_tokens(fact) {
                 *document_frequency.entry(token).or_default() += 1;
             }
             by_hash
-                .entry(fact.hash.clone())
+                .entry(fact.hash())
                 .or_default()
                 .push(SignatureMember {
                     file: file.as_str(),
@@ -40,7 +39,9 @@ pub(super) fn group_signature_facts(
 
     let mut groups = by_hash
         .into_iter()
-        .filter_map(|(hash, members)| signature_group_from_members(hash, members, &type_token_idfs))
+        .filter_map(|(hash, members)| {
+            signature_group_from_members(hash.to_string(), members, &type_token_idfs)
+        })
         .collect::<Vec<_>>();
     groups.sort_by(|left, right| {
         right
@@ -57,9 +58,9 @@ pub(super) fn review_visible_signature_group_count(groups: &[AstFunctionSignatur
     groups.iter().filter(|group| group.review_visible).count()
 }
 
-fn signature_group_from_members(
+pub(super) fn signature_group_from_members<S: FunctionSignatureFactView>(
     hash: String,
-    mut members: Vec<SignatureMember<'_>>,
+    mut members: Vec<SignatureMember<'_, S>>,
     type_token_idfs: &BTreeMap<String, f64>,
 ) -> Option<AstFunctionSignatureGroup> {
     if members.len() < RUST_FUNCTION_CLONE_MIN_GROUP_SIZE {
@@ -67,7 +68,7 @@ fn signature_group_from_members(
     }
     if members
         .first()
-        .is_some_and(|member| member.fact.return_type.is_none())
+        .is_some_and(|member| member.fact.return_type().is_none())
     {
         return None;
     }
@@ -89,13 +90,13 @@ fn signature_group_from_members(
         .collect::<Vec<_>>();
     let names = members
         .iter()
-        .map(|member| member.fact.name.clone())
+        .map(|member| member.fact.name().to_string())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
     let visibilities = members
         .iter()
-        .map(|member| member.fact.visibility)
+        .map(|member| member.fact.visibility())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -104,7 +105,7 @@ fn signature_group_from_members(
         .map(|member| AstFunctionCloneLine {
             identity: signature_member_identity(member),
             file: member.file.to_string(),
-            line: member.fact.location.line,
+            line: member.fact.line(),
         })
         .collect::<Vec<_>>();
     let has_non_public = visibilities
@@ -142,7 +143,7 @@ fn signature_group_from_members(
     })
 }
 
-fn signature_type_token_idfs(
+pub(super) fn signature_type_token_idfs(
     signature_count: usize,
     document_frequency: BTreeMap<String, usize>,
 ) -> BTreeMap<String, f64> {
@@ -157,7 +158,7 @@ fn signature_type_token_idfs(
 }
 
 fn signature_domain_idf_sum(
-    signature: &AstFunctionSignature,
+    signature: &impl FunctionSignatureFactView,
     type_token_idfs: &BTreeMap<String, f64>,
 ) -> f64 {
     signature_domain_type_tokens(signature)
@@ -166,18 +167,20 @@ fn signature_domain_idf_sum(
         .sum()
 }
 
-fn signature_domain_type_tokens(signature: &AstFunctionSignature) -> BTreeSet<String> {
+pub(super) fn signature_domain_type_tokens(
+    signature: &impl FunctionSignatureFactView,
+) -> BTreeSet<String> {
     let mut tokens = BTreeSet::new();
-    if let Some(generics) = &signature.generics {
+    if let Some(generics) = signature.generics() {
         push_domain_type_tokens(generics, &mut tokens);
     }
-    if let Some(receiver) = &signature.receiver {
-        push_domain_type_tokens(&receiver.text, &mut tokens);
+    if let Some(receiver) = signature.receiver_text() {
+        push_domain_type_tokens(receiver, &mut tokens);
     }
-    for param in &signature.params {
-        push_domain_type_tokens(&param.type_text, &mut tokens);
+    for param in signature.param_type_texts() {
+        push_domain_type_tokens(param, &mut tokens);
     }
-    if let Some(return_type) = &signature.return_type {
+    if let Some(return_type) = signature.return_type() {
         push_domain_type_tokens(return_type, &mut tokens);
     }
     tokens

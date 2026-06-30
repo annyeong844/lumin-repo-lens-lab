@@ -1,4 +1,5 @@
 mod ast;
+mod compact;
 mod file;
 mod function_clones;
 mod location;
@@ -22,7 +23,8 @@ pub use ast::{
     AstOpaqueSurfaceVisibility, AstOpaqueVisibility, AstPathRef, AstShapeConfidence, AstShapeField,
     AstShapeFieldKind, AstShapeHash, AstShapeHashKind, AstShapeKind, AstUseTree, AstVisibility,
 };
-pub use file::{Facts, FileHealth};
+pub use compact::{CompactAstSummary, CompactFileHealth, CompactSignalSummary};
+pub use file::{Facts, FileHealth, FileSignalSummary};
 pub use function_clones::{
     AstFunctionCloneGroup, AstFunctionCloneGroupKind, AstFunctionCloneGroups,
     AstFunctionCloneGroupsPolicy, AstFunctionCloneGroupsSupports, AstFunctionCloneInputError,
@@ -35,8 +37,9 @@ pub use function_clones::{
 };
 pub use location::Location;
 pub use meta::{
-    InputMeta, ParserMeta, PolicyMeta, ResponseMeta, RuntimeMeta, SidecarMeta, SignalPolicyMeta,
-    SkippedFile, SkippedFileReason, SourceHealthLimit, SourceHealthMode, SourceHealthProducer,
+    IncrementalMeta, InputMeta, ParserMeta, PolicyMeta, ResponseMeta, RuntimeMeta, SidecarMeta,
+    SignalPolicyMeta, SkippedFile, SkippedFileReason, SourceHealthLimit, SourceHealthMode,
+    SourceHealthProducer,
 };
 pub use parse::{ParseError, ParseStatus};
 pub use parser::{ParserEdition, ParserEditionPolicy, ParserEditionSource, ParserKind};
@@ -51,8 +54,9 @@ pub use unused_definitions::{
     RustUnusedDefinitionAction, RustUnusedDefinitionAnalysis, RustUnusedDefinitionCandidate,
     RustUnusedDefinitionCandidateKind, RustUnusedDefinitionDefinition,
     RustUnusedDefinitionDegradedScope, RustUnusedDefinitionEvidence,
-    RustUnusedDefinitionObservedReferences, RustUnusedDefinitionOwner, RustUnusedDefinitionPolicy,
-    RustUnusedDefinitionSafeAction, RustUnusedDefinitionSummary, RustUnusedDefinitionTier,
+    RustUnusedDefinitionExcludedCandidateProjection, RustUnusedDefinitionObservedReferences,
+    RustUnusedDefinitionOwner, RustUnusedDefinitionPolicy, RustUnusedDefinitionSafeAction,
+    RustUnusedDefinitionSummary, RustUnusedDefinitionTier,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -169,6 +173,9 @@ pub const SIGNAL_POLICY_VERSION: &str = "rust-source-health-signal-policy.v2";
 pub const RUST_UNUSED_DEFINITION_POLICY_ID: &str = "rust-unused-definition-policy-v1";
 pub const RUST_UNUSED_DEFINITION_TS_MODEL: &str = "dead-export-reachability-plus-action-safety";
 pub const RUST_UNUSED_DEFINITION_FP_GATE_NAMESPACE: &str = "RUST-FP";
+pub const RUST_UNUSED_DEFINITION_EXCLUDED_CANDIDATE_EXAMPLE_LIMIT: usize = 50;
+pub const RUST_UNUSED_DEFINITION_EXCLUDED_CANDIDATE_COUNT_SCOPE: &str =
+    "summary-counts-uncapped-excluded-candidates-may-be-projected";
 pub const RUST_UNUSED_DEFINITION_CANDIDATE_COUNT_SCOPE: &str =
     "observed-references-in-supported-rust-syntax-scopes";
 pub const RUST_UNUSED_DEFINITION_SAFE_ACTION_SCOPE: &str = "none-without-edit-proof";
@@ -192,6 +199,7 @@ pub const RUST_UNUSED_DEFINITION_ENTRYPOINT_GATE: &str = "RUST-FP-I";
 pub const RUST_UNUSED_DEFINITION_ENTRYPOINT_BLOCKER: &str = "rust-fp-i-rust-entrypoint";
 pub const RUST_UNUSED_DEFINITION_LOCAL_REF_SCOPE: &str =
     "crate-local-name-qualified-path-and-token-refs";
-pub const DEFAULT_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
+pub const MIN_WORKER_STACK_BYTES: usize = 1024 * 1024;
+pub const DEFAULT_WORKER_STACK_BYTES: usize = 4 * 1024 * 1024;
 pub const DEFAULT_INCLUDE: &[&str] = &["**/*.rs"];
 pub const DEFAULT_EXCLUDE: &[&str] = &["**/target/**", "**/vendor/**"];

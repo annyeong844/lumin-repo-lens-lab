@@ -16,7 +16,7 @@ pub fn request(files: Vec<Value>) -> Value {
         },
         "runtime": {
             "threadCount": 2,
-            "workerStackBytes": 16777216
+            "workerStackBytes": 4194304
         }
     })
 }

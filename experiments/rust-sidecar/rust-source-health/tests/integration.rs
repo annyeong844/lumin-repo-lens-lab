@@ -53,6 +53,8 @@ mod cli_hard_stops;
 mod file_and_parse;
 #[path = "integration/function_body_fingerprints.rs"]
 mod function_body_fingerprints;
+#[path = "integration/incremental_cache.rs"]
+mod incremental_cache;
 #[path = "integration/opaque_surfaces.rs"]
 mod opaque_surfaces;
 #[path = "integration/path_visibility.rs"]

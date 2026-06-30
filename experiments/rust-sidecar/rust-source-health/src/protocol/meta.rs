@@ -17,6 +17,8 @@ pub struct ResponseMeta {
     pub sidecar: Option<SidecarMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<InputMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incremental: Option<IncrementalMeta>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -82,6 +84,26 @@ pub struct SidecarMeta {
 #[serde(rename_all = "camelCase")]
 pub struct InputMeta {
     pub path_policy: PathPolicy,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncrementalMeta {
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_status: Option<String>,
+    pub changed_files: usize,
+    pub reused_files: usize,
+    pub dropped_files: usize,
+    pub invalidated_files: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

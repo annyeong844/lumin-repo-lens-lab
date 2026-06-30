@@ -17,6 +17,7 @@ use super::scoring::{
     format_score, range_similarity, round_score, saturated_call_token_idf_score,
     shared_token_idf_sum, token_idf, token_overlap,
 };
+use crate::function_clones::common::FunctionBodyFactView;
 
 pub(super) struct NearCandidateEvidence {
     pub(super) score: f64,
@@ -31,22 +32,22 @@ pub(super) struct NearCandidateEvidence {
     statement_count_similarity: f64,
 }
 
-pub(super) fn near_candidate_evidence_from_pair(
-    left: &NearFact<'_>,
-    right: &NearFact<'_>,
-    token_idfs: &BTreeMap<String, f64>,
+pub(super) fn near_candidate_evidence_from_pair<B: FunctionBodyFactView>(
+    left: &NearFact<'_, B>,
+    right: &NearFact<'_, B>,
+    token_idfs: &BTreeMap<&str, f64>,
 ) -> Option<NearCandidateEvidence> {
-    if left.member.fact.is_async != right.member.fact.is_async
-        || left.member.fact.is_unsafe != right.member.fact.is_unsafe
-        || left.member.fact.is_const != right.member.fact.is_const
+    if left.member.fact.is_async() != right.member.fact.is_async()
+        || left.member.fact.is_unsafe() != right.member.fact.is_unsafe()
+        || left.member.fact.is_const() != right.member.fact.is_const()
     {
         return None;
     }
     if left
         .member
         .fact
-        .param_count
-        .abs_diff(right.member.fact.param_count)
+        .param_count()
+        .abs_diff(right.member.fact.param_count())
         > RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA
     {
         return None;
@@ -71,10 +72,10 @@ pub(super) fn near_candidate_evidence_from_pair(
     let call_token_idf_score = saturated_call_token_idf_score(shared_call_token_idf_sum);
     let name_token_overlap = token_overlap(&left.name_tokens, &right.name_tokens);
     let body_loc_similarity =
-        range_similarity(left.member.fact.body_loc, right.member.fact.body_loc);
+        range_similarity(left.member.fact.body_loc(), right.member.fact.body_loc());
     let statement_count_similarity = range_similarity(
-        left.member.fact.statement_count,
-        right.member.fact.statement_count,
+        left.member.fact.statement_count(),
+        right.member.fact.statement_count(),
     );
     if body_loc_similarity < RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY
         || statement_count_similarity < RUST_FUNCTION_CLONE_NEAR_MIN_STATEMENT_COUNT_SIMILARITY
@@ -111,9 +112,9 @@ pub(super) fn near_candidate_evidence_from_pair(
     })
 }
 
-pub(super) fn near_pair_order_against_projected(
-    left: &NearFact<'_>,
-    right: &NearFact<'_>,
+pub(super) fn near_pair_order_against_projected<B: FunctionBodyFactView>(
+    left: &NearFact<'_, B>,
+    right: &NearFact<'_, B>,
     evidence: &NearCandidateEvidence,
     projected: &AstNearFunctionCandidate,
 ) -> std::cmp::Ordering {
@@ -124,9 +125,9 @@ pub(super) fn near_pair_order_against_projected(
         .then_with(|| pair_identity_key(left, right).cmp(&projected.identities.join("|")))
 }
 
-pub(super) fn build_near_candidate_from_evidence(
-    left: &NearFact<'_>,
-    right: &NearFact<'_>,
+pub(super) fn build_near_candidate_from_evidence<B: FunctionBodyFactView>(
+    left: &NearFact<'_, B>,
+    right: &NearFact<'_, B>,
     evidence: NearCandidateEvidence,
 ) -> AstNearFunctionCandidate {
     let mut pair = [left, right];
@@ -134,18 +135,18 @@ pub(super) fn build_near_candidate_from_evidence(
     let lines = pair
         .iter()
         .map(|fact| AstFunctionCloneLine {
-            identity: fact.identity.clone(),
+            identity: fact.identity.to_string(),
             file: fact.member.file.to_string(),
-            line: fact.member.fact.location.line,
+            line: fact.member.fact.line(),
         })
         .collect::<Vec<_>>();
     let body_locs = pair
         .iter()
-        .map(|fact| fact.member.fact.body_loc)
+        .map(|fact| fact.member.fact.body_loc())
         .collect::<Vec<_>>();
     let statement_counts = pair
         .iter()
-        .map(|fact| fact.member.fact.statement_count)
+        .map(|fact| fact.member.fact.statement_count())
         .collect::<Vec<_>>();
     let mut reasons = vec![
         format!(
@@ -178,7 +179,10 @@ pub(super) fn build_near_candidate_from_evidence(
 
     AstNearFunctionCandidate {
         kind: AstNearFunctionCandidateKind::NearFunctionCandidate,
-        identities: pair.iter().map(|fact| fact.identity.clone()).collect(),
+        identities: pair
+            .iter()
+            .map(|fact| fact.identity.to_string())
+            .collect(),
         owner_files: pair
             .iter()
             .map(|fact| fact.member.file.to_string())
@@ -187,7 +191,7 @@ pub(super) fn build_near_candidate_from_evidence(
             .collect(),
         names: pair
             .iter()
-            .map(|fact| fact.member.fact.name.clone())
+            .map(|fact| fact.member.fact.name().to_string())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect(),
@@ -214,7 +218,10 @@ pub(super) fn build_near_candidate_from_evidence(
     }
 }
 
-fn pair_identity_key(left: &NearFact<'_>, right: &NearFact<'_>) -> String {
+fn pair_identity_key<B: FunctionBodyFactView>(
+    left: &NearFact<'_, B>,
+    right: &NearFact<'_, B>,
+) -> String {
     if left.identity <= right.identity {
         format!("{}|{}", left.identity, right.identity)
     } else {

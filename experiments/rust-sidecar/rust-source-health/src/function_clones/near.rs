@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{
-    AstFunctionCloneGroup, AstNearFunctionCandidate, AstSkippedLowDiscriminationBucket, FileHealth,
+    AstFunctionCloneGroup, AstNearFunctionCandidate, AstSkippedLowDiscriminationBucket,
     RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES, RUST_FUNCTION_CLONE_NEAR_MAX_PARAM_COUNT_DELTA,
     RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY,
     RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF,
@@ -20,21 +20,35 @@ use model::{
     QualifierSignature,
 };
 
-use super::common::{function_members, member_identity};
+use super::common::{
+    function_members, member_identity, FunctionBodyFactView, FunctionCloneFileView,
+};
 
-pub(super) fn build_near_function_candidates(
-    files: &BTreeMap<String, FileHealth>,
+pub(super) fn build_near_function_candidates<F: FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
+    exact_body_groups: &[AstFunctionCloneGroup],
+    structure_groups: &[AstFunctionCloneGroup],
+) -> NearFunctionCandidateProjection {
+    build_near_function_candidates_from_members(
+        function_members(files),
+        exact_body_groups,
+        structure_groups,
+    )
+}
+
+pub(super) fn build_near_function_candidates_from_members<B: FunctionBodyFactView>(
+    members: Vec<super::common::GroupMember<'_, B>>,
     exact_body_groups: &[AstFunctionCloneGroup],
     structure_groups: &[AstFunctionCloneGroup],
 ) -> NearFunctionCandidateProjection {
     let grouped = grouped_identity_set(exact_body_groups, structure_groups);
-    let mut all_facts = function_members(files)
+    let mut all_facts = members
         .into_iter()
         .map(|member| {
-            let identity = member_identity(&member);
+            let identity = member_identity(&member).into_boxed_str();
             let significant_call_tokens = tokens::significant_call_tokens(member.fact);
             NearFact {
-                name_tokens: tokens::name_tokens(&member.fact.name),
+                name_tokens: tokens::name_tokens(member.fact.name()),
                 is_debug_formatter_boilerplate: tokens::is_debug_formatter_boilerplate(member.fact),
                 is_display_formatter: tokens::is_display_formatter(member.fact),
                 member,
@@ -53,41 +67,39 @@ pub(super) fn build_near_function_candidates(
                 scoring::token_idf(token, &token_idfs)
                     >= RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF
             })
-            .cloned()
+            .copied()
             .collect();
     }
     let mut eligible = all_facts
         .drain(..)
         .filter(|fact| {
-            !grouped.contains(&fact.identity) && !fact.significant_call_tokens.is_empty()
+            !grouped.contains(fact.identity.as_ref()) && !fact.significant_call_tokens.is_empty()
         })
         .collect::<Vec<_>>();
+    drop(all_facts);
     eligible.sort_by(|left, right| left.identity.cmp(&right.identity));
     let eligible_function_count = eligible.len();
 
-    let mut all_by_call_token = BTreeMap::<String, Vec<usize>>::new();
-    for (index, fact) in eligible.iter().enumerate() {
+    let mut call_token_counts = BTreeMap::<&str, usize>::new();
+    for fact in &eligible {
         for token in &fact.significant_call_tokens {
-            all_by_call_token
-                .entry(token.clone())
-                .or_default()
-                .push(index);
+            *call_token_counts.entry(*token).or_default() += 1;
         }
     }
 
     let mut skipped_low_discrimination_buckets = Vec::new();
-    for (token, bucket) in &all_by_call_token {
+    for (token, function_count) in &call_token_counts {
         if scoring::token_idf(token, &token_idfs) >= RUST_FUNCTION_CLONE_NEAR_MIN_SINGLE_TOKEN_IDF {
             continue;
         }
-        let raw_pair_estimate = raw_pair_estimate(bucket.len());
+        let raw_pair_estimate = raw_pair_estimate(*function_count);
         if raw_pair_estimate == 0 {
             continue;
         }
         skipped_low_discrimination_buckets.push(AstSkippedLowDiscriminationBucket {
-            token: token.clone(),
+            token: (*token).to_string(),
             idf: scoring::round_score(scoring::token_idf(token, &token_idfs)),
-            function_count: bucket.len(),
+            function_count: *function_count,
             raw_pair_estimate,
             reason: "below-min-single-token-idf",
         });
@@ -106,12 +118,12 @@ pub(super) fn build_near_function_candidates(
     skipped_low_discrimination_buckets
         .truncate(RUST_FUNCTION_CLONE_NEAR_SKIPPED_BUCKET_SAMPLE_LIMIT);
 
-    let mut retained = BTreeMap::<String, BTreeMap<CompatibilityKey, Vec<usize>>>::new();
+    let mut retained = BTreeMap::<&str, BTreeMap<CompatibilityKey, Vec<usize>>>::new();
     for (index, fact) in eligible.iter().enumerate() {
         let key = compatibility_key(fact);
         for token in &fact.retained_call_tokens {
             retained
-                .entry(token.clone())
+                .entry(*token)
                 .or_default()
                 .entry(key.clone())
                 .or_default()
@@ -172,6 +184,8 @@ pub(super) fn build_near_function_candidates(
             }
         }
     }
+    drop(retained);
+    drop(eligible);
 
     NearFunctionCandidateProjection {
         review_visible_count,
@@ -180,15 +194,15 @@ pub(super) fn build_near_function_candidates(
     }
 }
 
-struct CandidateGenerationState<'facts, 'state> {
-    eligible: &'state [NearFact<'facts>],
-    token_idfs: &'state BTreeMap<String, f64>,
+struct CandidateGenerationState<'facts, 'state, B: FunctionBodyFactView> {
+    eligible: &'state [NearFact<'facts, B>],
+    token_idfs: &'state BTreeMap<&'facts str, f64>,
     diagnostics: &'state mut CandidateGenerationDiagnostics,
     review_visible_count: &'state mut usize,
     candidates: &'state mut Vec<AstNearFunctionCandidate>,
 }
 
-impl<'facts, 'state> CandidateGenerationState<'facts, 'state> {
+impl<'facts, 'state, B: FunctionBodyFactView> CandidateGenerationState<'facts, 'state, B> {
     fn generate_candidate_from_pair(
         &mut self,
         left_index: usize,
@@ -249,20 +263,20 @@ impl<'facts, 'state> CandidateGenerationState<'facts, 'state> {
     }
 }
 
-fn compatibility_key(fact: &NearFact<'_>) -> CompatibilityKey {
+fn compatibility_key<B: FunctionBodyFactView>(fact: &NearFact<'_, B>) -> CompatibilityKey {
     CompatibilityKey {
         qualifier_signature: QualifierSignature {
-            is_async: fact.member.fact.is_async,
-            is_unsafe: fact.member.fact.is_unsafe,
-            is_const: fact.member.fact.is_const,
+            is_async: fact.member.fact.is_async(),
+            is_unsafe: fact.member.fact.is_unsafe(),
+            is_const: fact.member.fact.is_const(),
         },
-        param_count: fact.member.fact.param_count,
+        param_count: fact.member.fact.param_count(),
         body_loc_band: range_band(
-            fact.member.fact.body_loc,
+            fact.member.fact.body_loc(),
             RUST_FUNCTION_CLONE_NEAR_MIN_BODY_LOC_SIMILARITY,
         ),
         statement_count_band: range_band(
-            fact.member.fact.statement_count,
+            fact.member.fact.statement_count(),
             RUST_FUNCTION_CLONE_NEAR_MIN_STATEMENT_COUNT_SIMILARITY,
         ),
     }
@@ -352,9 +366,9 @@ fn raw_pair_estimate(count: usize) -> usize {
     count.saturating_mul(count.saturating_sub(1)) / 2
 }
 
-fn has_earlier_shared_call_token(left: &[String], right: &[String], current_token: &str) -> bool {
+fn has_earlier_shared_call_token(left: &[&str], right: &[&str], current_token: &str) -> bool {
     left.iter()
-        .take_while(|token| token.as_str() < current_token)
+        .take_while(|token| **token < current_token)
         .any(|token| right.binary_search(token).is_ok())
 }
 
@@ -379,10 +393,10 @@ fn push_projected_candidate(
     sort_projected_candidates(candidates);
 }
 
-fn should_project_candidate(
+fn should_project_candidate<B: FunctionBodyFactView>(
     candidates: &[AstNearFunctionCandidate],
-    left: &NearFact<'_>,
-    right: &NearFact<'_>,
+    left: &NearFact<'_, B>,
+    right: &NearFact<'_, B>,
     evidence: &candidate::NearCandidateEvidence,
 ) -> bool {
     if candidates.len() < RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES {

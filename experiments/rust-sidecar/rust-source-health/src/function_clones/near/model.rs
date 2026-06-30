@@ -4,7 +4,7 @@ use crate::protocol::{
     RUST_FUNCTION_CLONE_NEAR_COMPATIBILITY_SKIPPED_PAIR_ESTIMATE_KIND,
 };
 
-use crate::function_clones::common::GroupMember;
+use crate::function_clones::common::{FunctionBodyFactView, GroupMember};
 
 pub(in crate::function_clones) struct NearFunctionCandidateProjection {
     pub(in crate::function_clones) review_visible_count: usize,
@@ -12,12 +12,12 @@ pub(in crate::function_clones) struct NearFunctionCandidateProjection {
     pub(in crate::function_clones) diagnostics: CandidateGenerationDiagnostics,
 }
 
-pub(super) struct NearFact<'a> {
-    pub(super) member: GroupMember<'a>,
-    pub(super) identity: String,
-    pub(super) significant_call_tokens: Vec<String>,
-    pub(super) retained_call_tokens: Vec<String>,
-    pub(super) name_tokens: Vec<String>,
+pub(super) struct NearFact<'a, B: FunctionBodyFactView> {
+    pub(super) member: GroupMember<'a, B>,
+    pub(super) identity: Box<str>,
+    pub(super) significant_call_tokens: Vec<&'a str>,
+    pub(super) retained_call_tokens: Vec<&'a str>,
+    pub(super) name_tokens: Vec<Box<str>>,
     pub(super) is_debug_formatter_boilerplate: bool,
     pub(super) is_display_formatter: bool,
 }

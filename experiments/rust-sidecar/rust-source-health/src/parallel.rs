@@ -1,4 +1,4 @@
-use crate::protocol::{RuntimeRequest, DEFAULT_WORKER_STACK_BYTES};
+use crate::protocol::{RuntimeRequest, MIN_WORKER_STACK_BYTES};
 use crate::usage_error;
 use anyhow::Result;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -18,9 +18,9 @@ impl TryFrom<RuntimeRequest> for RuntimeConfig {
                 "runtime.threadCount must be greater than zero when provided",
             ));
         }
-        if request.worker_stack_bytes < DEFAULT_WORKER_STACK_BYTES {
+        if request.worker_stack_bytes < MIN_WORKER_STACK_BYTES {
             return Err(usage_error(format!(
-                "runtime.workerStackBytes must be at least {DEFAULT_WORKER_STACK_BYTES}"
+                "runtime.workerStackBytes must be at least {MIN_WORKER_STACK_BYTES}"
             )));
         }
         Ok(Self {

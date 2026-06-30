@@ -3,28 +3,94 @@ mod common;
 mod input;
 mod near;
 mod signatures;
+mod stream;
 
 use std::collections::BTreeMap;
 
 use crate::protocol::{
-    AstFunctionCloneGroups, AstNearFunctionCandidateGenerationSummary,
-    AstNearFunctionCompatibilitySkippedPairEstimates, FileHealth, PathClassification, SkippedFile,
-    RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES, RUST_FUNCTION_CLONE_NEAR_SKIPPED_PAIR_ESTIMATE_KIND,
+    AstFunctionCloneGroup, AstFunctionCloneGroups, AstFunctionSignatureGroup,
+    AstNearFunctionCandidateGenerationSummary, AstNearFunctionCompatibilitySkippedPairEstimates,
+    FileHealth, SkippedFile, RUST_FUNCTION_CLONE_NEAR_MAX_CANDIDATES,
+    RUST_FUNCTION_CLONE_NEAR_SKIPPED_PAIR_ESTIMATE_KIND,
 };
 
+pub(crate) use common::FunctionCloneFile;
+
 pub(crate) fn group_function_body_fingerprints(
-    files: &BTreeMap<String, FileHealth>,
+    files: &mut BTreeMap<String, FileHealth>,
+    skipped_files: &[SkippedFile],
+    prune_compact_phase_lanes: bool,
+) -> AstFunctionCloneGroups {
+    let groups = group_function_clone_file_views(files, skipped_files);
+    if prune_compact_phase_lanes {
+        for file in files.values_mut() {
+            file.ast.function_signatures = Vec::new();
+            file.ast.function_body_fingerprints = Vec::new();
+        }
+    }
+    groups
+}
+
+pub(crate) fn group_function_clone_files(
+    files: &mut BTreeMap<String, FunctionCloneFile>,
+    skipped_files: &[SkippedFile],
+) -> AstFunctionCloneGroups {
+    group_function_clone_file_views_mut(files, skipped_files)
+}
+
+pub(crate) fn function_clone_accumulator() -> stream::FunctionCloneAccumulator {
+    stream::FunctionCloneAccumulator::new()
+}
+
+fn group_function_clone_file_views<F: common::FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
     skipped_files: &[SkippedFile],
 ) -> AstFunctionCloneGroups {
     let exact_body_groups = body::group_exact_body_groups(files);
     let structure_groups = body::group_structure_groups(files);
     let signature_groups = signatures::group_signature_facts(files);
+    finish_function_clone_groups(
+        files,
+        skipped_files,
+        exact_body_groups,
+        structure_groups,
+        signature_groups,
+    )
+}
+
+fn group_function_clone_file_views_mut(
+    files: &mut BTreeMap<String, FunctionCloneFile>,
+    skipped_files: &[SkippedFile],
+) -> AstFunctionCloneGroups {
+    let exact_body_groups = body::group_exact_body_groups(files);
+    let structure_groups = body::group_structure_groups(files);
+    let signature_groups = signatures::group_signature_facts(files);
+    for file in files.values_mut() {
+        file.prune_grouped_lanes_for_near();
+    }
+    finish_function_clone_groups(
+        files,
+        skipped_files,
+        exact_body_groups,
+        structure_groups,
+        signature_groups,
+    )
+}
+
+fn finish_function_clone_groups<F: common::FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
+    skipped_files: &[SkippedFile],
+    exact_body_groups: Vec<AstFunctionCloneGroup>,
+    structure_groups: Vec<AstFunctionCloneGroup>,
+    signature_groups: Vec<AstFunctionSignatureGroup>,
+) -> AstFunctionCloneGroups {
     let near_function_candidates =
         near::build_near_function_candidates(files, &exact_body_groups, &structure_groups);
     let near_diagnostics = near_function_candidates.diagnostics;
     let files_with_parse_errors = input::files_with_parse_errors(files);
     let files_with_read_errors = input::files_with_read_errors(skipped_files);
     let complete = files_with_parse_errors.is_empty() && files_with_read_errors.is_empty();
+    let generated_file_fact_count = generated_file_fact_count(files);
 
     AstFunctionCloneGroups {
         complete,
@@ -72,7 +138,7 @@ pub(crate) fn group_function_body_fingerprints(
             .skipped_low_discrimination_raw_pair_estimate,
         skipped_low_discrimination_pair_estimate_kind:
             RUST_FUNCTION_CLONE_NEAR_SKIPPED_PAIR_ESTIMATE_KIND,
-        generated_file_fact_count: generated_file_fact_count(files),
+        generated_file_fact_count,
         exact_body_groups,
         structure_groups,
         signature_groups,
@@ -81,15 +147,12 @@ pub(crate) fn group_function_body_fingerprints(
     }
 }
 
-fn generated_file_fact_count(files: &BTreeMap<String, FileHealth>) -> usize {
+fn generated_file_fact_count<F: common::FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
+) -> usize {
     files
         .values()
-        .filter(|health| {
-            health
-                .path
-                .classifications
-                .contains(&PathClassification::Generated)
-        })
-        .map(|health| health.ast.function_body_fingerprints.len())
+        .filter(|health| health.generated())
+        .map(|health| health.function_body_fingerprints().len())
         .sum()
 }

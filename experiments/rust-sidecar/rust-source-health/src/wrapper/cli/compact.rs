@@ -1,20 +1,18 @@
+use serde::Serialize;
 use std::collections::BTreeMap;
 
-use serde::Serialize;
-
-mod ast_summary;
-mod file;
 mod function_clone_groups;
 
+use crate::driver::CompactAnalysisResponse;
 use crate::protocol::{
-    HealthResponse, ResponseMeta, RustUnusedDefinitionAnalysis, SkippedFile, Summary,
+    CompactFileHealth as OwnedCompactFileHealth, ResponseMeta, RustUnusedDefinitionAnalysis,
+    SkippedFile, Summary,
 };
-use file::CompactFileHealth;
 use function_clone_groups::CompactFunctionCloneGroups;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct CompactHealthResponse<'a> {
+pub(super) struct CompactAnalysisHealthResponse<'a> {
     schema_version: u32,
     artifact_profile: &'static str,
     meta: &'a ResponseMeta,
@@ -22,17 +20,11 @@ pub(super) struct CompactHealthResponse<'a> {
     function_clone_groups: CompactFunctionCloneGroups<'a>,
     unused_definition_analysis: &'a RustUnusedDefinitionAnalysis,
     skipped_files: &'a [SkippedFile],
-    files: BTreeMap<&'a str, CompactFileHealth<'a>>,
+    files: &'a BTreeMap<String, OwnedCompactFileHealth>,
 }
 
-impl<'a> CompactHealthResponse<'a> {
-    pub(super) fn from_response(response: &'a HealthResponse) -> Self {
-        let files = response
-            .files
-            .iter()
-            .map(|(path, file)| (path.as_str(), CompactFileHealth::from_file(file)))
-            .collect();
-
+impl<'a> CompactAnalysisHealthResponse<'a> {
+    pub(super) fn from_analysis(response: &'a CompactAnalysisResponse) -> Self {
         Self {
             schema_version: response.schema_version,
             artifact_profile: "compact",
@@ -43,7 +35,7 @@ impl<'a> CompactHealthResponse<'a> {
             ),
             unused_definition_analysis: &response.unused_definition_analysis,
             skipped_files: &response.skipped_files,
-            files,
+            files: &response.files,
         }
     }
 }

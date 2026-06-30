@@ -31,11 +31,15 @@ pub(super) fn collect_macro_call(
     collect_macro_call_signal(node, line_index, &name, &mut syntax.signals);
     let location = ast_location(line_index, call.syntax().text_range());
     let visibility = classify_macro_opaque_surface(&path, &name, call.syntax(), classifications);
-    syntax.ast.macro_calls.push(AstMacroCall {
-        path: path.clone(),
-        name: name.clone(),
-        location: location.clone(),
-    });
+    if syntax.retain_raw_ast_lanes {
+        syntax.ast.macro_calls.push(AstMacroCall {
+            path: path.clone(),
+            name: name.clone(),
+            location: location.clone(),
+        });
+    } else {
+        syntax.ast.counts.macro_calls += 1;
+    }
     collect_macro_token_name_refs(call.syntax(), syntax);
     syntax.ast.opaque_surfaces.push(AstOpaqueSurface {
         kind: AstOpaqueSurfaceKind::MacroExpansion,
@@ -130,7 +134,12 @@ fn previous_attribute_key_is_reference_slot(token: &SyntaxToken) -> bool {
     };
     matches!(
         key.text(),
-        "default" | "deserialize_with" | "serialize_with" | "skip_serializing_if" | "with"
+        "default"
+            | "deserialize_with"
+            | "schema_with"
+            | "serialize_with"
+            | "skip_serializing_if"
+            | "with"
     )
 }
 
@@ -182,6 +191,35 @@ fn format_capture_names(text: &str) -> Vec<String> {
         captures.push(chars[start].0..chars[end - 1].0 + chars[end - 1].1.len_utf8());
         cursor = end;
     }
+    let mut cursor = 0;
+    while cursor < chars.len() {
+        let Some((dollar_index, _)) = chars
+            .iter()
+            .enumerate()
+            .skip(cursor)
+            .find(|(_, (_, ch))| *ch == '$')
+        else {
+            break;
+        };
+        let mut start = dollar_index;
+        while start > 0
+            && chars
+                .get(start - 1)
+                .is_some_and(|(_, ch)| is_rust_ident_continue(*ch))
+        {
+            start -= 1;
+        }
+        if start < dollar_index
+            && chars
+                .get(start)
+                .is_some_and(|(_, ch)| is_rust_ident_start(*ch))
+        {
+            captures.push(
+                chars[start].0..chars[dollar_index - 1].0 + chars[dollar_index - 1].1.len_utf8(),
+            );
+        }
+        cursor = dollar_index + 1;
+    }
     captures
         .into_iter()
         .filter_map(|range| body.get(range).map(str::to_string))
@@ -230,10 +268,14 @@ fn collect_cfg_opaque_surface(
 ) {
     let location = ast_location(line_index, attr.syntax().text_range());
     let visibility = classify_cfg_opaque_surface(&expr, attr.syntax(), classifications);
-    syntax.ast.cfg_gates.push(AstCfgGate {
-        expr: expr.clone(),
-        location: location.clone(),
-    });
+    if syntax.retain_raw_ast_lanes {
+        syntax.ast.cfg_gates.push(AstCfgGate {
+            expr: expr.clone(),
+            location: location.clone(),
+        });
+    } else {
+        syntax.ast.counts.cfg_gates += 1;
+    }
     syntax.ast.opaque_surfaces.push(AstOpaqueSurface {
         kind: AstOpaqueSurfaceKind::CfgGate,
         reason: AstOpaqueReason::CfgConditionNotEvaluated,

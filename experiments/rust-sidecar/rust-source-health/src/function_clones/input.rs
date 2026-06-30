@@ -1,23 +1,23 @@
 use std::collections::BTreeMap;
 
-use crate::protocol::{AstFunctionCloneInputError, FileHealth, SkippedFile, SkippedFileReason};
+use crate::protocol::{AstFunctionCloneInputError, SkippedFile, SkippedFileReason};
 
-pub(super) fn files_with_parse_errors(
-    files: &BTreeMap<String, FileHealth>,
+use super::common::FunctionCloneFileView;
+
+pub(super) fn files_with_parse_errors<F: FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
 ) -> Vec<AstFunctionCloneInputError> {
     files
         .iter()
         .filter_map(|(file, health)| {
-            if health.parse.ok {
+            if health.parse_ok() {
                 return None;
             }
             Some(AstFunctionCloneInputError {
                 file: file.clone(),
                 message: health
-                    .parse
-                    .errors
-                    .first()
-                    .map(|error| error.message.clone())
+                    .parse_error_message()
+                    .map(str::to_string)
                     .unwrap_or_else(|| "parse error".to_string()),
             })
         })

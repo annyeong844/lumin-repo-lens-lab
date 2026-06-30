@@ -8,6 +8,7 @@ pub struct RustUnusedDefinitionAnalysis {
     pub policy: RustUnusedDefinitionPolicy,
     pub summary: RustUnusedDefinitionSummary,
     pub findings: Vec<RustUnusedDefinitionCandidate>,
+    pub excluded_candidate_projection: RustUnusedDefinitionExcludedCandidateProjection,
     pub excluded_candidates: Vec<RustUnusedDefinitionCandidate>,
     pub degraded_scopes: Vec<RustUnusedDefinitionDegradedScope>,
 }
@@ -20,6 +21,15 @@ pub struct RustUnusedDefinitionPolicy {
     pub rust_fp_gate_namespace: String,
     pub candidate_count_scope: String,
     pub safe_action_scope: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RustUnusedDefinitionExcludedCandidateProjection {
+    pub count_scope: String,
+    pub total_count: usize,
+    pub retained_count: usize,
+    pub example_limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]

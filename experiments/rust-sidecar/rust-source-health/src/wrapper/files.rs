@@ -4,7 +4,8 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use lumin_rust_common::{posix_path_has_segment, sha256_bytes};
 
-use crate::protocol::{RequestFile, SkippedFile, SkippedFileReason};
+use crate::analyzer::SourceFileEntry;
+use crate::protocol::{SkippedFile, SkippedFileReason};
 use crate::usage_error;
 
 pub(super) fn absolute_existing_dir(path: &Path) -> Result<PathBuf> {
@@ -28,19 +29,21 @@ pub(super) fn absolute_existing_dir(path: &Path) -> Result<PathBuf> {
     Ok(absolute)
 }
 
-pub(super) fn collect_rust_files(root: &Path) -> Result<(Vec<RequestFile>, Vec<SkippedFile>)> {
+pub(super) fn collect_rust_file_entries(
+    root: &Path,
+) -> Result<(Vec<SourceFileEntry>, Vec<SkippedFile>)> {
     let mut files = Vec::new();
     let mut skipped = Vec::new();
-    collect_rust_files_inner(root, root, &mut files, &mut skipped)?;
+    collect_rust_file_entries_inner(root, root, &mut files, &mut skipped)?;
     files.sort_by(|left, right| left.path.cmp(&right.path));
     skipped.sort_by(|left, right| left.path.cmp(&right.path));
     Ok((files, skipped))
 }
 
-fn collect_rust_files_inner(
+fn collect_rust_file_entries_inner(
     root: &Path,
     dir: &Path,
-    files: &mut Vec<RequestFile>,
+    files: &mut Vec<SourceFileEntry>,
     skipped: &mut Vec<SkippedFile>,
 ) -> Result<()> {
     let mut entries = fs::read_dir(dir)
@@ -60,7 +63,7 @@ fn collect_rust_files_inner(
             continue;
         }
         if file_type.is_dir() {
-            collect_rust_files_inner(root, &absolute, files, skipped)?;
+            collect_rust_file_entries_inner(root, &absolute, files, skipped)?;
             continue;
         }
         if !file_type.is_file() || !relative.ends_with(".rs") {
@@ -70,20 +73,17 @@ fn collect_rust_files_inner(
         let raw = fs::read(&absolute)
             .with_context(|| format!("failed to read Rust source {}", absolute.display()))?;
         let sha256 = sha256_bytes(&raw);
-        let text = match String::from_utf8(raw) {
-            Ok(text) => text,
-            Err(_) => {
-                skipped.push(SkippedFile {
-                    path: relative,
-                    reason: SkippedFileReason::InvalidUtf8,
-                });
-                continue;
-            }
-        };
-        files.push(RequestFile {
+        if std::str::from_utf8(&raw).is_err() {
+            skipped.push(SkippedFile {
+                path: relative,
+                reason: SkippedFileReason::InvalidUtf8,
+            });
+            continue;
+        }
+        files.push(SourceFileEntry {
             path: relative,
+            absolute_path: absolute,
             sha256,
-            text,
         });
     }
     Ok(())
