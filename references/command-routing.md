@@ -139,6 +139,14 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --r
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --root . --output .audit --profile quick
 ```
 
+Do not add `--rust-analyzer` to default quick/full runs automatically. Add it
+only when the user explicitly asks for Rust-owned analyzer evidence or a Rust
+audit pass that needs syntax, clone, dead-definition, Cargo metadata, or Rust
+absence claims. When it runs successfully, read
+`.audit/rust-analyzer-health.latest.json` before making Rust findings. When it
+does not run or is unavailable, keep Rust claims limited to manifest blind-zone
+evidence.
+
 Then answer with `templates/REVIEW_CHECKLIST_SHORT.md` unless the user
 asked for full checklist output: what is already stable, at most three
 things worth smoothing next, confidence/scan range, likely
@@ -279,8 +287,10 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --p
 The auto route keeps JS/TS as the default owner when the intent omits
 `language`, and routes to `lumin-rust-analyzer pre-write` only when the intent
 JSON explicitly contains `"language": "rust"`. Do not infer Rust from filenames,
-dependencies, or repository shape. For maintainer-only explicit routing,
-`--rust-pre-write` remains an alias for `--pre-write-engine rust`:
+dependencies, or repository shape. An explicit `--pre-write-engine js` request
+must still reject an intent that declares `"language": "rust"`; JS pre-write is
+not a Rust fallback. For maintainer-only explicit routing, `--rust-pre-write`
+remains an alias for `--pre-write-engine rust`:
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --rust-pre-write $ARGUMENTS
@@ -347,8 +357,9 @@ lane you checked supports that claim; name the remaining limits.
 
 Rust pre-write advisories are valid inputs here, but Rust has no TS `any`
 equivalent. In that route, post-write's language-neutral file delta remains
-useful; type-escape baseline fields may be missing or not applicable and must
-not be interpreted as Rust source-health evidence.
+useful. The TS type-escape lane is skipped and reported as
+`typeEscapeDelta.status: "not-applicable"`; do not reinterpret missing
+`any-inventory` baselines as Rust source-health evidence.
 
 ### canon-draft
 

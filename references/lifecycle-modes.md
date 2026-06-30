@@ -8,7 +8,7 @@ manifest blocks.
 
 Run before writing code in a repository context to surface what already
 exists: types, helpers, canonical owner claims, near-name alternatives,
-dependency signals, and exact shape matches when `shape-index.json` is
+dependency signals, and exact JS/TS shape matches when `shape-index.json` is
 available.
 
 ```bash
@@ -19,7 +19,9 @@ node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-e
 
 `--pre-write-engine auto` keeps JS/TS as the default owner when the intent omits
 `language`, and routes to Rust only when the intent explicitly declares
-`"language": "rust"`.
+`"language": "rust"`. JS pre-write must not accept a Rust-declared intent, even
+when the caller explicitly passes `--pre-write-engine js`; use Rust or auto for
+Rust source intents.
 
 The intent file is a structured declaration of planned names, files,
 dependencies, shapes, and type escapes. In normal chat use, the assistant
@@ -54,6 +56,9 @@ consumer counts, file lookups build `symbols.json`, `topology.json`, and
 `triage.json`, and shape lookups build `shape-index.json`. With
 `--no-fresh-audit`, missing dependency import counts are reported as
 unavailable rather than `0 observed consumers`.
+`shape-index.json` is JS/TS shape evidence. Rust shape, signature, clone, and
+file lookup evidence comes from the Rust pre-write artifact when the intent
+declares `"language": "rust"`.
 
 Exit codes through the orchestrator:
 
@@ -67,8 +72,10 @@ Run after writing code to compare the pre-write `any` inventory snapshot
 with a fresh after-inventory, and to compare the pre-write file inventory
 plus `intent.files` with the current scanned file set.
 For Rust pre-write advisories, the file inventory comparison still applies.
-The TS `any` inventory comparison is not Rust source-health evidence and may be
-missing or confidence-limited because Rust has no TS `any` equivalent.
+The TS `any` inventory comparison is not Rust source-health evidence. The
+post-write engine skips `any-inventory` for Rust advisories and reports
+`typeEscapeDelta.status: "not-applicable"` instead of treating the missing
+TS baseline as a confidence failure.
 
 ```bash
 node scripts/audit-repo.mjs --root . --output ./output --post-write --pre-write-advisory ./output/pre-write-advisory.<invocationId>.json
