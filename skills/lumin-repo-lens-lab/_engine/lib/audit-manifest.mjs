@@ -539,7 +539,23 @@ function buildRustAnalysisSummary(artifact, { root }) {
   }
   const summary = artifact.summary && typeof artifact.summary === 'object'
     ? artifact.summary
-    : {};
+    : null;
+  if (
+    typeof artifact.schemaVersion !== 'string' ||
+    typeof artifact.policyVersion !== 'string' ||
+    artifact.meta?.producer !== 'lumin-rust-analyzer' ||
+    artifact.meta?.mode !== 'rust-main' ||
+    !summary ||
+    typeof summary.files !== 'number' ||
+    !Number.isFinite(summary.files)
+  ) {
+    return {
+      artifact: artifactName,
+      status: 'invalid-shape',
+      available: false,
+      root: artifactRoot,
+    };
+  }
   return {
     artifact: artifactName,
     status: 'complete',

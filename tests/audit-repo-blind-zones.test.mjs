@@ -145,6 +145,98 @@ describe("audit-repo blind-zone and confidence split track", () => {
     expect(goScanGap.details.reason).toContain("tree-sitter");
   });
 
+  it("B2d. only the current valid Rust analyzer artifact clears Rust blind zones", () => {
+    const repo = mkdtempSync(path.join(tmpdir(), "lumin-rust-blind-zone-"));
+    const output = path.join(repo, "audit-out");
+    try {
+      mkdirSync(output, { recursive: true });
+      write(
+        output,
+        "triage.json",
+        JSON.stringify({
+          shape: { totalFiles: 1, rustFiles: 1 },
+          byLanguage: { rs: 1 },
+        }),
+      );
+
+      const validRustArtifact = {
+        schemaVersion: "lumin-rust-analyzer.v1",
+        policyVersion: "lumin-rust-analyzer-policy.v1",
+        meta: {
+          producer: "lumin-rust-analyzer",
+          mode: "rust-main",
+          input: {
+            root: repo,
+            effectiveSourceHealthProfile: "compact",
+            semanticMode: "metadata-only",
+          },
+        },
+        summary: { files: 1, syntaxReviewSignals: 0 },
+      };
+
+      write(
+        output,
+        "rust-analyzer-health.latest.json",
+        JSON.stringify(validRustArtifact),
+      );
+      const staleEvidence = buildManifestEvidence({
+        root: repo,
+        outDir: output,
+        includeTests: false,
+        production: true,
+        rustAnalysisRun: { requested: false, ran: false, status: "not-requested" },
+      });
+      expect(staleEvidence.rustAnalysis).toMatchObject({
+        status: "complete",
+        available: true,
+      });
+      expect(staleEvidence.blindZones.some((zone) => zone.area === "rs")).toBe(true);
+
+      write(
+        output,
+        "rust-analyzer-health.latest.json",
+        JSON.stringify({
+          schemaVersion: "lumin-rust-analyzer.v1",
+          meta: validRustArtifact.meta,
+          summary: {},
+        }),
+      );
+      const malformedEvidence = buildManifestEvidence({
+        root: repo,
+        outDir: output,
+        includeTests: false,
+        production: true,
+        rustAnalysisRun: { requested: true, ran: true, status: "complete" },
+      });
+      expect(malformedEvidence.rustAnalysis).toMatchObject({
+        status: "invalid-shape",
+        available: false,
+      });
+      expect(malformedEvidence.blindZones.some((zone) => zone.area === "rs")).toBe(true);
+
+      write(
+        output,
+        "rust-analyzer-health.latest.json",
+        JSON.stringify(validRustArtifact),
+      );
+      const currentEvidence = buildManifestEvidence({
+        root: repo,
+        outDir: output,
+        includeTests: false,
+        production: true,
+        rustAnalysisRun: { requested: true, ran: true, status: "complete" },
+      });
+      expect(currentEvidence.rustAnalysis).toMatchObject({
+        status: "complete",
+        available: true,
+        files: 1,
+      });
+      expect(currentEvidence.blindZones.some((zone) => zone.area === "rs")).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   it("B2b. mirrors symbol parse-error warnings into manifest confidence", () => {
     const repo = mkdtempSync(path.join(tmpdir(), "lumin-parse-confidence-"));
     try {

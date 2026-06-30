@@ -46,7 +46,7 @@
 // any step is captured but never hidden.
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, statSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -996,6 +996,7 @@ function runRustAnalyzerStep() {
   const t0 = Date.now();
   const memoryBefore = memorySnapshot();
   try {
+    rmSync(artifactPath, { force: true });
     execFileSync(invocation.command, argv, {
       stdio: values.verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'],
       encoding: 'utf8',
@@ -1034,7 +1035,9 @@ function runRustAnalyzerStep() {
   } catch (e) {
     const ms = Date.now() - t0;
     const memoryAfter = memorySnapshot();
-    const reason = `lumin-rust-analyzer exited non-zero: ${e.message}`;
+    const reason = Object.hasOwn(e ?? {}, 'status')
+      ? `lumin-rust-analyzer exited non-zero: ${e.message}`
+      : `lumin-rust-analyzer artifact refresh failed: ${e.message}`;
     commandsRun.push({
       step: 'lumin-rust-analyzer',
       status: 'failed-optional',
