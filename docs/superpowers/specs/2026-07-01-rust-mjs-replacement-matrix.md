@@ -194,6 +194,11 @@ Checked source state:
   records a Rust blind zone, but does not spend Cargo/Rust analyzer work unless
   this flag is present. A missing or failing analyzer remains artifact-visible;
   it is not a JS fallback.
+- User-facing audit summaries and review-pack lanes now label
+  `shape-index.json` and `function-clones.json` as JS/TS-language evidence.
+  Rust shape, signature, clone, syntax, and dead-definition claims must use
+  `rust-analyzer-health.latest.json` when `manifest.rustAnalysis` is complete;
+  otherwise they remain blind-zone-level claims.
 
 Result:
 

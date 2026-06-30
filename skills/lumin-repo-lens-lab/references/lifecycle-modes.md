@@ -8,7 +8,7 @@ manifest blocks.
 
 Run before writing code in a repository context to surface what already
 exists: types, helpers, canonical owner claims, near-name alternatives,
-dependency signals, and exact shape matches when `shape-index.json` is
+dependency signals, and exact JS/TS shape matches when `shape-index.json` is
 available.
 
 ```bash
@@ -54,6 +54,9 @@ consumer counts, file lookups build `symbols.json`, `topology.json`, and
 `triage.json`, and shape lookups build `shape-index.json`. With
 `--no-fresh-audit`, missing dependency import counts are reported as
 unavailable rather than `0 observed consumers`.
+`shape-index.json` is JS/TS shape evidence. Rust shape, signature, clone, and
+file lookup evidence comes from the Rust pre-write artifact when the intent
+declares `"language": "rust"`.
 
 Exit codes through the orchestrator:
 

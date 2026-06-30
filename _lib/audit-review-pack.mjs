@@ -141,7 +141,7 @@ function topologyLane({ topology, callGraph, barrels }) {
   }));
 }
 
-function typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symbols }) {
+function typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symbols, manifest }) {
   const totals = discipline?.totals ?? {};
   const escapeCount =
     n(totals[':any']) +
@@ -158,15 +158,28 @@ function typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symb
   const cloneStructure = n(checklistFacts?.B1_duplicate_implementation?.structureGroupCandidates, n(functionClones?.meta?.structureGroupCount));
   const cloneSignature = n(checklistFacts?.B1_duplicate_implementation?.signatureGroupCandidates, n(functionClones?.meta?.signatureGroupCount));
   const cloneNear = n(checklistFacts?.B1_duplicate_implementation?.nearFunctionCandidates, n(functionClones?.meta?.nearFunctionCandidateCount));
+  const rustAnalysis = manifest?.rustAnalysis;
+  const rustArtifactAvailable = rustAnalysis?.status === 'complete' && rustAnalysis?.available === true;
+  const artifacts = [
+    'discipline.json',
+    'shape-index.json',
+    'function-clones.json',
+    'checklist-facts.json',
+    'symbols.json',
+    ...(rustArtifactAvailable ? ['rust-analyzer-health.latest.json'] : []),
+  ];
   return lane('Lane 2 — Types, Shapes, And Contract Review', renderLanePrompt({
     title: 'Type and shape reviewer',
-    mission: 'Look for type-boundary and helper-shape drift that requires semantic judgment: repeated exported shapes, same-structure and near-function clone cues, and concentrated any/ignore-style escapes.',
-    artifacts: ['discipline.json', 'shape-index.json', 'function-clones.json', 'checklist-facts.json', 'symbols.json'],
+    mission: 'Look for JS/TS type-boundary and helper-shape drift that requires semantic judgment: repeated exported shapes, same-structure and near-function clone cues, and concentrated any/ignore-style escapes. Use Rust analyzer evidence, not JS/TS clone or shape artifacts, for Rust files.',
+    artifacts,
     checks: [
       `Type escape total to screen: ${escapeCount}. Prioritize clusters over scattered one-offs.`,
       formatAnyContaminationReviewCheck(symbols),
-      `Exact exported shape groups: ${exactGroups}; near-shape review cues: ${nearCandidates}; raw shape facts: ${shapeFacts}.`,
-      `Function clone cues: exact body groups ${cloneExact}; same-structure groups ${cloneStructure}; same-signature groups ${cloneSignature}; near-function cues ${cloneNear}. Read source before calling them semantic duplicates.`,
+      `JS/TS exact exported shape groups: ${exactGroups}; near-shape review cues: ${nearCandidates}; raw shape facts: ${shapeFacts}. Do not use shape-index.json as Rust shape evidence.`,
+      `JS/TS function clone cues: exact body groups ${cloneExact}; same-structure groups ${cloneStructure}; same-signature groups ${cloneSignature}; near-function cues ${cloneNear}. Read source before calling them semantic duplicates.`,
+      rustArtifactAvailable
+        ? `Rust analyzer artifact available for ${n(rustAnalysis.files)} file(s). Use rust-analyzer-health.latest.json for Rust shape, signature, clone, and syntax review cues.`
+        : `Rust analyzer artifact not available in this run${rustAnalysis?.requested ? ` (${rustAnalysis.status ?? 'not-run'})` : ''}; keep Rust shape/clone claims limited to manifest blind-zone evidence.`,
       'For near-shape or semantic duplication, read the cited declarations before recommending a merge.',
     ],
     report: 'One type/shape theme worth smoothing, anything likely intentional, and what evidence is still missing.',
@@ -287,7 +300,7 @@ export function renderAuditReviewPack({
     'Recommended default for a full audit: read lanes 1-4 before finalizing the normal gentle summary. If using Claude Code subagents, translate each chosen lane into a codebase-reading assignment with concrete files, symbols, or hypotheses. Do not paste artifact/checklist lanes wholesale; the subagent should inspect code directly and report file:line evidence.',
     '',
     topologyLane({ topology, callGraph, barrels }),
-    typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symbols }),
+    typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symbols, manifest }),
     deadSurfaceLane({ fixPlan, deadClassify, manifest, moduleReachability }),
     failureLane({ checklistFacts, manifest }),
     '## Merge Instructions',

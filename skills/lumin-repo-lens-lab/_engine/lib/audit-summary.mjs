@@ -350,7 +350,7 @@ function measuredCueLines({ manifest, checklistFacts, fixPlan, topology, discipl
     const structure = n(b1.structureGroupCandidates, n(functionClones?.meta?.structureGroupCount));
     const signature = n(b1.signatureGroupCandidates, n(functionClones?.meta?.signatureGroupCount));
     const near = n(b1.nearFunctionCandidates, n(functionClones?.meta?.nearFunctionCandidateCount));
-    lines.push(`- Function clone cues: exact body groups ${exact}, same-structure groups ${structure}, same-signature groups ${signature}, near-function cues ${near}. Read \`function-clones.json\` and source file:line evidence before calling helpers duplicated.`);
+    lines.push(`- JS/TS function clone cues: exact body groups ${exact}, same-structure groups ${structure}, same-signature groups ${signature}, near-function cues ${near}. Read \`function-clones.json\` and source file:line evidence before calling JS/TS helpers duplicated; use Rust analyzer evidence for Rust files.`);
   }
 
   if (fixPlan?.summary) {
@@ -482,10 +482,10 @@ function artifactMapLines({ manifest, checklistFacts, fixPlan, topology, discipl
     lines.push('- `call-graph.json`: call graph and semi-dead import evidence from full profile.');
   }
   if (produced.has('shape-index.json')) {
-    lines.push('- `shape-index.json`: exact shape-hash facts for full-profile B1/B2 review.');
+    lines.push('- `shape-index.json`: JS/TS exact shape-hash facts for full-profile B1/B2 review; use Rust analyzer shape/signature evidence for Rust files.');
   }
   if (functionClones || produced.has('function-clones.json')) {
-    lines.push('- `function-clones.json`: top-level exported and file-local function-body clone cues; candidates require source review before merge advice.');
+    lines.push('- `function-clones.json`: JS/TS top-level exported and file-local function-body clone cues; candidates require source review before merge advice and are not Rust evidence.');
   }
   if (manifest?.rustAnalysis?.status === 'complete' && manifest?.rustAnalysis?.available === true) {
     lines.push('- `rust-analyzer-health.latest.json`: Rust-owned syntax, clone, unused-definition, and Cargo metadata evidence; use this for Rust files instead of JS/TS graph absence.');

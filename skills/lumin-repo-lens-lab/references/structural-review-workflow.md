@@ -109,13 +109,14 @@ API uncertainty could hide real consumers. Start with
 `docs/maintainer/false-positive-patterns-ledger.md` only when changing
 FP policy, debugging a specific family, or adding a verified case.
 
-For duplicate-helper or similar-logic claims, `function-clones.json` is
-a candidate lens, not a semantic-equivalence detector: exact body
-matches are strong review cues; same-structure matches are weaker review
-cues; near-function candidates are degraded review cues for structurally
-different helpers that share important calls and size/name signals. Read
-listed source ranges first; never merge/refactor from this artifact
-alone.
+For JS/TS duplicate-helper or similar-logic claims, `function-clones.json` is
+a candidate lens, not a semantic-equivalence detector: exact body matches are
+strong review cues; same-structure matches are weaker review cues;
+near-function candidates are degraded review cues for structurally different
+helpers that share important calls and size/name signals. Read listed source
+ranges first; never merge/refactor from this artifact alone. For Rust files,
+use `rust-analyzer-health.latest.json` when `manifest.rustAnalysis.status` is
+`"complete"`; otherwise keep Rust duplicate/absence claims at blind-zone level.
 
 For marketplace or automation claims, read
 `references/operational-gates.md`. Do not market automatic cleanup from
