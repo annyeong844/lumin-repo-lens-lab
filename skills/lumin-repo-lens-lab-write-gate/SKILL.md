@@ -75,8 +75,12 @@ intent you can from the request, stream it via `--intent -` or write a
 temporary intent file, then run:
 
 ```bash
-<audit-repo> --pre-write --root <repo> --output <dir> --intent <file|->
+<audit-repo> --pre-write --pre-write-engine auto --root <repo> --output <dir> --intent <file|->
 ```
+
+Include `"language": "rust"` in the inferred intent only for Rust source
+changes. Omit `language` or use `"js-ts"` for JS/TS; do not route Rust by
+filename or dependency guessing.
 
 Read the invocation-specific advisory path printed by pre-write before
 coding during the same uninterrupted change transaction. It is also

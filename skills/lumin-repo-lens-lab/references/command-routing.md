@@ -273,20 +273,17 @@ profile entrypoint.
 If `--intent` is provided, pass the arguments through. Run:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write $ARGUMENTS
+node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --pre-write-engine auto $ARGUMENTS
 ```
 
-For Rust source intents, use the Rust execution surface explicitly:
+The auto route keeps JS/TS as the default owner when the intent omits
+`language`, and routes to `lumin-rust-analyzer pre-write` only when the intent
+JSON explicitly contains `"language": "rust"`. Do not infer Rust from filenames,
+dependencies, or repository shape. For maintainer-only explicit routing,
+`--rust-pre-write` remains an alias for `--pre-write-engine rust`:
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --rust-pre-write $ARGUMENTS
-```
-
-If the intent JSON explicitly contains `"language": "rust"`, this equivalent
-route may be used:
-
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --pre-write-engine auto $ARGUMENTS
 ```
 
 This routes to `lumin-rust-analyzer pre-write` instead of the JS/TS

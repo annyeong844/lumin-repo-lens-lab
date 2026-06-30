@@ -93,7 +93,7 @@ Stable capabilities:
     lumin-repo-lens-lab --root <repo> --output <dir> --profile quick|full|ci
 
   pre-write
-    lumin-repo-lens-lab --root <repo> --output <dir> --pre-write --intent intent.json
+    lumin-repo-lens-lab --root <repo> --output <dir> --pre-write --pre-write-engine auto --intent intent.json
     lumin-repo-lens-lab --root <repo> --output <dir> --pre-write --rust-pre-write --intent intent.json
 
   post-write

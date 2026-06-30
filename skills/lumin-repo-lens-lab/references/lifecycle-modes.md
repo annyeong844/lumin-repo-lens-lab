@@ -12,10 +12,14 @@ dependency signals, and exact shape matches when `shape-index.json` is
 available.
 
 ```bash
-node scripts/audit-repo.mjs --root . --output ./output --pre-write --intent intent.json
+node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-engine auto --intent intent.json
 # Or read the same intent JSON from stdin:
-# node scripts/audit-repo.mjs --root . --output ./output --pre-write --intent -
+# node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-engine auto --intent -
 ```
+
+`--pre-write-engine auto` keeps JS/TS as the default owner when the intent omits
+`language`, and routes to Rust only when the intent explicitly declares
+`"language": "rust"`.
 
 The intent file is a structured declaration of planned names, files,
 dependencies, shapes, and type escapes. In normal chat use, the assistant

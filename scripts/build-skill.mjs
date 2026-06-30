@@ -312,7 +312,7 @@ function buildSkillPackageJson(outDir) {
     },
     scripts: {
       audit: 'node scripts/audit-repo.mjs',
-      'pre-write': 'node scripts/audit-repo.mjs --pre-write',
+      'pre-write': 'node scripts/audit-repo.mjs --pre-write --pre-write-engine auto',
       'post-write': 'node scripts/audit-repo.mjs --post-write',
       'canon-draft': 'node scripts/audit-repo.mjs --canon-draft',
       'check-canon': 'node scripts/audit-repo.mjs --check-canon',

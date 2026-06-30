@@ -273,8 +273,26 @@ profile entrypoint.
 If `--intent` is provided, pass the arguments through. Run:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write $ARGUMENTS
+node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --pre-write-engine auto $ARGUMENTS
 ```
+
+The auto route keeps JS/TS as the default owner when the intent omits
+`language`, and routes to `lumin-rust-analyzer pre-write` only when the intent
+JSON explicitly contains `"language": "rust"`. Do not infer Rust from filenames,
+dependencies, or repository shape. For maintainer-only explicit routing,
+`--rust-pre-write` remains an alias for `--pre-write-engine rust`:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --rust-pre-write $ARGUMENTS
+```
+
+This routes to `lumin-rust-analyzer pre-write` instead of the JS/TS
+`pre-write.mjs` owner. The generated package must have
+`LUMIN_RUST_ANALYZER_BIN` set to a built analyzer binary, or a maintainer
+checkout with `experiments/Cargo.toml` available. Do not silently
+fall back to JS/TS pre-write for Rust source intents.
+Rust pre-write currently rejects JS audit scan-scope flags such as
+`--production` and `--exclude` instead of pretending they were applied.
 
 Intent files must follow `references/pre-write-intent-shape.md`. `--intent -`
 streams that same JSON through stdin. Before
