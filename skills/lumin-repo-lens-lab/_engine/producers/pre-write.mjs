@@ -49,6 +49,15 @@ function die(msg, code = 1) {
   process.exit(code);
 }
 
+function routeLanguage(value) {
+  if (value === undefined) return null;
+  if (value === 'js-ts') return 'js-ts';
+  if (value === 'rust') {
+    die('intent.language "rust" is owned by lumin-rust-analyzer; use audit-repo.mjs --pre-write --pre-write-engine auto or --pre-write-engine rust');
+  }
+  die('intent.language must be "js-ts" or omitted for pre-write.mjs; Rust intents require lumin-rust-analyzer');
+}
+
 function readStdinSync() {
   let buf;
   try {
@@ -236,6 +245,7 @@ if (intentFlag === '-') {
 let raw;
 try { raw = JSON.parse(intentText); }
 catch (e) { die(`intent JSON parse failed: ${e.message}`); }
+routeLanguage(raw?.language);
 
 const validation = validateIntent(raw);
 if (!validation.ok) {

@@ -199,6 +199,10 @@ Checked source state:
   Rust shape, signature, clone, syntax, and dead-definition claims must use
   `rust-analyzer-health.latest.json` when `manifest.rustAnalysis` is complete;
   otherwise they remain blind-zone-level claims.
+- Pre-write routing now treats `intent.language` as an owner boundary, not only
+  an auto-routing hint. `pre-write.mjs` rejects `"language": "rust"` directly,
+  and `audit-repo.mjs --pre-write --pre-write-engine js` refuses Rust-declared
+  intents instead of running JS cold-cache artifacts as a fallback.
 
 Result:
 

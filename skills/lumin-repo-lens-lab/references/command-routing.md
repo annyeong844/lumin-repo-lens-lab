@@ -287,8 +287,10 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --p
 The auto route keeps JS/TS as the default owner when the intent omits
 `language`, and routes to `lumin-rust-analyzer pre-write` only when the intent
 JSON explicitly contains `"language": "rust"`. Do not infer Rust from filenames,
-dependencies, or repository shape. For maintainer-only explicit routing,
-`--rust-pre-write` remains an alias for `--pre-write-engine rust`:
+dependencies, or repository shape. An explicit `--pre-write-engine js` request
+must still reject an intent that declares `"language": "rust"`; JS pre-write is
+not a Rust fallback. For maintainer-only explicit routing, `--rust-pre-write`
+remains an alias for `--pre-write-engine rust`:
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --rust-pre-write $ARGUMENTS

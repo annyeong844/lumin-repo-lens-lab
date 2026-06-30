@@ -19,7 +19,9 @@ node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-e
 
 `--pre-write-engine auto` keeps JS/TS as the default owner when the intent omits
 `language`, and routes to Rust only when the intent explicitly declares
-`"language": "rust"`.
+`"language": "rust"`. JS pre-write must not accept a Rust-declared intent, even
+when the caller explicitly passes `--pre-write-engine js`; use Rust or auto for
+Rust source intents.
 
 The intent file is a structured declaration of planned names, files,
 dependencies, shapes, and type escapes. In normal chat use, the assistant

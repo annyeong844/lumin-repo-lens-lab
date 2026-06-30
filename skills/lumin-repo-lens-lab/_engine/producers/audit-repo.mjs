@@ -498,22 +498,47 @@ function stripPreWriteRouteOnlyFields(intentText) {
   return `${JSON.stringify(parsed, null, 2)}\n`;
 }
 
+function readPreWriteIntentForRouting(intentFlag) {
+  const intentText = readPreWriteIntentText(intentFlag);
+  let parsed;
+  try {
+    parsed = JSON.parse(intentText);
+  } catch (error) {
+    throw new Error(`intent JSON parse failed before engine selection: ${error.message}`);
+  }
+  if (!isPlainObject(parsed)) {
+    throw new Error('intent must be a plain object before engine selection');
+  }
+  return {
+    intentText,
+    intentLanguage: normalizePreWriteIntentLanguage(parsed.language),
+  };
+}
+
 function resolvePreWriteEngineForIntent(requestedEngine, intentFlag) {
+  const { intentText, intentLanguage } = readPreWriteIntentForRouting(intentFlag);
+
   if (requestedEngine === 'js') {
+    if (intentLanguage === 'rust') {
+      throw new Error('intent.language "rust" is owned by lumin-rust-analyzer; use --pre-write-engine auto or --pre-write-engine rust');
+    }
     return {
       engine: 'js',
       childIntentFlag: intentFlag === '-' ? '-' : path.resolve(intentFlag),
-      childIntentInput: null,
+      childIntentInput: intentFlag === '-' ? intentText : null,
       engineSelection: {
         requested: requestedEngine,
         selected: 'js',
         reason: 'explicit-cli',
+        ...(intentLanguage !== null ? { intentLanguage } : {}),
       },
     };
   }
 
-  const intentText = readPreWriteIntentText(intentFlag);
   if (requestedEngine === 'rust') {
+    if (intentLanguage === 'js-ts') {
+      throw new Error('intent.language "js-ts" is owned by pre-write.mjs; use --pre-write-engine js or --pre-write-engine auto');
+    }
     return {
       engine: 'rust',
       childIntentFlag: '-',
@@ -522,21 +547,11 @@ function resolvePreWriteEngineForIntent(requestedEngine, intentFlag) {
         requested: requestedEngine,
         selected: 'rust',
         reason: 'explicit-cli',
+        ...(intentLanguage !== null ? { intentLanguage } : {}),
       },
     };
   }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(intentText);
-  } catch (error) {
-    throw new Error(`intent JSON parse failed before auto engine selection: ${error.message}`);
-  }
-  if (!isPlainObject(parsed)) {
-    throw new Error('intent must be a plain object before auto engine selection');
-  }
-
-  const intentLanguage = normalizePreWriteIntentLanguage(parsed.language);
   const selected = intentLanguage === 'rust' ? 'rust' : 'js';
   return {
     engine: selected,
