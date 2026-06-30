@@ -216,7 +216,7 @@ hung. Use `:full` for first checkups, branch-level reviews, and major refactor
 evidence; use quick/pre-write/post-write for smaller follow-ups.
 
 **Q. What are the main evidence limits?**
-Function-clone cues are review cues, not semantic-equivalence claims. They include exact body, same-structure, same-signature, and near-function evidence when the full profile has `function-clones.json`. Shape index is exact: nullable or widened types such as `email: string` versus `email: string | null` intentionally land in different groups. Start from `audit-summary.latest.md`, `manifest.json`, and `checklist-facts.json`, then open raw JSON artifacts only for the claim being cited.
+JS/TS function-clone cues are review cues, not semantic-equivalence claims. They include exact body, same-structure, same-signature, and near-function evidence when the full profile has `function-clones.json`. `shape-index.json` is JS/TS exact shape evidence: nullable or widened types such as `email: string` versus `email: string | null` intentionally land in different groups. For Rust files, use `rust-analyzer-health.latest.json` when `manifest.rustAnalysis` says it is available; otherwise keep Rust claims limited to the recorded blind zones. Start from `audit-summary.latest.md`, `manifest.json`, and `checklist-facts.json`, then open raw JSON artifacts only for the claim being cited.
 
 **Q. Does pre-write understand semantic duplicates?**
 No. Pre-write does not claim semantic equivalence from names alone. It surfaces grounded facts such as exact symbol/file matches, exact shape hashes, and exact function signature hashes, then separates weaker agent-review cues from muted token noise.
@@ -269,7 +269,7 @@ not the preferred user-facing interface; start from the plugin commands or
 
 ### Conservative evidence boundaries
 
-Function-clone cues are review cues, not semantic-equivalence proofs; same-signature groups mean "same exported function type contract", not "same behavior". Shape-index matching is exact (a `string` and a `string | null` field intentionally land in different groups). For the operational gates that keep dead-code, shape, and barrel claims grounded, see `references/false-positive-index.md` and `references/operational-gates.md`.
+JS/TS function-clone cues are review cues, not semantic-equivalence proofs; same-signature groups mean "same exported function type contract", not "same behavior". `shape-index.json` matching is JS/TS exact shape evidence (a `string` and a `string | null` field intentionally land in different groups). Rust files use the Rust analyzer artifact for clone, signature, shape, syntax, and unused-definition evidence; JS/TS clone and shape artifacts are not Rust evidence. For the operational gates that keep dead-code, shape, and barrel claims grounded, see `references/false-positive-index.md` and `references/operational-gates.md`.
 
 ### Public beta
 
