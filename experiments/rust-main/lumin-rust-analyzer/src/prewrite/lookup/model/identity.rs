@@ -40,14 +40,14 @@ pub(in crate::prewrite) struct CandidateRecord {
 #[derive(Debug, Clone)]
 pub(in crate::prewrite) struct FunctionSignatureEvidence {
     pub(in crate::prewrite) hash: String,
-    pub(in crate::prewrite) normalized_version: &'static str,
+    pub(in crate::prewrite) normalized_version: String,
 }
 
 impl FunctionSignatureEvidence {
     fn from_fact(fact: &AstFunctionSignature) -> Self {
         Self {
             hash: fact.hash.clone(),
-            normalized_version: fact.normalized_version,
+            normalized_version: fact.normalized_version.clone(),
         }
     }
 }

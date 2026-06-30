@@ -6,7 +6,7 @@ use lumin_rust_common::{
     parse_min_usize, parse_nonzero_usize, take_path, take_string, usage_error, CliAction,
 };
 
-use super::{usage, Command, PreWriteOptions, DEFAULT_WORKER_STACK_BYTES};
+use super::{usage, Command, PreWriteOptions, DEFAULT_WORKER_STACK_BYTES, MIN_WORKER_STACK_BYTES};
 
 pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<Command>> {
     let mut root: Option<PathBuf> = None;
@@ -31,7 +31,7 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
             "--worker-stack-bytes" => {
                 let value = take_string(&mut args, "--worker-stack-bytes")?;
                 worker_stack_bytes =
-                    parse_min_usize(&value, "--worker-stack-bytes", DEFAULT_WORKER_STACK_BYTES)?;
+                    parse_min_usize(&value, "--worker-stack-bytes", MIN_WORKER_STACK_BYTES)?;
             }
             "--help" | "-h" => {
                 usage::print_pre_write();

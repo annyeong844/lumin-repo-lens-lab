@@ -13,6 +13,12 @@ pub(super) fn source_health(repo: &PreWriteRepo) -> Result<HealthResponse> {
         source_commit: "test-source-commit".to_string(),
         thread_count: None,
         worker_stack_bytes: DEFAULT_WORKER_STACK_BYTES,
+        retain_raw_name_refs: false,
+        retain_raw_signals: true,
+        retain_raw_ast_lanes: true,
+        cache_root: None,
+        incremental_enabled: false,
+        clear_incremental_cache: false,
     })
 }
 

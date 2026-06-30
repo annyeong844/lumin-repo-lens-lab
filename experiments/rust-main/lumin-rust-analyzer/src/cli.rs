@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use lumin_rust_cargo_oracle::{CargoCheckMode, CargoTargetDirMode};
 use lumin_rust_common::CliAction;
-use lumin_rust_source_health::protocol::DEFAULT_WORKER_STACK_BYTES;
+use lumin_rust_source_health::protocol::{DEFAULT_WORKER_STACK_BYTES, MIN_WORKER_STACK_BYTES};
 
 #[derive(Debug)]
 pub(crate) struct Options {

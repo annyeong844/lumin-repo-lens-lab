@@ -64,6 +64,12 @@ fn run_unified_analyzer(options: cli::Options) -> Result<RunResult> {
         source_commit: options.source_commit.clone(),
         thread_count: options.thread_count,
         worker_stack_bytes: options.worker_stack_bytes,
+        retain_raw_name_refs: false,
+        retain_raw_signals: true,
+        retain_raw_ast_lanes: true,
+        cache_root: None,
+        incremental_enabled: false,
+        clear_incremental_cache: false,
     })?;
     let syntax_ms = syntax_started.elapsed().as_millis();
     let target_paths = oracle_targeting::targeted_oracle_paths(options.semantic_mode, &syntax);

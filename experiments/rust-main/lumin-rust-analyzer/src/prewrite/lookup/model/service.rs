@@ -50,7 +50,7 @@ pub(in crate::prewrite) struct ServiceSignatureSupport {
     #[serde(skip_serializing_if = "Option::is_none")]
     hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    normalized_version: Option<&'static str>,
+    normalized_version: Option<String>,
 }
 
 impl ServiceSignatureSupport {
@@ -75,7 +75,7 @@ impl ServiceSignatureSupport {
             artifact: Some("rust-source-health"),
             matched_field: Some(ServiceSignatureSupportMatchedField::FunctionSignatureHash),
             hash: Some(evidence.hash.clone()),
-            normalized_version: Some(evidence.normalized_version),
+            normalized_version: Some(evidence.normalized_version.clone()),
         }
     }
 }
