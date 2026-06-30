@@ -98,9 +98,14 @@ intents. It consumes typed `rust-source-health` evidence in memory. It does not
 run Cargo metadata or Cargo check because the current cargo/rustc oracle can
 verify diagnostics and clean build scope but cannot prove that an unreferenced
 repository name, shape, file, inline pattern, or dependency consumer is absent.
-The public audit orchestrator enters this route only through explicit Rust
-selection, currently `audit-repo.mjs --pre-write --rust-pre-write`; automatic
-language inference is not part of this contract. JS audit scan-scope flags such
+The public audit orchestrator enters this route through explicit Rust
+selection, currently `audit-repo.mjs --pre-write --rust-pre-write`, or through
+`audit-repo.mjs --pre-write --pre-write-engine auto` when the intent transport
+explicitly declares `language: "rust"`. Filename, dependency, and repository
+shape inference are not part of this contract. `intent.language` is an
+orchestrator route selector, not a Rust analyzer schema field; the audit
+orchestrator strips it before invoking `lumin-rust-analyzer pre-write` so Rust
+keeps its typed `deny_unknown_fields` boundary. JS audit scan-scope flags such
 as `--production` and `--exclude` are not silently applied to this route; until
 Rust owns equivalent scan-scope semantics, combining them with Rust pre-write is
 a hard-stop.

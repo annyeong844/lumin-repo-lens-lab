@@ -127,7 +127,7 @@ Flags:
   --strict-post-write      exit 2 when post-write orchestration cannot run
   --strict-post-write-confidence
                            exit 2 when post-write delta confidence is limited
-  --pre-write-engine <js|rust>
+  --pre-write-engine <js|rust|auto>
                            pre-write execution surface (default: js)
   --rust-pre-write         alias for --pre-write-engine rust
   --strict-check-canon     escalate drift to exit 1, all-fail to exit 2
@@ -268,7 +268,7 @@ const PRE_WRITE_ONLY =
   !values['canon-draft'] &&
   !values['check-canon'] &&
   !EMIT_SARIF;
-const PRE_WRITE_ENGINE = values['rust-pre-write'] ? 'rust' : values['pre-write-engine'];
+const REQUESTED_PRE_WRITE_ENGINE = values['rust-pre-write'] ? 'rust' : values['pre-write-engine'];
 const RUN_BASE_PIPELINE = !PRE_POST_MUTEX && !PRE_WRITE_ONLY;
 const AUTO_EXCLUDES = values['no-self-audit-excludes']
   ? []
@@ -298,8 +298,8 @@ if (!['quick', 'full', 'ci'].includes(PROFILE)) {
   process.exit(1);
 }
 
-if (!['js', 'rust'].includes(PRE_WRITE_ENGINE)) {
-  console.error(`[audit-repo] unknown --pre-write-engine: ${PRE_WRITE_ENGINE}. Use js|rust.`);
+if (!['js', 'rust', 'auto'].includes(REQUESTED_PRE_WRITE_ENGINE)) {
+  console.error(`[audit-repo] unknown --pre-write-engine: ${REQUESTED_PRE_WRITE_ENGINE}. Use js|rust|auto.`);
   process.exit(2);
 }
 
@@ -394,6 +394,117 @@ function rustAnalyzerInvocation() {
     ],
     source: 'cargo:experiments',
     manifestPath,
+  };
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readPreWriteIntentText(intentFlag) {
+  if (intentFlag === '-') {
+    try {
+      return readFileSync(0, 'utf8');
+    } catch (error) {
+      throw new Error(`failed to read --intent -: ${error.message}`);
+    }
+  }
+
+  const intentPath = path.resolve(intentFlag);
+  if (!existsSync(intentPath)) {
+    throw new Error(`intent file not found: ${intentPath}`);
+  }
+  try {
+    return readFileSync(intentPath, 'utf8');
+  } catch (error) {
+    throw new Error(`failed to read intent: ${error.message}`);
+  }
+}
+
+function normalizePreWriteIntentLanguage(value) {
+  if (value === undefined) return null;
+  if (value === 'rust' || value === 'js-ts') return value;
+  throw new Error('intent.language must be "rust" or "js-ts" when present');
+}
+
+function stripPreWriteRouteOnlyFields(intentText) {
+  let parsed;
+  try {
+    parsed = JSON.parse(intentText);
+  } catch {
+    return intentText;
+  }
+  if (!isPlainObject(parsed) || parsed.language === undefined) return intentText;
+  delete parsed.language;
+  return `${JSON.stringify(parsed, null, 2)}\n`;
+}
+
+function resolvePreWriteEngineForIntent(requestedEngine, intentFlag) {
+  if (requestedEngine === 'js') {
+    return {
+      engine: 'js',
+      childIntentFlag: intentFlag === '-' ? '-' : path.resolve(intentFlag),
+      childIntentInput: null,
+      engineSelection: {
+        requested: requestedEngine,
+        selected: 'js',
+        reason: 'explicit-cli',
+      },
+    };
+  }
+
+  const intentText = readPreWriteIntentText(intentFlag);
+  if (requestedEngine === 'rust') {
+    return {
+      engine: 'rust',
+      childIntentFlag: '-',
+      childIntentInput: stripPreWriteRouteOnlyFields(intentText),
+      engineSelection: {
+        requested: requestedEngine,
+        selected: 'rust',
+        reason: 'explicit-cli',
+      },
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(intentText);
+  } catch (error) {
+    throw new Error(`intent JSON parse failed before auto engine selection: ${error.message}`);
+  }
+  if (!isPlainObject(parsed)) {
+    throw new Error('intent must be a plain object before auto engine selection');
+  }
+
+  const intentLanguage = normalizePreWriteIntentLanguage(parsed.language);
+  const selected = intentLanguage === 'rust' ? 'rust' : 'js';
+  return {
+    engine: selected,
+    childIntentFlag: '-',
+    childIntentInput: selected === 'rust'
+      ? stripPreWriteRouteOnlyFields(intentText)
+      : intentText,
+    engineSelection: {
+      requested: requestedEngine,
+      selected,
+      reason: intentLanguage === null
+        ? 'intent-language-absent-default-js'
+        : 'intent-language',
+      ...(intentLanguage !== null ? { intentLanguage } : {}),
+    },
+  };
+}
+
+function childProcessOptionsForIntent(route, originalIntentFlag) {
+  if (route.childIntentInput !== null && route.childIntentInput !== undefined) {
+    return {
+      input: route.childIntentInput,
+      stdio: ['pipe', 'inherit', 'inherit'],
+    };
+  }
+  return {
+    stdio: [originalIntentFlag === '-' ? 'inherit' : 'ignore', 'inherit', 'inherit'],
   };
 }
 
@@ -861,121 +972,137 @@ if (values['pre-write'] && values['post-write']) {
     preWriteBlock = {
       requested: true,
       ran: false,
-      engine: PRE_WRITE_ENGINE,
-      ...(PRE_WRITE_ENGINE === 'rust'
+      engine: REQUESTED_PRE_WRITE_ENGINE,
+      ...(REQUESTED_PRE_WRITE_ENGINE === 'auto'
+        ? {}
+        : REQUESTED_PRE_WRITE_ENGINE === 'rust'
         ? { language: 'rust', producer: 'lumin-rust-analyzer' }
         : { language: 'js-ts', producer: 'pre-write.mjs' }),
       reason: '--intent missing',
     };
     finalExitCode = 2;
-  } else if (PRE_WRITE_ENGINE === 'rust') {
-    if (!INCLUDE_TESTS || EFFECTIVE_EXCLUDES.length > 0) {
-      const reason = 'rust pre-write does not support audit-repo scan-scope flags yet; rerun without --production/--exclude or use JS pre-write';
-      process.stderr.write(`[audit-repo] --pre-write requested but skipped: ${reason}\n`);
+  } else {
+    let preWriteRoute = null;
+    try {
+      preWriteRoute = resolvePreWriteEngineForIntent(REQUESTED_PRE_WRITE_ENGINE, values.intent);
+    } catch (error) {
       preWriteBlock = {
         requested: true,
         ran: false,
-        engine: 'rust',
-        language: 'rust',
-        producer: 'lumin-rust-analyzer',
-        reason,
+        engine: REQUESTED_PRE_WRITE_ENGINE,
+        reason: `pre-write engine selection failed: ${error.message}`,
       };
       finalExitCode = 2;
-    } else {
-      const { execFileSync: _exec } = await import('node:child_process');
-      const intentPath = values.intent === '-' ? '-' : path.resolve(values.intent);
-      const sourceCommit = gitHeadCommit(ROOT);
-      const latestAdvisoryPath = path.join(OUT, 'rust-pre-write-advisory.latest.json');
-      try {
-        const invocation = rustAnalyzerInvocation();
-        const preArgs = [
-          ...invocation.prefixArgs,
-          'pre-write',
-          '--root', ROOT,
-          '--source-commit', sourceCommit,
-          '--intent', intentPath,
-          '--output', latestAdvisoryPath,
-        ];
-        _exec(invocation.command, preArgs, {
-          stdio: [values.intent === '-' ? 'inherit' : 'ignore', 'inherit', 'inherit'],
-        });
-        preWriteBlock = {
-          requested: true,
-          ran: true,
-          engine: 'rust',
-          language: 'rust',
-          producer: 'lumin-rust-analyzer',
-          advisoryPath: latestAdvisoryPath,
-          latestAdvisoryPath,
-          sourceCommit,
-          analyzerInvocation: {
-            source: invocation.source,
-            ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
-          },
-        };
-      } catch (e) {
+    }
+
+    if (preWriteRoute?.engine === 'rust') {
+      if (!INCLUDE_TESTS || EFFECTIVE_EXCLUDES.length > 0) {
+        const reason = 'rust pre-write does not support audit-repo scan-scope flags yet; rerun without --production/--exclude or use JS pre-write';
+        process.stderr.write(`[audit-repo] --pre-write requested but skipped: ${reason}\n`);
         preWriteBlock = {
           requested: true,
           ran: false,
           engine: 'rust',
           language: 'rust',
           producer: 'lumin-rust-analyzer',
-          reason: `lumin-rust-analyzer pre-write exited non-zero: ${e.message}`,
+          engineSelection: preWriteRoute.engineSelection,
+          reason,
+        };
+        finalExitCode = 2;
+      } else {
+        const { execFileSync: _exec } = await import('node:child_process');
+        const sourceCommit = gitHeadCommit(ROOT);
+        const latestAdvisoryPath = path.join(OUT, 'rust-pre-write-advisory.latest.json');
+        try {
+          const invocation = rustAnalyzerInvocation();
+          const preArgs = [
+            ...invocation.prefixArgs,
+            'pre-write',
+            '--root', ROOT,
+            '--source-commit', sourceCommit,
+            '--intent', preWriteRoute.childIntentFlag,
+            '--output', latestAdvisoryPath,
+          ];
+          _exec(invocation.command, preArgs, childProcessOptionsForIntent(preWriteRoute, values.intent));
+          preWriteBlock = {
+            requested: true,
+            ran: true,
+            engine: 'rust',
+            language: 'rust',
+            producer: 'lumin-rust-analyzer',
+            engineSelection: preWriteRoute.engineSelection,
+            advisoryPath: latestAdvisoryPath,
+            latestAdvisoryPath,
+            sourceCommit,
+            analyzerInvocation: {
+              source: invocation.source,
+              ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
+            },
+          };
+        } catch (e) {
+          preWriteBlock = {
+            requested: true,
+            ran: false,
+            engine: 'rust',
+            language: 'rust',
+            producer: 'lumin-rust-analyzer',
+            engineSelection: preWriteRoute.engineSelection,
+            reason: `lumin-rust-analyzer pre-write exited non-zero: ${e.message}`,
+          };
+          finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
+        }
+      }
+    } else if (preWriteRoute?.engine === 'js') {
+      const { execFileSync: _exec } = await import('node:child_process');
+      const preWritePath = path.join(__dirname, 'pre-write.mjs');
+      const preArgs = [
+        preWritePath,
+        '--root', ROOT,
+        '--output', OUT,
+        '--intent', preWriteRoute.childIntentFlag,
+        ...forwardedScanArgs(),
+      ];
+      if (values['no-fresh-audit']) preArgs.push('--no-fresh-audit');
+      try {
+        _exec(process.execPath, preArgs, childProcessOptionsForIntent(preWriteRoute, values.intent));
+        const latestAdvisoryPath = path.join(OUT, 'pre-write-advisory.latest.json');
+        let advisoryPath = latestAdvisoryPath;
+        let advisoryInvocationId = null;
+        let advisoryEvidenceAvailability = null;
+        try {
+          const advisory = JSON.parse(readFileSync(latestAdvisoryPath, 'utf8'));
+          advisoryInvocationId = advisory.invocationId ?? null;
+          advisoryEvidenceAvailability = advisory.evidenceAvailability ?? null;
+          if (typeof advisory.artifactPaths?.invocationSpecific === 'string') {
+            advisoryPath = path.resolve(advisory.artifactPaths.invocationSpecific);
+          } else if (typeof advisory.invocationId === 'string') {
+            advisoryPath = path.join(OUT, `pre-write-advisory.${advisory.invocationId}.json`);
+          }
+        } catch { /* leave latest path fallback */ }
+        preWriteBlock = {
+          requested: true,
+          ran: true,
+          engine: 'js',
+          language: 'js-ts',
+          producer: 'pre-write.mjs',
+          engineSelection: preWriteRoute.engineSelection,
+          advisoryPath,
+          latestAdvisoryPath,
+          advisoryInvocationId,
+          evidenceAvailability: advisoryEvidenceAvailability,
+        };
+      } catch (e) {
+        preWriteBlock = {
+          requested: true,
+          ran: false,
+          engine: 'js',
+          language: 'js-ts',
+          producer: 'pre-write.mjs',
+          engineSelection: preWriteRoute.engineSelection,
+          reason: `pre-write.mjs exited non-zero: ${e.message}`,
         };
         finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
       }
-    }
-  } else {
-    const { execFileSync: _exec } = await import('node:child_process');
-    const preWritePath = path.join(__dirname, 'pre-write.mjs');
-    const intentPath = values.intent === '-' ? '-' : path.resolve(values.intent);
-    const preArgs = [
-      preWritePath,
-      '--root', ROOT,
-      '--output', OUT,
-      '--intent', intentPath,
-      ...forwardedScanArgs(),
-    ];
-    if (values['no-fresh-audit']) preArgs.push('--no-fresh-audit');
-    try {
-      _exec(process.execPath, preArgs, {
-        stdio: [values.intent === '-' ? 'inherit' : 'ignore', 'inherit', 'inherit'],
-      });
-      const latestAdvisoryPath = path.join(OUT, 'pre-write-advisory.latest.json');
-      let advisoryPath = latestAdvisoryPath;
-      let advisoryInvocationId = null;
-      let advisoryEvidenceAvailability = null;
-      try {
-        const advisory = JSON.parse(readFileSync(latestAdvisoryPath, 'utf8'));
-        advisoryInvocationId = advisory.invocationId ?? null;
-        advisoryEvidenceAvailability = advisory.evidenceAvailability ?? null;
-        if (typeof advisory.artifactPaths?.invocationSpecific === 'string') {
-          advisoryPath = path.resolve(advisory.artifactPaths.invocationSpecific);
-        } else if (typeof advisory.invocationId === 'string') {
-          advisoryPath = path.join(OUT, `pre-write-advisory.${advisory.invocationId}.json`);
-        }
-      } catch { /* leave latest path fallback */ }
-      preWriteBlock = {
-        requested: true,
-        ran: true,
-        engine: 'js',
-        language: 'js-ts',
-        producer: 'pre-write.mjs',
-        advisoryPath,
-        latestAdvisoryPath,
-        advisoryInvocationId,
-        evidenceAvailability: advisoryEvidenceAvailability,
-      };
-    } catch (e) {
-      preWriteBlock = {
-        requested: true,
-        ran: false,
-        engine: 'js',
-        language: 'js-ts',
-        producer: 'pre-write.mjs',
-        reason: `pre-write.mjs exited non-zero: ${e.message}`,
-      };
-      finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
     }
   }
 } else if (values['post-write']) {

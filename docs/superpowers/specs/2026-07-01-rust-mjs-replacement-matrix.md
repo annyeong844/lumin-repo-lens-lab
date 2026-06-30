@@ -169,8 +169,12 @@ Checked source state:
   `symbols.json`, `shape-index.json`, and `function-clones.json` must not be
   treated as Rust absence evidence.
 - `audit-repo.mjs --pre-write --rust-pre-write` is the explicit public route
-  for Rust source intents. It invokes `lumin-rust-analyzer pre-write` and
-  records `preWrite.producer = "lumin-rust-analyzer"` in `manifest.json`.
+  for Rust source intents. `audit-repo.mjs --pre-write --pre-write-engine auto`
+  may also enter the Rust route, but only when the intent transport explicitly
+  declares `language: "rust"`. It does not infer Rust from filenames,
+  dependencies, or repository shape. The route invokes
+  `lumin-rust-analyzer pre-write` and records
+  `preWrite.producer = "lumin-rust-analyzer"` in `manifest.json`.
   Generated packages must supply `LUMIN_RUST_ANALYZER_BIN` or run from a
   checkout that includes `experiments/Cargo.toml`; missing Rust
   analyzer support is a hard-stop, not permission to fall back to JS.
@@ -179,7 +183,6 @@ Result:
 
 - No code deletion is justified for `build-function-clone-index.mjs` or
   `build-shape-index.mjs`; they already scan JS-family inputs only.
-- The owner handoff gap has narrowed to automatic language selection. The
-  explicit Rust route exists; a later slice may infer Rust routing from a
-  language declaration only after the intent transport has a checked
-  language field.
+- The owner handoff gap has narrowed to default command selection. The explicit
+  Rust route exists, and `--pre-write-engine auto` can route from a checked
+  language declaration without guessing.

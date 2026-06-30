@@ -282,6 +282,13 @@ For Rust source intents, use the Rust execution surface explicitly:
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --rust-pre-write $ARGUMENTS
 ```
 
+If the intent JSON explicitly contains `"language": "rust"`, this equivalent
+route may be used:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --pre-write-engine auto $ARGUMENTS
+```
+
 This routes to `lumin-rust-analyzer pre-write` instead of the JS/TS
 `pre-write.mjs` owner. The generated package must have
 `LUMIN_RUST_ANALYZER_BIN` set to a built analyzer binary, or a maintainer
