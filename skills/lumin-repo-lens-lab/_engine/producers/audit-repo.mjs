@@ -71,6 +71,7 @@ import {
 import {
   buildProducerPerformanceSummaryFromFile,
   buildOrchestrationPlan,
+  buildOrchestrationResultSummaryFromFile,
   buildManifestEvidence,
   collectProducedArtifacts,
   refreshManifestEvidence,
@@ -1542,6 +1543,7 @@ atomicWrite(
   JSON.stringify(producerPerformance, null, 2)
 );
 manifest.performance = buildProducerPerformanceSummaryFromFile(producerPerformancePath);
+manifest.orchestration = buildOrchestrationResultSummaryFromFile(producerPerformancePath);
 manifest.artifactsProduced = collectManifestProducedArtifacts(manifest.rustAnalysis);
 
 const manifestPath = path.join(OUT, 'manifest.json');

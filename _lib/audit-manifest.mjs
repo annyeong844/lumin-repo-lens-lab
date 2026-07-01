@@ -99,6 +99,13 @@ export function buildOrchestrationPlan({
   ], 'buildOrchestrationPlan');
 }
 
+export function buildOrchestrationResultSummaryFromFile(artifactPath) {
+  return runAuditCoreJson([
+    'orchestration-result-summary',
+    '--artifact', artifactPath,
+  ], 'buildOrchestrationResultSummary');
+}
+
 export function buildManifestEvidence({
   root,
   outDir,

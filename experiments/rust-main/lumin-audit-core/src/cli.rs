@@ -19,11 +19,12 @@ use lumin_audit_core::manifest_evidence::{
 use lumin_audit_core::orchestration_plan::{
     build_orchestration_plan, AuditProfile, OrchestrationPlanOptions,
 };
+use lumin_audit_core::orchestration_result::summarize_orchestration_result;
 use lumin_audit_core::producer_performance::summarize_producer_performance;
 use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::summarize_rust_analysis_artifact;
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary --input <fixture.json>\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core living-audit-summary --root <repo>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary --input <fixture.json>\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -37,6 +38,7 @@ pub fn run() -> Result<()> {
         Some("manifest-core-summary") => run_manifest_core_summary(args.collect()),
         Some("manifest-evidence-summary") => run_manifest_evidence_summary(args.collect()),
         Some("orchestration-plan") => run_orchestration_plan(args.collect()),
+        Some("orchestration-result-summary") => run_orchestration_result_summary(args.collect()),
         Some("producer-performance-summary") => run_producer_performance_summary(args.collect()),
         Some("living-audit-summary") => run_living_audit_summary(args.collect()),
         _ => bail!(USAGE),
@@ -373,6 +375,22 @@ fn run_producer_performance_summary(args: Vec<String>) -> Result<()> {
     let artifact = artifact.context("producer-performance-summary: missing --artifact <path>")?;
     let artifact_json = read_required_json(&artifact, "producer-performance-summary")?;
     let summary = summarize_producer_performance(&artifact_json);
+    write_stdout_json(&summary)
+}
+
+fn run_orchestration_result_summary(args: Vec<String>) -> Result<()> {
+    let mut artifact = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--artifact" => artifact = Some(take_path(&mut args, "--artifact")?),
+            _ => bail!("orchestration-result-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let artifact = artifact.context("orchestration-result-summary: missing --artifact <path>")?;
+    let artifact_json = read_required_json(&artifact, "orchestration-result-summary")?;
+    let summary = summarize_orchestration_result(&artifact_json);
     write_stdout_json(&summary)
 }
 

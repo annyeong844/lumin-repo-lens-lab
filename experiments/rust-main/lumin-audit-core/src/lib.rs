@@ -6,6 +6,7 @@ pub mod living_audit;
 pub mod manifest_core;
 pub mod manifest_evidence;
 pub mod orchestration_plan;
+pub mod orchestration_result;
 pub mod producer_performance;
 pub mod resolver_diagnostics;
 pub mod rust_analysis;

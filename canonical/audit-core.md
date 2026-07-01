@@ -8,8 +8,8 @@
 ## Scope
 
 `lumin-audit-core` owns typed audit artifact registry, manifest evidence
-summary contracts, and the audit orchestration plan contract that are not
-source-language analysis.
+summary contracts, the audit orchestration plan contract, and the
+orchestration result summary projection that are not source-language analysis.
 
 It does not own JS/TS producer behavior, Rust source-health syntax analysis,
 Cargo semantic oracle behavior, child-process execution, or final
@@ -23,7 +23,7 @@ or orchestration ownership before migration.
 | Manifest area | Current owner | Why it stays JS-owned for now | Next migration gate |
 |---|---|---|---|
 | `manifest.json.blindZones` | `_lib/blind-zones.mjs` through `_lib/audit-manifest.mjs` | Blind-zone detection combines TS/JS producer semantics from `triage.json`, `symbols.json`, `dead-classify.json`, `entry-surface.json`, resolver diagnostics, and Rust analysis availability. Rust audit-core must not reinterpret those claims until parity is checked. | Follow `docs/superpowers/specs/2026-07-01-blind-zones-audit-core-parity-design.md`: compare JS blind-zone outputs against a typed Rust port on protected fixtures and real artifacts, including missing/partial producer artifacts, before changing the owner. |
-| Producer execution evidence (`commandsRun`, `skipped`) | `audit-repo.mjs` | These fields describe child process orchestration, skip decisions, exit statuses, stderr snippets, and wall-clock observations. Audit-core reads completed artifacts; it does not execute producers. | Only migrate if producer orchestration itself moves to Rust. |
+| Producer execution evidence (`commandsRun`, `skipped`) | `audit-repo.mjs` | These raw fields describe child process orchestration, skip decisions, exit statuses, stderr snippets, and wall-clock observations. Audit-core reads completed artifacts and owns only the typed `manifest.json.orchestration` summary projection from `producer-performance.json`; it does not execute producers. | Only migrate the raw fields if producer orchestration itself moves to Rust. |
 | `producer-performance.json` construction | `audit-repo.mjs` | The artifact records JS orchestrator observations: command timings, memory snapshots, phase timing reads, artifact read metrics, and skipped producer entries. Rust owns only the typed `manifest.json.performance` summary projection from that artifact. | Keep JS-owned unless the measurement source moves to Rust. |
 | Human companion artifacts (`auditSummary`, `reviewPack`, `topologyMermaid`) | `audit-repo.mjs` plus renderer modules | These are presentation/rendering outputs, not typed manifest evidence summaries. | Migrate only through a separate renderer parity plan. |
 | Final `manifest.json` file write | `audit-repo.mjs` | The manifest root still joins Rust summaries with JS producer orchestration and optional pre/post-write lifecycle blocks. | Migrate after all manifest fields have typed Rust owners or an explicit Rust orchestrator owns the final write. |
@@ -43,6 +43,7 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/generated_artifacts.rs` | `manifest.json.generatedArtifacts` projection from already-produced `symbols.json`, generated-artifact mode validation, generated miss grouping, blind-zone grouping, and present/prepared out-of-scope evidence | package resolution, generator execution, generated-artifact producer evidence construction |
 | `experiments/rust-main/lumin-audit-core/src/manifest_evidence.rs` | Composition of Rust-owned `manifest.json` evidence fields from already-produced artifacts, excluding `blindZones` | blind-zone detection, producer orchestration, manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/orchestration_plan.rs` | Typed audit profile command graph, lifecycle request plan, profile/SARIF/base-pipeline skip semantics, and planned precondition metadata consumed by `audit-repo.mjs` | child process execution, filesystem precondition evaluation, command telemetry, producer-performance measurement |
+| `experiments/rust-main/lumin-audit-core/src/orchestration_result.rs` | `manifest.json.orchestration` projection from already-produced `producer-performance.json`, including execution status counts, required/optional failure counts, skipped counts, and capped examples | child process execution, live telemetry collection, raw `commandsRun`/`skipped` ownership, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/producer_performance.rs` | `manifest.json.performance` projection from already-produced `producer-performance.json` | producer execution, memory measurement, artifact read measurement, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/scan_scope.rs` | Audit manifest scan-scope path inclusion policy used by migrated manifest summaries, matching the JS `scanScopeStatusForPath` contract | source walking, parsing, producer orchestration |
 | `experiments/rust-main/lumin-audit-core/src/cli.rs` | CLI request parsing and stdout JSON dispatch for audit-core commands | producer orchestration, manifest file writing |
