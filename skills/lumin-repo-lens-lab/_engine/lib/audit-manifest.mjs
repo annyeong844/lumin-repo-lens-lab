@@ -150,6 +150,15 @@ export function buildManifestRoot(input) {
   });
 }
 
+export function buildManifestEvidenceUpdate(evidence) {
+  return runAuditCoreJson([
+    'manifest-evidence-update',
+    '--input', '-',
+  ], 'buildManifestEvidenceUpdate', {
+    input: JSON.stringify({ evidence }),
+  });
+}
+
 export function buildManifestEvidence({
   root,
   outDir,
@@ -203,15 +212,5 @@ export function buildManifestEvidence({
 
 export function refreshManifestEvidence(manifest, options) {
   const evidence = buildManifestEvidence(options);
-  manifest.scanRange = evidence.scanRange;
-  manifest.confidence = evidence.confidence;
-  manifest.resolverDiagnostics = evidence.resolverDiagnostics;
-  manifest.blindZones = evidence.blindZones;
-  manifest.rustAnalysis = evidence.rustAnalysis;
-  manifest.generatedArtifacts = evidence.generatedArtifacts;
-  manifest.frameworkResourceSurfaces = evidence.frameworkResourceSurfaces;
-  manifest.unusedDependencies = evidence.unusedDependencies;
-  manifest.blockClones = evidence.blockClones;
-  manifest.sfcEvidence = evidence.sfcEvidence;
-  manifest.livingAudit = evidence.livingAudit;
+  Object.assign(manifest, buildManifestEvidenceUpdate(evidence));
 }

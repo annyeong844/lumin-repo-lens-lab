@@ -3,17 +3,43 @@ use serde_json::{json, Value};
 use std::fs;
 use std::process::Command;
 
-use lumin_audit_core::manifest_root::{build_manifest_root, ManifestRootInput};
+use lumin_audit_core::manifest_root::{
+    build_manifest_evidence_update, build_manifest_root, ManifestEvidenceUpdateInput,
+    ManifestRootInput,
+};
 
 #[test]
-fn manifest_root_preserves_js_owned_blocks_and_places_rust_owned_fields() -> Result<()> {
+fn manifest_root_projects_typed_runtime_log_and_places_rust_owned_fields() -> Result<()> {
     let root = serde_json::from_value::<ManifestRootInput>(json!({
         "generated": "2026-07-01T00:00:00.000Z",
         "profile": "full",
         "root": "C:/repo",
         "output": "C:/repo/.audit",
         "commandsRun": [
-            { "step": "measure-topology.mjs", "status": "ok", "ms": 12 }
+            {
+                "step": "measure-topology.mjs",
+                "status": "ok",
+                "ms": 12,
+                "memory": {
+                    "before": { "rssBytes": 1000 },
+                    "after": { "rssBytes": 1400 },
+                    "delta": { "rssBytes": 400 }
+                }
+            },
+            {
+                "step": "lumin-rust-analyzer",
+                "status": "ok",
+                "ms": 34,
+                "artifact": "rust-analyzer-health.latest.json",
+                "rustFiles": 8,
+                "analyzerInvocation": { "source": "cargo-run", "manifestPath": "experiments/Cargo.toml" }
+            },
+            {
+                "step": "resolve-method-calls.mjs",
+                "status": "failed-optional",
+                "ms": 4,
+                "stderr": "resolver diagnostics unavailable"
+            }
         ],
         "skipped": [
             { "step": "emit-sarif.mjs", "reason": "not in --sarif mode" }
@@ -46,6 +72,24 @@ fn manifest_root_preserves_js_owned_blocks_and_places_rust_owned_fields() -> Res
     assert_eq!(manifest["meta"]["profile"], "full");
     assert_eq!(manifest["profile"], "full");
     assert_eq!(manifest["commandsRun"][0]["step"], "measure-topology.mjs");
+    assert_eq!(
+        manifest["commandsRun"][0]["memory"]["delta"]["rssBytes"],
+        400
+    );
+    assert_eq!(
+        manifest["commandsRun"][1]["artifact"],
+        "rust-analyzer-health.latest.json"
+    );
+    assert_eq!(manifest["commandsRun"][1]["rustFiles"], 8);
+    assert_eq!(
+        manifest["commandsRun"][1]["analyzerInvocation"]["manifestPath"],
+        "experiments/Cargo.toml"
+    );
+    assert_eq!(manifest["commandsRun"][2]["status"], "failed-optional");
+    assert_eq!(
+        manifest["commandsRun"][2]["stderr"],
+        "resolver diagnostics unavailable"
+    );
     assert_eq!(manifest["skipped"][0]["reason"], "not in --sarif mode");
     assert_eq!(manifest["blindZones"][0]["area"], "rust");
     assert_eq!(manifest["blindZones"][0]["details"]["files"], 2);
@@ -54,6 +98,76 @@ fn manifest_root_preserves_js_owned_blocks_and_places_rust_owned_fields() -> Res
         manifest["artifactsProduced"],
         json!(["triage.json", "symbols.json"])
     );
+    Ok(())
+}
+
+#[test]
+fn cli_manifest_root_hard_stops_on_malformed_runtime_log() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("manifest-root.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "generated": "2026-07-01T00:00:00.000Z",
+            "profile": "quick",
+            "root": "C:/repo",
+            "output": "C:/repo/.audit",
+            "commandsRun": [
+                { "step": "measure-topology.mjs", "ms": 12 }
+            ],
+            "skipped": [
+                { "step": "emit-sarif.mjs", "reason": "not in --sarif mode" }
+            ],
+            "evidence": {
+                "scanRange": {},
+                "confidence": {},
+                "blindZones": [],
+                "rustAnalysis": null,
+                "generatedArtifacts": {},
+                "livingAudit": {}
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-root")
+        .arg("--input")
+        .arg(&input_path)
+        .output()?;
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("manifest-root: invalid request shape"));
+    Ok(())
+}
+
+#[test]
+fn manifest_root_rejects_empty_skipped_reason() -> Result<()> {
+    let input = serde_json::from_value::<ManifestRootInput>(json!({
+        "generated": "2026-07-01T00:00:00.000Z",
+        "profile": "quick",
+        "root": "C:/repo",
+        "output": "C:/repo/.audit",
+        "commandsRun": [],
+        "skipped": [
+            { "step": "emit-sarif.mjs", "reason": "  " }
+        ],
+        "evidence": {
+            "scanRange": {},
+            "confidence": {},
+            "blindZones": [],
+            "rustAnalysis": null,
+            "generatedArtifacts": {},
+            "livingAudit": {}
+        }
+    }))?;
+
+    let Err(error) = build_manifest_root(input) else {
+        panic!("empty skipped reason should hard-stop");
+    };
+    assert!(error
+        .to_string()
+        .contains("manifest-root: skipped[].reason must be a non-empty string"));
     Ok(())
 }
 
@@ -136,5 +250,78 @@ fn cli_manifest_root_hard_stops_on_invalid_profile() -> Result<()> {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("manifest-root: invalid --profile"));
+    Ok(())
+}
+
+#[test]
+fn manifest_evidence_update_projects_all_refresh_fields_without_reinterpreting_blind_zones(
+) -> Result<()> {
+    let input = serde_json::from_value::<ManifestEvidenceUpdateInput>(json!({
+        "evidence": {
+            "scanRange": { "includeTests": true, "production": false },
+            "confidence": { "parseErrors": 0 },
+            "resolverDiagnostics": { "status": "available" },
+            "blindZones": [
+                {
+                    "area": "resolver",
+                    "severity": "precision-gap",
+                    "effect": "JS producer owns this meaning"
+                }
+            ],
+            "rustAnalysis": { "status": "complete" },
+            "generatedArtifacts": { "mode": "present" },
+            "frameworkResourceSurfaces": { "status": "available" },
+            "unusedDependencies": { "reviewUnused": 2 },
+            "blockClones": { "groups": 1 },
+            "sfcEvidence": { "files": 3 },
+            "livingAudit": { "action": "read-existing" }
+        }
+    }))?;
+
+    let update = serde_json::to_value(build_manifest_evidence_update(input))?;
+
+    assert_eq!(update["scanRange"]["includeTests"], true);
+    assert_eq!(update["resolverDiagnostics"]["status"], "available");
+    assert_eq!(update["blindZones"][0]["area"], "resolver");
+    assert_eq!(
+        update["blindZones"][0]["effect"],
+        "JS producer owns this meaning"
+    );
+    assert_eq!(update["unusedDependencies"]["reviewUnused"], 2);
+    assert_eq!(update["livingAudit"]["action"], "read-existing");
+    Ok(())
+}
+
+#[test]
+fn cli_manifest_evidence_update_hard_stops_on_incomplete_evidence() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("manifest-evidence-update.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "evidence": {
+                "scanRange": {},
+                "confidence": {},
+                "resolverDiagnostics": {},
+                "blindZones": [],
+                "rustAnalysis": {},
+                "generatedArtifacts": {},
+                "frameworkResourceSurfaces": {},
+                "unusedDependencies": {},
+                "blockClones": {},
+                "sfcEvidence": {}
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-evidence-update")
+        .arg("--input")
+        .arg(&input_path)
+        .output()?;
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("manifest-evidence-update: invalid request shape"));
     Ok(())
 }
