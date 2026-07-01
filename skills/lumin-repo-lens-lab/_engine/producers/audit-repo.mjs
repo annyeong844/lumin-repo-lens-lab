@@ -70,6 +70,7 @@ import {
 } from '../lib/incremental-cache-store.mjs';
 import {
   buildProducerPerformanceSummaryFromFile,
+  buildOrchestrationPlan,
   buildManifestEvidence,
   collectProducedArtifacts,
   refreshManifestEvidence,
@@ -264,7 +265,6 @@ const PROFILE = values.profile;
 const SOURCES_VALUE = values.sources ?? values.source;
 const INCLUDE_TESTS = normalizeIncludeTests(values, process.argv.slice(2));
 const PRODUCTION = !INCLUDE_TESTS;
-const EMIT_SARIF = values.sarif || PROFILE === 'ci';
 const PRE_POST_MUTEX = values['pre-write'] && values['post-write'];
 let GENERATED_ARTIFACTS_MODE = 'default';
 try {
@@ -273,14 +273,7 @@ try {
   console.error(`[audit-repo] ${error.message}`);
   process.exit(2);
 }
-const PRE_WRITE_ONLY =
-  values['pre-write'] &&
-  !values['post-write'] &&
-  !values['canon-draft'] &&
-  !values['check-canon'] &&
-  !EMIT_SARIF;
 const REQUESTED_PRE_WRITE_ENGINE = values['rust-pre-write'] ? 'rust' : values['pre-write-engine'];
-const RUN_BASE_PIPELINE = !PRE_POST_MUTEX && !PRE_WRITE_ONLY;
 const AUTO_EXCLUDES = values['no-self-audit-excludes']
   ? []
   : detectMaintainerSelfAuditExcludes(ROOT);
@@ -313,6 +306,18 @@ if (!['js', 'rust', 'auto'].includes(REQUESTED_PRE_WRITE_ENGINE)) {
   console.error(`[audit-repo] unknown --pre-write-engine: ${REQUESTED_PRE_WRITE_ENGINE}. Use js|rust|auto.`);
   process.exit(2);
 }
+
+const ORCHESTRATION_PLAN = buildOrchestrationPlan({
+  profile: PROFILE,
+  sarif: values.sarif,
+  preWrite: values['pre-write'],
+  postWrite: values['post-write'],
+  canonDraft: values['canon-draft'],
+  checkCanon: values['check-canon'],
+  rustAnalyzer: values['rust-analyzer'],
+});
+const EMIT_SARIF = ORCHESTRATION_PLAN.emitSarif === true;
+const RUN_BASE_PIPELINE = ORCHESTRATION_PLAN.basePipeline?.status === 'planned';
 
 if (values['clear-incremental-cache'] === true) {
   const cacheStore = openIncrementalCacheStore({
@@ -1048,134 +1053,84 @@ function runRustAnalyzerStep() {
   }
 }
 
+function hasCoverage() {
+  const candidates = [
+    path.join(ROOT, 'coverage', 'coverage-final.json'),
+    path.join(ROOT, '.nyc_output', 'coverage-final.json'),
+  ];
+  return candidates.some(existsSync);
+}
+
+function isGitWorkTree() {
+  try {
+    const out = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return out === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function plannedSkip(stepName) {
+  return ORCHESTRATION_PLAN.skipped?.find((entry) => entry.step === stepName) ?? null;
+}
+
+function recordPlannedSkip(stepName, fallbackReason) {
+  const reason = plannedSkip(stepName)?.reason ?? fallbackReason;
+  skipped.push({ step: stepName, reason });
+  console.log(`[audit-repo] skip  ${stepName}  (${reason})`);
+}
+
+function plannedStepPrecondition(step) {
+  switch (step.step) {
+    case 'build-resolver-diagnostics.mjs':
+    case 'build-entry-surface.mjs':
+      return () => existsSync(path.join(OUT, 'symbols.json'));
+    case 'build-module-reachability.mjs':
+      return () =>
+        existsSync(path.join(OUT, 'symbols.json')) &&
+        existsSync(path.join(OUT, 'entry-surface.json'));
+    case 'export-action-safety.mjs':
+    case 'rank-fixes.mjs':
+      return () => existsSync(path.join(OUT, 'dead-classify.json'));
+    case 'merge-runtime-evidence.mjs':
+      return hasCoverage;
+    case 'measure-staleness.mjs':
+      return isGitWorkTree;
+    default:
+      return null;
+  }
+}
+
+function runPlannedBaseStep(step) {
+  if (step.step === 'lumin-rust-analyzer') {
+    rustAnalysisRun = runRustAnalyzerStep();
+    return;
+  }
+  runStep(step.script, {
+    required: step.required === true,
+    precondition: plannedStepPrecondition(step),
+    reason: step.skipReasonWhenUnmet ?? '',
+  });
+}
+
+function runBasePipelineFromPlan(plan) {
+  for (const step of plan.steps ?? []) {
+    runPlannedBaseStep(step);
+  }
+}
+
 console.log(`[audit-repo] profile=${PROFILE}  root=${ROOT}  output=${OUT}`);
 
 if (!RUN_BASE_PIPELINE) {
-  const baseSkipReason = PRE_POST_MUTEX
-    ? '--pre-write and --post-write are mutually exclusive'
-    : 'pre-write-only mode uses intent-shaped cold-cache instead of full quick audit';
-  skipped.push({
-    step: 'base-audit-profile',
-    reason: baseSkipReason,
-  });
-  console.log(`[audit-repo] skip  base audit profile  (${baseSkipReason})`);
+  recordPlannedSkip('base-audit-profile', 'base audit profile skipped by Rust orchestration plan');
 } else {
-  // ─── Step 1: triage (always) ──────────────────────────────
-  runStep('triage-repo.mjs', { required: true });
-
-  // ─── Step 1a: Rust-owned analyzer artifact (explicit opt-in) ──
-  rustAnalysisRun = runRustAnalyzerStep();
-
-  // ─── Step 1b: framework/resource surface inventory ─────────
-  runStep('build-framework-resource-surfaces.mjs', { required: false });
-
-  // ─── Step 2-3: measurement (quick+) ──────────────────────
-  runStep('measure-topology.mjs', { required: false });
-  runStep('measure-discipline.mjs', { required: false });
-
-  // ─── Step 4: optional structural evidence (full+) ───────────
-  if (PROFILE !== 'quick') {
-    runStep('build-call-graph.mjs', { required: false });
-    runStep('check-barrel-discipline.mjs', { required: false });
-    runStep('build-shape-index.mjs', { required: false });
-    runStep('build-function-clone-index.mjs', { required: false });
-    runStep('build-block-clone-index.mjs', { required: false });
-  }
-
-  // ─── Step 5: symbol graph (always, required for classify) ──
-  runStep('build-symbol-graph.mjs', { required: true });
-
-  // ─── Step 5a: review-only declared dependency hygiene ───
-  runStep('build-unused-deps.mjs', { required: false });
-
-  // ─── Step 5b: resolver capability + per-run diagnostics ───
-  runStep('build-resolver-diagnostics.mjs', {
-    required: false,
-    precondition: () => existsSync(path.join(OUT, 'symbols.json')),
-    reason: 'symbols.json missing (symbol graph step failed or was skipped)',
-  });
-
-  // ─── Step 6: PCEF entry surface evidence ────────────────
-  runStep('build-entry-surface.mjs', {
-    required: false,
-    precondition: () => existsSync(path.join(OUT, 'symbols.json')),
-    reason: 'symbols.json missing (symbol graph step failed or was skipped)',
-  });
-
-  // ─── Step 7: PCEF module reachability evidence ──────────
-  runStep('build-module-reachability.mjs', {
-    required: false,
-    precondition: () =>
-      existsSync(path.join(OUT, 'symbols.json')) &&
-      existsSync(path.join(OUT, 'entry-surface.json')),
-    reason: 'symbols.json or entry-surface.json missing',
-  });
-
-  // ─── Step 8: classify dead exports ──────────────────────
-  runStep('classify-dead-exports.mjs', { required: false });
-
-  // ─── Step 9: PCEF safe action proof ─────────────────────
-  runStep('export-action-safety.mjs', {
-    required: false,
-    precondition: () => existsSync(path.join(OUT, 'dead-classify.json')),
-    reason: 'dead-classify.json missing (classify step failed or was skipped)',
-  });
-
-  // ─── Step 10: runtime evidence (full only, coverage present) ──
-  const hasCoverage = () => {
-    const candidates = [
-      path.join(ROOT, 'coverage', 'coverage-final.json'),
-      path.join(ROOT, '.nyc_output', 'coverage-final.json'),
-    ];
-    return candidates.some(existsSync);
-  };
-  if (PROFILE !== 'quick') {
-    runStep('merge-runtime-evidence.mjs', {
-      required: false,
-      precondition: hasCoverage,
-      reason: 'no coverage-final.json in coverage/ or .nyc_output/',
-    });
-  }
-
-  // ─── Step 11: staleness (full only, git repo) ───────────
-  function isGitWorkTree() {
-    try {
-      const out = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
-        cwd: ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim();
-      return out === 'true';
-    } catch {
-      return false;
-    }
-  }
-  if (PROFILE !== 'quick') {
-    runStep('measure-staleness.mjs', {
-      required: false,
-      precondition: isGitWorkTree,
-      reason: 'not a git working tree',
-    });
-  }
-
-  // ─── Step 11: rank-fixes ──────────────────────────────────
-  runStep('rank-fixes.mjs', {
-    required: false,
-    precondition: () => existsSync(path.join(OUT, 'dead-classify.json')),
-    reason: 'dead-classify.json missing (classify step failed or was skipped)',
-  });
-
-  // ─── Step 12: checklist-facts (pre-compute for templates/REVIEW_CHECKLIST.md) ──
-  // Always runs — cheap and degrades per-item when inputs are missing.
-  // Produces `checklist-facts.json` so a structural-review walker lands
-  // with the automatable half pre-labeled `[grounded]`.
-  runStep('checklist-facts.mjs', { required: false });
-
-  // ─── Step 13: SARIF emission (ci, or --sarif) ──────────────
-  if (EMIT_SARIF) {
-    runStep('emit-sarif.mjs', { required: false });
-  } else {
-    skipped.push({ step: 'emit-sarif.mjs', reason: 'not in --sarif mode' });
+  runBasePipelineFromPlan(ORCHESTRATION_PLAN);
+  if (!EMIT_SARIF && plannedSkip('emit-sarif.mjs')) {
+    recordPlannedSkip('emit-sarif.mjs', 'not in --sarif mode');
   }
 }
 
