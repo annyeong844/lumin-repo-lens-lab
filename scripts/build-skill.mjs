@@ -107,6 +107,7 @@ const SIBLING_SKILL_SURFACES = [
 ];
 const RUNTIME_CANON_FILES = [
   'any-contamination.md',
+  'audit-core.md',
   'canon-drift.md',
   'classification-gates.md',
   'evidence-ladder.md',
