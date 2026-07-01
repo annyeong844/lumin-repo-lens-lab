@@ -80,7 +80,14 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/orchestration_result.rs` | `manifest.json.orchestration` projection from the typed `producer-performance.json` source shape, including execution status counts, required/optional failure counts, skipped counts, and capped examples | child process execution, live telemetry collection, raw `commandsRun`/`skipped` value production, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/producer_performance.rs` | `manifest.json.performance` projection from already-produced `producer-performance.json` | producer execution, memory measurement, artifact read measurement, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/scan_scope.rs` | Audit manifest scan-scope path inclusion policy used by migrated manifest summaries, matching the JS `scanScopeStatusForPath` contract | source walking, parsing, producer orchestration |
-| `experiments/rust-main/lumin-audit-core/src/cli.rs` | CLI request parsing and stdout JSON dispatch for audit-core commands | producer orchestration, manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/cli/mod.rs` | CLI command dispatch for audit-core commands | producer orchestration, manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/cli/args.rs` | CLI-only parsed argument structs shared by audit-core command runners | product projection logic, producer orchestration |
+| `experiments/rust-main/lumin-audit-core/src/cli/io_support.rs` | CLI stdin/file JSON reads, JSON stdout/file writes, and flag value extraction | product projection logic, producer orchestration |
+| `experiments/rust-main/lumin-audit-core/src/cli/artifact.rs` | CLI runners for artifact registry, artifact summaries, generated artifact summaries, resolver diagnostics summaries, Rust-analysis summaries, and blind-zone parity summaries | product projection logic beyond delegating to owned audit-core modules |
+| `experiments/rust-main/lumin-audit-core/src/cli/manifest.rs` | CLI runners for manifest metadata, manifest root/update/final summary, manifest core summary, and manifest evidence summary | producer orchestration, blind-zone owner migration before parity |
+| `experiments/rust-main/lumin-audit-core/src/cli/lifecycle.rs` | CLI runners for lifecycle summary, lifecycle guards, canon/check/post-write lifecycle wrappers, Rust pre-write wrapper, and pre-write routing | JS/TS producer semantics, final manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/cli/orchestration.rs` | CLI runners for orchestration plan/result, base-plan execution, producer-performance artifacts, and living-audit summary | product projection logic beyond delegating to owned audit-core modules |
+| `experiments/rust-main/lumin-audit-core/src/cli/usage.rs` | CLI usage text for audit-core commands | command implementation or product projection logic |
 | `experiments/rust-main/lumin-audit-core/src/lib.rs` | public library exports for audit manifest wrappers | ad hoc JSON shape construction outside owned modules |
 
 ## Rules
