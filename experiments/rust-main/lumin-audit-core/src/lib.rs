@@ -11,6 +11,7 @@ pub mod manifest_final;
 pub mod manifest_meta;
 pub mod manifest_root;
 pub mod orchestration_events;
+pub mod orchestration_executor;
 pub mod orchestration_plan;
 pub mod orchestration_result;
 pub mod producer_performance;

@@ -4,7 +4,7 @@
 
 **Goal:** Move base audit child-process execution from `audit-repo.mjs` into `lumin-audit-core` while keeping JS/MJS producers, lifecycle helpers, `blindZones`, human renderers, and final manifest writing outside this slice.
 
-**Architecture:** Add a typed Rust executor that consumes the existing Rust orchestration plan, runs only the base audit pipeline, and emits one execution result containing `commandsRun`, `skipped`, `rustAnalysisRun`, and a `lumin-audit-orchestration-ledger.v1` ledger built from the same observed events. The JS runner becomes a wrapper around this executor for base pipeline execution and keeps the JS-owned phases.
+**Architecture:** Add a typed Rust executor that consumes the existing Rust orchestration plan, runs only the base audit pipeline, and emits one execution result containing `commandsRun`, `skipped`, `rustAnalysisRun`, and typed execution events built from the same observations. The JS runner becomes a wrapper around this executor for base pipeline execution and still assembles the final producer-performance ledger after JS-owned artifact-read metrics, phase timing reads, and final artifact-size measurement are available.
 
 **Tech Stack:** Rust 2021, `lumin-audit-core`, `serde`, `serde_json`, `anyhow`, `std::process::Command`, current JS wrapper in `audit-repo.mjs` and `skills/lumin-repo-lens-lab/_engine/producers/audit-repo.mjs`.
 
@@ -15,7 +15,7 @@
 ## File Structure
 
 - Create `experiments/rust-main/lumin-audit-core/src/orchestration_executor.rs`
-  - Owns executor request/result protocol, base step precondition evaluation, argv construction, child execution observation, memory snapshots, stderr snippets, and conversion to runtime-log/ledger shapes.
+  - Owns executor request/result protocol, base step precondition evaluation, argv construction, child execution observation, memory snapshots, stderr snippets, and conversion to runtime-log/execution-event shapes.
   - Must not parse producer artifacts, interpret `blindZones`, render human markdown, or write `manifest.json`.
 - Modify `experiments/rust-main/lumin-audit-core/src/lib.rs`
   - Export `orchestration_executor`.
@@ -55,9 +55,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::orchestration_events::{
-    ArtifactReadSummary, ArtifactSizeSummary, LedgerCache, LedgerEvent,
-    LedgerGeneratedArtifacts, LedgerScanRange, OrchestrationLedger,
-    ORCHESTRATION_LEDGER_SCHEMA_VERSION,
+    LedgerCache, LedgerEvent, LedgerGeneratedArtifacts, LedgerScanRange,
 };
 use crate::orchestration_plan::ORCHESTRATION_PLAN_SCHEMA_VERSION;
 
@@ -69,7 +67,6 @@ pub const EXECUTOR_RESULT_SCHEMA_VERSION: &str = "lumin-audit-executor-result.v1
 pub struct ExecutorRequest {
     pub schema_version: String,
     pub plan: ExecutorPlanInput,
-    pub generated: String,
     pub root: PathBuf,
     pub output: PathBuf,
     pub scripts_dir: PathBuf,
@@ -79,8 +76,6 @@ pub struct ExecutorRequest {
     pub scan_range: LedgerScanRange,
     pub cache: LedgerCache,
     pub generated_artifacts: LedgerGeneratedArtifacts,
-    pub artifact_reads: ArtifactReadSummary,
-    pub artifacts: ArtifactSizeSummary,
     #[serde(default)]
     pub rust_analyzer: RustAnalyzerExecutorRequest,
 }
@@ -151,11 +146,19 @@ pub struct RustAnalyzerInvocation {
     pub manifest_path: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RustAnalyzerArtifactInvocation {
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest_path: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutorResult {
     pub schema_version: &'static str,
-    pub ledger: OrchestrationLedger,
+    pub events: Vec<LedgerEvent>,
     pub commands_run: Vec<CommandRun>,
     pub skipped: Vec<SkippedRun>,
     pub rust_analysis_run: RustAnalysisRunResult,
@@ -173,7 +176,7 @@ pub struct CommandRun {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rust_files: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub analyzer_invocation: Option<RustAnalyzerInvocation>,
+    pub analyzer_invocation: Option<RustAnalyzerArtifactInvocation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stderr: Option<String>,
     pub memory: ExecutorMemoryObservation,
@@ -204,7 +207,7 @@ pub struct RustAnalysisRunResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub producer: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub analyzer_invocation: Option<RustAnalyzerInvocation>,
+    pub analyzer_invocation: Option<RustAnalyzerArtifactInvocation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -251,7 +254,6 @@ pub fn validate_executor_request(request: &ExecutorRequest) -> Result<()> {
             request.plan.schema_version
         );
     }
-    validate_non_empty("generated", &request.generated)?;
     validate_non_empty("nodeExecutable", &request.node_executable)?;
     if request.root.as_os_str().is_empty() {
         bail!("execute-base-plan: root must be provided");
@@ -293,7 +295,6 @@ fn base_request() -> Value {
     json!({
         "schemaVersion": "lumin-audit-executor-request.v1",
         "plan": build_orchestration_plan(OrchestrationPlanOptions::default()),
-        "generated": "2026-07-01T00:00:00.000Z",
         "root": "C:/repo",
         "output": "C:/repo/.audit",
         "scriptsDir": "C:/repo",
@@ -311,16 +312,6 @@ fn base_request() -> Value {
             "clearIncrementalCache": false
         },
         "generatedArtifacts": { "mode": "default" },
-        "artifactReads": {
-            "schemaVersion": "artifact-read-metrics.v1",
-            "measurement": "audit-repo-orchestrator-json-reads",
-            "totalReadCount": 0,
-            "totalReadBytes": 0,
-            "totalReadMs": 0,
-            "totalJsonParseMs": 0,
-            "parseFailureCount": 0
-        },
-        "artifacts": { "producedCount": 0, "totalBytes": 0 },
         "rustAnalyzer": { "requested": false, "rustFiles": 0 }
     })
 }
@@ -710,12 +701,83 @@ fn memory_snapshot() -> crate::orchestration_events::MemorySnapshot {
 
 #[cfg(windows)]
 fn current_process_rss_bytes() -> i64 {
-    0
+    windows_working_set_bytes().unwrap_or(0)
 }
 
-#[cfg(not(windows))]
+#[cfg(windows)]
+fn windows_working_set_bytes() -> Option<i64> {
+    #[repr(C)]
+    struct ProcessMemoryCounters {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    }
+
+    #[link(name = "psapi")]
+    extern "system" {
+        fn GetProcessMemoryInfo(
+            process: *mut std::ffi::c_void,
+            counters: *mut ProcessMemoryCounters,
+            size: u32,
+        ) -> i32;
+    }
+
+    let mut counters = ProcessMemoryCounters {
+        cb: std::mem::size_of::<ProcessMemoryCounters>() as u32,
+        page_fault_count: 0,
+        peak_working_set_size: 0,
+        working_set_size: 0,
+        quota_peak_paged_pool_usage: 0,
+        quota_paged_pool_usage: 0,
+        quota_peak_non_paged_pool_usage: 0,
+        quota_non_paged_pool_usage: 0,
+        pagefile_usage: 0,
+        peak_pagefile_usage: 0,
+    };
+    // This is the only unsafe boundary in the executor. It preserves the
+    // current JS `process.memoryUsage().rss` product surface without adding a
+    // heavy dependency or inventing child peak RSS.
+    let ok = unsafe {
+        GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            &mut counters,
+            counters.cb,
+        )
+    };
+    (ok != 0).then_some(counters.working_set_size as i64)
+}
+
+#[cfg(unix)]
 fn current_process_rss_bytes() -> i64 {
-    0
+    linux_proc_status_rss_bytes().unwrap_or(0)
+}
+
+#[cfg(unix)]
+fn linux_proc_status_rss_bytes() -> Option<i64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    for line in status.lines() {
+        let Some(rest) = line.strip_prefix("VmRSS:") else {
+            continue;
+        };
+        let kb = rest
+            .split_whitespace()
+            .next()
+            .and_then(|value| value.parse::<i64>().ok())?;
+        return Some(kb.saturating_mul(1024));
+    }
+    None
 }
 
 fn memory_delta(
@@ -732,7 +794,7 @@ fn memory_delta(
 }
 ```
 
-This intentionally does not claim child peak RSS. If native RSS is later added, keep `childPeakRssAvailable=false` in producer-performance until a child-process RSS owner exists.
+This intentionally does not claim child peak RSS. Keep `childPeakRssAvailable=false` in producer-performance until a child-process RSS owner exists. If the Windows FFI boundary is considered too much for the first implementation, do not wire the JS wrapper yet; preserving the memory evidence is part of the owner migration.
 
 - [ ] **Step 2: Add child output runner**
 
@@ -976,11 +1038,13 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
 }
 ```
 
-Add `result_from_parts(...)` to build `OrchestrationLedger` from request fields and the observed events:
+Add `result_from_parts(...)` to return the observed events. The final
+`OrchestrationLedger` is still assembled later, after JS-owned artifact-read
+metrics, phase timing reads, and final artifact-size measurement are available.
 
 ```rust
 fn result_from_parts(
-    request: ExecutorRequest,
+    _request: ExecutorRequest,
     commands_run: Vec<CommandRun>,
     skipped: Vec<SkippedRun>,
     events: Vec<LedgerEvent>,
@@ -989,19 +1053,7 @@ fn result_from_parts(
 ) -> ExecutorResult {
     ExecutorResult {
         schema_version: EXECUTOR_RESULT_SCHEMA_VERSION,
-        ledger: OrchestrationLedger {
-            schema_version: ORCHESTRATION_LEDGER_SCHEMA_VERSION.to_string(),
-            generated: request.generated,
-            root: request.root.to_string_lossy().to_string(),
-            output: request.output.to_string_lossy().to_string(),
-            profile: request.plan.profile.clone(),
-            scan_range: request.scan_range,
-            cache: request.cache,
-            generated_artifacts: request.generated_artifacts,
-            artifact_reads: request.artifact_reads,
-            artifacts: request.artifacts,
-            events,
-        },
+        events,
         commands_run,
         skipped,
         rust_analysis_run,
@@ -1037,6 +1089,13 @@ fn not_requested_rust_analysis(request: &ExecutorRequest) -> RustAnalysisRunResu
         source_commit: None,
         producer: None,
         analyzer_invocation: None,
+    }
+}
+
+fn artifact_invocation(invocation: &RustAnalyzerInvocation) -> RustAnalyzerArtifactInvocation {
+    RustAnalyzerArtifactInvocation {
+        source: invocation.source.clone(),
+        manifest_path: invocation.manifest_path.clone(),
     }
 }
 
@@ -1132,7 +1191,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
             ms: observed.ms,
             artifact: Some(artifact.clone()),
             rust_files: Some(request.rust_analyzer.rust_files),
-            analyzer_invocation: Some(invocation.clone()),
+            analyzer_invocation: Some(artifact_invocation(&invocation)),
             stderr: None,
             memory: observed.memory.clone(),
         };
@@ -1164,24 +1223,39 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
                 path: Some(artifact_path.to_string_lossy().to_string()),
                 source_commit: request.rust_analyzer.source_commit.clone(),
                 producer: Some("lumin-rust-analyzer".to_string()),
-                analyzer_invocation: Some(invocation),
+                analyzer_invocation: Some(artifact_invocation(&invocation)),
             },
         });
     }
     let reason = "lumin-rust-analyzer exited non-zero".to_string();
+    let command = CommandRun {
+        step: "lumin-rust-analyzer".to_string(),
+        status: "failed-optional".to_string(),
+        ms: observed.ms,
+        artifact: None,
+        rust_files: Some(request.rust_analyzer.rust_files),
+        analyzer_invocation: None,
+        stderr: observed.stderr_snippet.clone(),
+        memory: observed.memory.clone(),
+    };
     Ok(RustAnalyzerObserved {
-        commands_run: vec![CommandRun {
-            step: "lumin-rust-analyzer".to_string(),
-            status: "failed-optional".to_string(),
-            ms: observed.ms,
-            artifact: None,
-            rust_files: Some(request.rust_analyzer.rust_files),
-            analyzer_invocation: None,
-            stderr: observed.stderr_snippet.clone(),
-            memory: observed.memory,
-        }],
+        commands_run: vec![command],
         skipped: Vec::new(),
-        events: Vec::new(),
+        events: vec![LedgerEvent::Producer(Box::new(
+            crate::orchestration_events::ProducerLedgerEvent {
+                name: "lumin-rust-analyzer".to_string(),
+                status: "failed-optional".to_string(),
+                wall_ms: Some(observed.ms),
+                phases: None,
+                counters: None,
+                memory: Some(crate::orchestration_events::ProducerMemory {
+                    before: observed.memory.before,
+                    after: observed.memory.after,
+                    delta: observed.memory.delta,
+                }),
+                stderr_snippet: observed.stderr_snippet,
+            },
+        ))],
         rust_analysis_run: RustAnalysisRunResult {
             requested: true,
             ran: false,
@@ -1208,7 +1282,7 @@ The test must assert:
 assert_eq!(result.commands_run[0].status, "failed-optional");
 assert_eq!(result.commands_run[1].status, "ok");
 assert_eq!(result.exit_policy.recommended_exit_code, 0);
-assert!(result.ledger.events.iter().any(|event| matches!(event, LedgerEvent::Producer(_))));
+assert!(result.events.iter().any(|event| matches!(event, LedgerEvent::Producer(_))));
 ```
 
 For required halt:
@@ -1368,11 +1442,10 @@ In both `audit-repo.mjs` files, add `executeBasePlan` to the import from audit m
 Add a small function near `buildProducerPerformanceArtifact`:
 
 ```js
-function buildExecutorRequest(generated, artifactsProduced) {
+function buildExecutorRequest() {
   return {
     schemaVersion: 'lumin-audit-executor-request.v1',
     plan: ORCHESTRATION_PLAN,
-    generated,
     root: ROOT,
     output: OUT,
     scriptsDir: __dirname,
@@ -1392,8 +1465,6 @@ function buildExecutorRequest(generated, artifactsProduced) {
     generatedArtifacts: {
       mode: GENERATED_ARTIFACTS_MODE,
     },
-    artifactReads: artifactReadMetrics.summary(),
-    artifacts: buildArtifactSizeSummary(OUT, artifactsProduced),
     rustAnalyzer: {
       requested: values['rust-analyzer'] === true,
       rustFiles: rustFileCountFromTriage(loadIfExists('triage.json')),
@@ -1439,12 +1510,7 @@ if (!RUN_BASE_PIPELINE) {
 with:
 
 ```js
-const baseExecutorGenerated = new Date().toISOString();
-const initialArtifactsProduced = collectProducedArtifacts(OUT);
-const baseExecution = executeBasePlan(buildExecutorRequest(
-  baseExecutorGenerated,
-  initialArtifactsProduced
-));
+const baseExecution = executeBasePlan(buildExecutorRequest());
 commandsRun.push(...(baseExecution.commandsRun ?? []));
 skipped.push(...(baseExecution.skipped ?? []));
 rustAnalysisRun = baseExecution.rustAnalysisRun ?? rustAnalysisRun;
@@ -1458,6 +1524,11 @@ let finalExitCode = basePipelineExitCode;
 ```
 
 Do not remove lifecycle execution paths in this task.
+
+Keep `buildProducerPerformanceArtifact(...)` as the final ledger assembly point
+for this slice. It must continue to use final `artifactReadMetrics.summary()`,
+phase timing reads, and `buildArtifactSizeSummary(...)` after manifest evidence
+and human companion artifacts have been read/written.
 
 - [ ] **Step 5: Delete base JS execution helpers after wiring**
 
@@ -1515,7 +1586,7 @@ git commit -m "Route base audit execution through audit core"
 In `canonical/audit-core.md`, add:
 
 ```markdown
-| `experiments/rust-main/lumin-audit-core/src/orchestration_executor.rs` | Base audit child-process execution for planned base pipeline steps, typed `commandsRun` / `skipped` value production for those steps, child status/wall/stderr observation, and ledger event production from the same observed events | JS/TS producer internals, lifecycle child execution, artifact-read timing, phase timing reads, human renderers, `blindZones`, final `manifest.json` writing |
+| `experiments/rust-main/lumin-audit-core/src/orchestration_executor.rs` | Base audit child-process execution for planned base pipeline steps, typed `commandsRun` / `skipped` value production for those steps, child status/wall/stderr observation, and `LedgerEvent` value production from the same observed events | JS/TS producer internals, lifecycle child execution, artifact-read timing, phase timing reads, human renderers, `blindZones`, final `manifest.json` writing |
 ```
 
 Update the remaining JS-owned row for child execution to say lifecycle child helpers remain JS-owned, while base pipeline execution is Rust-owned.

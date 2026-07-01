@@ -91,14 +91,14 @@ pub struct ArtifactSizeBytes {
     pub bytes: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum LedgerEvent {
     Producer(Box<ProducerLedgerEvent>),
     Skipped(Box<SkippedLedgerEvent>),
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProducerLedgerEvent {
     pub name: String,
@@ -115,7 +115,7 @@ pub struct ProducerLedgerEvent {
     pub stderr_snippet: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkippedLedgerEvent {
     pub name: String,

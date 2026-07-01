@@ -5,11 +5,12 @@
 Move base audit child-process execution from `audit-repo.mjs` into
 `lumin-audit-core` without moving JS/TS producer semantics.
 
-This is the next step after the Rust orchestration plan and typed event ledger.
-Rust should own the executor that runs the planned base pipeline, observes
-runtime outcomes, and emits the same ledger records that now feed
-`producer-performance.json`. JS/MJS producers remain producers; Rust only owns
-the process runner and typed observation contract.
+This is the next step after the Rust orchestration plan and typed
+producer-performance event projection. Rust should own the executor that runs
+the planned base pipeline, observes runtime outcomes, and emits typed execution
+events that feed the later
+`producer-performance.json` ledger. JS/MJS producers remain producers; Rust
+only owns the process runner and typed observation contract.
 
 ## Current State
 
@@ -67,7 +68,7 @@ The module should own:
 - orchestrator memory snapshots before and after each child;
 - stderr snippet capture capped to the existing 500-byte/character product
   surface;
-- conversion of observed outcomes into `OrchestrationLedger` events;
+- conversion of observed outcomes into typed `LedgerEvent` values;
 - `RustAnalysisRun` observation for the optional `lumin-rust-analyzer` step.
 
 The module must not own producer analysis behavior. A step with
@@ -120,7 +121,7 @@ The output should be a typed execution result:
 ```json
 {
   "schemaVersion": "lumin-audit-executor-result.v1",
-  "ledger": { "schemaVersion": "lumin-audit-orchestration-ledger.v1" },
+  "events": [],
   "commandsRun": [],
   "skipped": [],
   "rustAnalysisRun": {
@@ -135,10 +136,12 @@ The output should be a typed execution result:
 }
 ```
 
-The duplicated `commandsRun` and `skipped` arrays are intentional for the first
-compatibility slice: `manifest_root.rs` already consumes those fields, while
-`producer-performance.json` consumes the ledger. They must be built from the
-same typed observed events so they cannot drift.
+The duplicated `commandsRun`, `skipped`, and `events` surfaces are intentional
+for the first compatibility slice: `manifest_root.rs` already consumes the
+runtime-log fields, while the final `producer-performance.json` ledger is still
+assembled after JS-owned artifact-read metrics, phase timing reads, and final
+artifact-size measurement are available. They must be built from the same typed
+observed events so they cannot drift.
 
 ## Step Execution Contract
 
@@ -243,7 +246,8 @@ After the Rust CLI exists, `audit-repo.mjs` should become thinner:
 
 1. parse CLI flags and build the Rust orchestration plan;
 2. call `execute-base-plan` for the base pipeline;
-3. use the returned `commandsRun`, `skipped`, `rustAnalysisRun`, and ledger;
+3. use the returned `commandsRun`, `skipped`, `rustAnalysisRun`, and typed
+   execution events;
 4. continue to run lifecycle helpers in JS;
 5. continue to build JS-owned `blindZones` and human renderers;
 6. continue final manifest write until all remaining fields have Rust owners.
@@ -316,8 +320,8 @@ Before implementation, update `canonical/audit-core.md`:
 4. Port precondition checks into Rust using the existing plan strings.
 5. Add child process runner with argv arrays only.
 6. Add memory/wall/stderr observation.
-7. Emit ledger, `commandsRun`, `skipped`, and `rustAnalysisRun` from one typed
-   event source.
+7. Emit typed execution events, `commandsRun`, `skipped`, and
+   `rustAnalysisRun` from one typed event source.
 8. Wire `audit-repo.mjs` to call Rust for the base pipeline.
 9. Delete JS base-pipeline `runStep` once Rust is active.
 10. Run Rust verification. Do not run Node unless explicitly approved.
@@ -330,7 +334,8 @@ This slice is done when:
 - JS no longer has a base-pipeline `runStep` implementation;
 - lifecycle helpers remain JS-owned and unchanged;
 - manifest summaries and `producer-performance.json` are produced from the
-  same typed Rust observations;
+  same typed Rust execution observations plus the still JS-owned artifact-read
+  and phase-timing measurements;
 - no JS/TS producer behavior changes;
 - no timeout, repository-size cap, elapsed-time cap, or quota is introduced;
 - all omissions and skipped work are artifact-visible.
