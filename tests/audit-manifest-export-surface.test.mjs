@@ -34,6 +34,10 @@ describe("audit-manifest public surface", () => {
       "LIVING_AUDIT_DOC_CANDIDATES",
       "detectLivingAuditDocs",
       "mergeRustAnalysisRun",
+      "buildArtifactSizeSummary",
+      "buildArtifactReadMetricsSummary",
+      "buildManifestMeta",
+      "buildManifestEvidenceUpdate",
     ]) {
       expect(Object.hasOwn(auditManifest, symbol)).toBe(false);
     }

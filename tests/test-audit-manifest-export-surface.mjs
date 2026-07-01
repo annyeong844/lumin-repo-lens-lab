@@ -28,6 +28,10 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
     'LIVING_AUDIT_DOC_CANDIDATES',
     'detectLivingAuditDocs',
     'mergeRustAnalysisRun',
+    'buildArtifactSizeSummary',
+    'buildArtifactReadMetricsSummary',
+    'buildManifestMeta',
+    'buildManifestEvidenceUpdate',
   ]) {
     assert.equal(Object.hasOwn(auditManifest, symbol), false, symbol);
   }

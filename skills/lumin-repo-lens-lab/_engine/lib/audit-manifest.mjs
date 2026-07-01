@@ -163,17 +163,7 @@ export function collectProducedArtifacts(outDir, options = {}) {
   return runAuditCoreJson(args, 'collectProducedArtifacts', runOptions);
 }
 
-export function buildArtifactSizeSummary(outDir, artifacts) {
-  return runAuditCoreJson([
-    'artifact-size-summary',
-    '--output', outDir,
-    '--input', '-',
-  ], 'buildArtifactSizeSummary', {
-    input: JSON.stringify(artifacts ?? []),
-  });
-}
-
-export function buildArtifactReadMetricsSummary(input) {
+function buildArtifactReadMetricsSummary(input) {
   return runAuditCoreJson([
     'artifact-read-metrics-summary',
     '--input', '-',
@@ -341,21 +331,6 @@ export function buildLifecycleSummary(blocks) {
   });
 }
 
-export function buildManifestMeta({
-  generated,
-  profile,
-  root,
-  outDir,
-}) {
-  return runAuditCoreJson([
-    'manifest-meta',
-    '--generated', generated,
-    '--profile', profile,
-    '--root', root,
-    '--output', outDir,
-  ], 'buildManifestMeta');
-}
-
 export function buildManifestRoot(input) {
   return runAuditCoreJson([
     'manifest-root',
@@ -365,7 +340,7 @@ export function buildManifestRoot(input) {
   });
 }
 
-export function buildManifestEvidenceUpdate(evidence) {
+function buildManifestEvidenceUpdate(evidence) {
   return runAuditCoreJson([
     'manifest-evidence-update',
     '--input', '-',
