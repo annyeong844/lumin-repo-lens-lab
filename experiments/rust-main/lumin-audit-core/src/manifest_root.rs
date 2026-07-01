@@ -17,7 +17,7 @@ pub struct ManifestRootInput {
     pub commands_run: Vec<ManifestCommandRun>,
     #[serde(default)]
     pub skipped: Vec<ManifestSkippedStep>,
-    pub evidence: ManifestRootEvidenceInput,
+    pub evidence: ManifestEvidenceUpdateFields,
     #[serde(default)]
     pub artifacts_produced: Vec<String>,
 }
@@ -46,18 +46,6 @@ pub struct ManifestCommandRun {
 pub struct ManifestSkippedStep {
     pub step: String,
     pub reason: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ManifestRootEvidenceInput {
-    pub scan_range: Value,
-    pub confidence: Value,
-    #[serde(default)]
-    pub blind_zones: Vec<Value>,
-    pub rust_analysis: Value,
-    pub generated_artifacts: Value,
-    pub living_audit: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -95,6 +83,11 @@ pub struct ManifestRoot {
     pub blind_zones: Vec<Value>,
     pub rust_analysis: Value,
     pub generated_artifacts: Value,
+    pub resolver_diagnostics: Value,
+    pub framework_resource_surfaces: Value,
+    pub unused_dependencies: Value,
+    pub block_clones: Value,
+    pub sfc_evidence: Value,
     pub living_audit: Value,
     pub artifacts_produced: Vec<String>,
 }
@@ -120,6 +113,11 @@ pub fn build_manifest_root(input: ManifestRootInput) -> Result<ManifestRoot> {
         blind_zones: input.evidence.blind_zones,
         rust_analysis: input.evidence.rust_analysis,
         generated_artifacts: input.evidence.generated_artifacts,
+        resolver_diagnostics: input.evidence.resolver_diagnostics,
+        framework_resource_surfaces: input.evidence.framework_resource_surfaces,
+        unused_dependencies: input.evidence.unused_dependencies,
+        block_clones: input.evidence.block_clones,
+        sfc_evidence: input.evidence.sfc_evidence,
         living_audit: input.evidence.living_audit,
         artifacts_produced: input.artifacts_produced,
     })

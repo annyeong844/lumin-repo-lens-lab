@@ -62,6 +62,11 @@ fn manifest_root_projects_typed_runtime_log_and_places_rust_owned_fields() -> Re
                 "available": true
             },
             "generatedArtifacts": { "mode": "default", "status": "complete" },
+            "resolverDiagnostics": { "resolverVersion": "resolver-v1" },
+            "frameworkResourceSurfaces": { "artifact": "framework-resource-surfaces.json" },
+            "unusedDependencies": { "artifact": "unused-deps.json" },
+            "blockClones": { "artifact": "block-clones.json" },
+            "sfcEvidence": { "status": "complete" },
             "livingAudit": { "action": "read-existing" }
         },
         "artifactsProduced": ["triage.json", "symbols.json"]
@@ -95,6 +100,20 @@ fn manifest_root_projects_typed_runtime_log_and_places_rust_owned_fields() -> Re
     assert_eq!(manifest["blindZones"][0]["details"]["files"], 2);
     assert_eq!(manifest["rustAnalysis"]["available"], true);
     assert_eq!(
+        manifest["resolverDiagnostics"]["resolverVersion"],
+        "resolver-v1"
+    );
+    assert_eq!(
+        manifest["frameworkResourceSurfaces"]["artifact"],
+        "framework-resource-surfaces.json"
+    );
+    assert_eq!(
+        manifest["unusedDependencies"]["artifact"],
+        "unused-deps.json"
+    );
+    assert_eq!(manifest["blockClones"]["artifact"], "block-clones.json");
+    assert_eq!(manifest["sfcEvidence"]["status"], "complete");
+    assert_eq!(
         manifest["artifactsProduced"],
         json!(["triage.json", "symbols.json"])
     );
@@ -124,6 +143,11 @@ fn cli_manifest_root_hard_stops_on_malformed_runtime_log() -> Result<()> {
                 "blindZones": [],
                 "rustAnalysis": null,
                 "generatedArtifacts": {},
+                "resolverDiagnostics": {},
+                "frameworkResourceSurfaces": null,
+                "unusedDependencies": null,
+                "blockClones": null,
+                "sfcEvidence": null,
                 "livingAudit": {}
             }
         }))?,
@@ -158,6 +182,11 @@ fn manifest_root_rejects_empty_skipped_reason() -> Result<()> {
             "blindZones": [],
             "rustAnalysis": null,
             "generatedArtifacts": {},
+            "resolverDiagnostics": {},
+            "frameworkResourceSurfaces": null,
+            "unusedDependencies": null,
+            "blockClones": null,
+            "sfcEvidence": null,
             "livingAudit": {}
         }
     }))?;
@@ -186,6 +215,11 @@ fn cli_manifest_root_reads_stdin_json() -> Result<()> {
             "blindZones": [],
             "rustAnalysis": { "requested": false, "ran": false, "status": "not-requested" },
             "generatedArtifacts": { "mode": "default" },
+            "resolverDiagnostics": {},
+            "frameworkResourceSurfaces": null,
+            "unusedDependencies": null,
+            "blockClones": null,
+            "sfcEvidence": null,
             "livingAudit": { "action": "create-only-on-explicit-tracking-request" }
         },
         "artifactsProduced": []
@@ -236,6 +270,11 @@ fn cli_manifest_root_hard_stops_on_invalid_profile() -> Result<()> {
                 "blindZones": [],
                 "rustAnalysis": null,
                 "generatedArtifacts": {},
+                "resolverDiagnostics": {},
+                "frameworkResourceSurfaces": null,
+                "unusedDependencies": null,
+                "blockClones": null,
+                "sfcEvidence": null,
                 "livingAudit": {}
             }
         }))?,

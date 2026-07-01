@@ -49,6 +49,7 @@ function auditCoreBinary() {
 
 function auditCorePlatformHint() {
   const here = path.dirname(fileURLToPath(import.meta.url));
+  const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
   const manifestPath = path.resolve(here, '../bin/audit-core-platforms.json');
   let supported = [];
   let packageScope = null;

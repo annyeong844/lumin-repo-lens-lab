@@ -719,12 +719,8 @@ const manifest = buildManifestRoot({
   commandsRun,
   skipped,
   evidence: {
-    scanRange: initialEvidence.scanRange,
-    confidence: initialEvidence.confidence,
-    blindZones: initialEvidence.blindZones,
+    ...initialEvidence,
     rustAnalysis: initialRustAnalysis,
-    generatedArtifacts: initialEvidence.generatedArtifacts,
-    livingAudit: initialEvidence.livingAudit,
   },
   artifactsProduced: collectProducedArtifacts(OUT, {
     rustAnalysis: initialRustAnalysis,
