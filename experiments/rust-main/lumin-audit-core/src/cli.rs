@@ -6,12 +6,13 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use lumin_audit_core::artifact_registry::collect_produced_artifacts;
+use lumin_audit_core::artifact_summaries::{summarize_artifact, ArtifactSummaryKind};
 use lumin_audit_core::generated_artifacts::{
     summarize_generated_artifacts, GeneratedArtifactsMode, GeneratedArtifactsOptions,
 };
 use lumin_audit_core::rust_analysis::summarize_rust_analysis_artifact;
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -19,6 +20,7 @@ pub fn run() -> Result<()> {
         Some("artifact-registry") => run_artifact_registry(args.collect()),
         Some("rust-analysis-summary") => run_rust_analysis_summary(args.collect()),
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
+        Some("artifact-summary") => run_artifact_summary(args.collect()),
         _ => bail!(USAGE),
     }
 }
@@ -130,6 +132,34 @@ fn run_generated_artifacts_summary(args: Vec<String>) -> Result<()> {
     write_stdout_json(&summary)
 }
 
+fn run_artifact_summary(args: Vec<String>) -> Result<()> {
+    let mut parsed = ArtifactSummaryArgs::default();
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--artifact-kind" => {
+                let kind = take_string(&mut args, "--artifact-kind")?;
+                parsed.kind = Some(ArtifactSummaryKind::parse(&kind)?);
+            }
+            "--artifact" => parsed.artifact = Some(take_path(&mut args, "--artifact")?),
+            _ => bail!("artifact-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let kind = parsed
+        .kind
+        .context("artifact-summary: missing --artifact-kind <kind>")?;
+    let artifact = parsed
+        .artifact
+        .context("artifact-summary: missing --artifact <path>")?;
+    let artifact_text = fs::read_to_string(&artifact)
+        .with_context(|| format!("artifact-summary: failed to read {}", artifact.display()))?;
+    let artifact_json = serde_json::from_str::<Value>(&artifact_text)
+        .with_context(|| format!("artifact-summary: invalid JSON in {}", artifact.display()))?;
+    let summary = summarize_artifact(kind, &artifact_json);
+    write_stdout_json(&summary)
+}
+
 fn take_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf> {
     let Some(value) = args.next() else {
         bail!("{flag} requires a value");
@@ -178,4 +208,10 @@ struct GeneratedArtifactsSummaryArgs {
     include_tests: bool,
     excludes: Vec<String>,
     generated_artifacts_mode: GeneratedArtifactsMode,
+}
+
+#[derive(Default)]
+struct ArtifactSummaryArgs {
+    kind: Option<ArtifactSummaryKind>,
+    artifact: Option<PathBuf>,
 }

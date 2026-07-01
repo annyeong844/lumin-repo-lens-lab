@@ -178,156 +178,6 @@ function buildResolverDiagnosticsSummary(symbols, {
   };
 }
 
-function buildFrameworkResourceSurfacesSummary(artifact) {
-  if (!artifact || typeof artifact !== 'object') return null;
-  const files = Array.isArray(artifact.files) ? artifact.files : [];
-  const summary = artifact.summary ?? {};
-  const topExamples = Array.isArray(summary.topExamples)
-    ? summary.topExamples.slice(0, 10)
-    : files.slice(0, 10).map((entry) => ({
-        file: entry.file ?? null,
-        lanes: (entry.surfaceLanes ?? []).map((lane) => lane.lane).filter(Boolean),
-        capabilityPacks: (entry.surfaceLanes ?? []).map((lane) => lane.capabilityPack).filter(Boolean),
-        reasons: (entry.surfaceLanes ?? []).map((lane) => lane.reason).filter(Boolean),
-      }));
-  return {
-    artifact: 'framework-resource-surfaces.json',
-    schemaVersion: artifact.schemaVersion ?? null,
-    policyVersion: artifact.policyVersion ?? null,
-    totalFilesWithSurfaces: summary.totalFilesWithSurfaces ?? files.length,
-    totalSurfaceLanes: summary.totalSurfaceLanes ?? files.reduce(
-      (count, entry) => count + (Array.isArray(entry.surfaceLanes) ? entry.surfaceLanes.length : 0),
-      0,
-    ),
-    byLane: summary.byLane ?? {},
-    byCapabilityPack: summary.byCapabilityPack ?? {},
-    byConfidence: summary.byConfidence ?? {},
-    byReason: summary.byReason ?? {},
-    byFramework: summary.byFramework ?? {},
-    topExamples,
-  };
-}
-
-function buildUnusedDependenciesSummary(artifact) {
-  if (!artifact || typeof artifact !== 'object') return null;
-  const summary = artifact.summary ?? {};
-  const packages = Array.isArray(artifact.packages) ? artifact.packages : [];
-  const topReviewUnused = [];
-  for (const pkg of packages) {
-    const dependencies = Array.isArray(pkg?.dependencies) ? pkg.dependencies : [];
-    for (const dep of dependencies) {
-      if (dep?.status !== 'review-unused') continue;
-      topReviewUnused.push({
-        packageDir: pkg.packageDir ?? '.',
-        manifestPath: pkg.manifestPath ?? null,
-        name: dep.name ?? null,
-        field: dep.field ?? null,
-        reason: dep.reason ?? null,
-        confidence: dep.confidence ?? null,
-      });
-    }
-  }
-  topReviewUnused.sort((a, b) =>
-    String(a.packageDir ?? '').localeCompare(String(b.packageDir ?? '')) ||
-    String(a.name ?? '').localeCompare(String(b.name ?? '')) ||
-    String(a.field ?? '').localeCompare(String(b.field ?? '')));
-
-  return {
-    artifact: 'unused-deps.json',
-    schemaVersion: artifact.schemaVersion ?? null,
-    policyVersion: artifact.policyVersion ?? null,
-    status: artifact.status ?? null,
-    ...(artifact.reason ? { reason: artifact.reason } : {}),
-    packageCount: summary.packageCount ?? packages.length,
-    declaredDependencyCount: summary.declaredDependencyCount ?? 0,
-    usedCount: summary.usedCount ?? 0,
-    reviewUnusedCount: summary.reviewUnusedCount ?? 0,
-    mutedCount: summary.mutedCount ?? 0,
-    confidenceLimitedCount: summary.confidenceLimitedCount ?? 0,
-    unavailableCount: summary.unavailableCount ?? 0,
-    byReason: summary.byReason ?? {},
-    topReviewUnused: topReviewUnused.slice(0, 10),
-  };
-}
-
-function buildBlockClonesSummary(artifact) {
-  if (!artifact || typeof artifact !== 'object') return null;
-  const summary = artifact.summary ?? {};
-  const groups = Array.isArray(artifact.groups) ? artifact.groups : [];
-  const thresholds = artifact.thresholds && typeof artifact.thresholds === 'object'
-    ? artifact.thresholds
-    : {};
-  const normalization = artifact.normalization && typeof artifact.normalization === 'object'
-    ? artifact.normalization
-    : {};
-  const noisePolicy = artifact.noisePolicy && typeof artifact.noisePolicy === 'object'
-    ? artifact.noisePolicy
-    : {};
-  const groupCount = typeof summary.groupCount === 'number'
-    ? summary.groupCount
-    : groups.length;
-  const instanceCount = typeof summary.instanceCount === 'number'
-    ? summary.instanceCount
-    : groups.reduce((sum, group) =>
-        sum + (Array.isArray(group?.instances) ? group.instances.length : 0), 0);
-
-  const thresholdSummary = {
-    minTokens: thresholds.minTokens ?? null,
-    minLines: thresholds.minLines ?? null,
-    minOccurrences: thresholds.minOccurrences ?? null,
-    maxInstancesPerGroup: thresholds.maxInstancesPerGroup ?? null,
-    maxTokensPerFile: thresholds.maxTokensPerFile ?? null,
-  };
-  if (Object.hasOwn(thresholds, 'maxGroups')) {
-    thresholdSummary.maxGroups = thresholds.maxGroups ?? null;
-  }
-  if (Object.hasOwn(thresholds, 'maxCandidateGroups')) {
-    thresholdSummary.maxCandidateGroups = thresholds.maxCandidateGroups ?? null;
-  }
-  if (Object.hasOwn(thresholds, 'maxReviewGroups')) {
-    thresholdSummary.maxReviewGroups = thresholds.maxReviewGroups ?? null;
-  }
-  if (Object.hasOwn(thresholds, 'maxMutedGroups')) {
-    thresholdSummary.maxMutedGroups = thresholds.maxMutedGroups ?? null;
-  }
-
-  const blockClones = {
-    artifact: 'block-clones.json',
-    schemaVersion: artifact.schemaVersion ?? null,
-    policyVersion: artifact.policyVersion ?? null,
-    status: artifact.status ?? null,
-    ...(artifact.reason ? { reason: artifact.reason } : {}),
-    reviewOnly: true,
-    normalizationPolicyId: normalization.policyId ?? null,
-    normalizationMode: normalization.mode ?? null,
-    thresholdPolicyId: thresholds.policyId ?? null,
-    noisePolicyId: noisePolicy.policyId ?? null,
-    thresholds: thresholdSummary,
-    fileCount: summary.fileCount ?? 0,
-    tokenCount: summary.tokenCount ?? 0,
-    groupCount,
-    instanceCount,
-    reviewGroupCount: noisePolicy.reviewGroupCount ?? summary.reviewGroupCount ?? null,
-    mutedGroupCount: noisePolicy.mutedGroupCount ?? summary.mutedGroupCount ?? null,
-    mutedByReason: noisePolicy.mutedByReason ?? {},
-    skippedFileCount: summary.skippedFileCount ?? 0,
-    unavailableFileCount: summary.unavailableFileCount ?? 0,
-  };
-  if (Object.hasOwn(noisePolicy, 'capSaturated')) {
-    blockClones.capSaturated = noisePolicy.capSaturated ?? null;
-  }
-  if (Object.hasOwn(noisePolicy, 'candidateCapSaturated')) {
-    blockClones.candidateCapSaturated = noisePolicy.candidateCapSaturated ?? null;
-  }
-  if (Object.hasOwn(noisePolicy, 'reviewCapSaturated')) {
-    blockClones.reviewCapSaturated = noisePolicy.reviewCapSaturated ?? null;
-  }
-  if (Object.hasOwn(noisePolicy, 'mutedCapSaturated')) {
-    blockClones.mutedCapSaturated = noisePolicy.mutedCapSaturated ?? null;
-  }
-  return blockClones;
-}
-
 function numberOrZero(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
@@ -388,6 +238,15 @@ function buildGeneratedArtifactsSummaryFromFile(root, outDir, symbols, {
     args.push('--exclude', exclude);
   }
   return runAuditCoreJson(args, 'buildGeneratedArtifactsSummary');
+}
+
+function buildArtifactSummaryFromFile(outDir, artifact, artifactName, artifactKind, label) {
+  if (!artifact || typeof artifact !== 'object') return null;
+  return runAuditCoreJson([
+    'artifact-summary',
+    '--artifact-kind', artifactKind,
+    '--artifact', path.join(outDir, artifactName),
+  ], label);
 }
 
 function buildSfcEvidenceSummary(symbols) {
@@ -499,9 +358,27 @@ export function buildManifestEvidence({
       excludes,
       generatedArtifactsMode,
     }),
-    frameworkResourceSurfaces: buildFrameworkResourceSurfacesSummary(frameworkResourceSurfaces),
-    unusedDependencies: buildUnusedDependenciesSummary(unusedDeps),
-    blockClones: buildBlockClonesSummary(blockClones),
+    frameworkResourceSurfaces: buildArtifactSummaryFromFile(
+      outDir,
+      frameworkResourceSurfaces,
+      'framework-resource-surfaces.json',
+      'framework-resource-surfaces',
+      'buildFrameworkResourceSurfacesSummary',
+    ),
+    unusedDependencies: buildArtifactSummaryFromFile(
+      outDir,
+      unusedDeps,
+      'unused-deps.json',
+      'unused-deps',
+      'buildUnusedDependenciesSummary',
+    ),
+    blockClones: buildArtifactSummaryFromFile(
+      outDir,
+      blockClones,
+      'block-clones.json',
+      'block-clones',
+      'buildBlockClonesSummary',
+    ),
     sfcEvidence: buildSfcEvidenceSummary(symbols),
     livingAudit: detectLivingAuditDocs(root),
   };
