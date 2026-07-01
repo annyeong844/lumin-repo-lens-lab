@@ -257,7 +257,9 @@ rails stop:
   `measure-topology`, `build-call-graph`, `check-barrel-discipline`
   currently re-parses from scratch). No suite exercises shared
   cache.
-- Rust source trees. No tree-sitter-rust extractor yet.
+- Rust source trees are owned by `lumin-rust-analyzer`; this JS test suite
+  covers routing, manifest, and blind-zone behavior only, not a JS
+  tree-sitter-rust fallback.
 - `__getattr__`-based lazy export maps in Python `__init__.py`
   files. Known residual FP source; no fixture.
 - Interactive `--focus-class` output beyond the smoke check that
