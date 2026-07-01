@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde_json::json;
 use std::fs;
+use std::process::Command;
 
 use lumin_audit_core::artifact_registry::collect_produced_artifacts;
 use lumin_audit_core::rust_analysis::{summarize_rust_analysis_artifact, RustAnalysisStatus};
@@ -305,6 +306,94 @@ fn rust_analysis_summary_uses_syntax_scan_scope_fallback() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn cli_artifact_registry_emits_stdout_json() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    fs::write(temp.path().join("symbols.json"), "{}\n")?;
+    fs::write(temp.path().join("rust-analyzer-health.latest.json"), "{}\n")?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("artifact-registry")
+        .arg("--output")
+        .arg(temp.path())
+        .output()?;
+
+    assert!(output.status.success());
+    let artifacts = serde_json::from_slice::<Vec<String>>(&output.stdout)?;
+    assert_eq!(artifacts, names(&["symbols.json"]));
+    Ok(())
+}
+
+#[test]
+fn cli_artifact_registry_can_include_current_rust_analysis_artifact() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    fs::write(temp.path().join("rust-analyzer-health.latest.json"), "{}\n")?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("artifact-registry")
+        .arg("--output")
+        .arg(temp.path())
+        .arg("--rust-analysis-ran")
+        .output()?;
+
+    assert!(output.status.success());
+    let artifacts = serde_json::from_slice::<Vec<String>>(&output.stdout)?;
+    assert_eq!(artifacts, names(&["rust-analyzer-health.latest.json"]));
+    Ok(())
+}
+
+#[test]
+fn cli_rust_analysis_summary_emits_complete_json() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let root_text = root.path().to_string_lossy().to_string();
+    let artifact = root.path().join("rust-analyzer-health.latest.json");
+    fs::write(
+        &artifact,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-rust-analyzer.v1",
+            "policyVersion": "lumin-rust-analyzer-policy.v1",
+            "meta": {
+                "producer": "lumin-rust-analyzer",
+                "mode": "rust-main",
+                "input": { "root": root_text }
+            },
+            "summary": { "files": 3, "syntaxReviewSignals": 2 }
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("rust-analysis-summary")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--artifact")
+        .arg(&artifact)
+        .output()?;
+
+    assert!(output.status.success());
+    let summary = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(summary["status"], "complete");
+    assert_eq!(summary["available"], true);
+    assert_eq!(summary["files"], 3);
+    assert_eq!(summary["syntaxReviewSignals"], 2);
+    Ok(())
+}
+
+#[test]
+fn cli_unknown_argument_hard_stops() -> Result<()> {
+    let output = Command::new(audit_core_bin())
+        .arg("artifact-registry")
+        .arg("--bogus")
+        .output()?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown argument"));
+    Ok(())
+}
+
 fn names(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_string()).collect()
+}
+
+fn audit_core_bin() -> &'static str {
+    env!("CARGO_BIN_EXE_lumin-audit-core")
 }
