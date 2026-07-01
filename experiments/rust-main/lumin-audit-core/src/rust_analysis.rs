@@ -1,5 +1,7 @@
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use anyhow::{bail, Result as AnyResult};
+use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 const ARTIFACT_NAME: &str = "rust-analyzer-health.latest.json";
@@ -47,8 +49,59 @@ pub struct ScanScope {
     pub path_policy: Option<Value>,
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RustAnalysisRunMergeInput {
+    #[serde(default)]
+    pub evidence: Option<Value>,
+    #[serde(default)]
+    pub run: RustAnalysisRunObservation,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RustAnalysisRunObservation {
+    pub requested: bool,
+    pub ran: bool,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rust_files: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_commit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analyzer_invocation: Option<Value>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+impl Default for RustAnalysisRunObservation {
+    fn default() -> Self {
+        Self {
+            requested: false,
+            ran: false,
+            status: "not-requested".to_string(),
+            rust_files: None,
+            reason: None,
+            artifact: None,
+            path: None,
+            source_commit: None,
+            producer: None,
+            analyzer_invocation: None,
+            extra: BTreeMap::new(),
+        }
+    }
+}
+
 impl Serialize for RustAnalysisSummary {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -104,6 +157,64 @@ impl Serialize for RustAnalysisSummary {
             }
         }
     }
+}
+
+pub fn merge_rust_analysis_run(input: RustAnalysisRunMergeInput) -> AnyResult<Value> {
+    validate_rust_analysis_run(&input.run)?;
+    if input.run.requested {
+        if input.run.ran {
+            if status_field(input.evidence.as_ref()) != Some("complete") {
+                let mut output = run_object(input.run)?;
+                output.insert(
+                    "status".to_string(),
+                    Value::String("artifact-unavailable".to_string()),
+                );
+                output.insert("available".to_string(), Value::Bool(false));
+                output.insert(
+                    "artifactStatus".to_string(),
+                    Value::String(
+                        status_field(input.evidence.as_ref())
+                            .unwrap_or("missing")
+                            .to_string(),
+                    ),
+                );
+                if let Some(artifact) = string_field_from_value(input.evidence.as_ref(), "artifact")
+                {
+                    output.insert("artifact".to_string(), Value::String(artifact.to_string()));
+                }
+                return Ok(Value::Object(output));
+            }
+
+            let mut output = object_field_map(input.evidence.as_ref());
+            output.extend(run_object(input.run)?);
+            output.insert("status".to_string(), Value::String("complete".to_string()));
+            output.insert("available".to_string(), Value::Bool(true));
+            return Ok(Value::Object(output));
+        }
+        return serde_json::to_value(input.run).map_err(Into::into);
+    }
+
+    let mut output = serde_json::Map::new();
+    output.insert("requested".to_string(), Value::Bool(false));
+    output.insert("ran".to_string(), Value::Bool(false));
+    output.insert(
+        "status".to_string(),
+        Value::String("not-requested".to_string()),
+    );
+    output.insert(
+        "rustFiles".to_string(),
+        Value::Number(input.run.rust_files.unwrap_or(0).into()),
+    );
+    if let Some(artifact) = string_field_from_value(input.evidence.as_ref(), "artifact") {
+        output.insert("artifact".to_string(), Value::String(artifact.to_string()));
+    }
+    if let Some(status) = status_field(input.evidence.as_ref()) {
+        output.insert(
+            "artifactStatus".to_string(),
+            Value::String(status.to_string()),
+        );
+    }
+    Ok(Value::Object(output))
 }
 
 pub fn summarize_rust_analysis_artifact(
@@ -180,6 +291,35 @@ pub fn summarize_rust_analysis_artifact(
         action_tier_summary: summary.get("actionTierSummary").cloned(),
         oracle_bridge_status: summary.get("oracleBridgeStatus").cloned(),
     })
+}
+
+fn validate_rust_analysis_run(run: &RustAnalysisRunObservation) -> AnyResult<()> {
+    if run.status.trim().is_empty() {
+        bail!("rust-analysis-run-merge: run.status must be a non-empty string");
+    }
+    Ok(())
+}
+
+fn run_object(run: RustAnalysisRunObservation) -> AnyResult<serde_json::Map<String, Value>> {
+    let Value::Object(map) = serde_json::to_value(run)? else {
+        bail!("rust-analysis-run-merge: invalid run shape");
+    };
+    Ok(map)
+}
+
+fn object_field_map(value: Option<&Value>) -> serde_json::Map<String, Value> {
+    value
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn status_field(value: Option<&Value>) -> Option<&str> {
+    string_field_from_value(value, "status")
+}
+
+fn string_field_from_value<'a>(value: Option<&'a Value>, field: &str) -> Option<&'a str> {
+    value?.get(field)?.as_str()
 }
 
 fn unavailable_summary(status: RustAnalysisStatus, root: Option<String>) -> RustAnalysisSummary {

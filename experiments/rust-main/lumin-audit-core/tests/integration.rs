@@ -4,7 +4,10 @@ use std::fs;
 use std::process::Command;
 
 use lumin_audit_core::artifact_registry::collect_produced_artifacts;
-use lumin_audit_core::rust_analysis::{summarize_rust_analysis_artifact, RustAnalysisStatus};
+use lumin_audit_core::rust_analysis::{
+    merge_rust_analysis_run, summarize_rust_analysis_artifact, RustAnalysisRunMergeInput,
+    RustAnalysisStatus,
+};
 
 #[test]
 fn produced_artifacts_include_static_and_dynamic_names_in_order() -> Result<()> {
@@ -303,6 +306,164 @@ fn rust_analysis_summary_uses_syntax_scan_scope_fallback() -> Result<()> {
             "pathPolicy": { "mode": "syntax" }
         }))
     );
+    Ok(())
+}
+
+#[test]
+fn rust_analysis_run_merge_preserves_js_contract_branches() -> Result<()> {
+    let complete = merged_rust_analysis(json!({
+        "evidence": {
+            "artifact": "rust-analyzer-health.latest.json",
+            "status": "complete",
+            "available": true,
+            "files": 3
+        },
+        "run": {
+            "requested": true,
+            "ran": true,
+            "status": "complete",
+            "rustFiles": 3,
+            "artifact": "rust-analyzer-health.latest.json",
+            "path": "C:/repo/.audit/rust-analyzer-health.latest.json",
+            "sourceCommit": "abc123",
+            "producer": "lumin-rust-analyzer",
+            "analyzerInvocation": { "source": "cargo-run" },
+            "futureRunField": { "kept": true }
+        }
+    }))?;
+    assert_eq!(complete["status"], "complete");
+    assert_eq!(complete["available"], true);
+    assert_eq!(complete["files"], 3);
+    assert_eq!(complete["sourceCommit"], "abc123");
+    assert_eq!(complete["analyzerInvocation"]["source"], "cargo-run");
+    assert_eq!(complete["futureRunField"]["kept"], true);
+
+    let artifact_unavailable = merged_rust_analysis(json!({
+        "evidence": {
+            "artifact": "rust-analyzer-health.latest.json",
+            "status": "invalid-shape"
+        },
+        "run": {
+            "requested": true,
+            "ran": true,
+            "status": "complete",
+            "rustFiles": 3,
+            "artifact": "rust-analyzer-health.latest.json"
+        }
+    }))?;
+    assert_eq!(artifact_unavailable["status"], "artifact-unavailable");
+    assert_eq!(artifact_unavailable["available"], false);
+    assert_eq!(artifact_unavailable["artifactStatus"], "invalid-shape");
+    assert_eq!(
+        artifact_unavailable["artifact"],
+        "rust-analyzer-health.latest.json"
+    );
+
+    let skipped = merged_rust_analysis(json!({
+        "evidence": null,
+        "run": {
+            "requested": true,
+            "ran": false,
+            "status": "skipped",
+            "rustFiles": 0,
+            "reason": "no Rust files counted by triage"
+        }
+    }))?;
+    assert_eq!(skipped["status"], "skipped");
+    assert_eq!(skipped["reason"], "no Rust files counted by triage");
+
+    let not_requested = merged_rust_analysis(json!({
+        "evidence": {
+            "artifact": "rust-analyzer-health.latest.json",
+            "status": "complete"
+        },
+        "run": {
+            "requested": false,
+            "ran": false,
+            "status": "not-requested",
+            "rustFiles": 7
+        }
+    }))?;
+    assert_eq!(not_requested["requested"], false);
+    assert_eq!(not_requested["ran"], false);
+    assert_eq!(not_requested["status"], "not-requested");
+    assert_eq!(not_requested["rustFiles"], 7);
+    assert_eq!(not_requested["artifactStatus"], "complete");
+
+    let missing_run = merged_rust_analysis(json!({ "evidence": null }))?;
+    assert_eq!(missing_run["status"], "not-requested");
+    assert_eq!(missing_run["rustFiles"], 0);
+    Ok(())
+}
+
+fn merged_rust_analysis(input: serde_json::Value) -> Result<serde_json::Value> {
+    let input = serde_json::from_value::<RustAnalysisRunMergeInput>(input)?;
+    merge_rust_analysis_run(input)
+}
+
+#[test]
+fn rust_analysis_run_merge_rejects_empty_run_status() -> Result<()> {
+    let input = serde_json::from_value::<RustAnalysisRunMergeInput>(json!({
+        "evidence": null,
+        "run": {
+            "requested": true,
+            "ran": false,
+            "status": " "
+        }
+    }))?;
+    let Err(error) = merge_rust_analysis_run(input) else {
+        panic!("empty rust analysis run status should hard-stop");
+    };
+    assert!(error
+        .to_string()
+        .contains("rust-analysis-run-merge: run.status must be a non-empty string"));
+    Ok(())
+}
+
+#[test]
+fn cli_rust_analysis_run_merge_reads_stdin_json() -> Result<()> {
+    let input = json!({
+        "evidence": {
+            "artifact": "rust-analyzer-health.latest.json",
+            "status": "complete",
+            "available": true,
+            "files": 2
+        },
+        "run": {
+            "requested": true,
+            "ran": true,
+            "status": "complete",
+            "rustFiles": 2,
+            "artifact": "rust-analyzer-health.latest.json"
+        }
+    });
+
+    let mut child = Command::new(audit_core_bin())
+        .arg("rust-analysis-run-merge")
+        .arg("--input")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin pipe missing")
+        })?;
+        stdin.write_all(input.to_string().as_bytes())?;
+    }
+    let output = child.wait_with_output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(stdout["status"], "complete");
+    assert_eq!(stdout["available"], true);
+    assert_eq!(stdout["rustFiles"], 2);
     Ok(())
 }
 

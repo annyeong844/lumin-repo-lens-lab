@@ -77,6 +77,7 @@ import {
   buildManifestEvidence,
   collectProducedArtifacts,
   refreshManifestEvidence,
+  mergeRustAnalysisRun,
 } from '../lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from '../lib/generated-artifact-mode.mjs';
 import {
@@ -436,36 +437,6 @@ function forwardedRustAnalyzerArgs() {
   if (values['cache-root']) args.push('--cache-root', path.resolve(values['cache-root']));
   if (values['clear-incremental-cache'] === true) args.push('--clear-incremental-cache');
   return args;
-}
-
-function mergeRustAnalysisBlocks(evidence, run) {
-  if (run?.requested === true) {
-    if (run.ran === true) {
-      if (evidence?.status !== 'complete') {
-        return {
-          ...run,
-          status: 'artifact-unavailable',
-          available: false,
-          artifactStatus: evidence?.status ?? 'missing',
-          ...(evidence?.artifact ? { artifact: evidence.artifact } : {}),
-        };
-      }
-      return {
-        ...evidence,
-        ...run,
-        status: 'complete',
-        available: true,
-      };
-    }
-    return run;
-  }
-  return {
-    requested: false,
-    ran: false,
-    status: 'not-requested',
-    rustFiles: run?.rustFiles ?? 0,
-    ...(evidence ? { artifact: evidence.artifact, artifactStatus: evidence.status } : {}),
-  };
 }
 
 function isPlainObject(value) {
@@ -1096,7 +1067,10 @@ if (!RUN_BASE_PIPELINE) {
 // ─── Build manifest ───────────────────────────────────────
 const initialEvidence = buildManifestEvidence(manifestEvidenceOptions());
 
-const initialRustAnalysis = mergeRustAnalysisBlocks(initialEvidence.rustAnalysis, rustAnalysisRun);
+const initialRustAnalysis = mergeRustAnalysisRun({
+  evidence: initialEvidence.rustAnalysis,
+  run: rustAnalysisRun,
+});
 const manifestGenerated = new Date().toISOString();
 const manifest = buildManifestRoot({
   generated: manifestGenerated,
@@ -1433,7 +1407,10 @@ if (values['strict-post-write-confidence'] && postWriteConfidenceLimited(postWri
 }
 
 refreshManifestEvidence(manifest, manifestEvidenceOptions());
-manifest.rustAnalysis = mergeRustAnalysisBlocks(manifest.rustAnalysis, rustAnalysisRun);
+manifest.rustAnalysis = mergeRustAnalysisRun({
+  evidence: manifest.rustAnalysis,
+  run: rustAnalysisRun,
+});
 const topologyArtifact = loadIfExists('topology.json');
 const moduleReachabilityArtifact = loadIfExists('module-reachability.json');
 if (topologyArtifact) {
