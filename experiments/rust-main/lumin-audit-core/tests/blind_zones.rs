@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
 use lumin_audit_core::blind_zones::{summarize_blind_zones, BlindZoneInput};
@@ -29,6 +30,71 @@ fn zone_by_area<'a>(zones: &'a Value, area: &str) -> Result<&'a Value> {
                 .find(|zone| zone.get("area").and_then(Value::as_str) == Some(area))
         })
         .ok_or_else(|| anyhow::anyhow!("missing zone area {area}: {zones}"))
+}
+
+fn shared_fixture_cases_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/fixtures/audit-core-blind-zones/cases.json")
+}
+
+#[test]
+fn shared_parity_fixture_cases_cover_expected_blind_zones() -> Result<()> {
+    let cases = serde_json::from_slice::<Value>(&fs::read(shared_fixture_cases_path())?)?;
+    let cases = cases
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("blind-zone cases fixture must be an array"))?;
+
+    for case in cases {
+        let name = case
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("<unnamed>");
+        let input = case
+            .get("input")
+            .ok_or_else(|| anyhow::anyhow!("{name}: missing input"))?;
+        let zones = serialized_zones(BlindZoneInput {
+            triage: input.get("triage"),
+            symbols: input.get("symbols"),
+            dead_classify: input.get("deadClassify"),
+            entry_surface: input.get("entrySurface"),
+            resolver_diagnostics: input.get("resolverDiagnostics"),
+            rust_analysis: input.get("rustAnalysis"),
+        })?;
+        for expected in case
+            .get("expectedZones")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
+            let area = expected
+                .get("area")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("{name}: expected zone missing area"))?;
+            let zone =
+                zone_by_area(&zones, area).map_err(|error| anyhow::anyhow!("{name}: {error}"))?;
+            if let Some(severity) = expected.get("severity").and_then(Value::as_str) {
+                assert_eq!(
+                    zone.get("severity").and_then(Value::as_str),
+                    Some(severity),
+                    "{name}: wrong severity for {area}: {zones}"
+                );
+            }
+        }
+        for area in case
+            .get("absentAreas")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(Value::as_str)
+        {
+            assert!(
+                zone_by_area(&zones, area).is_err(),
+                "{name}: unexpectedly emitted {area}: {zones}"
+            );
+        }
+    }
+    Ok(())
 }
 
 #[test]
