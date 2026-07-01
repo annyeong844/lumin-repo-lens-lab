@@ -122,13 +122,19 @@ function formatRustAnalysisCue(summary) {
     }
     return null;
   }
+  const scope = summary.scanScope && typeof summary.scanScope === 'object'
+    ? summary.scanScope
+    : null;
+  const scopeText = scope
+    ? ` (${scope.includeTests === false ? 'production files only' : 'including tests'}${Array.isArray(scope.exclude) && scope.exclude.length > 0 ? `, ${scope.exclude.length} exclude ${plural(scope.exclude.length, 'pattern')}` : ''})`
+    : '';
   const cloneParts = [
     `exact ${n(summary.syntaxFunctionCloneExactBodyGroups)}`,
     `structure ${n(summary.syntaxFunctionCloneStructureGroups)}`,
     `signature ${n(summary.syntaxFunctionCloneSignatureGroups)}`,
     `near ${n(summary.syntaxFunctionCloneNearCandidates)}`,
   ].join(', ');
-  return `Rust analyzer: ${n(summary.files)} files, review signals ${n(summary.syntaxReviewSignals)}, opaque surfaces ${n(summary.syntaxReviewOpaqueSurfaces)}, clone cues ${cloneParts}. Read \`rust-analyzer-health.latest.json\` before making Rust findings.`;
+  return `Rust analyzer: ${n(summary.files)} files${scopeText}, review signals ${n(summary.syntaxReviewSignals)}, opaque surfaces ${n(summary.syntaxReviewOpaqueSurfaces)}, clone cues ${cloneParts}. Read \`rust-analyzer-health.latest.json\` before making Rust findings.`;
 }
 
 function formatSfcEvidenceCue(summary) {

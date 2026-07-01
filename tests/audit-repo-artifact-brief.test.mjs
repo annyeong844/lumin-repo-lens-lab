@@ -241,6 +241,10 @@ describe("audit-repo artifact brief split track", () => {
           status: "complete",
           available: true,
           files: 2,
+          scanScope: {
+            includeTests: false,
+            exclude: ["generated"],
+          },
         },
       },
       discipline: { totals: { ":any": 41 } },
@@ -254,6 +258,9 @@ describe("audit-repo artifact brief split track", () => {
     );
     expect(reviewPackWithRustEvidence).toContain(
       "Rust analyzer artifact available for 2 file(s)",
+    );
+    expect(reviewPackWithRustEvidence).toContain(
+      "Rust analyzer artifact available for 2 file(s) (production files only, 1 exclude pattern)",
     );
     expect(reviewPack).toContain("Resolver blocked absence hints");
     expect(reviewPack).not.toContain("Ask the coding agent:");

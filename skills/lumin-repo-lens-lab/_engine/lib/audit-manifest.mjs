@@ -525,6 +525,34 @@ function sameResolvedPath(left, right) {
   return path.resolve(left) === path.resolve(right);
 }
 
+function stringArrayOrNull(value) {
+  if (!Array.isArray(value)) return null;
+  return value.filter((item) => typeof item === 'string');
+}
+
+function objectOrNull(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function rustScanScopeFromArtifact(artifact) {
+  const input = objectOrNull(artifact?.meta?.input) ?? {};
+  const syntaxInput = objectOrNull(artifact?.phases?.syntax?.meta?.input) ?? {};
+  const includeTests =
+    typeof input.includeTests === 'boolean'
+      ? input.includeTests
+      : typeof syntaxInput.includeTests === 'boolean'
+        ? syntaxInput.includeTests
+        : null;
+  const exclude = stringArrayOrNull(input.exclude) ?? stringArrayOrNull(syntaxInput.exclude);
+  const pathPolicy = objectOrNull(syntaxInput.pathPolicy) ?? objectOrNull(input.pathPolicy);
+  if (includeTests === null && exclude === null && pathPolicy === null) return null;
+  return {
+    ...(includeTests !== null ? { includeTests } : {}),
+    ...(exclude !== null ? { exclude } : {}),
+    ...(pathPolicy !== null ? { pathPolicy } : {}),
+  };
+}
+
 function buildRustAnalysisSummary(artifact, { root }) {
   if (!artifact || typeof artifact !== 'object') return null;
   const artifactName = 'rust-analyzer-health.latest.json';
@@ -556,6 +584,7 @@ function buildRustAnalysisSummary(artifact, { root }) {
       root: artifactRoot,
     };
   }
+  const scanScope = rustScanScopeFromArtifact(artifact);
   return {
     artifact: artifactName,
     status: 'complete',
@@ -569,6 +598,7 @@ function buildRustAnalysisSummary(artifact, { root }) {
       artifact.meta?.input?.sourceHealthProfile ??
       null,
     semanticMode: artifact.meta?.input?.semanticMode ?? null,
+    ...(scanScope ? { scanScope } : {}),
     files: numberOrZero(summary.files),
     syntaxReviewSignals: numberOrZero(summary.syntaxReviewSignals),
     syntaxReviewOpaqueSurfaces: numberOrZero(summary.syntaxReviewOpaqueSurfaces),

@@ -17,6 +17,16 @@ function n(value, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+function formatRustScope(summary) {
+  const scope = summary?.scanScope;
+  if (!scope || typeof scope !== 'object') return '';
+  const tests = scope.includeTests === false ? 'production files only' : 'including tests';
+  const excludes = Array.isArray(scope.exclude) && scope.exclude.length > 0
+    ? `, ${scope.exclude.length} exclude ${scope.exclude.length === 1 ? 'pattern' : 'patterns'}`
+    : '';
+  return ` (${tests}${excludes})`;
+}
+
 function arr(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -181,7 +191,7 @@ function typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symb
       `JS/TS exact exported shape groups: ${exactGroups}; near-shape review cues: ${nearCandidates}; raw shape facts: ${shapeFacts}. Do not use shape-index.json as Rust shape evidence.`,
       `JS/TS function clone cues: exact body groups ${cloneExact}; same-structure groups ${cloneStructure}; same-signature groups ${cloneSignature}; near-function cues ${cloneNear}. Read source before calling them semantic duplicates.`,
       rustArtifactAvailable
-        ? `Rust analyzer artifact available for ${n(rustAnalysis.files)} file(s). Use rust-analyzer-health.latest.json for Rust shape, signature, clone, and syntax review cues.`
+        ? `Rust analyzer artifact available for ${n(rustAnalysis.files)} file(s)${formatRustScope(rustAnalysis)}. Use rust-analyzer-health.latest.json for Rust shape, signature, clone, and syntax review cues.`
         : `Rust analyzer artifact not available in this run${rustAnalysis?.requested ? ` (${rustAnalysis.status ?? 'not-run'})` : ''}; keep Rust shape/clone claims limited to manifest blind-zone evidence.`,
       'For near-shape or semantic duplication, read the cited declarations before recommending a merge.',
     ],
@@ -269,7 +279,7 @@ function failureLane({ checklistFacts, manifest }) {
       `Silent catch count: ${n(e2.count)}; non-empty anonymous catches: ${n(e2.nonEmptyAnonymousCount)}; unused catch params: ${n(e2.unusedParamCount)}.`,
       `Blind zones recorded in manifest: ${blindZones.length}. Treat any blind zone as a limit on absence/removal claims.`,
       rustArtifactAvailable
-        ? `Rust analyzer artifact available for ${n(rustAnalysis.files)} file(s). Read rust-analyzer-health.latest.json before making Rust syntax, clone, dead-definition, or absence claims.`
+        ? `Rust analyzer artifact available for ${n(rustAnalysis.files)} file(s)${formatRustScope(rustAnalysis)}. Read rust-analyzer-health.latest.json before making Rust syntax, clone, dead-definition, or absence claims.`
         : `Rust analyzer artifact not available in this run${rustAnalysis?.requested ? ` (${rustAnalysis.status ?? 'not-run'})` : ''}; keep Rust findings limited to manifest blind-zone evidence.`,
       'If a catch pattern is intentional, recommend documenting the intent rather than changing behavior blindly.',
     ],

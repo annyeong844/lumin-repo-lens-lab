@@ -208,7 +208,12 @@ function assert(label, ok, detail = '') {
   const reviewPackWithRustEvidence = renderAuditReviewPack({
     manifest: {
       scanRange: { files: 10, languages: ['ts', 'rs'], includeTests: true },
-      rustAnalysis: { status: 'complete', available: true, files: 2 },
+      rustAnalysis: {
+        status: 'complete',
+        available: true,
+        files: 2,
+        scanScope: { includeTests: false, exclude: ['generated'] },
+      },
     },
     discipline: { totals: { ':any': 41 } },
     symbols: {
@@ -220,7 +225,7 @@ function assert(label, ok, detail = '') {
   assert('A0f2. review pack only lists Rust analyzer artifact when manifest marks it available',
     reviewPackWithRustEvidence.includes('Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.') &&
     reviewPackWithRustEvidence.includes('Artifacts for the controller to inspect first: discipline.json, shape-index.json, function-clones.json, checklist-facts.json, symbols.json, rust-analyzer-health.latest.json') &&
-    reviewPackWithRustEvidence.includes('Rust analyzer artifact available for 2 file(s)'),
+    reviewPackWithRustEvidence.includes('Rust analyzer artifact available for 2 file(s) (production files only, 1 exclude pattern)'),
     reviewPackWithRustEvidence);
   const reviewPackWithResolverHints = renderAuditReviewPack({
     manifest: {

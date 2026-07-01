@@ -80,12 +80,16 @@ Supported in the generic audit route:
 - `manifest.json.blindZones[]` entry with `area: "rust"` when the Rust
   analyzer artifact is not registered for that audit run
 - opt-in `audit-repo.mjs --rust-analyzer`, which writes
-  `rust-analyzer-health.latest.json` and records `manifest.rustAnalysis`
+  `rust-analyzer-health.latest.json` and records `manifest.rustAnalysis`,
+  including `manifest.rustAnalysis.scanScope` copied from the native Rust
+  artifact's source-health input metadata
 
 Boundary:
 
 - read the unified `lumin-rust-analyzer` artifact before making Rust
   syntax, semantic, dead-definition, clone, or absence claims
+- use `manifest.rustAnalysis.scanScope` as the quick range cue, but use the
+  native Rust artifact for exact Rust evidence
 - do not use JS/TS `symbols.json` absence as Rust evidence
 - if `manifest.rustAnalysis.status !== "complete"`, keep Rust claims at
   scan-range/blind-zone level

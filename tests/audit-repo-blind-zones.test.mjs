@@ -169,6 +169,21 @@ describe("audit-repo blind-zone and confidence split track", () => {
             root: repo,
             effectiveSourceHealthProfile: "compact",
             semanticMode: "metadata-only",
+            includeTests: false,
+            exclude: ["generated"],
+          },
+        },
+        phases: {
+          syntax: {
+            meta: {
+              input: {
+                includeTests: false,
+                exclude: ["generated"],
+                pathPolicy: {
+                  exclude: ["**/target/**", "**/vendor/**", "generated"],
+                },
+              },
+            },
           },
         },
         summary: { files: 1, syntaxReviewSignals: 0 },
@@ -230,6 +245,13 @@ describe("audit-repo blind-zone and confidence split track", () => {
         status: "complete",
         available: true,
         files: 1,
+        scanScope: {
+          includeTests: false,
+          exclude: ["generated"],
+          pathPolicy: {
+            exclude: ["**/target/**", "**/vendor/**", "generated"],
+          },
+        },
       });
       expect(currentEvidence.blindZones.some((zone) => zone.area === "rs")).toBe(false);
     } finally {
