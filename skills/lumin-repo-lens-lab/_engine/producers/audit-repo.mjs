@@ -267,7 +267,6 @@ const PROFILE = values.profile;
 const SOURCES_VALUE = values.sources ?? values.source;
 const INCLUDE_TESTS = normalizeIncludeTests(values, process.argv.slice(2));
 const PRODUCTION = !INCLUDE_TESTS;
-const PRE_POST_MUTEX = values['pre-write'] && values['post-write'];
 let GENERATED_ARTIFACTS_MODE = 'default';
 try {
   GENERATED_ARTIFACTS_MODE = normalizeGeneratedArtifactsMode(values['generated-artifacts']);
