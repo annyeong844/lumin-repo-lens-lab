@@ -79,6 +79,16 @@ export function collectProducedArtifacts(outDir, options = {}) {
   return runAuditCoreJson(args, 'collectProducedArtifacts', runOptions);
 }
 
+export function buildArtifactSizeSummary(outDir, artifacts) {
+  return runAuditCoreJson([
+    'artifact-size-summary',
+    '--output', outDir,
+    '--input', '-',
+  ], 'buildArtifactSizeSummary', {
+    input: JSON.stringify(artifacts ?? []),
+  });
+}
+
 export function buildProducerPerformanceArtifactFromLedger(ledger) {
   return runAuditCoreJson([
     'producer-performance-artifact',

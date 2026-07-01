@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 use crate::orchestration_plan::AuditProfile;
 
@@ -72,9 +73,22 @@ pub struct ArtifactSizeSummary {
     pub produced_count: u64,
     pub total_bytes: u64,
     #[serde(default)]
-    pub largest: Vec<Value>,
+    pub largest: Vec<ArtifactSizeEntry>,
     #[serde(default)]
-    pub by_name: Value,
+    pub by_name: BTreeMap<String, ArtifactSizeBytes>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactSizeEntry {
+    pub name: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactSizeBytes {
+    pub bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

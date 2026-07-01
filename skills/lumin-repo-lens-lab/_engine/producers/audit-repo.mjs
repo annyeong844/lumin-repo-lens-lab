@@ -46,7 +46,7 @@
 // any step is captured but never hidden.
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync, existsSync, mkdirSync, statSync, rmSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -70,6 +70,7 @@ import {
 } from '../lib/incremental-cache-store.mjs';
 import {
   buildProducerPerformanceArtifactFromLedger,
+  buildArtifactSizeSummary,
   buildOrchestrationPlan,
   buildManifestFinalSummaryUpdate,
   buildLifecycleSummary,
@@ -667,8 +668,6 @@ function manifestEvidenceOptions() {
   };
 }
 
-const PRODUCER_PERFORMANCE_LARGEST_ARTIFACT_LIMIT = 10;
-
 function performanceCacheRoot() {
   return path.resolve(values['cache-root'] ?? path.join(ROOT, '.audit', '.cache'));
 }
@@ -691,36 +690,6 @@ function memoryDelta(before, after) {
     heapUsedBytes: after.heapUsedBytes - before.heapUsedBytes,
     externalBytes: after.externalBytes - before.externalBytes,
     arrayBuffersBytes: after.arrayBuffersBytes - before.arrayBuffersBytes,
-  };
-}
-
-function collectArtifactSizeSummary(artifacts = collectProducedArtifacts(OUT)) {
-  const byName = Object.create(null);
-  let totalBytes = 0;
-
-  for (const name of artifacts) {
-    const artifactPath = path.join(OUT, name);
-    try {
-      const stats = statSync(artifactPath);
-      if (!stats.isFile()) continue;
-      byName[name] = { bytes: stats.size };
-      totalBytes += stats.size;
-    } catch {
-      // Artifact enumeration is best-effort: disappearing files should not
-      // turn a completed audit into a failed one.
-    }
-  }
-
-  const largest = Object.entries(byName)
-    .map(([name, entry]) => ({ name, bytes: entry.bytes }))
-    .sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name))
-    .slice(0, PRODUCER_PERFORMANCE_LARGEST_ARTIFACT_LIMIT);
-
-  return {
-    producedCount: Object.keys(byName).length,
-    totalBytes,
-    largest,
-    byName,
   };
 }
 
@@ -767,7 +736,7 @@ function buildProducerPerformanceArtifact(generated, artifactsProduced) {
       mode: GENERATED_ARTIFACTS_MODE,
     },
     artifactReads: artifactReadMetrics.summary(),
-    artifacts: collectArtifactSizeSummary(artifactsProduced),
+    artifacts: buildArtifactSizeSummary(OUT, artifactsProduced),
     events: [...producerEvents, ...skippedEvents],
   });
 }

@@ -5,6 +5,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
+use lumin_audit_core::artifact_measurement::measure_artifact_sizes;
 use lumin_audit_core::artifact_registry::{
     collect_produced_artifacts, collect_produced_artifacts_for_manifest,
 };
@@ -40,12 +41,13 @@ use lumin_audit_core::rust_analysis::{
     merge_rust_analysis_run, summarize_rust_analysis_artifact, RustAnalysisRunMergeInput,
 };
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core rust-analysis-run-merge --input <path|->\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>\n       lumin-audit-core manifest-root --input <path|->\n       lumin-audit-core manifest-evidence-update --input <path|->\n       lumin-audit-core manifest-final-summary-update --output <dir> --producer-performance <path> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core producer-performance-artifact --input <path|->\n       lumin-audit-core living-audit-summary --root <repo>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core artifact-size-summary --output <dir> --input <path|->\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core rust-analysis-run-merge --input <path|->\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>\n       lumin-audit-core manifest-root --input <path|->\n       lumin-audit-core manifest-evidence-update --input <path|->\n       lumin-audit-core manifest-final-summary-update --output <dir> --producer-performance <path> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core producer-performance-artifact --input <path|->\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("artifact-registry") => run_artifact_registry(args.collect()),
+        Some("artifact-size-summary") => run_artifact_size_summary(args.collect()),
         Some("rust-analysis-summary") => run_rust_analysis_summary(args.collect()),
         Some("rust-analysis-run-merge") => run_rust_analysis_run_merge(args.collect()),
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
@@ -99,6 +101,27 @@ fn run_artifact_registry(args: Vec<String>) -> Result<()> {
         None => collect_produced_artifacts(&output, parsed.rust_analysis_ran)?,
     };
     write_stdout_json(&artifacts)
+}
+
+fn run_artifact_size_summary(args: Vec<String>) -> Result<()> {
+    let mut output = None;
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--output" => output = Some(take_path(&mut args, "--output")?),
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("artifact-size-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let output = output.context("artifact-size-summary: missing --output <dir>")?;
+    let input = input.context("artifact-size-summary: missing --input <path|->")?;
+    let json = read_json_input(&input, "artifact-size-summary")?;
+    let artifacts = serde_json::from_value::<Vec<String>>(json)
+        .context("artifact-size-summary: invalid artifact list shape")?;
+    let summary = measure_artifact_sizes(&output, &artifacts);
+    write_stdout_json(&summary)
 }
 
 fn run_rust_analysis_summary(args: Vec<String>) -> Result<()> {

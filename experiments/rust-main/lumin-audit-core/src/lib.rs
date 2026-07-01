@@ -1,3 +1,4 @@
+pub mod artifact_measurement;
 pub mod artifact_registry;
 pub mod artifact_summaries;
 pub mod blind_zones;
