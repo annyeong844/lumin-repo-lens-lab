@@ -1046,6 +1046,11 @@ amended with a separate raw-fact cache contract.
   Rust module files `tests.rs`, `test.rs`, `*.test.rs`, `*.spec.rs`,
   `*_test.rs`, and `*_tests.rs` are also test-like. Substrings are not enough:
   `contest.rs` remains source.
+- `lumin-rust-analyzer` product mode and `lumin-rust-analyzer pre-write` pass
+  scan-scope flags into Rust source-health instead of filtering Rust files in
+  JS. Effective scope is artifact-visible in the Rust source-health input
+  metadata; omitted files are unavailable/absent because the Rust owner did
+  not enumerate them, not because JS screening hid them.
 - Rust source health also mutes signals in explicit Rust test-only AST context
   without dropping raw evidence. Signals inside a direct `#[cfg(test)]` module,
   impl, or function carry `muteReason: "cfg-test"`. Signals inside a direct

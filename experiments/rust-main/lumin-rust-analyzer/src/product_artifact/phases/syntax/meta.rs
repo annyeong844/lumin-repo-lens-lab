@@ -1,8 +1,9 @@
 use lumin_rust_source_health::protocol::{
-    IncrementalMeta, ParserEdition, ParserEditionPolicy, ParserEditionSource, ParserKind,
-    PolicyMeta as SyntaxPolicyMeta, ResponseMeta as SyntaxMeta, RuntimeMeta as SyntaxRuntimeMeta,
-    SidecarMeta as SyntaxSidecarMeta, SignalPolicyMeta as SyntaxSignalPolicyMeta,
-    SourceHealthLimit, SourceHealthMode, SourceHealthProducer,
+    IncrementalMeta, InputMeta, ParserEdition, ParserEditionPolicy, ParserEditionSource,
+    ParserKind, PolicyMeta as SyntaxPolicyMeta, ResponseMeta as SyntaxMeta,
+    RuntimeMeta as SyntaxRuntimeMeta, SidecarMeta as SyntaxSidecarMeta,
+    SignalPolicyMeta as SyntaxSignalPolicyMeta, SourceHealthLimit, SourceHealthMode,
+    SourceHealthProducer,
 };
 use serde::Serialize;
 
@@ -17,6 +18,8 @@ pub(super) struct SyntaxPhaseMetaBrief<'a> {
     limits: [SourceHealthLimit; 4],
     #[serde(skip_serializing_if = "Option::is_none")]
     sidecar: Option<SyntaxPhaseSidecarBrief<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<&'a InputMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     incremental: Option<&'a IncrementalMeta>,
 }
@@ -34,6 +37,7 @@ impl<'a> SyntaxPhaseMetaBrief<'a> {
                 .sidecar
                 .as_ref()
                 .map(SyntaxPhaseSidecarBrief::from_meta),
+            input: meta.input.as_ref(),
             incremental: meta.incremental.as_ref(),
         }
     }

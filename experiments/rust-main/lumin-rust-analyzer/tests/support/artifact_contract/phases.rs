@@ -82,7 +82,11 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
         .context("syntax sidecar binary hash")?
         .starts_with("sha256:"));
     assert!(syntax_meta.get("generated").is_none());
-    assert!(syntax_meta.get("input").is_none());
+    assert_eq!(syntax_meta["input"]["includeTests"], true);
+    assert_eq!(
+        syntax_meta["input"]["pathPolicy"]["exclude"],
+        serde_json::json!(["**/target/**", "**/vendor/**"])
+    );
     assert_eq!(syntax_meta["incremental"]["enabled"], true);
     assert_eq!(artifact["phases"]["semantic"]["rawEmbedded"], false);
     assert_eq!(artifact["phases"]["semantic"]["findingCount"], 1);

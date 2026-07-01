@@ -145,7 +145,10 @@ audit pass that needs syntax, clone, dead-definition, Cargo metadata, or Rust
 absence claims. When it runs successfully, read
 `.audit/rust-analyzer-health.latest.json` before making Rust findings. When it
 does not run or is unavailable, keep Rust claims limited to manifest blind-zone
-evidence.
+evidence. The orchestrator forwards the same scan-scope flags used by the
+JS/TS audit route (`--production`, `--exclude-tests`, and repeated
+`--exclude <pattern>`) to `lumin-rust-analyzer`, and Rust source-health records
+the effective syntax scope under `phases.syntax.meta.input`.
 
 Then answer with `templates/REVIEW_CHECKLIST_SHORT.md` unless the user
 asked for full checklist output: what is already stable, at most three

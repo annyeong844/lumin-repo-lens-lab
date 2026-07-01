@@ -100,6 +100,36 @@ fn unified_cli_uses_compact_source_health_by_default_for_metadata_only() -> Resu
 }
 
 #[test]
+fn unified_cli_honors_rust_source_health_scan_scope_flags() -> Result<()> {
+    let artifact = analyze_metadata_only_unified_workspace_with_args(&[
+        std::ffi::OsStr::new("--production"),
+        std::ffi::OsStr::new("--exclude"),
+        std::ffi::OsStr::new("generated"),
+    ])?;
+    assert_eq!(artifact["meta"]["input"]["includeTests"], false);
+    assert_eq!(
+        artifact["meta"]["input"]["exclude"],
+        serde_json::json!(["generated"])
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["meta"]["input"]["includeTests"],
+        false
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["meta"]["input"]["exclude"],
+        serde_json::json!(["generated"])
+    );
+    assert_eq!(
+        artifact["phases"]["syntax"]["meta"]["input"]["pathPolicy"]["exclude"],
+        serde_json::json!(["**/target/**", "**/vendor/**", "generated"])
+    );
+    assert!(artifact["files"].get("src/lib.rs").is_some());
+    assert!(artifact["files"].get("tests/integration.rs").is_none());
+    assert!(artifact["files"].get("generated/bindings.rs").is_none());
+    Ok(())
+}
+
+#[test]
 fn unified_cli_preserves_full_source_health_diagnostic_mode() -> Result<()> {
     let artifact = analyze_metadata_only_unified_workspace_with_args(&[
         std::ffi::OsStr::new("--source-health-profile"),

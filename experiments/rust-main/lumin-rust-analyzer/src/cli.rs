@@ -21,6 +21,8 @@ pub(crate) struct Options {
     pub(crate) features: Option<String>,
     pub(crate) package_name: Option<String>,
     pub(crate) repo_root: PathBuf,
+    pub(crate) include_tests: bool,
+    pub(crate) exclude: Vec<String>,
     pub(crate) thread_count: Option<usize>,
     pub(crate) worker_stack_bytes: usize,
     pub(crate) semantic_mode: CargoCheckMode,

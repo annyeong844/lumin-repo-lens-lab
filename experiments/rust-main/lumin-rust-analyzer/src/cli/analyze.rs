@@ -21,6 +21,8 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
     let mut features: Option<String> = None;
     let mut package_name: Option<String> = None;
     let mut repo_root: Option<PathBuf> = None;
+    let mut include_tests = true;
+    let mut exclude = Vec::new();
     let mut thread_count: Option<usize> = None;
     let mut worker_stack_bytes = DEFAULT_WORKER_STACK_BYTES;
     let mut semantic_mode = CargoCheckMode::MetadataOnly;
@@ -42,6 +44,11 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
             "--features" => features = Some(take_string(&mut args, "--features")?),
             "--package" => package_name = Some(take_string(&mut args, "--package")?),
             "--repo-root" => repo_root = Some(take_path(&mut args, "--repo-root")?),
+            "--production" | "--exclude-tests" | "--no-tests" | "--no-include-tests" => {
+                include_tests = false;
+            }
+            "--include-tests" => include_tests = true,
+            "--exclude" => exclude.push(take_string(&mut args, "--exclude")?),
             "--semantic-mode" => {
                 let value = take_string(&mut args, "--semantic-mode")?;
                 semantic_mode = parse_enum(&value, "--semantic-mode")?;
@@ -96,6 +103,8 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
         features,
         package_name,
         repo_root,
+        include_tests,
+        exclude,
         thread_count,
         worker_stack_bytes,
         semantic_mode,

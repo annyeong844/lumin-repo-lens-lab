@@ -47,6 +47,9 @@ pub(super) struct ProductArtifactInput {
     pub(super) package_name: Option<String>,
     pub(super) features: Option<String>,
     pub(super) cargo_bin: String,
+    pub(super) include_tests: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) exclude: Vec<String>,
     pub(super) semantic_mode: CargoCheckMode,
     pub(super) cargo_target_dir_mode: CargoTargetDirMode,
     pub(super) cargo_target_dir_policy: CargoTargetDirPolicy,
