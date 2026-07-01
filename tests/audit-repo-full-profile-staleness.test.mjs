@@ -158,10 +158,10 @@ describe("audit-repo full-profile staleness split track", () => {
       expect(
         typeof checklist.B1_duplicate_implementation?.nearFunctionCandidates,
       ).toBe("number");
-      expect(summary).toContain("Function clone cues:");
+      expect(summary).toContain("JS/TS function clone cues:");
       expect(summary).toContain("near-function cues");
       expect(summary).toContain("function-clones.json");
-      expect(reviewPack).toContain("Function clone cues:");
+      expect(reviewPack).toContain("JS/TS function clone cues:");
       expect(reviewPack).toContain("near-function cues");
 
       expect(summary).toContain("Exported any-contamination:");

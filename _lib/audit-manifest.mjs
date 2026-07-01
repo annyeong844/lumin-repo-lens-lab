@@ -375,6 +375,15 @@ export function buildManifestRoot(input) {
   });
 }
 
+export function buildManifestCompanionUpdate(input) {
+  return runAuditCoreJson([
+    'manifest-companion-update',
+    '--input', '-',
+  ], 'buildManifestCompanionUpdate', {
+    input: JSON.stringify(input ?? {}),
+  });
+}
+
 function buildManifestEvidenceUpdate(evidence) {
   return runAuditCoreJson([
     'manifest-evidence-update',

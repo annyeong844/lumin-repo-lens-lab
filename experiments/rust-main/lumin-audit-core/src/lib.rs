@@ -10,6 +10,7 @@ pub mod lifecycle;
 pub mod lifecycle_exit_policy;
 pub mod lifecycle_request;
 pub mod living_audit;
+pub mod manifest_companion;
 pub mod manifest_core;
 pub mod manifest_evidence;
 pub mod manifest_final;

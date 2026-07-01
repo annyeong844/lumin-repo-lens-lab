@@ -164,6 +164,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'producer-performance-audit-run-artifact',
       'producer-performance-audit-run-artifact: missing --input',
     ],
+    [
+      'manifest-companion-update',
+      'manifest-companion-update: missing --input',
+    ],
   ]) {
     const result = spawnSync(binaryPath, [command], {
       cwd: ROOT,

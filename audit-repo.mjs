@@ -78,6 +78,7 @@ import {
   evaluateLifecycleRequestGuard,
   buildManifestFinalSummaryUpdate,
   buildLifecycleSummary,
+  buildManifestCompanionUpdate,
   buildManifestRoot,
   buildManifestEvidence,
   collectProducedArtifacts,
@@ -869,15 +870,12 @@ finalExitCode = lifecycleExitPolicy.exitCode;
 refreshManifestEvidence(manifest, manifestEvidenceOptions());
 const topologyArtifact = loadIfExists('topology.json');
 const moduleReachabilityArtifact = loadIfExists('module-reachability.json');
+let topologyMermaidPath = null;
+let auditSummaryPath = null;
+let reviewPackPath = null;
 if (topologyArtifact) {
-  const topologyMermaidPath = path.join(OUT, 'topology.mermaid.md');
+  topologyMermaidPath = path.join(OUT, 'topology.mermaid.md');
   atomicWrite(topologyMermaidPath, renderTopologyMermaid(topologyArtifact));
-  manifest.topologyMermaid = {
-    path: topologyMermaidPath,
-    format: 'markdown',
-    source: 'topology.json',
-    use: 'human visual companion; topology.json remains authoritative for exact citations',
-  };
   manifest.artifactsProduced = collectProducedArtifacts(OUT, {
     rustAnalysis: manifest.rustAnalysis,
   });
@@ -890,7 +888,7 @@ const SHOULD_WRITE_SUMMARY = (
   manifest.checkCanon?.requested
 );
 if (SHOULD_WRITE_SUMMARY) {
-  const auditSummaryPath = path.join(OUT, 'audit-summary.latest.md');
+  auditSummaryPath = path.join(OUT, 'audit-summary.latest.md');
   const summaryMarkdown = renderAuditSummary({
     manifest,
     checklistFacts: loadIfExists('checklist-facts.json'),
@@ -904,13 +902,9 @@ if (SHOULD_WRITE_SUMMARY) {
   });
   writeFileSync(auditSummaryPath, summaryMarkdown);
   auditSummaryPreview = renderSummaryConsolePreview(summaryMarkdown);
-  manifest.auditSummary = {
-    path: auditSummaryPath,
-    format: 'markdown',
-  };
 }
 if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
-  const reviewPackPath = path.join(OUT, 'audit-review-pack.latest.md');
+  reviewPackPath = path.join(OUT, 'audit-review-pack.latest.md');
   const reviewPackMarkdown = renderAuditReviewPack({
     manifest,
     checklistFacts: loadIfExists('checklist-facts.json'),
@@ -926,12 +920,12 @@ if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
     moduleReachability: moduleReachabilityArtifact,
   });
   writeFileSync(reviewPackPath, reviewPackMarkdown);
-  manifest.reviewPack = {
-    path: reviewPackPath,
-    format: 'markdown',
-    use: 'main assistant reads lanes as artifact briefs; if using built-in reviewer subagents, translate lanes into focused codebase-reading tasks with file:line evidence; the engine never calls external APIs',
-  };
 }
+Object.assign(manifest, buildManifestCompanionUpdate({
+  topologyMermaidPath,
+  auditSummaryPath,
+  reviewPackPath,
+}));
 const producerPerformance = buildProducerPerformanceArtifactForAuditRun({
   generated: manifest.meta.generated,
   root: ROOT,

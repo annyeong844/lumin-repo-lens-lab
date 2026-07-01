@@ -8,6 +8,9 @@ use super::io_support::{
 };
 use super::usage::USAGE;
 use lumin_audit_core::generated_artifacts::GeneratedArtifactsMode;
+use lumin_audit_core::manifest_companion::{
+    build_manifest_companion_update, ManifestCompanionUpdateInput,
+};
 use lumin_audit_core::manifest_core::{summarize_manifest_core, ManifestCoreOptions};
 use lumin_audit_core::manifest_evidence::{
     summarize_manifest_evidence, ManifestEvidenceArtifacts, ManifestEvidenceOptions,
@@ -80,6 +83,27 @@ pub(super) fn run_manifest_evidence_update(args: Vec<String>) -> Result<()> {
     let request = serde_json::from_value::<ManifestEvidenceUpdateInput>(json)
         .context("manifest-evidence-update: invalid request shape")?;
     let update = build_manifest_evidence_update(request);
+    write_stdout_json(&update)
+}
+
+pub(super) fn run_manifest_companion_update(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("manifest-companion-update: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("manifest-companion-update: missing --input <path|->")?;
+    let json = read_json_input(&input, "manifest-companion-update")?;
+    if !json.is_object() {
+        bail!("manifest-companion-update: invalid request shape");
+    }
+    let request = serde_json::from_value::<ManifestCompanionUpdateInput>(json)
+        .context("manifest-companion-update: invalid request shape")?;
+    let update = build_manifest_companion_update(request)?;
     write_stdout_json(&update)
 }
 

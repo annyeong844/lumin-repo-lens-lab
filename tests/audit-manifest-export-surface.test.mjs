@@ -29,6 +29,7 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.buildManifestEvidence).toBe("function");
     expect(typeof auditManifest.refreshManifestEvidence).toBe("function");
     expect(typeof auditManifest.collectProducedArtifacts).toBe("function");
+    expect(typeof auditManifest.buildManifestCompanionUpdate).toBe("function");
     expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
       "function",
     );
@@ -45,6 +46,32 @@ describe("audit-manifest public surface", () => {
     ]) {
       expect(Object.hasOwn(auditManifest, symbol)).toBe(false);
     }
+  });
+
+  it("AMES1d. companion manifest wrapper leaves companion block shapes in audit-core", () => {
+    const update = auditManifest.buildManifestCompanionUpdate({
+      topologyMermaidPath: "C:/repo/.audit/topology.mermaid.md",
+      auditSummaryPath: "C:/repo/.audit/audit-summary.latest.md",
+      reviewPackPath: "C:/repo/.audit/audit-review-pack.latest.md",
+    });
+
+    expect(update).toMatchObject({
+      topologyMermaid: {
+        path: "C:/repo/.audit/topology.mermaid.md",
+        format: "markdown",
+        source: "topology.json",
+        use: "human visual companion; topology.json remains authoritative for exact citations",
+      },
+      auditSummary: {
+        path: "C:/repo/.audit/audit-summary.latest.md",
+        format: "markdown",
+      },
+      reviewPack: {
+        path: "C:/repo/.audit/audit-review-pack.latest.md",
+        format: "markdown",
+      },
+    });
+    expect(update.reviewPack.use).toContain("the engine never calls external APIs");
   });
 
   it("AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core", () =>

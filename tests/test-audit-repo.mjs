@@ -1792,10 +1792,10 @@ function assert(label, ok, detail = '') {
     assert('O10d2. full profile artifact brief maps function clone cues without ranking them',
       typeof checklist.B1_duplicate_implementation?.structureGroupCandidates === 'number' &&
       typeof checklist.B1_duplicate_implementation?.nearFunctionCandidates === 'number' &&
-      summaryMd.includes('Function clone cues:') &&
+      summaryMd.includes('JS/TS function clone cues:') &&
       summaryMd.includes('near-function cues') &&
       summaryMd.includes('function-clones.json') &&
-      reviewPackMd.includes('Function clone cues:') &&
+      reviewPackMd.includes('JS/TS function clone cues:') &&
       reviewPackMd.includes('near-function cues'),
       `${summaryMd}\n---\n${reviewPackMd}`);
     assert('O10e. full profile summary and review pack expose symbols anyContamination lane',

@@ -23,6 +23,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.buildManifestEvidence, 'function');
   assert.equal(typeof auditManifest.refreshManifestEvidence, 'function');
   assert.equal(typeof auditManifest.collectProducedArtifacts, 'function');
+  assert.equal(typeof auditManifest.buildManifestCompanionUpdate, 'function');
   assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
 
   for (const symbol of [
@@ -37,6 +38,29 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   ]) {
     assert.equal(Object.hasOwn(auditManifest, symbol), false, symbol);
   }
+});
+
+check('AMES1d. companion manifest wrapper leaves companion block shapes in audit-core', () => {
+  const update = auditManifest.buildManifestCompanionUpdate({
+    topologyMermaidPath: 'C:/repo/.audit/topology.mermaid.md',
+    auditSummaryPath: 'C:/repo/.audit/audit-summary.latest.md',
+    reviewPackPath: 'C:/repo/.audit/audit-review-pack.latest.md',
+  });
+
+  assert.equal(update.topologyMermaid.path, 'C:/repo/.audit/topology.mermaid.md');
+  assert.equal(update.topologyMermaid.format, 'markdown');
+  assert.equal(update.topologyMermaid.source, 'topology.json');
+  assert.equal(
+    update.topologyMermaid.use,
+    'human visual companion; topology.json remains authoritative for exact citations',
+  );
+  assert.deepEqual(update.auditSummary, {
+    path: 'C:/repo/.audit/audit-summary.latest.md',
+    format: 'markdown',
+  });
+  assert.equal(update.reviewPack.path, 'C:/repo/.audit/audit-review-pack.latest.md');
+  assert.equal(update.reviewPack.format, 'markdown');
+  assert.match(update.reviewPack.use, /the engine never calls external APIs/);
 });
 
 check('AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core', () => {
