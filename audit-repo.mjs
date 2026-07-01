@@ -69,6 +69,7 @@ import {
   openIncrementalCacheStore,
 } from './_lib/incremental-cache-store.mjs';
 import {
+  buildProducerPerformanceSummaryFromFile,
   buildManifestEvidence,
   collectProducedArtifacts,
   refreshManifestEvidence,
@@ -846,27 +847,6 @@ function buildProducerPerformanceArtifact(generated, artifactsProduced) {
   };
 }
 
-function summarizeProducerPerformance(performanceArtifact) {
-  return {
-    artifact: 'producer-performance.json',
-    schemaVersion: performanceArtifact.schemaVersion,
-    producerCount: performanceArtifact.summary?.producerCount ?? 0,
-    okCount: performanceArtifact.summary?.okCount ?? 0,
-    failedCount: performanceArtifact.summary?.failedCount ?? 0,
-    skippedCount: performanceArtifact.summary?.skippedCount ?? 0,
-    totalWallMs: performanceArtifact.summary?.totalWallMs ?? 0,
-    artifactCount: performanceArtifact.summary?.artifactCount ?? 0,
-    totalArtifactBytes: performanceArtifact.summary?.totalArtifactBytes ?? 0,
-    artifactReadCount: performanceArtifact.summary?.artifactReadCount ?? 0,
-    totalArtifactReadBytes: performanceArtifact.summary?.totalArtifactReadBytes ?? 0,
-    totalJsonParseMs: performanceArtifact.summary?.totalJsonParseMs ?? 0,
-    phaseSupportCount: performanceArtifact.summary?.phaseSupportCount ?? 0,
-    largestArtifacts: performanceArtifact.artifacts?.largest ?? [],
-    maxObservedOrchestratorRssBytes:
-      performanceArtifact.summary?.maxObservedOrchestratorRssBytes ?? 0,
-  };
-}
-
 function shortenConsoleLine(line, max = 150) {
   const normalized = String(line ?? '').replace(/\s+/g, ' ').trim();
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
@@ -1601,11 +1581,12 @@ const producerPerformance = buildProducerPerformanceArtifact(
   manifest.meta.generated,
   collectManifestProducedArtifacts(manifest.rustAnalysis)
 );
+const producerPerformancePath = path.join(OUT, 'producer-performance.json');
 atomicWrite(
-  path.join(OUT, 'producer-performance.json'),
+  producerPerformancePath,
   JSON.stringify(producerPerformance, null, 2)
 );
-manifest.performance = summarizeProducerPerformance(producerPerformance);
+manifest.performance = buildProducerPerformanceSummaryFromFile(producerPerformancePath);
 manifest.artifactsProduced = collectManifestProducedArtifacts(manifest.rustAnalysis);
 
 const manifestPath = path.join(OUT, 'manifest.json');

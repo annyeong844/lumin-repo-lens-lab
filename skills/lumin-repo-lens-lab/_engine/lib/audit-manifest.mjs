@@ -71,6 +71,13 @@ export function collectProducedArtifacts(outDir, options = {}) {
   ], 'collectProducedArtifacts');
 }
 
+export function buildProducerPerformanceSummaryFromFile(artifactPath) {
+  return runAuditCoreJson([
+    'producer-performance-summary',
+    '--artifact', artifactPath,
+  ], 'buildProducerPerformanceSummary');
+}
+
 export function buildManifestEvidence({
   root,
   outDir,

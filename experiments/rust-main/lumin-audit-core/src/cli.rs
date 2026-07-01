@@ -15,10 +15,11 @@ use lumin_audit_core::manifest_core::{summarize_manifest_core, ManifestCoreOptio
 use lumin_audit_core::manifest_evidence::{
     summarize_manifest_evidence, ManifestEvidenceArtifacts, ManifestEvidenceOptions,
 };
+use lumin_audit_core::producer_performance::summarize_producer_performance;
 use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::summarize_rust_analysis_artifact;
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core living-audit-summary --root <repo>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -30,6 +31,7 @@ pub fn run() -> Result<()> {
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         Some("manifest-core-summary") => run_manifest_core_summary(args.collect()),
         Some("manifest-evidence-summary") => run_manifest_evidence_summary(args.collect()),
+        Some("producer-performance-summary") => run_producer_performance_summary(args.collect()),
         Some("living-audit-summary") => run_living_audit_summary(args.collect()),
         _ => bail!(USAGE),
     }
@@ -327,6 +329,22 @@ fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
     write_stdout_json(&summary)
 }
 
+fn run_producer_performance_summary(args: Vec<String>) -> Result<()> {
+    let mut artifact = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--artifact" => artifact = Some(take_path(&mut args, "--artifact")?),
+            _ => bail!("producer-performance-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let artifact = artifact.context("producer-performance-summary: missing --artifact <path>")?;
+    let artifact_json = read_required_json(&artifact, "producer-performance-summary")?;
+    let summary = summarize_producer_performance(&artifact_json);
+    write_stdout_json(&summary)
+}
+
 fn run_living_audit_summary(args: Vec<String>) -> Result<()> {
     let mut root = None;
     let mut args = args.into_iter();
@@ -351,6 +369,13 @@ fn read_optional_json(path: Option<PathBuf>, label: &str) -> Result<Option<Value
     let json = serde_json::from_str::<Value>(&text)
         .with_context(|| format!("{label}: invalid JSON in {}", path.display()))?;
     Ok(Some(json))
+}
+
+fn read_required_json(path: &Path, label: &str) -> Result<Value> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("{label}: failed to read {}", path.display()))?;
+    serde_json::from_str::<Value>(&text)
+        .with_context(|| format!("{label}: invalid JSON in {}", path.display()))
 }
 
 fn read_optional_output_json(
