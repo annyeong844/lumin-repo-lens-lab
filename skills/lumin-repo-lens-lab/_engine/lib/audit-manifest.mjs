@@ -110,6 +110,15 @@ export function buildArtifactSizeSummary(outDir, artifacts) {
   });
 }
 
+export function buildArtifactReadMetricsSummary(input) {
+  return runAuditCoreJson([
+    'artifact-read-metrics-summary',
+    '--input', '-',
+  ], 'buildArtifactReadMetricsSummary', {
+    input: JSON.stringify(input ?? {}),
+  });
+}
+
 export function buildProducerPerformanceArtifactFromRuntime(input) {
   return runAuditCoreJson([
     'producer-performance-runtime-artifact',
@@ -142,6 +151,15 @@ export function executeCheckCanonLifecycle(request) {
     'execute-check-canon',
     '--input', '-',
   ], 'executeCheckCanonLifecycle', {
+    input: JSON.stringify(request ?? {}),
+  });
+}
+
+export function resolvePreWriteRoute(request) {
+  return runAuditCoreJson([
+    'pre-write-route',
+    '--input', '-',
+  ], 'resolvePreWriteRoute', {
     input: JSON.stringify(request ?? {}),
   });
 }

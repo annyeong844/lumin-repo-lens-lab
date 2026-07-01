@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::artifact_measurement::measure_artifact_sizes;
+use crate::artifact_read_metrics::{
+    record_artifact_read, ArtifactReadRecord, ArtifactReadSummary, DEFAULT_LARGEST_READ_LIMIT,
+};
 use crate::orchestration_plan::AuditProfile;
 
 pub const ORCHESTRATION_LEDGER_SCHEMA_VERSION: &str = "lumin-audit-orchestration-ledger.v1";
@@ -14,7 +17,6 @@ pub const PRODUCER_PERFORMANCE_SCHEMA_VERSION: &str = "producer-performance.v1";
 pub const PRODUCER_PERFORMANCE_RUNTIME_INPUT_SCHEMA_VERSION: &str =
     "lumin-audit-producer-performance-runtime.v1";
 const PRODUCER_PHASE_TIMING_SCHEMA_VERSION: &str = "producer-phase-timing.v1";
-const LARGEST_ARTIFACT_READ_LIMIT: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,24 +97,6 @@ pub struct LedgerCache {
 #[serde(rename_all = "camelCase")]
 pub struct LedgerGeneratedArtifacts {
     pub mode: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtifactReadSummary {
-    pub schema_version: String,
-    pub measurement: String,
-    pub total_read_count: u64,
-    pub total_read_bytes: u64,
-    pub total_read_ms: u64,
-    pub total_json_parse_ms: u64,
-    pub parse_failure_count: u64,
-    #[serde(default)]
-    pub largest_reads: Vec<Value>,
-    #[serde(default)]
-    pub slowest_json_parses: Vec<Value>,
-    #[serde(default)]
-    pub by_name: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -467,24 +451,30 @@ fn read_phase_timing(
         Ok(parsed) => {
             record_artifact_read(
                 artifact_reads,
-                output,
-                &path,
-                raw.len() as u64,
-                read_ms,
-                elapsed_ms(parse_started),
-                true,
+                ArtifactReadRecord {
+                    root: Some(output),
+                    file_path: &path,
+                    bytes: raw.len() as u64,
+                    read_ms,
+                    json_parse_ms: elapsed_ms(parse_started),
+                    ok: true,
+                    largest_limit: DEFAULT_LARGEST_READ_LIMIT,
+                },
             );
             parsed
         }
         Err(_) => {
             record_artifact_read(
                 artifact_reads,
-                output,
-                &path,
-                raw.len() as u64,
-                read_ms,
-                0,
-                false,
+                ArtifactReadRecord {
+                    root: Some(output),
+                    file_path: &path,
+                    bytes: raw.len() as u64,
+                    read_ms,
+                    json_parse_ms: 0,
+                    ok: false,
+                    largest_limit: DEFAULT_LARGEST_READ_LIMIT,
+                },
             );
             return None;
         }
@@ -561,152 +551,4 @@ fn rounded_non_negative_u64(value: &Value) -> Option<u64> {
 
 fn elapsed_ms(started: Instant) -> u64 {
     started.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
-}
-
-#[derive(Debug, Clone, Default)]
-struct ArtifactReadMetricEntry {
-    read_count: u64,
-    total_bytes: u64,
-    total_read_ms: u64,
-    total_json_parse_ms: u64,
-    parse_failure_count: u64,
-}
-
-fn record_artifact_read(
-    summary: &mut ArtifactReadSummary,
-    root: &Path,
-    file_path: &Path,
-    bytes: u64,
-    read_ms: u64,
-    json_parse_ms: u64,
-    ok: bool,
-) {
-    let mut by_name = artifact_read_entries(&summary.by_name);
-    let name = artifact_metric_name(root, file_path);
-    let entry = by_name.entry(name).or_default();
-    entry.read_count += 1;
-    entry.total_bytes += bytes;
-    entry.total_read_ms += read_ms;
-    entry.total_json_parse_ms += json_parse_ms;
-    if !ok {
-        entry.parse_failure_count += 1;
-        summary.parse_failure_count += 1;
-    }
-
-    summary.total_read_count += 1;
-    summary.total_read_bytes += bytes;
-    summary.total_read_ms += read_ms;
-    summary.total_json_parse_ms += json_parse_ms;
-    refresh_artifact_read_projections(summary, by_name);
-}
-
-fn artifact_read_entries(value: &Value) -> BTreeMap<String, ArtifactReadMetricEntry> {
-    let Some(object) = value.as_object() else {
-        return BTreeMap::new();
-    };
-    object
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.clone(),
-                ArtifactReadMetricEntry {
-                    read_count: number_field(value, "readCount"),
-                    total_bytes: number_field(value, "totalBytes"),
-                    total_read_ms: number_field(value, "totalReadMs"),
-                    total_json_parse_ms: number_field(value, "totalJsonParseMs"),
-                    parse_failure_count: number_field(value, "parseFailureCount"),
-                },
-            )
-        })
-        .collect()
-}
-
-fn number_field(value: &Value, field: &str) -> u64 {
-    value.get(field).and_then(Value::as_u64).unwrap_or(0)
-}
-
-fn refresh_artifact_read_projections(
-    summary: &mut ArtifactReadSummary,
-    entries: BTreeMap<String, ArtifactReadMetricEntry>,
-) {
-    let mut by_name = Map::new();
-    for (name, entry) in &entries {
-        by_name.insert(
-            name.clone(),
-            json!({
-                "readCount": entry.read_count,
-                "totalBytes": entry.total_bytes,
-                "totalReadMs": entry.total_read_ms,
-                "totalJsonParseMs": entry.total_json_parse_ms,
-                "parseFailureCount": entry.parse_failure_count,
-            }),
-        );
-    }
-    summary.by_name = Value::Object(by_name);
-
-    let mut largest_reads = entries
-        .iter()
-        .map(|(name, entry)| {
-            json!({
-                "name": name,
-                "bytes": entry.total_bytes,
-                "readCount": entry.read_count,
-            })
-        })
-        .collect::<Vec<_>>();
-    largest_reads.sort_by(|left, right| {
-        number_field(right, "bytes")
-            .cmp(&number_field(left, "bytes"))
-            .then_with(|| string_field(left, "name").cmp(&string_field(right, "name")))
-    });
-    largest_reads.truncate(LARGEST_ARTIFACT_READ_LIMIT);
-    summary.largest_reads = largest_reads;
-
-    let mut slowest_json_parses = entries
-        .iter()
-        .filter(|(_, entry)| entry.total_json_parse_ms > 0)
-        .map(|(name, entry)| {
-            json!({
-                "name": name,
-                "jsonParseMs": entry.total_json_parse_ms,
-                "readCount": entry.read_count,
-            })
-        })
-        .collect::<Vec<_>>();
-    slowest_json_parses.sort_by(|left, right| {
-        number_field(right, "jsonParseMs")
-            .cmp(&number_field(left, "jsonParseMs"))
-            .then_with(|| string_field(left, "name").cmp(&string_field(right, "name")))
-    });
-    slowest_json_parses.truncate(LARGEST_ARTIFACT_READ_LIMIT);
-    summary.slowest_json_parses = slowest_json_parses;
-}
-
-fn string_field(value: &Value, field: &str) -> String {
-    value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string()
-}
-
-fn artifact_metric_name(root: &Path, file_path: &Path) -> String {
-    if let Ok(relative) = file_path.strip_prefix(root) {
-        let text = path_to_posix(relative);
-        if !text.is_empty() {
-            return text;
-        }
-    }
-    file_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("unknown")
-        .to_string()
-}
-
-fn path_to_posix(path: &Path) -> String {
-    path.components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
 }

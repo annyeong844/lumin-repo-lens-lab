@@ -1,4 +1,5 @@
 pub mod artifact_measurement;
+pub mod artifact_read_metrics;
 pub mod artifact_registry;
 pub mod artifact_summaries;
 pub mod blind_zones;
@@ -19,6 +20,7 @@ pub mod orchestration_plan;
 pub mod orchestration_result;
 pub mod post_write_lifecycle;
 pub mod pre_write_lifecycle;
+pub mod pre_write_routing;
 pub mod producer_performance;
 pub mod resolver_diagnostics;
 pub mod rust_analysis;

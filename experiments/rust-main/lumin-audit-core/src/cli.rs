@@ -6,6 +6,9 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use lumin_audit_core::artifact_measurement::measure_artifact_sizes;
+use lumin_audit_core::artifact_read_metrics::{
+    summarize_artifact_read_events, ArtifactReadMetricsRequest,
+};
 use lumin_audit_core::artifact_registry::{
     collect_produced_artifacts, collect_produced_artifacts_for_manifest,
 };
@@ -53,19 +56,21 @@ use lumin_audit_core::pre_write_lifecycle::{
     execute_rust_pre_write_lifecycle, execute_rust_pre_write_lifecycle_streaming,
     RustPreWriteLifecycleRequest,
 };
+use lumin_audit_core::pre_write_routing::{resolve_pre_write_route, PreWriteRoutingRequest};
 use lumin_audit_core::producer_performance::summarize_producer_performance;
 use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::{
     merge_rust_analysis_run, summarize_rust_analysis_artifact, RustAnalysisRunMergeInput,
 };
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core artifact-size-summary --output <dir> --input <path|->\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core rust-analysis-run-merge --input <path|->\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core lifecycle-exit-policy --input <path|->\n       lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>\n       lumin-audit-core manifest-root --input <path|->\n       lumin-audit-core manifest-evidence-update --input <path|->\n       lumin-audit-core manifest-final-summary-update --output <dir> --producer-performance <path> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core execute-base-plan --input <path|->\n       lumin-audit-core execute-canon-draft --input <path|->\n       lumin-audit-core execute-check-canon --input <path|->\n       lumin-audit-core execute-rust-pre-write --input <path|-> [--result-output <path>]\n       lumin-audit-core execute-post-write --input <path|->\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core producer-performance-artifact --input <path|->\n       lumin-audit-core producer-performance-runtime-artifact --input <path|->\n       lumin-audit-core living-audit-summary --root <repo>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core artifact-size-summary --output <dir> --input <path|->\n       lumin-audit-core artifact-read-metrics-summary --input <path|->\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core rust-analysis-run-merge --input <path|->\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core lifecycle-exit-policy --input <path|->\n       lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>\n       lumin-audit-core manifest-root --input <path|->\n       lumin-audit-core manifest-evidence-update --input <path|->\n       lumin-audit-core manifest-final-summary-update --output <dir> --producer-performance <path> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core execute-base-plan --input <path|->\n       lumin-audit-core execute-canon-draft --input <path|->\n       lumin-audit-core execute-check-canon --input <path|->\n       lumin-audit-core pre-write-route --input <path|->\n       lumin-audit-core execute-rust-pre-write --input <path|-> [--result-output <path>]\n       lumin-audit-core execute-post-write --input <path|->\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core producer-performance-artifact --input <path|->\n       lumin-audit-core producer-performance-runtime-artifact --input <path|->\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("artifact-registry") => run_artifact_registry(args.collect()),
         Some("artifact-size-summary") => run_artifact_size_summary(args.collect()),
+        Some("artifact-read-metrics-summary") => run_artifact_read_metrics_summary(args.collect()),
         Some("rust-analysis-summary") => run_rust_analysis_summary(args.collect()),
         Some("rust-analysis-run-merge") => run_rust_analysis_run_merge(args.collect()),
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
@@ -84,6 +89,7 @@ pub fn run() -> Result<()> {
         Some("execute-base-plan") => run_execute_base_plan(args.collect()),
         Some("execute-canon-draft") => run_execute_canon_draft(args.collect()),
         Some("execute-check-canon") => run_execute_check_canon(args.collect()),
+        Some("pre-write-route") => run_pre_write_route(args.collect()),
         Some("execute-rust-pre-write") => run_execute_rust_pre_write(args.collect()),
         Some("execute-post-write") => run_execute_post_write(args.collect()),
         Some("orchestration-result-summary") => run_orchestration_result_summary(args.collect()),
@@ -148,6 +154,24 @@ fn run_artifact_size_summary(args: Vec<String>) -> Result<()> {
     let artifacts = serde_json::from_value::<Vec<String>>(json)
         .context("artifact-size-summary: invalid artifact list shape")?;
     let summary = measure_artifact_sizes(&output, &artifacts);
+    write_stdout_json(&summary)
+}
+
+fn run_artifact_read_metrics_summary(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("artifact-read-metrics-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("artifact-read-metrics-summary: missing --input <path|->")?;
+    let input_json = read_json_input(&input, "artifact-read-metrics-summary")?;
+    let request = serde_json::from_value::<ArtifactReadMetricsRequest>(input_json)
+        .context("artifact-read-metrics-summary: invalid request shape")?;
+    let summary = summarize_artifact_read_events(request)?;
     write_stdout_json(&summary)
 }
 
@@ -762,6 +786,24 @@ fn run_execute_check_canon(args: Vec<String>) -> Result<()> {
     let request = serde_json::from_value::<CheckCanonLifecycleRequest>(json)
         .context("execute-check-canon: invalid request shape")?;
     let result = execute_check_canon_lifecycle(request)?;
+    write_stdout_json(&result)
+}
+
+fn run_pre_write_route(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("pre-write-route: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("pre-write-route: missing --input <path|->")?;
+    let json = read_json_input(&input, "pre-write-route")?;
+    let request = serde_json::from_value::<PreWriteRoutingRequest>(json)
+        .context("pre-write-route: invalid request shape")?;
+    let result = resolve_pre_write_route(request)?;
     write_stdout_json(&result)
 }
 

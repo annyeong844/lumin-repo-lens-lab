@@ -51,10 +51,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { formatBlindZonesSummary } from '../lib/blind-zones.mjs';
-import {
-  createArtifactReadMetrics,
-  loadIfExists as loadArtifact,
-} from '../lib/artifacts.mjs';
+import { createArtifactReadMetrics } from '../lib/artifact-read-metrics.mjs';
+import { loadIfExists as loadArtifact } from '../lib/artifacts.mjs';
 import { atomicWrite } from '../lib/atomic-write.mjs';
 import { normalizeIncludeTests } from '../lib/cli.mjs';
 import { collectFiles } from '../lib/collect-files.mjs';
@@ -73,6 +71,7 @@ import {
   executeBasePlan,
   executeCanonDraftLifecycle,
   executeCheckCanonLifecycle,
+  resolvePreWriteRoute,
   executeRustPreWriteLifecycle,
   executePostWriteLifecycle,
   applyLifecycleExitPolicy,
@@ -411,10 +410,6 @@ function forwardedRustAnalyzerArgs() {
   return args;
 }
 
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function readPreWriteIntentText(intentFlag) {
   if (intentFlag === '-') {
     try {
@@ -435,93 +430,13 @@ function readPreWriteIntentText(intentFlag) {
   }
 }
 
-function normalizePreWriteIntentLanguage(value) {
-  if (value === undefined) return null;
-  if (value === 'rust' || value === 'js-ts') return value;
-  throw new Error('intent.language must be "rust" or "js-ts" when present');
-}
-
-function stripPreWriteRouteOnlyFields(intentText) {
-  let parsed;
-  try {
-    parsed = JSON.parse(intentText);
-  } catch {
-    return intentText;
-  }
-  if (!isPlainObject(parsed) || parsed.language === undefined) return intentText;
-  delete parsed.language;
-  return `${JSON.stringify(parsed, null, 2)}\n`;
-}
-
-function readPreWriteIntentForRouting(intentFlag) {
+function buildPreWriteRoutingRequest(requestedEngine, intentFlag) {
   const intentText = readPreWriteIntentText(intentFlag);
-  let parsed;
-  try {
-    parsed = JSON.parse(intentText);
-  } catch (error) {
-    throw new Error(`intent JSON parse failed before engine selection: ${error.message}`);
-  }
-  if (!isPlainObject(parsed)) {
-    throw new Error('intent must be a plain object before engine selection');
-  }
   return {
+    schemaVersion: 'lumin-pre-write-routing-request.v1',
+    requestedEngine,
+    intentFlag: intentFlag === '-' ? '-' : path.resolve(intentFlag),
     intentText,
-    intentLanguage: normalizePreWriteIntentLanguage(parsed.language),
-  };
-}
-
-function resolvePreWriteEngineForIntent(requestedEngine, intentFlag) {
-  const { intentText, intentLanguage } = readPreWriteIntentForRouting(intentFlag);
-
-  if (requestedEngine === 'js') {
-    if (intentLanguage === 'rust') {
-      throw new Error('intent.language "rust" is owned by lumin-rust-analyzer; use --pre-write-engine auto or --pre-write-engine rust');
-    }
-    return {
-      engine: 'js',
-      childIntentFlag: intentFlag === '-' ? '-' : path.resolve(intentFlag),
-      childIntentInput: intentFlag === '-' ? intentText : null,
-      engineSelection: {
-        requested: requestedEngine,
-        selected: 'js',
-        reason: 'explicit-cli',
-        ...(intentLanguage !== null ? { intentLanguage } : {}),
-      },
-    };
-  }
-
-  if (requestedEngine === 'rust') {
-    if (intentLanguage === 'js-ts') {
-      throw new Error('intent.language "js-ts" is owned by pre-write.mjs; use --pre-write-engine js or --pre-write-engine auto');
-    }
-    return {
-      engine: 'rust',
-      childIntentFlag: '-',
-      childIntentInput: stripPreWriteRouteOnlyFields(intentText),
-      engineSelection: {
-        requested: requestedEngine,
-        selected: 'rust',
-        reason: 'explicit-cli',
-        ...(intentLanguage !== null ? { intentLanguage } : {}),
-      },
-    };
-  }
-
-  const selected = intentLanguage === 'rust' ? 'rust' : 'js';
-  return {
-    engine: selected,
-    childIntentFlag: '-',
-    childIntentInput: selected === 'rust'
-      ? stripPreWriteRouteOnlyFields(intentText)
-      : intentText,
-    engineSelection: {
-      requested: requestedEngine,
-      selected,
-      reason: intentLanguage === null
-        ? 'intent-language-absent-default-js'
-        : 'intent-language',
-      ...(intentLanguage !== null ? { intentLanguage } : {}),
-    },
   };
 }
 
@@ -844,7 +759,9 @@ if (values['pre-write'] && values['post-write']) {
   } else {
     let preWriteRoute = null;
     try {
-      preWriteRoute = resolvePreWriteEngineForIntent(REQUESTED_PRE_WRITE_ENGINE, values.intent);
+      preWriteRoute = resolvePreWriteRoute(
+        buildPreWriteRoutingRequest(REQUESTED_PRE_WRITE_ENGINE, values.intent),
+      );
     } catch (error) {
       preWriteBlock = {
         requested: true,
