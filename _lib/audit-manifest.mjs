@@ -1,10 +1,12 @@
 // _lib/audit-manifest.mjs
 //
 // Helpers for audit-repo.mjs manifest evidence and artifact enumeration.
-// NO orchestration. NO child process execution.
+// NO producer orchestration. Migrated manifest contracts call lumin-audit-core.
 
-import { existsSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { detectBlindZones } from './blind-zones.mjs';
 import { loadIfExists as loadArtifact } from './artifacts.mjs';
 import { scanScopeStatusForPath } from './collect-files.mjs';
@@ -24,29 +26,6 @@ const LIVING_AUDIT_DOC_CANDIDATES = [
   'LUMIN_REPO_LENS.md',
   'LUMIN_AUDIT.md',
   'TECH_DEBT_AUDIT.md',
-];
-
-const ARTIFACT_CANDIDATES = [
-  'triage.json', 'topology.json', 'discipline.json',
-  'call-graph.json', 'barrels.json', 'shape-index.json',
-  'function-clones.json', 'block-clones.json',
-  'framework-resource-surfaces.json',
-  'resolver-capabilities.json', 'resolver-diagnostics.json',
-  'symbols.json', 'unused-deps.json', 'entry-surface.json', 'module-reachability.json',
-  'dead-classify.json', 'runtime-evidence.json',
-  'staleness.json', 'fix-plan.json', 'checklist-facts.json',
-  'rust-analyzer-health.latest.json',
-  'producer-performance.json',
-  'canon-drift.json', 'topology.mermaid.md', 'audit-summary.latest.md',
-  'audit-review-pack.latest.md', 'lumin-repo-lens-lab.sarif',
-];
-
-const DYNAMIC_ARTIFACT_PATTERNS = [
-  /^canon-drift\..+\.md$/,
-  /^pre-write-advisory(?:\..+)?\.json$/,
-  /^post-write-delta(?:\..+)?\.json$/,
-  /^any-inventory\.pre\..+\.json$/,
-  /^any-inventory\.post\..+\.json$/,
 ];
 
 const RESOLVER_BLOCKED_CANDIDATE_HINT_SAMPLE_LIMIT = 10;
@@ -520,95 +499,42 @@ function numberOrZero(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-function sameResolvedPath(left, right) {
-  if (typeof left !== 'string' || typeof right !== 'string') return false;
-  return path.resolve(left) === path.resolve(right);
-}
-
-function stringArrayOrNull(value) {
-  if (!Array.isArray(value)) return null;
-  return value.filter((item) => typeof item === 'string');
-}
-
-function objectOrNull(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
-}
-
-function rustScanScopeFromArtifact(artifact) {
-  const input = objectOrNull(artifact?.meta?.input) ?? {};
-  const syntaxInput = objectOrNull(artifact?.phases?.syntax?.meta?.input) ?? {};
-  const includeTests =
-    typeof input.includeTests === 'boolean'
-      ? input.includeTests
-      : typeof syntaxInput.includeTests === 'boolean'
-        ? syntaxInput.includeTests
-        : null;
-  const exclude = stringArrayOrNull(input.exclude) ?? stringArrayOrNull(syntaxInput.exclude);
-  const pathPolicy = objectOrNull(syntaxInput.pathPolicy) ?? objectOrNull(input.pathPolicy);
-  if (includeTests === null && exclude === null && pathPolicy === null) return null;
-  return {
-    ...(includeTests !== null ? { includeTests } : {}),
-    ...(exclude !== null ? { exclude } : {}),
-    ...(pathPolicy !== null ? { pathPolicy } : {}),
-  };
-}
-
-function buildRustAnalysisSummary(artifact, { root }) {
-  if (!artifact || typeof artifact !== 'object') return null;
-  const artifactName = 'rust-analyzer-health.latest.json';
-  const artifactRoot = artifact.meta?.input?.root ?? null;
-  if (!sameResolvedPath(artifactRoot, root)) {
-    return {
-      artifact: artifactName,
-      status: 'root-mismatch',
-      available: false,
-      root: artifactRoot,
-    };
+function auditCoreBinary() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
+  const fallback = path.join(path.resolve(here, '..'), 'experiments', 'target', 'debug', exe);
+  let cursor = here;
+  for (;;) {
+    const candidate = path.join(cursor, 'experiments', 'target', 'debug', exe);
+    if (existsSync(candidate) || existsSync(path.join(cursor, 'experiments', 'Cargo.toml'))) {
+      return candidate;
+    }
+    const parent = path.dirname(cursor);
+    if (parent === cursor) return fallback;
+    cursor = parent;
   }
-  const summary = artifact.summary && typeof artifact.summary === 'object'
-    ? artifact.summary
-    : null;
-  if (
-    typeof artifact.schemaVersion !== 'string' ||
-    typeof artifact.policyVersion !== 'string' ||
-    artifact.meta?.producer !== 'lumin-rust-analyzer' ||
-    artifact.meta?.mode !== 'rust-main' ||
-    !summary ||
-    typeof summary.files !== 'number' ||
-    !Number.isFinite(summary.files)
-  ) {
-    return {
-      artifact: artifactName,
-      status: 'invalid-shape',
-      available: false,
-      root: artifactRoot,
-    };
+}
+
+function runAuditCoreJson(args, label) {
+  const command = auditCoreBinary();
+  if (!existsSync(command)) {
+    throw new Error(`${label}: lumin-audit-core binary missing at ${command}; run cargo build --manifest-path experiments/Cargo.toml -p lumin-audit-core`);
   }
-  const scanScope = rustScanScopeFromArtifact(artifact);
-  return {
-    artifact: artifactName,
-    status: 'complete',
-    available: true,
-    schemaVersion: artifact.schemaVersion ?? null,
-    policyVersion: artifact.policyVersion ?? null,
-    producer: artifact.meta?.producer ?? 'lumin-rust-analyzer',
-    mode: artifact.meta?.mode ?? null,
-    sourceHealthProfile:
-      artifact.meta?.input?.effectiveSourceHealthProfile ??
-      artifact.meta?.input?.sourceHealthProfile ??
-      null,
-    semanticMode: artifact.meta?.input?.semanticMode ?? null,
-    ...(scanScope ? { scanScope } : {}),
-    files: numberOrZero(summary.files),
-    syntaxReviewSignals: numberOrZero(summary.syntaxReviewSignals),
-    syntaxReviewOpaqueSurfaces: numberOrZero(summary.syntaxReviewOpaqueSurfaces),
-    syntaxFunctionCloneExactBodyGroups: numberOrZero(summary.syntaxFunctionCloneExactBodyGroups),
-    syntaxFunctionCloneStructureGroups: numberOrZero(summary.syntaxFunctionCloneStructureGroups),
-    syntaxFunctionCloneSignatureGroups: numberOrZero(summary.syntaxFunctionCloneSignatureGroups),
-    syntaxFunctionCloneNearCandidates: numberOrZero(summary.syntaxFunctionCloneNearCandidates),
-    actionTierSummary: summary.actionTierSummary ?? null,
-    oracleBridgeStatus: summary.oracleBridgeStatus ?? null,
-  };
+  const stdout = execFileSync(command, args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return JSON.parse(stdout);
+}
+
+function buildRustAnalysisSummaryFromFile(root, outDir) {
+  const artifactPath = path.join(outDir, 'rust-analyzer-health.latest.json');
+  if (!existsSync(artifactPath)) return null;
+  return runAuditCoreJson([
+    'rust-analysis-summary',
+    '--root', root,
+    '--artifact', artifactPath,
+  ], 'buildRustAnalysisSummary');
 }
 
 function buildSfcEvidenceSummary(symbols) {
@@ -646,24 +572,13 @@ function buildSfcEvidenceSummary(symbols) {
   };
 }
 
-export function collectProducedArtifacts(outDir) {
-  const produced = new Set();
-  for (const name of ARTIFACT_CANDIDATES) {
-    if (existsSync(path.join(outDir, name))) produced.add(name);
-  }
-  let entries = [];
-  try {
-    entries = readdirSync(outDir, { withFileTypes: true });
-  } catch {
-    return Array.from(produced).sort();
-  }
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (DYNAMIC_ARTIFACT_PATTERNS.some((pattern) => pattern.test(entry.name))) {
-      produced.add(entry.name);
-    }
-  }
-  return Array.from(produced).sort();
+export function collectProducedArtifacts(outDir, options = {}) {
+  const rustAnalysisUsable = options.rustAnalysisUsable ?? true;
+  return runAuditCoreJson([
+    'artifact-registry',
+    '--output', outDir,
+    ...(rustAnalysisUsable ? ['--rust-analysis-ran'] : []),
+  ], 'collectProducedArtifacts');
 }
 
 export function buildManifestEvidence({
@@ -686,8 +601,7 @@ export function buildManifestEvidence({
   const blockClones = loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
   const entrySurface = loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
   const deadClassify = loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
-  const rustAnalyzer = loadArtifact(outDir, 'rust-analyzer-health.latest.json', { onRead: onArtifactRead });
-  const rustAnalysis = buildRustAnalysisSummary(rustAnalyzer, { root });
+  const rustAnalysis = buildRustAnalysisSummaryFromFile(root, outDir);
   const rustAnalysisForBlindZones = rustAnalysisRun?.ran === true ? rustAnalysis : null;
 
   const parseErrors = (() => {

@@ -738,9 +738,9 @@ function rustAnalysisArtifactUsable(rustAnalysis) {
 }
 
 function collectManifestProducedArtifacts(rustAnalysis) {
-  const artifacts = collectProducedArtifacts(OUT);
-  if (rustAnalysisArtifactUsable(rustAnalysis)) return artifacts;
-  return artifacts.filter((name) => name !== 'rust-analyzer-health.latest.json');
+  return collectProducedArtifacts(OUT, {
+    rustAnalysisUsable: rustAnalysisArtifactUsable(rustAnalysis),
+  });
 }
 
 function collectArtifactSizeSummary(artifacts = collectProducedArtifacts(OUT)) {
