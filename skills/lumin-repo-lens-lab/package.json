@@ -13,7 +13,8 @@
       ],
       "platformScope": "win32-x64",
       "platformOverrideEnv": "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
-      "genericOverrideEnv": "LUMIN_AUDIT_CORE_BIN"
+      "genericOverrideEnv": "LUMIN_AUDIT_CORE_BIN",
+      "pathFallback": true
     }
   },
   "bin": {

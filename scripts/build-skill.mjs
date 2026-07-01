@@ -154,11 +154,30 @@ function cargoBuildAuditCore() {
   return path.join(ROOT, 'experiments', 'target', 'debug', exe);
 }
 
+function validateRunnableAuditCoreBinary(binaryPath) {
+  const result = spawnSync(binaryPath, [
+    'producer-performance-runtime-artifact',
+  ], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  if (result.error) {
+    throw new Error(`failed to start built lumin-audit-core at ${binaryPath}: ${result.error.message}`);
+  }
+  if (!output.includes('producer-performance-runtime-artifact: missing --input')) {
+    throw new Error(
+      `built lumin-audit-core at ${binaryPath} does not expose the current CLI contract`
+    );
+  }
+}
+
 function currentAuditCoreBinarySource() {
-  const configured = process.env[auditCoreBinaryEnvName()] ?? process.env.LUMIN_AUDIT_CORE_BIN;
-  if (configured) return path.resolve(configured);
   const built = cargoBuildAuditCore();
-  if (existsSync(built)) return built;
+  if (existsSync(built)) {
+    validateRunnableAuditCoreBinary(built);
+    return built;
+  }
   throw new Error(`cargo build finished but lumin-audit-core was not found at ${built}`);
 }
 
@@ -180,6 +199,7 @@ function configuredAuditCoreBinarySources() {
     const arch = parts.pop();
     const platform = parts.join('_');
     const key = auditCorePlatformKey(platform, arch);
+    if (key === currentKey) continue;
     sources.set(key, {
       platform,
       arch,
@@ -326,11 +346,11 @@ function writeEngineReadme(outDir) {
     '',
     '- `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` for one platform',
     '- `LUMIN_AUDIT_CORE_BIN` as a generic external binary override',
+    '- `lumin-audit-core` / `lumin-audit-core.exe` on `PATH`',
     '',
-    'Those overrides must point to a real audit-core binary for the current',
-    'runtime platform. They are the only supported fallback when this',
-    'package does not include `_engine/bin/<platform>-<arch>/` for the',
-    'current platform.',
+    'Those fallback binaries must match the current runtime platform. They',
+    'are supported when this package does not include',
+    '`_engine/bin/<platform>-<arch>/` for the current platform.',
     '',
   ].join('\n'));
 }
@@ -410,6 +430,7 @@ function buildSkillPackageJson(outDir, auditCoreBinaries = []) {
           : 'multi-platform',
         platformOverrideEnv: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',
         genericOverrideEnv: 'LUMIN_AUDIT_CORE_BIN',
+        pathFallback: true,
       },
     },
     bin: {
@@ -539,9 +560,9 @@ function writeAuditCorePlatformManifest(outDir, sources) {
       executable: auditCoreExecutableNameFor(source.platform),
     })),
     fallback: {
-      kind: 'external-binary-env',
+      kind: 'external-binary-env-or-path',
       requiredWhenRuntimePlatformMissing: true,
-      message: 'Use a package built for the runtime platform or set LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH> / LUMIN_AUDIT_CORE_BIN to a matching external binary.',
+      message: 'Use a package built for the runtime platform, set LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH> / LUMIN_AUDIT_CORE_BIN to a matching external binary, or put lumin-audit-core on PATH.',
     },
     overrideEnv: {
       platformSpecific: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',

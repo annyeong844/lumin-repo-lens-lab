@@ -10,6 +10,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadIfExists as loadArtifact } from './artifacts.mjs';
 
+function executableOnPath(exe) {
+  for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, exe);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 function auditCoreBinary() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
@@ -21,6 +30,8 @@ function auditCoreBinary() {
   }
   const packagedPlatform = path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe);
   if (existsSync(packagedPlatform)) return packagedPlatform;
+  const pathBinary = executableOnPath(exe);
+  if (pathBinary) return pathBinary;
   const packagedManifest = path.resolve(here, '../bin/audit-core-platforms.json');
   if (existsSync(packagedManifest)) return packagedPlatform;
   const fallback = path.join(path.resolve(here, '..'), 'experiments', 'target', 'debug', exe);
@@ -62,7 +73,7 @@ function auditCorePlatformHint() {
   const scopeText = packageScope && packageScope !== 'multi-platform'
     ? ` This skill package is scoped to ${packageScope}.`
     : '';
-  return `${supportedText}${scopeText} Provide ${platformEnv} or LUMIN_AUDIT_CORE_BIN for this platform, or install a package built for ${process.platform}-${process.arch}.`;
+  return `${supportedText}${scopeText} Provide ${platformEnv} or LUMIN_AUDIT_CORE_BIN for this platform, put ${exe} on PATH, or install a package built for ${process.platform}-${process.arch}.`;
 }
 
 function missingAuditCoreBinaryError(label, command) {

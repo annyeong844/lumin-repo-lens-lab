@@ -95,6 +95,34 @@ fn framework_resource_surfaces_summary_uses_summary_and_fallback_examples() -> R
 }
 
 #[test]
+fn framework_resource_surfaces_summary_preserves_malformed_artifact_as_unavailable() -> Result<()> {
+    let artifact = json!({
+        "schemaVersion": null,
+        "artifact": "framework-resource-surfaces.json",
+        "status": "unavailable",
+        "reason": {
+            "kind": "malformed-json",
+            "message": "expected value"
+        },
+        "summary": {
+            "status": "unavailable",
+            "unavailableReason": "malformed-json"
+        }
+    });
+
+    let summary = summarize_artifact(ArtifactSummaryKind::FrameworkResourceSurfaces, &artifact)
+        .ok_or_else(|| anyhow::anyhow!("unavailable framework artifact should summarize"))?;
+    let summary = serde_json::to_value(summary)?;
+
+    assert_eq!(summary["status"], "unavailable");
+    assert_eq!(summary["reason"]["kind"], "malformed-json");
+    assert_eq!(summary["totalFilesWithSurfaces"], json!(null));
+    assert_eq!(summary["totalSurfaceLanes"], json!(null));
+    assert_eq!(summary["topExamples"], json!([]));
+    Ok(())
+}
+
+#[test]
 fn unused_dependencies_summary_sorts_review_unused_and_preserves_unavailable_reason() -> Result<()>
 {
     let artifact = json!({

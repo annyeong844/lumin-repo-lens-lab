@@ -19,8 +19,8 @@ runtime platform, or set a runtime override variable:
 
 - `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` for one platform
 - `LUMIN_AUDIT_CORE_BIN` as a generic external binary override
+- `lumin-audit-core` / `lumin-audit-core.exe` on `PATH`
 
-Those overrides must point to a real audit-core binary for the current
-runtime platform. They are the only supported fallback when this
-package does not include `_engine/bin/<platform>-<arch>/` for the
-current platform.
+Those fallback binaries must match the current runtime platform. They
+are supported when this package does not include
+`_engine/bin/<platform>-<arch>/` for the current platform.

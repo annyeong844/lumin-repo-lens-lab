@@ -65,7 +65,8 @@ the intent JSON by hand.
 > ⚙️ Packages that include the Rust `lumin-audit-core` helper are
 > platform-scoped. Use a package built for your runtime platform, or point
 > `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` / `LUMIN_AUDIT_CORE_BIN` at a
-> matching external binary before running the skill.
+> matching external binary, or put `lumin-audit-core` on `PATH`, before running
+> the skill.
 
 For very large repos, do not auto-trigger full profile on every edit. Run
 `:full` once per branch, first checkup, or major refactor review, then use

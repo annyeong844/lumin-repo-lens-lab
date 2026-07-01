@@ -283,14 +283,14 @@ try {
   assert('SP4. generated skill moves implementation under _engine',
     existsSync(path.join(OUT, '_engine/_README.md')) &&
     readFileSync(path.join(OUT, '_engine/_README.md'), 'utf8').includes('LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>') &&
-    readFileSync(path.join(OUT, '_engine/_README.md'), 'utf8').includes('Those overrides must point to a real audit-core binary for the current') &&
+    readFileSync(path.join(OUT, '_engine/_README.md'), 'utf8').includes('`lumin-audit-core` / `lumin-audit-core.exe` on `PATH`') &&
     readFileSync(path.join(OUT, 'README.md'), 'utf8').includes('Packages that include the Rust `lumin-audit-core` helper are') &&
     existsSync(path.join(OUT, '_engine/lib/cli.mjs')) &&
     existsSync(path.join(OUT, '_engine/lib/dependency-guard.mjs')) &&
     readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('process.env.LUMIN_AUDIT_CORE_BIN') &&
     readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('LUMIN_AUDIT_CORE_BIN_') &&
     readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('audit-core-platforms.json') &&
-    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('if (existsSync(packagedManifest)) return packagedPlatform') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('executableOnPath') &&
     existsSync(path.join(
       OUT,
       '_engine/bin',
@@ -310,7 +310,7 @@ try {
   assert('SP4a. generated skill records packaged audit-core platform scope',
     auditCorePlatformManifest.schemaVersion === 'lumin-audit-core-packaged-platforms.v1' &&
     auditCorePlatformManifest.packageScope === auditCorePlatformKey &&
-    auditCorePlatformManifest.fallback?.kind === 'external-binary-env' &&
+    auditCorePlatformManifest.fallback?.kind === 'external-binary-env-or-path' &&
     auditCorePlatformManifest.fallback?.requiredWhenRuntimePlatformMissing === true &&
     auditCorePlatformManifest.platforms.some((platform) =>
       platform.key === auditCorePlatformKey &&
@@ -320,7 +320,8 @@ try {
     packageJson.luminRepoLens?.auditCore?.packagedPlatforms?.includes(auditCorePlatformKey) &&
     packageJson.luminRepoLens?.auditCore?.platformScope === auditCorePlatformKey &&
     packageJson.luminRepoLens?.auditCore?.platformOverrideEnv === 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>' &&
-    packageJson.luminRepoLens?.auditCore?.genericOverrideEnv === 'LUMIN_AUDIT_CORE_BIN',
+    packageJson.luminRepoLens?.auditCore?.genericOverrideEnv === 'LUMIN_AUDIT_CORE_BIN' &&
+    packageJson.luminRepoLens?.auditCore?.pathFallback === true,
     JSON.stringify({ auditCorePlatformManifest, packageJson }, null, 2));
 
   const generatedDocs = collectMarkdownFiles(OUT);

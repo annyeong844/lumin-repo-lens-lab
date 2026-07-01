@@ -425,7 +425,7 @@ try {
         "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
       ) &&
       readFileSync(path.join(OUT, "_engine/_README.md"), "utf8").includes(
-        "Those overrides must point to a real audit-core binary for the current",
+        "`lumin-audit-core` / `lumin-audit-core.exe` on `PATH`",
       ) &&
       readFileSync(path.join(OUT, "README.md"), "utf8").includes(
         "Packages that include the Rust `lumin-audit-core` helper are",
@@ -434,6 +434,9 @@ try {
       existsSync(path.join(OUT, "_engine/lib/dependency-guard.mjs")) &&
       readFileSync(path.join(OUT, "_engine/lib/audit-manifest.mjs"), "utf8").includes(
         "process.env.LUMIN_AUDIT_CORE_BIN",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-manifest.mjs"), "utf8").includes(
+        "executableOnPath",
       ) &&
       readFileSync(path.join(OUT, "_engine/lib/audit-manifest.mjs"), "utf8").includes(
         "LUMIN_AUDIT_CORE_BIN_",
@@ -471,7 +474,7 @@ try {
     auditCorePlatformManifest.schemaVersion ===
       "lumin-audit-core-packaged-platforms.v1" &&
       auditCorePlatformManifest.packageScope === auditCorePlatformKey &&
-      auditCorePlatformManifest.fallback?.kind === "external-binary-env" &&
+      auditCorePlatformManifest.fallback?.kind === "external-binary-env-or-path" &&
       auditCorePlatformManifest.fallback?.requiredWhenRuntimePlatformMissing ===
         true &&
       auditCorePlatformManifest.platforms.some(
@@ -491,7 +494,8 @@ try {
       packageJson.luminRepoLens?.auditCore?.platformOverrideEnv ===
         "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>" &&
       packageJson.luminRepoLens?.auditCore?.genericOverrideEnv ===
-        "LUMIN_AUDIT_CORE_BIN",
+        "LUMIN_AUDIT_CORE_BIN" &&
+      packageJson.luminRepoLens?.auditCore?.pathFallback === true,
     JSON.stringify({ auditCorePlatformManifest, packageJson }, null, 2),
   );
 
