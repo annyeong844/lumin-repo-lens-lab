@@ -21,6 +21,8 @@ function auditCoreBinary() {
   }
   const packagedPlatform = path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe);
   if (existsSync(packagedPlatform)) return packagedPlatform;
+  const packagedManifest = path.resolve(here, '../bin/audit-core-platforms.json');
+  if (existsSync(packagedManifest)) return packagedPlatform;
   const fallback = path.join(path.resolve(here, '..'), 'experiments', 'target', 'debug', exe);
   let cursor = here;
   for (;;) {
@@ -107,6 +109,7 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
   excludes = [],
   autoExcludes = [],
   generatedArtifactsMode = 'default',
+  rustAnalysisRun = null,
 } = {}) {
   const args = [
     'manifest-evidence-summary',
@@ -116,6 +119,7 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
     includeTests ? '--include-tests' : '--no-include-tests',
     production ? '--production' : '--no-production',
   ];
+  if (rustAnalysisRun?.ran === true) args.push('--rust-analysis-ran');
   for (const exclude of excludes) {
     args.push('--exclude', exclude);
   }
@@ -123,16 +127,6 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
     args.push('--auto-exclude', autoExclude);
   }
   return runAuditCoreJson(args, 'buildManifestEvidenceSummary');
-}
-
-function buildBlindZonesFromOutputDir(root, outDir, rustAnalysisRun = null) {
-  const args = [
-    'blind-zones-summary',
-    '--root', root,
-    '--output', outDir,
-  ];
-  if (rustAnalysisRun?.ran === true) args.push('--rust-analysis-ran');
-  return runAuditCoreJson(args, 'buildBlindZonesFromOutputDir');
 }
 
 export function collectProducedArtifacts(outDir, options = {}) {
@@ -396,21 +390,9 @@ export function buildManifestEvidence({
     excludes,
     autoExcludes,
     generatedArtifactsMode,
+    rustAnalysisRun,
   });
-
-  return {
-    scanRange: manifestEvidence.scanRange,
-    confidence: manifestEvidence.confidence,
-    resolverDiagnostics: manifestEvidence.resolverDiagnostics,
-    blindZones: buildBlindZonesFromOutputDir(root, outDir, rustAnalysisRun),
-    rustAnalysis: manifestEvidence.rustAnalysis,
-    generatedArtifacts: manifestEvidence.generatedArtifacts,
-    frameworkResourceSurfaces: manifestEvidence.frameworkResourceSurfaces,
-    unusedDependencies: manifestEvidence.unusedDependencies,
-    blockClones: manifestEvidence.blockClones,
-    sfcEvidence: manifestEvidence.sfcEvidence,
-    livingAudit: manifestEvidence.livingAudit,
-  };
+  return manifestEvidence;
 }
 
 export function refreshManifestEvidence(manifest, options) {

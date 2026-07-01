@@ -187,6 +187,7 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
             "--no-include-tests" => parsed.include_tests = false,
             "--production" => parsed.production = true,
             "--no-production" => parsed.production = false,
+            "--rust-analysis-ran" => parsed.rust_analysis_ran = true,
             "--exclude" => parsed.excludes.push(take_string(&mut args, "--exclude")?),
             "--auto-exclude" => parsed
                 .auto_excludes
@@ -211,6 +212,8 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
         read_optional_output_json_tolerant(&output, "framework-resource-surfaces.json");
     let unused_deps = read_optional_output_json_tolerant(&output, "unused-deps.json");
     let block_clones = read_optional_output_json_tolerant(&output, "block-clones.json");
+    let dead_classify = read_optional_output_json_tolerant(&output, "dead-classify.json");
+    let entry_surface = read_optional_output_json_tolerant(&output, "entry-surface.json");
     let rust_analysis =
         read_optional_output_json_tolerant(&output, "rust-analyzer-health.latest.json");
 
@@ -222,6 +225,7 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
             excludes: parsed.excludes,
             auto_excludes: parsed.auto_excludes,
             generated_artifacts_mode: parsed.generated_artifacts_mode,
+            rust_analysis_ran: parsed.rust_analysis_ran,
         },
         ManifestEvidenceArtifacts {
             triage: triage.as_ref(),
@@ -231,6 +235,8 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
             framework_resource_surfaces: framework_resource_surfaces.as_ref(),
             unused_deps: unused_deps.as_ref(),
             block_clones: block_clones.as_ref(),
+            dead_classify: dead_classify.as_ref(),
+            entry_surface: entry_surface.as_ref(),
             rust_analysis: rust_analysis.as_ref(),
         },
     );

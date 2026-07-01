@@ -289,6 +289,8 @@ try {
     existsSync(path.join(OUT, '_engine/lib/dependency-guard.mjs')) &&
     readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('process.env.LUMIN_AUDIT_CORE_BIN') &&
     readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('LUMIN_AUDIT_CORE_BIN_') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('audit-core-platforms.json') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('if (existsSync(packagedManifest)) return packagedPlatform') &&
     existsSync(path.join(
       OUT,
       '_engine/bin',

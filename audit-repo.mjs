@@ -37,7 +37,7 @@
 //   commandsRun     scripts actually invoked, in order, with status
 //   scanRange       root, includeTests, languages, excludes
 //   confidence      parseErrors, unresolvedInternalRatio, externalImports
-//   blindZones      standardized blind-zone list (_lib/blind-zones.mjs)
+//   blindZones      standardized blind-zone list (lumin-audit-core)
 //   livingAudit     existing living audit docs that the model should read/update
 //   skipped         scripts that were intentionally skipped (with reason)
 //

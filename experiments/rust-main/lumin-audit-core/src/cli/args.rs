@@ -77,6 +77,7 @@ pub(super) struct ManifestEvidenceSummaryArgs {
     pub(super) excludes: Vec<String>,
     pub(super) auto_excludes: Vec<String>,
     pub(super) generated_artifacts_mode: GeneratedArtifactsMode,
+    pub(super) rust_analysis_ran: bool,
 }
 
 #[derive(Default)]

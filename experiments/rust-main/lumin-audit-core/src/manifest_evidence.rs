@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::artifact_summaries::{summarize_artifact, ArtifactSummary, ArtifactSummaryKind};
+use crate::blind_zones::{summarize_blind_zones, BlindZoneInput, BlindZoneSummary};
 use crate::generated_artifacts::{
     summarize_generated_artifacts, GeneratedArtifactsMode, GeneratedArtifactsOptions,
     GeneratedArtifactsSummary,
@@ -23,6 +24,7 @@ pub struct ManifestEvidenceOptions {
     pub excludes: Vec<String>,
     pub auto_excludes: Vec<String>,
     pub generated_artifacts_mode: GeneratedArtifactsMode,
+    pub rust_analysis_ran: bool,
 }
 
 pub struct ManifestEvidenceArtifacts<'a> {
@@ -33,6 +35,8 @@ pub struct ManifestEvidenceArtifacts<'a> {
     pub framework_resource_surfaces: Option<&'a Value>,
     pub unused_deps: Option<&'a Value>,
     pub block_clones: Option<&'a Value>,
+    pub dead_classify: Option<&'a Value>,
+    pub entry_surface: Option<&'a Value>,
     pub rust_analysis: Option<&'a Value>,
 }
 
@@ -42,6 +46,7 @@ pub struct ManifestEvidenceSummary {
     pub scan_range: ScanRangeSummary,
     pub confidence: ConfidenceSummary,
     pub resolver_diagnostics: ResolverDiagnosticsSummary,
+    pub blind_zones: Vec<BlindZoneSummary>,
     pub rust_analysis: Option<RustAnalysisSummary>,
     pub generated_artifacts: GeneratedArtifactsSummary,
     pub framework_resource_surfaces: Option<ArtifactSummary>,
@@ -56,6 +61,12 @@ pub fn summarize_manifest_evidence(
     artifacts: ManifestEvidenceArtifacts<'_>,
 ) -> ManifestEvidenceSummary {
     let root_path = PathBuf::from(&options.root);
+    let rust_analysis_summary = artifacts
+        .rust_analysis
+        .and_then(|artifact| summarize_rust_analysis_artifact(&root_path, artifact));
+    let rust_analysis_value = rust_analysis_summary
+        .as_ref()
+        .and_then(|summary| serde_json::to_value(summary).ok());
     let manifest_core = summarize_manifest_core(
         ManifestCoreOptions {
             root: options.root.clone(),
@@ -76,9 +87,18 @@ pub fn summarize_manifest_evidence(
             artifacts.resolver_capabilities,
             artifacts.resolver_diagnostics,
         ),
-        rust_analysis: artifacts
-            .rust_analysis
-            .and_then(|artifact| summarize_rust_analysis_artifact(&root_path, artifact)),
+        blind_zones: summarize_blind_zones(BlindZoneInput {
+            triage: artifacts.triage,
+            symbols: artifacts.symbols,
+            dead_classify: artifacts.dead_classify,
+            entry_surface: artifacts.entry_surface,
+            resolver_diagnostics: artifacts.resolver_diagnostics,
+            rust_analysis: options
+                .rust_analysis_ran
+                .then_some(rust_analysis_value.as_ref())
+                .flatten(),
+        }),
+        rust_analysis: rust_analysis_summary,
         generated_artifacts: summarize_generated_artifacts(
             &root_path,
             artifacts.symbols,
