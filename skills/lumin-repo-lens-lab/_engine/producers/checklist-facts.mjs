@@ -498,11 +498,9 @@ function b1DuplicateImplementation() {
     };
   }
 
-  const reviewVisibleCloneGroup = (g) =>
-    !g.generatedOnly && g.reviewVisible !== false && g.risk !== 'muted';
   const exactGroups = (functionClones.exactBodyGroups ?? []).filter((g) => !g.generatedOnly);
   const structureGroups = (functionClones.structureGroups ?? []).filter((g) => !g.generatedOnly);
-  const signatureGroups = (functionClones.signatureGroups ?? []).filter(reviewVisibleCloneGroup);
+  const signatureGroups = (functionClones.signatureGroups ?? []).filter((g) => !g.generatedOnly);
   const nearFunctionCandidates =
     (functionClones.nearFunctionCandidates ?? []).filter((g) => !g.generatedOnly);
   const generatedOnlyExactGroups =
@@ -511,9 +509,6 @@ function b1DuplicateImplementation() {
     (functionClones.structureGroups ?? []).filter((g) => g.generatedOnly).length;
   const generatedOnlySignatureGroups =
     (functionClones.signatureGroups ?? []).filter((g) => g.generatedOnly).length;
-  const mutedSignatureGroups =
-    (functionClones.signatureGroups ?? [])
-      .filter((g) => !g.generatedOnly && !reviewVisibleCloneGroup(g)).length;
   const generatedOnlyNearFunctionCandidates =
     (functionClones.nearFunctionCandidates ?? []).filter((g) => g.generatedOnly).length;
   const gate =
@@ -540,7 +535,6 @@ function b1DuplicateImplementation() {
     generatedOnlyExactGroups,
     generatedOnlyStructureGroups,
     generatedOnlySignatureGroups,
-    mutedSignatureGroups,
     generatedOnlyNearFunctionCandidates,
     candidateIdentityCount: candidateIdentities.size,
     totalFunctionFacts: Array.isArray(functionClones.facts) ? functionClones.facts.length : 0,

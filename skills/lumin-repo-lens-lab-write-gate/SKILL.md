@@ -1,6 +1,6 @@
 ---
 name: lumin-repo-lens-lab-write-gate
-description: "Use before/after JS/TS or Rust source code changes: add, edit, move, rename, refactor, make a helper/type/file/function, or ask if something already exists."
+description: "Use before/after TS/JS code changes: add, edit, move, rename, refactor, make a helper/type/file/function, or ask if something already exists. Infer intent from plain language, run pre-write reuse screening, then post-write delta checks."
 ---
 
 # Lumin Repo Lens Write Gate
@@ -75,20 +75,13 @@ intent you can from the request, stream it via `--intent -` or write a
 temporary intent file, then run:
 
 ```bash
-<audit-repo> --pre-write --pre-write-engine auto --root <repo> --output <dir> --intent <file|->
+<audit-repo> --pre-write --root <repo> --output <dir> --intent <file|->
 ```
-
-Include `"language": "rust"` in the inferred intent only for Rust source
-changes. Omit `language` or use `"js-ts"` for JS/TS; do not route Rust by
-filename or dependency guessing.
 
 Read the invocation-specific advisory path printed by pre-write before
 coding during the same uninterrupted change transaction. It is also
 recorded as `artifactPaths.invocationSpecific` in the advisory JSON and
 as `manifest.preWrite.advisoryPath` when run through the orchestrator.
-For Rust source changes, the Rust-native lookup artifact is recorded beside
-the lifecycle advisory as `rust-pre-write-artifact.<invocationId>.json`; use the
-standard `pre-write-advisory.<invocationId>.json` for post-write.
 `pre-write-advisory.latest.json` is only a convenience pointer; use the
 explicit `pre-write-advisory.<invocationId>.json` path for post-write
 across session or task boundaries.
@@ -120,10 +113,6 @@ Check:
 - scan-range parity against the pre-write run
 - unexpected new files in the scan range outside `intent.files`
 - advisory failures plus baseline, capability, and scan-range confidence
-
-For Rust source changes, the file delta remains useful. TS `any`-escape delta
-is not Rust source-health evidence; report it as not applicable or confidence
-limited rather than as a Rust clean/dirty verdict.
 
 If post-write cannot find the advisory, say that the post-write check is
 `unknown` and name the missing file. Do not invent a clean result.

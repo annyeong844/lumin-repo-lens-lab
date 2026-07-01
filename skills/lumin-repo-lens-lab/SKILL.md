@@ -1,6 +1,6 @@
 ---
 name: lumin-repo-lens-lab
-description: "Audit JS/TS and Rust repos for structural debt with machine evidence: dead exports, cycles, oversized modules, duplicate helpers/types, barrels, naming drift, refactor plans, and 'does X exist anywhere?'"
+description: "Audit TypeScript/JavaScript repos for structural debt with machine evidence: dead exports, cycles, oversized modules, duplicate helpers/types, barrels, naming drift, refactor plans, 'what should I clean up next?', and 'does X exist anywhere?'"
 ---
 
 # Lumin Repo Lens

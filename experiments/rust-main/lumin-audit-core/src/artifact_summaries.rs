@@ -51,6 +51,10 @@ pub struct FrameworkResourceSurfacesSummary {
     pub artifact: &'static str,
     pub schema_version: Value,
     pub policy_version: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<Value>,
     pub total_files_with_surfaces: Value,
     pub total_surface_lanes: Value,
     pub by_lane: Value,
@@ -130,12 +134,37 @@ pub fn summarize_framework_resource_surfaces(
     artifact: &Value,
 ) -> Option<FrameworkResourceSurfacesSummary> {
     let artifact_object = artifact.as_object()?;
+    let summary = object_field(artifact_object, "summary");
+    if artifact_object.get("status").and_then(Value::as_str) == Some("unavailable")
+        || summary
+            .and_then(|summary| summary.get("status"))
+            .and_then(Value::as_str)
+            == Some("unavailable")
+    {
+        return Some(FrameworkResourceSurfacesSummary {
+            artifact: "framework-resource-surfaces.json",
+            schema_version: field_or_null(artifact_object, "schemaVersion"),
+            policy_version: field_or_null(artifact_object, "policyVersion"),
+            status: Some(Value::String("unavailable".to_string())),
+            reason: artifact_object
+                .get("reason")
+                .cloned()
+                .or_else(|| summary.and_then(|summary| summary.get("reason")).cloned()),
+            total_files_with_surfaces: Value::Null,
+            total_surface_lanes: Value::Null,
+            by_lane: json!({}),
+            by_capability_pack: json!({}),
+            by_confidence: json!({}),
+            by_reason: json!({}),
+            by_framework: json!({}),
+            top_examples: Vec::new(),
+        });
+    }
     let files = artifact_object
         .get("files")
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or(&[]);
-    let summary = object_field(artifact_object, "summary");
     let top_examples = summary
         .and_then(|summary| summary.get("topExamples"))
         .and_then(Value::as_array)
@@ -146,6 +175,8 @@ pub fn summarize_framework_resource_surfaces(
         artifact: "framework-resource-surfaces.json",
         schema_version: field_or_null(artifact_object, "schemaVersion"),
         policy_version: field_or_null(artifact_object, "policyVersion"),
+        status: None,
+        reason: None,
         total_files_with_surfaces: summary_number_or(
             summary,
             "totalFilesWithSurfaces",

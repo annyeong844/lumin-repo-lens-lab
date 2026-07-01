@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "lumin-audit-core-packaged-platforms.v1",
+  "packageScope": "win32-x64",
+  "platforms": [
+    {
+      "key": "win32-x64",
+      "platform": "win32",
+      "arch": "x64",
+      "executable": "lumin-audit-core.exe"
+    }
+  ],
+  "overrideEnv": {
+    "platformSpecific": "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
+    "generic": "LUMIN_AUDIT_CORE_BIN"
+  }
+}

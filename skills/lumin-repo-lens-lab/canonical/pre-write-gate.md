@@ -129,6 +129,17 @@ input:
 - inline extraction pattern lookup;
 - planned type-escape declaration preservation.
 
+The Rust file lane follows the JS/TS P1-2 file lookup semantics with
+Rust-owned evidence:
+
+- `rust-source-health.files[path]` present -> `FILE_EXISTS`;
+- safe repo-relative `.rs` path absent from `files` and `skippedFiles`, under
+  the source-health path policy -> `NEW_FILE`;
+- skipped files, non-Rust paths, excluded `target` / `vendor` paths, and unsafe
+  path text -> `FILE_STATUS_UNKNOWN`;
+- boundary status is always `NOT_EVALUATED` because Rust pre-write intent does
+  not carry planned `from -> to` edges.
+
 The Rust command accepts the checked pre-write intent transport. Missing arrays
 default with warnings and malformed present fields hard-stop. `taskId` is the
 only typed transport extension. Unknown extra fields hard-stop instead of

@@ -80,3 +80,22 @@ Three sub-invariants drawn from that file that everything else in this skill inh
 - **`any` ≠ `unknown`**. `any` is an escape hatch. `unknown` is a safe boundary type requiring narrowing. Never conflate them; punishing `unknown` in the name of type safety teaches the wrong lesson.
 - **No silent new `any`**. When post-write detects newly-introduced `any` / `as any` / `as unknown as T` / JSDoc `{any}` / `@ts-ignore` / `@ts-expect-error` / `no-explicit-any` disable, Claude's final response MUST cite each new escape with file + line + reason, or remove them before completing the task. The skill does not veto; it makes the introduction visible. The full enumeration of tracked escape kinds is in `canonical/fact-model.md` §3.9 `type-escape.escapeKind`; this list mirrors that field's value set.
 - **Missing return annotation is NOT `any`**. TypeScript inference is a feature, not contamination. `function add(a: number, b: number) { return a + b }` is fine. True implicit-`any` requires a TS semantic pass; without a checker, emit `[확인 불가]`, do not guess.
+
+## 10. Syntax candidates are never semantic truth
+
+Syntax-only and heuristic producers emit candidates, not verified facts. A
+candidate may point a reviewer to a question; it may not assert semantic truth,
+absence, safety, or cleanup readiness by itself.
+
+Sub-invariants:
+
+- **Confidence and coverage are different axes.** `verified`, `rule-backed`, and `candidate` describe findings. `ran`, `not-run`, `unavailable`, and `unsupported` describe oracle coverage.
+- **Not run is not clean.** Clean may only appear inside coverage that actually ran over a declared scope.
+- **Stale evidence is not verified.** If the `analysisInputSetHash`, registry content hash, policy version, oracle version, or relevant snapshot no longer matches, prior verified evidence becomes a coverage gap.
+- **Tool names are provenance, not claim permission.** Renderers and ranking logic must branch on confidence and coverage, not on ad hoc tool-name checks.
+- **Semantic silence refutes nothing by default.** A higher-tier oracle may refute a lower-tier candidate only when `canonical/oracle-registry.json` lists the candidate kind and scope relation.
+- **Semantic cache reuse requires the analysis input set.** A file hash alone is not enough for verified semantic reuse; the oracle, version, policy, registry content hash, scope, command mode, and `analysisInputSetHash` must match.
+- **Clean is oracle-relative.** A file, crate, or package does not have one clean boolean. Clean is valid only for a declared oracle, authority, scope, and analysis input set. For Rust, `cargo check` clean also requires the exact package, target, feature set, target triple, cfg set, and `build-finished` success.
+- **Lint namespace beats diagnostic level.** A denied Rust lint can arrive as `level: "error"`, but it remains rule-backed evidence, not verified compiler truth.
+
+See `canonical/evidence-ladder.md` and `canonical/oracle-registry.json`.

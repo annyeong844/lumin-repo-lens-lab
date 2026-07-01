@@ -249,6 +249,10 @@ fn cli_manifest_evidence_summary_degrades_malformed_optional_artifacts() -> Resu
     fs::write(output_dir.join("unused-deps.json"), "{not-json")?;
     fs::write(output_dir.join("block-clones.json"), "{not-json")?;
     fs::write(output_dir.join("resolver-diagnostics.json"), "{not-json")?;
+    fs::write(
+        output_dir.join("framework-resource-surfaces.json"),
+        "{not-json",
+    )?;
 
     let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
         .arg("manifest-evidence-summary")
@@ -264,8 +268,27 @@ fn cli_manifest_evidence_summary_degrades_malformed_optional_artifacts() -> Resu
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
-    assert_eq!(stdout["unusedDependencies"], json!(null));
-    assert_eq!(stdout["blockClones"], json!(null));
+    assert_eq!(stdout["unusedDependencies"]["status"], "unavailable");
+    assert_eq!(
+        stdout["unusedDependencies"]["reason"]["kind"],
+        "malformed-json"
+    );
+    assert_eq!(stdout["blockClones"]["status"], "unavailable");
+    assert_eq!(stdout["blockClones"]["reason"]["kind"], "malformed-json");
+    assert_eq!(stdout["frameworkResourceSurfaces"]["status"], "unavailable");
+    assert_eq!(
+        stdout["frameworkResourceSurfaces"]["reason"]["kind"],
+        "malformed-json"
+    );
+    assert_eq!(
+        stdout["frameworkResourceSurfaces"]["totalFilesWithSurfaces"],
+        json!(null)
+    );
+    assert_eq!(stdout["resolverDiagnostics"]["status"], "unavailable");
+    assert_eq!(
+        stdout["resolverDiagnostics"]["reason"]["kind"],
+        "malformed-json"
+    );
     assert_eq!(
         stdout["resolverDiagnostics"]["resolverVersion"],
         json!(null)

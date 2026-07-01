@@ -6,7 +6,15 @@
   "private": true,
   "license": "MIT",
   "luminRepoLens": {
-    "distribution": "skill"
+    "distribution": "skill",
+    "auditCore": {
+      "packagedPlatforms": [
+        "win32-x64"
+      ],
+      "platformScope": "win32-x64",
+      "platformOverrideEnv": "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
+      "genericOverrideEnv": "LUMIN_AUDIT_CORE_BIN"
+    }
   },
   "bin": {
     "lumin-repo-lens-lab": "./scripts/audit-repo.mjs"
@@ -27,5 +35,11 @@
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
-  }
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ]
 }

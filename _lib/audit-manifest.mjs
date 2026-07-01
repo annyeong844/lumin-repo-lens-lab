@@ -14,6 +14,14 @@ import { loadIfExists as loadArtifact } from './artifacts.mjs';
 function auditCoreBinary() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
+  const platformEnv = `LUMIN_AUDIT_CORE_BIN_${process.platform}_${process.arch}`
+    .replace(/[^A-Z0-9_]/gi, '_')
+    .toUpperCase();
+  for (const configured of [process.env[platformEnv], process.env.LUMIN_AUDIT_CORE_BIN]) {
+    if (configured && existsSync(configured)) return path.resolve(configured);
+  }
+  const packagedPlatform = path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe);
+  if (existsSync(packagedPlatform)) return packagedPlatform;
   const packaged = path.resolve(here, '../bin', exe);
   if (existsSync(packaged)) return packaged;
   const fallback = path.join(path.resolve(here, '..'), 'experiments', 'target', 'debug', exe);
@@ -29,10 +37,43 @@ function auditCoreBinary() {
   }
 }
 
+function auditCorePlatformHint() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const manifestPath = path.resolve(here, '../bin/audit-core-platforms.json');
+  let supported = [];
+  let packageScope = null;
+  if (existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      packageScope = typeof manifest.packageScope === 'string' ? manifest.packageScope : null;
+      supported = (manifest.platforms ?? [])
+        .map((platform) => platform.key)
+        .filter((key) => typeof key === 'string' && key.length > 0)
+        .sort();
+    } catch {
+      supported = [];
+    }
+  }
+  const platformEnv = `LUMIN_AUDIT_CORE_BIN_${process.platform}_${process.arch}`
+    .replace(/[^A-Z0-9_]/gi, '_')
+    .toUpperCase();
+  const supportedText = supported.length > 0
+    ? ` packaged audit-core platforms: ${supported.join(', ')}.`
+    : '';
+  const scopeText = packageScope && packageScope !== 'multi-platform'
+    ? ` This skill package is scoped to ${packageScope}.`
+    : '';
+  return `${supportedText}${scopeText} Provide ${platformEnv} or LUMIN_AUDIT_CORE_BIN for this platform, or install a package built for ${process.platform}-${process.arch}.`;
+}
+
+function missingAuditCoreBinaryError(label, command) {
+  return new Error(`${label}: lumin-audit-core binary missing at ${command}.${auditCorePlatformHint()}`);
+}
+
 function runAuditCoreJson(args, label, options = {}) {
   const command = auditCoreBinary();
   if (!existsSync(command)) {
-    throw new Error(`${label}: lumin-audit-core binary missing at ${command}; run cargo build --manifest-path experiments/Cargo.toml -p lumin-audit-core`);
+    throw missingAuditCoreBinaryError(label, command);
   }
   const childOptions = {
     encoding: 'utf8',
@@ -46,7 +87,7 @@ function runAuditCoreJson(args, label, options = {}) {
 function runAuditCoreJsonResultFile(args, label, options = {}) {
   const command = auditCoreBinary();
   if (!existsSync(command)) {
-    throw new Error(`${label}: lumin-audit-core binary missing at ${command}; run cargo build --manifest-path experiments/Cargo.toml -p lumin-audit-core`);
+    throw missingAuditCoreBinaryError(label, command);
   }
   const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-'));
   const resultPath = path.join(tempDir, 'result.json');

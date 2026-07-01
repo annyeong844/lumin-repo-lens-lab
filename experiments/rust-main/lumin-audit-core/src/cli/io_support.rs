@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -65,13 +65,40 @@ pub(super) fn read_optional_output_json_tolerant(
     if !path.exists() {
         return None;
     }
-    let Ok(text) = fs::read_to_string(&path) else {
-        return None;
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) => {
+            return Some(malformed_optional_artifact(
+                artifact_name,
+                "read-error",
+                error.to_string(),
+            ));
+        }
     };
-    let Ok(json) = serde_json::from_str::<Value>(&text) else {
-        return None;
-    };
-    Some(json)
+    match serde_json::from_str::<Value>(&text) {
+        Ok(json) => Some(json),
+        Err(error) => Some(malformed_optional_artifact(
+            artifact_name,
+            "malformed-json",
+            error.to_string(),
+        )),
+    }
+}
+
+fn malformed_optional_artifact(artifact_name: &str, kind: &str, message: String) -> Value {
+    json!({
+        "schemaVersion": Value::Null,
+        "artifact": artifact_name,
+        "status": "unavailable",
+        "reason": {
+            "kind": kind,
+            "message": message,
+        },
+        "summary": {
+            "status": "unavailable",
+            "unavailableReason": kind,
+        }
+    })
 }
 
 pub(super) fn take_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf> {

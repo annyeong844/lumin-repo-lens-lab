@@ -421,12 +421,22 @@ try {
   assert(
     "SP4. generated skill moves implementation under _engine",
     existsSync(path.join(OUT, "_engine/_README.md")) &&
+      readFileSync(path.join(OUT, "_engine/_README.md"), "utf8").includes(
+        "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
+      ) &&
       existsSync(path.join(OUT, "_engine/lib/cli.mjs")) &&
       existsSync(path.join(OUT, "_engine/lib/dependency-guard.mjs")) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-manifest.mjs"), "utf8").includes(
+        "process.env.LUMIN_AUDIT_CORE_BIN",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-manifest.mjs"), "utf8").includes(
+        "LUMIN_AUDIT_CORE_BIN_",
+      ) &&
       existsSync(
         path.join(
           OUT,
           "_engine/bin",
+          `${process.platform}-${process.arch}`,
           process.platform === "win32" ? "lumin-audit-core.exe" : "lumin-audit-core",
         ),
       ) &&
@@ -440,6 +450,40 @@ try {
       existsSync(path.join(OUT, "_engine/producers/build-symbol-graph.mjs")) &&
       existsSync(path.join(OUT, "_engine/producers/rank-fixes.mjs")),
     OUT,
+  );
+
+  const auditCorePlatformKey = `${process.platform}-${process.arch}`;
+  const auditCorePlatformManifest = JSON.parse(
+    readFileSync(
+      path.join(OUT, "_engine/bin/audit-core-platforms.json"),
+      "utf8",
+    ),
+  );
+  const packageJson = JSON.parse(readFileSync(path.join(OUT, "package.json"), "utf8"));
+  assert(
+    "SP4a. generated skill records packaged audit-core platform scope",
+    auditCorePlatformManifest.schemaVersion ===
+      "lumin-audit-core-packaged-platforms.v1" &&
+      auditCorePlatformManifest.packageScope === auditCorePlatformKey &&
+      auditCorePlatformManifest.platforms.some(
+        (platform) =>
+          platform.key === auditCorePlatformKey &&
+          platform.executable ===
+            (process.platform === "win32"
+              ? "lumin-audit-core.exe"
+              : "lumin-audit-core"),
+      ) &&
+      packageJson.os?.includes(process.platform) &&
+      packageJson.cpu?.includes(process.arch) &&
+      packageJson.luminRepoLens?.auditCore?.packagedPlatforms?.includes(
+        auditCorePlatformKey,
+      ) &&
+      packageJson.luminRepoLens?.auditCore?.platformScope === auditCorePlatformKey &&
+      packageJson.luminRepoLens?.auditCore?.platformOverrideEnv ===
+        "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>" &&
+      packageJson.luminRepoLens?.auditCore?.genericOverrideEnv ===
+        "LUMIN_AUDIT_CORE_BIN",
+    JSON.stringify({ auditCorePlatformManifest, packageJson }, null, 2),
   );
 
   const generatedDocs = collectMarkdownFiles(OUT);

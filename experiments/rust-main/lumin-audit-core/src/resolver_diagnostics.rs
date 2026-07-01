@@ -7,6 +7,10 @@ pub const RESOLVER_BLOCKED_CANDIDATE_HINT_SAMPLE_LIMIT: usize = 10;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolverDiagnosticsSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<Value>,
     pub resolver_version: Value,
     pub resolver_capability_artifact: Value,
     pub resolver_diagnostics_artifact: Value,
@@ -79,8 +83,26 @@ pub fn summarize_resolver_diagnostics(
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or(&[]);
+    let status = resolver_diagnostics_object
+        .and_then(|artifact| artifact.get("status"))
+        .cloned()
+        .or_else(|| {
+            resolver_diagnostics_summary
+                .and_then(|summary| summary.get("status"))
+                .cloned()
+        });
+    let reason = resolver_diagnostics_object
+        .and_then(|artifact| artifact.get("reason"))
+        .cloned()
+        .or_else(|| {
+            resolver_diagnostics_summary
+                .and_then(|summary| summary.get("reason"))
+                .cloned()
+        });
 
     ResolverDiagnosticsSummary {
+        status,
+        reason,
         resolver_version: resolver_diagnostics_object
             .and_then(|artifact| artifact.get("resolverVersion"))
             .or_else(|| {

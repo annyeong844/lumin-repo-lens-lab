@@ -78,22 +78,6 @@ For dead-export rule `GA001`, run `rank-fixes.mjs` first. When
 Without `fix-plan.json`, SARIF falls back to older ad-hoc severity and
 may overstate warnings.
 
-## Rust Analyzer Artifact
-
-`audit-repo.mjs --rust-analyzer` opts into the Rust-owned unified analyzer
-artifact when triage counts `.rs` files. The orchestrator writes
-`rust-analyzer-health.latest.json` and records `manifest.rustAnalysis`.
-
-The default mode is intentionally not automatic: quick/full/ci still count
-Rust files and emit a Rust blind zone, but they do not spend Cargo/Rust
-analysis work unless this flag is present.
-
-The Rust analyzer run uses compact source-health evidence and Cargo
-`metadata-only` semantic mode. It is not a timeout, repo-size cap, or JS
-fallback. If the analyzer is unavailable or exits non-zero, the audit keeps
-running and records the reason in `manifest.rustAnalysis`; do not use
-JS/TS `symbols.json` absence as Rust evidence.
-
 ## Dead-Export Proposal Buckets
 
 `dead-classify.json` has four proposal buckets:

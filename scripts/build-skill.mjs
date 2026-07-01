@@ -15,6 +15,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -120,19 +121,77 @@ const RUNTIME_CANON_FILES = [
   'pre-write-gate.md',
 ];
 
-function auditCoreExecutableName() {
-  return process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
+function auditCoreExecutableNameFor(platform) {
+  return platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
 }
 
-function auditCoreBinarySource() {
-  const exe = auditCoreExecutableName();
-  const configured = process.env.LUMIN_AUDIT_CORE_BIN;
-  const candidates = [
-    configured ? path.resolve(configured) : null,
-    path.join(ROOT, 'experiments', 'target', 'release', exe),
-    path.join(ROOT, 'experiments', 'target', 'debug', exe),
-  ].filter(Boolean);
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+function auditCorePlatformKey(platform = process.platform, arch = process.arch) {
+  return `${platform}-${arch}`;
+}
+
+function auditCoreBinaryEnvName(platform = process.platform, arch = process.arch) {
+  return `LUMIN_AUDIT_CORE_BIN_${platform}_${arch}`.replace(/[^A-Z0-9_]/gi, '_').toUpperCase();
+}
+
+function cargoBuildAuditCore() {
+  const exe = auditCoreExecutableNameFor(process.platform);
+  const result = spawnSync('cargo', [
+    'build',
+    '--manifest-path',
+    path.join(ROOT, 'experiments', 'Cargo.toml'),
+    '-p',
+    'lumin-audit-core',
+  ], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  if (result.error) {
+    throw new Error(`failed to start cargo while building lumin-audit-core: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`cargo build failed while building lumin-audit-core (exit ${result.status ?? 'unknown'})`);
+  }
+  return path.join(ROOT, 'experiments', 'target', 'debug', exe);
+}
+
+function currentAuditCoreBinarySource() {
+  const configured = process.env[auditCoreBinaryEnvName()] ?? process.env.LUMIN_AUDIT_CORE_BIN;
+  if (configured) return path.resolve(configured);
+  const built = cargoBuildAuditCore();
+  if (existsSync(built)) return built;
+  throw new Error(`cargo build finished but lumin-audit-core was not found at ${built}`);
+}
+
+function configuredAuditCoreBinarySources() {
+  const currentKey = auditCorePlatformKey();
+  const sources = new Map();
+  sources.set(currentKey, {
+    platform: process.platform,
+    arch: process.arch,
+    path: currentAuditCoreBinarySource(),
+  });
+
+  for (const [name, value] of Object.entries(process.env)) {
+    const prefix = 'LUMIN_AUDIT_CORE_BIN_';
+    if (!name.startsWith(prefix) || name === 'LUMIN_AUDIT_CORE_BIN') continue;
+    const suffix = name.slice(prefix.length).toLowerCase();
+    const parts = suffix.split('_');
+    if (parts.length < 2 || !value) continue;
+    const arch = parts.pop();
+    const platform = parts.join('_');
+    const key = auditCorePlatformKey(platform, arch);
+    sources.set(key, {
+      platform,
+      arch,
+      path: path.resolve(value),
+    });
+  }
+
+  return [...sources.values()].sort((left, right) =>
+    auditCorePlatformKey(left.platform, left.arch).localeCompare(
+      auditCorePlatformKey(right.platform, right.arch)
+    )
+  );
 }
 
 function parseArgs(argv) {
@@ -255,6 +314,18 @@ function writeEngineReadme(outDir) {
     'are not a stable user-facing API; use `scripts/audit-repo.mjs` or',
     'the other public wrappers instead.',
     '',
+    '`_engine/bin/<platform>-<arch>/` contains the packaged audit-core',
+    'binary for each platform supplied at package build time. The current',
+    'build platform is rebuilt before packaging so stale CLI commands are',
+    'not copied. Additional platform binaries can be supplied with',
+    '`LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>`.',
+    '',
+    'A package built with only one platform binary is platform-scoped, not',
+    'a cross-platform binary bundle. Runtime override variables',
+    '`LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` and `LUMIN_AUDIT_CORE_BIN`',
+    'can point to an external audit-core binary when this package does not',
+    'include one for the current platform.',
+    '',
   ].join('\n'));
 }
 
@@ -311,8 +382,12 @@ function rewritePackagedSourceFiles(dir) {
   }
 }
 
-function buildSkillPackageJson(outDir) {
+function buildSkillPackageJson(outDir, auditCoreBinaries = []) {
   const source = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const packagedPlatforms = auditCoreBinaries.map((source) =>
+    auditCorePlatformKey(source.platform, source.arch)
+  );
+  const singlePlatform = auditCoreBinaries.length === 1 ? auditCoreBinaries[0] : null;
   const pkg = {
     name: 'lumin-repo-lens-lab-skill',
     version: source.version,
@@ -322,6 +397,14 @@ function buildSkillPackageJson(outDir) {
     license: source.license,
     luminRepoLens: {
       distribution: 'skill',
+      auditCore: {
+        packagedPlatforms,
+        platformScope: singlePlatform
+          ? auditCorePlatformKey(singlePlatform.platform, singlePlatform.arch)
+          : 'multi-platform',
+        platformOverrideEnv: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',
+        genericOverrideEnv: 'LUMIN_AUDIT_CORE_BIN',
+      },
     },
     bin: {
       'lumin-repo-lens-lab': './scripts/audit-repo.mjs',
@@ -337,6 +420,10 @@ function buildSkillPackageJson(outDir) {
     dependencies: source.dependencies ?? {},
     engines: source.engines ?? {},
   };
+  if (singlePlatform) {
+    pkg.os = [singlePlatform.platform];
+    pkg.cpu = [singlePlatform.arch];
+  }
   writeFileSync(path.join(outDir, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`);
 }
 
@@ -388,6 +475,8 @@ function buildSkillPackageLock(outDir) {
     bin: normalizeLockBin(pkg.bin),
     engines: pkg.engines,
   };
+  if (pkg.os) lock.packages[''].os = pkg.os;
+  if (pkg.cpu) lock.packages[''].cpu = pkg.cpu;
   writeFileSync(path.join(outDir, 'package-lock.json'), `${JSON.stringify(lock, null, 2)}\n`);
 }
 
@@ -409,16 +498,45 @@ function writeOpenAiYaml(outDir, metadata) {
   ].join('\n'));
 }
 
-function copyAuditCoreBinary(outDir) {
-  const src = auditCoreBinarySource();
-  if (!src) {
-    throw new Error(
-      'missing lumin-audit-core binary; run `cargo build --manifest-path experiments/Cargo.toml -p lumin-audit-core` or set LUMIN_AUDIT_CORE_BIN before building the skill package'
+function copyAuditCoreBinaries(outDir) {
+  const sources = configuredAuditCoreBinarySources();
+  for (const source of sources) {
+    if (!existsSync(source.path)) {
+      throw new Error(`configured lumin-audit-core binary does not exist: ${source.path}`);
+    }
+    const dest = path.join(
+      outDir,
+      '_engine',
+      'bin',
+      auditCorePlatformKey(source.platform, source.arch),
+      auditCoreExecutableNameFor(source.platform)
     );
+    ensureDir(dest);
+    cpSync(source.path, dest);
   }
-  const dest = path.join(outDir, '_engine', 'bin', auditCoreExecutableName());
+  writeAuditCorePlatformManifest(outDir, sources);
+  return sources;
+}
+
+function writeAuditCorePlatformManifest(outDir, sources) {
+  const dest = path.join(outDir, '_engine', 'bin', 'audit-core-platforms.json');
   ensureDir(dest);
-  cpSync(src, dest);
+  writeFileSync(dest, `${JSON.stringify({
+    schemaVersion: 'lumin-audit-core-packaged-platforms.v1',
+    packageScope: sources.length === 1
+      ? auditCorePlatformKey(sources[0].platform, sources[0].arch)
+      : 'multi-platform',
+    platforms: sources.map((source) => ({
+      key: auditCorePlatformKey(source.platform, source.arch),
+      platform: source.platform,
+      arch: source.arch,
+      executable: auditCoreExecutableNameFor(source.platform),
+    })),
+    overrideEnv: {
+      platformSpecific: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',
+      generic: 'LUMIN_AUDIT_CORE_BIN',
+    },
+  }, null, 2)}\n`);
 }
 
 function build(outDir) {
@@ -430,7 +548,7 @@ function build(outDir) {
   copyDirRel('templates', 'templates', outDir);
   copyDirRel('references', 'references', outDir);
   copyDirRel('_lib', '_engine/lib', outDir);
-  copyAuditCoreBinary(outDir);
+  const auditCoreBinaries = copyAuditCoreBinaries(outDir);
 
   for (const script of PRODUCER_SCRIPTS) writeProducerScript(script, outDir);
   for (const command of PUBLIC_COMMANDS) writePublicWrapper(command, outDir);
@@ -439,7 +557,7 @@ function build(outDir) {
   writeEngineReadme(outDir);
   rewritePackagedSourceFiles(path.join(outDir, '_engine'));
   rewritePackagedMarkdownFiles(outDir);
-  buildSkillPackageJson(outDir);
+  buildSkillPackageJson(outDir, auditCoreBinaries);
   buildSkillPackageLock(outDir);
   writeOpenAiYaml(outDir, MAIN_OPENAI_METADATA);
 
