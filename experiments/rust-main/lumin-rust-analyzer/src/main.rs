@@ -128,6 +128,8 @@ fn analyze_syntax_phase(
             RustSourceHealthOptions {
                 root: root.to_path_buf(),
                 source_commit: options.source_commit.clone(),
+                include_tests: true,
+                exclude: Vec::new(),
                 thread_count: options.thread_count,
                 worker_stack_bytes: options.worker_stack_bytes,
                 retain_raw_name_refs: false,
@@ -142,6 +144,8 @@ fn analyze_syntax_phase(
             RustSourceHealthOptions {
                 root: root.to_path_buf(),
                 source_commit: options.source_commit.clone(),
+                include_tests: true,
+                exclude: Vec::new(),
                 thread_count: options.thread_count,
                 worker_stack_bytes: options.worker_stack_bytes,
                 retain_raw_name_refs: false,

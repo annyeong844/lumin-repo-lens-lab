@@ -13,6 +13,8 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
     let mut output: Option<PathBuf> = None;
     let mut source_commit: Option<String> = None;
     let mut intent: Option<PathBuf> = None;
+    let mut include_tests = true;
+    let mut exclude = Vec::new();
     let mut thread_count: Option<usize> = None;
     let mut worker_stack_bytes = DEFAULT_WORKER_STACK_BYTES;
 
@@ -24,6 +26,11 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
                 source_commit = Some(take_string(&mut args, "--source-commit")?)
             }
             "--intent" => intent = Some(take_path(&mut args, "--intent")?),
+            "--production" | "--exclude-tests" | "--no-tests" | "--no-include-tests" => {
+                include_tests = false;
+            }
+            "--include-tests" => include_tests = true,
+            "--exclude" => exclude.push(take_string(&mut args, "--exclude")?),
             "--threads" => {
                 let value = take_string(&mut args, "--threads")?;
                 thread_count = Some(parse_nonzero_usize(&value, "--threads")?);
@@ -50,6 +57,8 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<CliAction<
         output,
         source_commit: source_commit.ok_or_else(|| usage_error("--source-commit is required"))?,
         intent: intent.ok_or_else(|| usage_error("--intent is required"))?,
+        include_tests,
+        exclude,
         thread_count,
         worker_stack_bytes,
     })))

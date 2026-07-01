@@ -19,6 +19,8 @@ pub fn run_cli(args: Vec<String>) -> Result<()> {
             let response = analyze_root_compact(RustSourceHealthOptions {
                 root: options.root,
                 source_commit: options.source_commit,
+                include_tests: true,
+                exclude: Vec::new(),
                 thread_count: options.thread_count,
                 worker_stack_bytes: options.worker_stack_bytes,
                 retain_raw_name_refs: false,
@@ -43,6 +45,8 @@ pub fn run_cli(args: Vec<String>) -> Result<()> {
             let response = analyze_root(RustSourceHealthOptions {
                 root: options.root,
                 source_commit: options.source_commit,
+                include_tests: true,
+                exclude: Vec::new(),
                 thread_count: options.thread_count,
                 worker_stack_bytes: options.worker_stack_bytes,
                 retain_raw_name_refs: true,

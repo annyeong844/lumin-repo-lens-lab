@@ -84,6 +84,9 @@ pub struct SidecarMeta {
 #[serde(rename_all = "camelCase")]
 pub struct InputMeta {
     pub path_policy: PathPolicy,
+    pub include_tests: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

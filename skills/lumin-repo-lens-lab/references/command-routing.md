@@ -306,8 +306,10 @@ Rust pre-write writes the native Rust lookup artifact as
 the standard lifecycle advisory shape at
 `pre-write-advisory.<invocationId>.json`. Use `manifest.preWrite.advisoryPath`
 for post-write, not the native Rust artifact path.
-Rust pre-write currently rejects JS audit scan-scope flags such as
-`--production` and `--exclude` instead of pretending they were applied.
+The orchestrator forwards JS audit scan-scope flags such as `--production`,
+`--exclude-tests`, and repeated `--exclude <pattern>` to Rust pre-write. Rust
+source-health applies those filters during Rust file enumeration and preserves
+the effective scope in the native artifact's source-health input metadata.
 
 Intent files must follow `references/pre-write-intent-shape.md`. `--intent -`
 streams that same JSON through stdin. Before

@@ -105,10 +105,12 @@ explicitly declares `language: "rust"`. Filename, dependency, and repository
 shape inference are not part of this contract. `intent.language` is an
 orchestrator route selector, not a Rust analyzer schema field; the audit
 orchestrator strips it before invoking `lumin-rust-analyzer pre-write` so Rust
-keeps its typed `deny_unknown_fields` boundary. JS audit scan-scope flags such
-as `--production` and `--exclude` are not silently applied to this route; until
-Rust owns equivalent scan-scope semantics, combining them with Rust pre-write is
-a hard-stop.
+keeps its typed `deny_unknown_fields` boundary. JS audit scan-scope flags
+`--production` / `--exclude-tests` and repeated `--exclude <pattern>` are
+forwarded to `lumin-rust-analyzer pre-write`. Rust source-health owns the Rust
+file enumeration semantics for that route, applies Rust test-like path policy
+and normalized excludes before analysis, and records the effective scope under
+the source-health input metadata (`includeTests`, `exclude`, and `pathPolicy`).
 
 The Rust-native lookup artifact is not the lifecycle advisory. The analyzer
 writes `rust-pre-write-artifact.<invocationId>.json`; the audit orchestrator

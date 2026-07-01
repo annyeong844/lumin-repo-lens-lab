@@ -4,6 +4,7 @@ mod driver;
 mod function_clones;
 mod locations;
 mod parallel;
+mod path_policy;
 pub mod protocol;
 mod signals;
 mod summary;
@@ -14,4 +15,7 @@ pub use driver::{
     CompactAnalysisResponse, FinalMeta,
 };
 pub(crate) use lumin_rust_common::{is_usage_error, usage_error};
-pub use wrapper::{analyze_root, analyze_root_compact, run_cli, RustSourceHealthOptions};
+pub use path_policy::is_test_like_rust_path;
+pub use wrapper::{
+    analyze_root, analyze_root_compact, run_cli, RustFileScanScope, RustSourceHealthOptions,
+};

@@ -20,6 +20,8 @@ pub(crate) fn run(options: &PreWriteOptions) -> Result<PreWriteArtifact> {
     let syntax = analyze_root(RustSourceHealthOptions {
         root: root.clone(),
         source_commit: options.source_commit.clone(),
+        include_tests: options.include_tests,
+        exclude: options.exclude.clone(),
         thread_count: options.thread_count,
         worker_stack_bytes: options.worker_stack_bytes,
         retain_raw_name_refs: false,

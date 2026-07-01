@@ -83,6 +83,16 @@ impl PreWriteRepo {
         self.read_json_output()
     }
 
+    pub fn run_json_with_args(&self, intent: &str, extra_args: &[&str]) -> Result<Value> {
+        let output = self.run_with_args(intent, extra_args)?;
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        self.read_json_output()
+    }
+
     pub fn read_json_output(&self) -> Result<Value> {
         serde_json::from_slice(&fs::read(self.output_path())?)
             .context("parse rust pre-write artifact")
@@ -92,6 +102,8 @@ impl PreWriteRepo {
         analyze_root(RustSourceHealthOptions {
             root: self.temp.path().to_path_buf(),
             source_commit: "test-source-commit".to_string(),
+            include_tests: true,
+            exclude: Vec::new(),
             thread_count: None,
             worker_stack_bytes: DEFAULT_WORKER_STACK_BYTES,
             retain_raw_name_refs: false,
@@ -104,9 +116,14 @@ impl PreWriteRepo {
     }
 
     pub fn run(&self, intent: &str) -> Result<Output> {
+        self.run_with_args(intent, &[])
+    }
+
+    pub fn run_with_args(&self, intent: &str, extra_args: &[&str]) -> Result<Output> {
         fs::write(self.intent_path(), intent)?;
         let _ = fs::remove_file(self.output_path());
-        unified_analyzer_command()
+        let mut command = unified_analyzer_command();
+        command
             .arg("pre-write")
             .arg("--root")
             .arg(self.temp.path())
@@ -115,9 +132,11 @@ impl PreWriteRepo {
             .arg("--intent")
             .arg(self.intent_path())
             .arg("--output")
-            .arg(self.output_path())
-            .output()
-            .context("run rust pre-write analyzer")
+            .arg(self.output_path());
+        for arg in extra_args {
+            command.arg(arg);
+        }
+        command.output().context("run rust pre-write analyzer")
     }
 
     pub fn run_stdin(&self, intent: &str) -> Result<Output> {

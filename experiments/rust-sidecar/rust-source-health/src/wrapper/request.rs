@@ -14,12 +14,14 @@ use crate::protocol::{
 };
 use crate::{AnalysisOptions, FinalMeta};
 
-use super::files::{absolute_existing_dir, collect_rust_file_entries};
+use super::files::{absolute_existing_dir, collect_rust_file_entries, RustFileScanScope};
 
 #[derive(Debug)]
 pub struct RustSourceHealthOptions {
     pub root: PathBuf,
     pub source_commit: String,
+    pub include_tests: bool,
+    pub exclude: Vec<String>,
     pub thread_count: Option<usize>,
     pub worker_stack_bytes: usize,
     pub retain_raw_name_refs: bool,
@@ -32,8 +34,9 @@ pub struct RustSourceHealthOptions {
 
 pub fn analyze_root(options: RustSourceHealthOptions) -> Result<HealthResponse> {
     let root = absolute_existing_dir(&options.root)?;
-    let (files, skipped_files) = collect_rust_file_entries(&root)?;
-    let path_policy = default_path_policy();
+    let scan_scope = RustFileScanScope::new(options.include_tests, &options.exclude);
+    let (files, skipped_files) = collect_rust_file_entries(&root, &scan_scope)?;
+    let input = input_meta(&scan_scope);
     let parser = ParserRequest {
         edition_policy: PARSER_EDITION_POLICY,
         edition: PARSER_EDITION,
@@ -58,7 +61,7 @@ pub fn analyze_root(options: RustSourceHealthOptions) -> Result<HealthResponse> 
                 source_commit: options.source_commit,
                 binary_sha256,
             },
-            input: InputMeta { path_policy },
+            input,
         }),
         analysis_options,
     )
@@ -66,8 +69,9 @@ pub fn analyze_root(options: RustSourceHealthOptions) -> Result<HealthResponse> 
 
 pub fn analyze_root_compact(options: RustSourceHealthOptions) -> Result<CompactAnalysisResponse> {
     let root = absolute_existing_dir(&options.root)?;
-    let (files, skipped_files) = collect_rust_file_entries(&root)?;
-    let path_policy = default_path_policy();
+    let scan_scope = RustFileScanScope::new(options.include_tests, &options.exclude);
+    let (files, skipped_files) = collect_rust_file_entries(&root, &scan_scope)?;
+    let input = input_meta(&scan_scope);
     let parser = ParserRequest {
         edition_policy: PARSER_EDITION_POLICY,
         edition: PARSER_EDITION,
@@ -91,7 +95,7 @@ pub fn analyze_root_compact(options: RustSourceHealthOptions) -> Result<CompactA
                 source_commit: options.source_commit,
                 binary_sha256,
             },
-            input: InputMeta { path_policy },
+            input,
         }),
         crate::driver::cache::CompactCacheOptions {
             root,
@@ -112,15 +116,21 @@ fn analysis_options(options: &RustSourceHealthOptions) -> AnalysisOptions {
     .with_raw_ast_lanes(options.retain_raw_ast_lanes)
 }
 
-fn default_path_policy() -> PathPolicy {
-    PathPolicy {
-        include: DEFAULT_INCLUDE
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect(),
-        exclude: DEFAULT_EXCLUDE
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect(),
+fn input_meta(scan_scope: &RustFileScanScope) -> InputMeta {
+    let mut exclude = DEFAULT_EXCLUDE
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>();
+    exclude.extend(scan_scope.exclude_patterns().iter().cloned());
+    InputMeta {
+        path_policy: PathPolicy {
+            include: DEFAULT_INCLUDE
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
+            exclude,
+        },
+        include_tests: scan_scope.include_tests(),
+        exclude: scan_scope.exclude_patterns().to_vec(),
     }
 }

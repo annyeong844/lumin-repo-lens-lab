@@ -141,6 +141,8 @@ forbidden unless this canonical file is amended with a migration reason.
 | Rust unused-definition analysis | `classify_unused_definitions_with_options(...)` | `src/dead_exports.rs` |
 | Rust inline statement pattern extraction | `collect_inline_patterns(...)` | `src/analyzer/syntax/items/inline_patterns.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
+| Rust test-like path policy | `is_test_like_rust_path(path)` | `src/path_policy.rs` |
+| Rust wrapper scan scope | `RustFileScanScope` | `src/wrapper/files.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
 | unsafe block syntax check | `is_unsafe_block_expr(node)` | `src/analyzer.rs` |
 | method call signal scan | `collect_method_call_signal(...)` | `src/analyzer.rs` |

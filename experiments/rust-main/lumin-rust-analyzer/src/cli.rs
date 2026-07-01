@@ -44,6 +44,8 @@ pub(crate) struct PreWriteOptions {
     pub(crate) output: Option<PathBuf>,
     pub(crate) source_commit: String,
     pub(crate) intent: PathBuf,
+    pub(crate) include_tests: bool,
+    pub(crate) exclude: Vec<String>,
     pub(crate) thread_count: Option<usize>,
     pub(crate) worker_stack_bytes: usize,
 }

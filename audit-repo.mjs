@@ -1272,9 +1272,57 @@ if (values['pre-write'] && values['post-write']) {
     }
 
     if (preWriteRoute?.engine === 'rust') {
-      if (!INCLUDE_TESTS || EFFECTIVE_EXCLUDES.length > 0) {
-        const reason = 'rust pre-write does not support audit-repo scan-scope flags yet; rerun without --production/--exclude';
-        process.stderr.write(`[audit-repo] --pre-write requested but skipped: ${reason}\n`);
+      const { execFileSync: _exec } = await import('node:child_process');
+      const sourceCommit = gitHeadCommit(ROOT);
+      const advisoryInvocationId = generateInvocationId();
+      const rustNativePath = path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`);
+      const rustNativeLatestPath = path.join(OUT, 'rust-pre-write-artifact.latest.json');
+      try {
+        const invocation = rustAnalyzerInvocation();
+        const preArgs = [
+          ...invocation.prefixArgs,
+          'pre-write',
+          '--root', ROOT,
+          '--source-commit', sourceCommit,
+          '--intent', preWriteRoute.childIntentFlag,
+          '--output', rustNativePath,
+        ];
+        if (!INCLUDE_TESTS) {
+          preArgs.push('--production');
+        }
+        for (const pattern of EFFECTIVE_EXCLUDES) {
+          preArgs.push('--exclude', pattern);
+        }
+        _exec(invocation.command, preArgs, childProcessOptionsForIntent(preWriteRoute, values.intent));
+        const rustNativeContent = readFileSync(rustNativePath, 'utf8');
+        atomicWrite(rustNativeLatestPath, rustNativeContent);
+        const rustArtifact = readJsonFileStrict(rustNativePath, 'rust pre-write artifact');
+        const advisory = buildRustPreWriteLifecycleAdvisory({
+          rustArtifact,
+          rustArtifactPath: rustNativePath,
+          invocationId: advisoryInvocationId,
+          sourceCommit,
+        });
+        const { latestPath, specificPath } = writeAdvisory(OUT, advisory);
+        preWriteBlock = {
+          requested: true,
+          ran: true,
+          engine: 'rust',
+          language: 'rust',
+          producer: 'lumin-rust-analyzer',
+          engineSelection: preWriteRoute.engineSelection,
+          advisoryPath: specificPath,
+          latestAdvisoryPath: latestPath,
+          advisoryInvocationId,
+          rustNativeArtifactPath: rustNativePath,
+          rustNativeLatestPath,
+          sourceCommit,
+          analyzerInvocation: {
+            source: invocation.source,
+            ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
+          },
+        };
+      } catch (e) {
         preWriteBlock = {
           requested: true,
           ran: false,
@@ -1282,66 +1330,9 @@ if (values['pre-write'] && values['post-write']) {
           language: 'rust',
           producer: 'lumin-rust-analyzer',
           engineSelection: preWriteRoute.engineSelection,
-          reason,
+          reason: `lumin-rust-analyzer pre-write exited non-zero: ${e.message}`,
         };
-        finalExitCode = 2;
-      } else {
-        const { execFileSync: _exec } = await import('node:child_process');
-        const sourceCommit = gitHeadCommit(ROOT);
-        const advisoryInvocationId = generateInvocationId();
-        const rustNativePath = path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`);
-        const rustNativeLatestPath = path.join(OUT, 'rust-pre-write-artifact.latest.json');
-        try {
-          const invocation = rustAnalyzerInvocation();
-          const preArgs = [
-            ...invocation.prefixArgs,
-            'pre-write',
-            '--root', ROOT,
-            '--source-commit', sourceCommit,
-            '--intent', preWriteRoute.childIntentFlag,
-            '--output', rustNativePath,
-          ];
-          _exec(invocation.command, preArgs, childProcessOptionsForIntent(preWriteRoute, values.intent));
-          const rustNativeContent = readFileSync(rustNativePath, 'utf8');
-          atomicWrite(rustNativeLatestPath, rustNativeContent);
-          const rustArtifact = readJsonFileStrict(rustNativePath, 'rust pre-write artifact');
-          const advisory = buildRustPreWriteLifecycleAdvisory({
-            rustArtifact,
-            rustArtifactPath: rustNativePath,
-            invocationId: advisoryInvocationId,
-            sourceCommit,
-          });
-          const { latestPath, specificPath } = writeAdvisory(OUT, advisory);
-          preWriteBlock = {
-            requested: true,
-            ran: true,
-            engine: 'rust',
-            language: 'rust',
-            producer: 'lumin-rust-analyzer',
-            engineSelection: preWriteRoute.engineSelection,
-            advisoryPath: specificPath,
-            latestAdvisoryPath: latestPath,
-            advisoryInvocationId,
-            rustNativeArtifactPath: rustNativePath,
-            rustNativeLatestPath,
-            sourceCommit,
-            analyzerInvocation: {
-              source: invocation.source,
-              ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
-            },
-          };
-        } catch (e) {
-          preWriteBlock = {
-            requested: true,
-            ran: false,
-            engine: 'rust',
-            language: 'rust',
-            producer: 'lumin-rust-analyzer',
-            engineSelection: preWriteRoute.engineSelection,
-            reason: `lumin-rust-analyzer pre-write exited non-zero: ${e.message}`,
-          };
-          finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
-        }
+        finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
       }
     } else if (preWriteRoute?.engine === 'js') {
       const { execFileSync: _exec } = await import('node:child_process');

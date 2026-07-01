@@ -11,6 +11,8 @@ pub(super) fn source_health(repo: &PreWriteRepo) -> Result<HealthResponse> {
     analyze_root(RustSourceHealthOptions {
         root: repo.root_path().to_path_buf(),
         source_commit: "test-source-commit".to_string(),
+        include_tests: true,
+        exclude: Vec::new(),
         thread_count: None,
         worker_stack_bytes: DEFAULT_WORKER_STACK_BYTES,
         retain_raw_name_refs: false,
