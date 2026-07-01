@@ -9,12 +9,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectBlindZones } from './blind-zones.mjs';
 import { loadIfExists as loadArtifact } from './artifacts.mjs';
-import { scanScopeStatusForPath } from './collect-files.mjs';
-import { normalizeGeneratedArtifactsMode } from './generated-artifact-mode.mjs';
-import {
-  GENERATED_ARTIFACT_MISSING_REASON,
-  GENERATED_ARTIFACT_POLICY_VERSION,
-} from './generated-artifact-evidence.mjs';
 import {
   buildBlockedCandidateHintFamilyCounts,
   buildBlockedCandidateHintReasonCounts,
@@ -181,167 +175,6 @@ function buildResolverDiagnosticsSummary(symbols, {
     topSpecifierRoots:
       resolverDiagnostics?.summary?.topSpecifierRoots ?? buildTopSpecifierRoots(symbols),
     topUnresolvedSpecifiers: (symbols?.topUnresolvedSpecifiers ?? []).slice(0, 20),
-  };
-}
-
-function toRepoRelative(root, candidate) {
-  const abs = path.isAbsolute(candidate)
-    ? path.resolve(candidate)
-    : path.resolve(root, candidate);
-  const rel = path.relative(path.resolve(root), abs);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
-  return rel.split(path.sep).join('/');
-}
-
-function sortedGeneratedConsumerZoneExamples(zones) {
-  return [...zones]
-    .sort((a, b) =>
-      String(a.consumerFile ?? '').localeCompare(String(b.consumerFile ?? '')) ||
-      String(a.candidatePath ?? '').localeCompare(String(b.candidatePath ?? '')) ||
-      String(a.specifier ?? '').localeCompare(String(b.specifier ?? '')))
-    .slice(0, 5)
-    .map((zone) => ({
-      specifier: zone.specifier ?? null,
-      consumerFile: zone.consumerFile ?? null,
-      candidatePath: zone.candidatePath ?? null,
-      status: zone.status ?? null,
-      ...(zone.scanScopeReason ? { scanScopeReason: zone.scanScopeReason } : {}),
-      mode: zone.mode ?? null,
-    }));
-}
-
-function buildGeneratedConsumerBlindZoneSummary(zones) {
-  const groups = new Map();
-  for (const zone of zones ?? []) {
-    if (!zone || typeof zone !== 'object') continue;
-    const scopePackageRoot = zone.scopePackageRoot ?? 'unknown';
-    if (!groups.has(scopePackageRoot)) {
-      groups.set(scopePackageRoot, {
-        scopePackageRoot,
-        count: 0,
-        statuses: new Map(),
-        specifiers: new Map(),
-        zones: [],
-      });
-    }
-    const group = groups.get(scopePackageRoot);
-    group.count++;
-    group.statuses.set(zone.status ?? 'unknown', (group.statuses.get(zone.status ?? 'unknown') ?? 0) + 1);
-    group.specifiers.set(zone.specifier ?? 'unknown', (group.specifiers.get(zone.specifier ?? 'unknown') ?? 0) + 1);
-    group.zones.push(zone);
-  }
-
-  return [...groups.values()]
-    .map((group) => ({
-      scopePackageRoot: group.scopePackageRoot,
-      count: group.count,
-      statuses: sortCounterObject(group.statuses),
-      topSpecifiers: [...group.specifiers.entries()]
-        .map(([specifier, count]) => ({ specifier, count }))
-        .sort((a, b) => b.count - a.count || a.specifier.localeCompare(b.specifier))
-        .slice(0, 5),
-      examples: sortedGeneratedConsumerZoneExamples(group.zones),
-    }))
-    .sort((a, b) => b.count - a.count || a.scopePackageRoot.localeCompare(b.scopePackageRoot))
-    .slice(0, 20);
-}
-
-function buildGeneratedArtifactsSummary(symbols, options = {}) {
-  const {
-    root = process.cwd(),
-    includeTests = true,
-    excludes = [],
-    generatedArtifactsMode = 'default',
-  } = options;
-  const mode = normalizeGeneratedArtifactsMode(generatedArtifactsMode);
-  const reasonSummary = new Map();
-  const misses = new Map();
-  const presentButOutOfScope = [];
-  const presentKeys = new Set();
-  const generatedConsumerBlindZones = Array.isArray(symbols?.generatedConsumerBlindZones)
-    ? symbols.generatedConsumerBlindZones
-    : [];
-
-  for (const record of symbols?.unresolvedInternalSpecifierRecords ?? []) {
-    if (record?.reason !== GENERATED_ARTIFACT_MISSING_REASON) continue;
-    reasonSummary.set(record.reason, (reasonSummary.get(record.reason) ?? 0) + 1);
-
-    const generatedArtifact = record.generatedArtifact ?? {};
-    const key = [
-      record.specifier ?? '',
-      generatedArtifact.matchedPackage ?? '',
-      generatedArtifact.targetSubpath ?? '',
-      generatedArtifact.generatorFamily ?? '',
-      generatedArtifact.confidence ?? '',
-    ].join('|');
-    if (!misses.has(key)) {
-      misses.set(key, {
-        specifier: record.specifier,
-        matchedPackage: generatedArtifact.matchedPackage ?? null,
-        targetSubpath: generatedArtifact.targetSubpath ?? null,
-        count: 0,
-        generatorFamily: generatedArtifact.generatorFamily ?? null,
-        confidence: generatedArtifact.confidence ?? null,
-      });
-    }
-    misses.get(key).count += 1;
-
-    if (mode !== 'default') {
-      for (const candidate of record.targetCandidates ?? []) {
-        const candidatePath = toRepoRelative(root, candidate);
-        if (!candidatePath) continue;
-        const absCandidate = path.resolve(root, candidatePath);
-        if (!existsSync(absCandidate)) continue;
-        const scope = scanScopeStatusForPath(root, absCandidate, { includeTests, exclude: excludes });
-        if (scope.included) continue;
-        const presentKey = [
-          record.specifier ?? '',
-          record.consumerFile ?? '',
-          candidatePath,
-          mode,
-        ].join('|');
-        if (presentKeys.has(presentKey)) continue;
-        presentKeys.add(presentKey);
-        const present = {
-          specifier: record.specifier,
-          consumerFile: record.consumerFile ?? null,
-          matchedPackage: generatedArtifact.matchedPackage ?? null,
-          targetSubpath: generatedArtifact.targetSubpath ?? null,
-          candidatePath,
-          reason: 'present-but-out-of-scope',
-          mode,
-        };
-        if (mode === 'prepared') {
-          present.staleStatus = 'unknown';
-          present.staleReason = 'generator-input-hash-not-recorded';
-        }
-        presentButOutOfScope.push(present);
-      }
-    }
-  }
-
-  const topGeneratedMisses = [...misses.values()]
-    .sort((a, b) =>
-      b.count - a.count ||
-      String(a.matchedPackage ?? '').localeCompare(String(b.matchedPackage ?? '')) ||
-      String(a.specifier ?? '').localeCompare(String(b.specifier ?? '')))
-    .slice(0, 20);
-
-  return {
-    mode,
-    generatedArtifactPolicyVersion: GENERATED_ARTIFACT_POLICY_VERSION,
-    executedGenerators: false,
-    reasonSummary: sortCounterObject(reasonSummary),
-    topGeneratedMisses,
-    generatedConsumerBlindZoneCount: generatedConsumerBlindZones.length,
-    topGeneratedConsumerBlindZones:
-      buildGeneratedConsumerBlindZoneSummary(generatedConsumerBlindZones),
-    presentButOutOfScopeCount: presentButOutOfScope.length,
-    presentButOutOfScope: presentButOutOfScope.sort((a, b) =>
-      String(a.candidatePath ?? '').localeCompare(String(b.candidatePath ?? '')) ||
-      String(a.specifier ?? '').localeCompare(String(b.specifier ?? '')) ||
-      String(a.consumerFile ?? '').localeCompare(String(b.consumerFile ?? ''))),
-    supportedGenerators: [],
   };
 }
 
@@ -537,6 +370,26 @@ function buildRustAnalysisSummaryFromFile(root, outDir) {
   ], 'buildRustAnalysisSummary');
 }
 
+function buildGeneratedArtifactsSummaryFromFile(root, outDir, symbols, {
+  includeTests = true,
+  excludes = [],
+  generatedArtifactsMode = 'default',
+} = {}) {
+  const args = [
+    'generated-artifacts-summary',
+    '--root', root,
+    '--generated-artifacts', generatedArtifactsMode,
+    includeTests ? '--include-tests' : '--no-include-tests',
+  ];
+  if (symbols && typeof symbols === 'object') {
+    args.push('--symbols', path.join(outDir, 'symbols.json'));
+  }
+  for (const exclude of excludes) {
+    args.push('--exclude', exclude);
+  }
+  return runAuditCoreJson(args, 'buildGeneratedArtifactsSummary');
+}
+
 function buildSfcEvidenceSummary(symbols) {
   if (!symbols || typeof symbols !== 'object') return null;
   const uses = symbols.uses && typeof symbols.uses === 'object'
@@ -640,7 +493,7 @@ export function buildManifestEvidence({
       rustAnalysis: rustAnalysisForBlindZones,
     }),
     rustAnalysis,
-    generatedArtifacts: buildGeneratedArtifactsSummary(symbols, {
+    generatedArtifacts: buildGeneratedArtifactsSummaryFromFile(root, outDir, symbols, {
       root,
       includeTests,
       excludes,
