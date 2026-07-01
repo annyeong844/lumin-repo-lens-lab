@@ -80,6 +80,15 @@ export function buildProducerPerformanceSummaryFromFile(artifactPath) {
   ], 'buildProducerPerformanceSummary');
 }
 
+export function buildProducerPerformanceArtifactFromLedger(ledger) {
+  return runAuditCoreJson([
+    'producer-performance-artifact',
+    '--input', '-',
+  ], 'buildProducerPerformanceArtifact', {
+    input: JSON.stringify(ledger ?? {}),
+  });
+}
+
 export function buildOrchestrationPlan({
   profile = 'quick',
   sarif = false,
@@ -130,6 +139,15 @@ export function buildManifestMeta({
     '--root', root,
     '--output', outDir,
   ], 'buildManifestMeta');
+}
+
+export function buildManifestRoot(input) {
+  return runAuditCoreJson([
+    'manifest-root',
+    '--input', '-',
+  ], 'buildManifestRoot', {
+    input: JSON.stringify(input ?? {}),
+  });
 }
 
 export function buildManifestEvidence({

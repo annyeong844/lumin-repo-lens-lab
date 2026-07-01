@@ -7,6 +7,8 @@ pub mod living_audit;
 pub mod manifest_core;
 pub mod manifest_evidence;
 pub mod manifest_meta;
+pub mod manifest_root;
+pub mod orchestration_events;
 pub mod orchestration_plan;
 pub mod orchestration_result;
 pub mod producer_performance;

@@ -69,11 +69,12 @@ import {
   openIncrementalCacheStore,
 } from './_lib/incremental-cache-store.mjs';
 import {
+  buildProducerPerformanceArtifactFromLedger,
   buildProducerPerformanceSummaryFromFile,
   buildOrchestrationPlan,
   buildOrchestrationResultSummaryFromFile,
   buildLifecycleSummary,
-  buildManifestMeta,
+  buildManifestRoot,
   buildManifestEvidence,
   collectProducedArtifacts,
   refreshManifestEvidence,
@@ -696,7 +697,6 @@ function manifestEvidenceOptions() {
   };
 }
 
-const PRODUCER_PERFORMANCE_SCHEMA_VERSION = 'producer-performance.v1';
 const PRODUCER_PERFORMANCE_LARGEST_ARTIFACT_LIMIT = 10;
 
 function performanceCacheRoot() {
@@ -722,24 +722,6 @@ function memoryDelta(before, after) {
     externalBytes: after.externalBytes - before.externalBytes,
     arrayBuffersBytes: after.arrayBuffersBytes - before.arrayBuffersBytes,
   };
-}
-
-function sumCommandWallMs(entries) {
-  return entries.reduce((sum, entry) => sum + (typeof entry.ms === 'number' ? entry.ms : 0), 0);
-}
-
-function statusCount(entries, predicate) {
-  return entries.filter(predicate).length;
-}
-
-function maxObservedRss(entries) {
-  let max = 0;
-  for (const entry of entries) {
-    const before = entry.memory?.before?.rssBytes ?? 0;
-    const after = entry.memory?.after?.rssBytes ?? 0;
-    max = Math.max(max, before, after);
-  }
-  return max;
 }
 
 function rustAnalysisArtifactUsable(rustAnalysis) {
@@ -783,13 +765,12 @@ function collectArtifactSizeSummary(artifacts = collectProducedArtifacts(OUT)) {
 }
 
 function buildProducerPerformanceArtifact(generated, artifactsProduced) {
-  let phaseSupportCount = 0;
-  const producers = commandsRun.map((entry) => {
+  const producerEvents = commandsRun.map((entry) => {
     const phaseTiming = readProducerPhaseTiming(OUT, entry.step, {
       onRead: artifactReadMetrics.observeRead,
     });
-    if (phaseTiming?.phases?.length > 0) phaseSupportCount++;
     return {
+      kind: 'producer',
       name: entry.step,
       status: entry.status,
       wallMs: typeof entry.ms === 'number' ? entry.ms : null,
@@ -799,18 +780,14 @@ function buildProducerPerformanceArtifact(generated, artifactsProduced) {
       ...(entry.stderr ? { stderrSnippet: entry.stderr } : {}),
     };
   });
-  const skippedEntries = skipped.map((entry) => ({
+  const skippedEvents = skipped.map((entry) => ({
+    kind: 'skipped',
     name: entry.step,
-    status: 'skipped',
-    reason: entry.reason ?? null,
+    reason: entry.reason,
   }));
-  const totalWallMs = sumCommandWallMs(commandsRun);
-  const artifacts = collectArtifactSizeSummary(artifactsProduced);
-  const artifactReads = artifactReadMetrics.summary();
-  const maxObservedOrchestratorRssBytes = maxObservedRss(commandsRun);
 
-  return {
-    schemaVersion: PRODUCER_PERFORMANCE_SCHEMA_VERSION,
+  return buildProducerPerformanceArtifactFromLedger({
+    schemaVersion: 'lumin-audit-orchestration-ledger.v1',
     generated,
     root: ROOT,
     output: OUT,
@@ -829,30 +806,10 @@ function buildProducerPerformanceArtifact(generated, artifactsProduced) {
     generatedArtifacts: {
       mode: GENERATED_ARTIFACTS_MODE,
     },
-    summary: {
-      producerCount: producers.length,
-      okCount: statusCount(commandsRun, (entry) => entry.status === 'ok'),
-      failedCount: statusCount(commandsRun, (entry) => String(entry.status ?? '').startsWith('failed')),
-      skippedCount: skippedEntries.length,
-      totalWallMs,
-      artifactCount: artifacts.producedCount,
-      totalArtifactBytes: artifacts.totalBytes,
-      artifactReadCount: artifactReads.totalReadCount,
-      totalArtifactReadBytes: artifactReads.totalReadBytes,
-      totalJsonParseMs: artifactReads.totalJsonParseMs,
-      maxObservedOrchestratorRssBytes,
-      phaseSupportCount,
-    },
-    memory: {
-      measurement: 'orchestrator-process-snapshots',
-      childPeakRssAvailable: false,
-      note: 'Memory snapshots are measured in the audit-repo orchestrator before and after each child producer; they do not measure child process peak RSS.',
-    },
-    artifacts,
-    artifactReads,
-    producers,
-    skipped: skippedEntries,
-  };
+    artifactReads: artifactReadMetrics.summary(),
+    artifacts: collectArtifactSizeSummary(artifactsProduced),
+    events: [...producerEvents, ...skippedEvents],
+  });
 }
 
 function shortenConsoleLine(line, max = 150) {
@@ -1142,24 +1099,23 @@ const initialEvidence = buildManifestEvidence(manifestEvidenceOptions());
 
 const initialRustAnalysis = mergeRustAnalysisBlocks(initialEvidence.rustAnalysis, rustAnalysisRun);
 const manifestGenerated = new Date().toISOString();
-const manifest = {
-  meta: buildManifestMeta({
-    generated: manifestGenerated,
-    profile: PROFILE,
-    root: ROOT,
-    outDir: OUT,
-  }),
+const manifest = buildManifestRoot({
+  generated: manifestGenerated,
   profile: PROFILE,
+  root: ROOT,
+  output: OUT,
   commandsRun,
   skipped,
-  scanRange: initialEvidence.scanRange,
-  confidence: initialEvidence.confidence,
-  blindZones: initialEvidence.blindZones,
-  rustAnalysis: initialRustAnalysis,
-  generatedArtifacts: initialEvidence.generatedArtifacts,
-  livingAudit: initialEvidence.livingAudit,
+  evidence: {
+    scanRange: initialEvidence.scanRange,
+    confidence: initialEvidence.confidence,
+    blindZones: initialEvidence.blindZones,
+    rustAnalysis: initialRustAnalysis,
+    generatedArtifacts: initialEvidence.generatedArtifacts,
+    livingAudit: initialEvidence.livingAudit,
+  },
   artifactsProduced: collectManifestProducedArtifacts(initialRustAnalysis),
-};
+});
 
 // ─── P1-3: pre-write opt-in step ──────────────────────────
 // ─── P2-2: post-write opt-in step — mutually exclusive with --pre-write ─
