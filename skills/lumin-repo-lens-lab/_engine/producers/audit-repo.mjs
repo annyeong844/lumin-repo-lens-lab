@@ -73,6 +73,7 @@ import {
   executeCanonDraftLifecycle,
   executeCheckCanonLifecycle,
   executePostWriteLifecycle,
+  applyLifecycleExitPolicy,
   buildManifestFinalSummaryUpdate,
   buildLifecycleSummary,
   buildManifestRoot,
@@ -759,11 +760,6 @@ function buildPostWriteLifecycleRequest() {
   };
 }
 
-function replayPostWriteLifecycleOutput(result) {
-  if (typeof result?.stdout === 'string' && result.stdout.length > 0) process.stdout.write(result.stdout);
-  if (typeof result?.stderr === 'string' && result.stderr.length > 0) process.stderr.write(result.stderr);
-}
-
 function shortenConsoleLine(line, max = 150) {
   const normalized = String(line ?? '').replace(/\s+/g, ' ').trim();
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
@@ -1008,7 +1004,6 @@ if (values['pre-write'] && values['post-write']) {
   }
 } else if (values['post-write']) {
   const result = executePostWriteLifecycle(buildPostWriteLifecycleRequest());
-  replayPostWriteLifecycleOutput(result);
   postWriteBlock = result.block;
   if (finalExitCode === 0) finalExitCode = result.exitCode;
 }
@@ -1062,36 +1057,17 @@ manifest.lifecycle = buildLifecycleSummary({
   checkCanon: manifest.checkCanon ?? null,
 });
 
-// Strict post-write: if --strict-post-write is set AND the post-write step
-// was requested but did not run (spawn failure), escalate to exit 2. The
-// mutual-exclusion and missing-advisory branches above already set
-// finalExitCode=2, so this strictly targets the spawn-failure case (which
-// defaults to exit 0 under advisory semantics).
-if (values['strict-post-write'] && postWriteBlock?.ran === false && finalExitCode === 0) {
-  process.stderr.write(`[audit-repo] --strict-post-write: post-write did not run; escalating to exit 2\n`);
-  finalExitCode = 2;
+const lifecycleExitPolicy = applyLifecycleExitPolicy({
+  schemaVersion: 'lumin-lifecycle-exit-policy-request.v1',
+  currentExitCode: finalExitCode,
+  strictPostWrite: values['strict-post-write'] === true,
+  strictPostWriteConfidence: values['strict-post-write-confidence'] === true,
+  postWrite: postWriteBlock ?? null,
+});
+if (typeof lifecycleExitPolicy.stderr === 'string' && lifecycleExitPolicy.stderr.length > 0) {
+  process.stderr.write(lifecycleExitPolicy.stderr);
 }
-
-function postWriteConfidenceLimited(block) {
-  if (!block?.ran) return false;
-  if (block.typeEscapeDeltaStatus === 'not-applicable') {
-    return block.fileDeltaStatus !== 'computed';
-  }
-  return block.baselineStatus !== 'available' ||
-    block.scanRangeParity !== 'ok' ||
-    block.afterComplete !== true;
-}
-
-if (values['strict-post-write-confidence'] && postWriteConfidenceLimited(postWriteBlock) && finalExitCode === 0) {
-  process.stderr.write(
-    `[audit-repo] --strict-post-write-confidence: post-write delta confidence limited ` +
-    `(baseline=${postWriteBlock.baselineStatus ?? 'unknown'}, ` +
-    `scanRange=${postWriteBlock.scanRangeParity ?? 'unknown'}, ` +
-    `typeEscapeDelta=${postWriteBlock.typeEscapeDeltaStatus ?? 'unknown'}, ` +
-    `afterComplete=${postWriteBlock.afterComplete === true}); escalating to exit 2\n`
-  );
-  finalExitCode = 2;
-}
+finalExitCode = lifecycleExitPolicy.exitCode;
 
 refreshManifestEvidence(manifest, manifestEvidenceOptions());
 manifest.rustAnalysis = mergeRustAnalysisRun({

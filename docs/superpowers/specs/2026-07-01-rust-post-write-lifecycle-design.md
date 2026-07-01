@@ -42,13 +42,21 @@ It must not own:
 post-write branch becomes a request builder around
 `executePostWriteLifecycle`.
 
-`--strict-post-write` and `--strict-post-write-confidence` remain thin
-orchestrator exit policies over the returned block. They do not change the
+The product wrapper calls audit-core with `execute-post-write --result-output
+<file>`, so `post-write.mjs` stdout/stderr keep the original inherited
+streaming contract. The typed lifecycle result is written out-of-band and read
+by the JS wrapper, avoiding JSON stdout pollution and avoiding buffering large
+Markdown output in JS.
+
+`--strict-post-write` and `--strict-post-write-confidence` are applied by
+`lifecycle_exit_policy.rs` over the returned block. They do not change the
 delta producer or manifest block owner.
 
 ## Exit Contract
 
-The Rust result returns `{ block, exitCode, stdout?, stderr? }`.
+The Rust result returns `{ block, exitCode }` in product mode. The plain JSON
+CLI/library mode may include `stdout` / `stderr` only for focused Rust tests and
+non-product diagnostics.
 
 - Missing `--pre-write-advisory` returns `exitCode=2` with
   `ran=false`, preserving the existing hard-stop branch.
@@ -56,6 +64,6 @@ The Rust result returns `{ block, exitCode, stdout?, stderr? }`.
   `exitCode=0`.
 - Successful child execution returns `ran=true`, `deltaPath`, projected
   summary fields when readable, and `exitCode=0`.
-- Child stdout/stderr are captured and returned so the JS wrapper can replay
-  the existing `post-write.mjs` user-visible output without making Rust own
-  final manifest writing.
+- Product-mode child stdout/stderr are inherited through the Rust CLI to
+  preserve the existing `post-write.mjs` user-visible output without making
+  Rust own final manifest writing.

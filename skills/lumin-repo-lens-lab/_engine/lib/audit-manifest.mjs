@@ -155,6 +155,15 @@ export function executePostWriteLifecycle(request) {
   });
 }
 
+export function applyLifecycleExitPolicy(request) {
+  return runAuditCoreJson([
+    'lifecycle-exit-policy',
+    '--input', '-',
+  ], 'applyLifecycleExitPolicy', {
+    input: JSON.stringify(request ?? {}),
+  });
+}
+
 export function buildOrchestrationPlan({
   profile = 'quick',
   sarif = false,

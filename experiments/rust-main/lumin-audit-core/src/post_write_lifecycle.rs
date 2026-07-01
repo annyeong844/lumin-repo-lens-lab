@@ -136,6 +136,19 @@ struct FileDeltaSummary {
 pub fn execute_post_write_lifecycle(
     request: PostWriteLifecycleRequest,
 ) -> Result<PostWriteLifecycleResult> {
+    execute_post_write_lifecycle_with_stdio(request, ChildStdio::Capture)
+}
+
+pub fn execute_post_write_lifecycle_streaming(
+    request: PostWriteLifecycleRequest,
+) -> Result<PostWriteLifecycleResult> {
+    execute_post_write_lifecycle_with_stdio(request, ChildStdio::Inherit)
+}
+
+fn execute_post_write_lifecycle_with_stdio(
+    request: PostWriteLifecycleRequest,
+    child_stdio: ChildStdio,
+) -> Result<PostWriteLifecycleResult> {
     validate_request(&request)?;
     let Some(advisory_path) = request.advisory_path.as_ref() else {
         return Ok(PostWriteLifecycleResult {
@@ -165,7 +178,7 @@ pub fn execute_post_write_lifecycle(
         });
     };
 
-    let child = run_post_write_child(&request, advisory_path);
+    let child = run_post_write_child(&request, advisory_path, child_stdio);
     if !child.status_success {
         return Ok(PostWriteLifecycleResult {
             schema_version: POST_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
@@ -221,6 +234,12 @@ pub fn execute_post_write_lifecycle(
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChildStdio {
+    Capture,
+    Inherit,
+}
+
 fn validate_request(request: &PostWriteLifecycleRequest) -> Result<()> {
     if request.schema_version != POST_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION {
         bail!(
@@ -252,7 +271,11 @@ struct ChildOutput {
     stderr: String,
 }
 
-fn run_post_write_child(request: &PostWriteLifecycleRequest, advisory_path: &Path) -> ChildOutput {
+fn run_post_write_child(
+    request: &PostWriteLifecycleRequest,
+    advisory_path: &Path,
+    child_stdio: ChildStdio,
+) -> ChildOutput {
     let post_write_path = request.scripts_dir.join("post-write.mjs");
     let mut args = vec![
         path_string(&post_write_path),
@@ -272,30 +295,59 @@ fn run_post_write_child(request: &PostWriteLifecycleRequest, advisory_path: &Pat
     args.extend(request.scan_args.clone());
     args.extend(request.incremental_args.clone());
 
-    match Command::new(&request.node_executable)
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-    {
-        Ok(output) => {
-            let status_success = output.status.success();
-            let reason = output
-                .status
-                .code()
-                .map(|code| format!("post-write.mjs exited {code}"))
-                .unwrap_or_else(|| "post-write.mjs terminated by signal".to_string());
-            ChildOutput {
-                status_success,
-                reason,
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    match child_stdio {
+        ChildStdio::Capture => match Command::new(&request.node_executable)
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+        {
+            Ok(output) => {
+                let status_success = output.status.success();
+                let reason = output
+                    .status
+                    .code()
+                    .map(|code| format!("post-write.mjs exited {code}"))
+                    .unwrap_or_else(|| "post-write.mjs terminated by signal".to_string());
+                ChildOutput {
+                    status_success,
+                    reason,
+                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                }
             }
-        }
-        Err(error) => ChildOutput {
-            status_success: false,
-            reason: error.to_string(),
-            stdout: String::new(),
-            stderr: String::new(),
+            Err(error) => ChildOutput {
+                status_success: false,
+                reason: error.to_string(),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        },
+        ChildStdio::Inherit => match Command::new(&request.node_executable)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+        {
+            Ok(status) => {
+                let status_success = status.success();
+                let reason = status
+                    .code()
+                    .map(|code| format!("post-write.mjs exited {code}"))
+                    .unwrap_or_else(|| "post-write.mjs terminated by signal".to_string());
+                ChildOutput {
+                    status_success,
+                    reason,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                }
+            }
+            Err(error) => ChildOutput {
+                status_success: false,
+                reason: error.to_string(),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
         },
     }
 }

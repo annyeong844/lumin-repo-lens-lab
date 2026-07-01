@@ -201,6 +201,47 @@ fn cli_execute_post_write_hard_stops_on_malformed_request() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn cli_execute_post_write_result_output_streams_child_and_writes_clean_result_file() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let out = temp.path().join("out");
+    fs::create_dir_all(&out)?;
+    let advisory = temp.path().join("pre-write-advisory.latest.json");
+    fs::write(&advisory, "{}")?;
+    write_delta(&out.join("post-write-delta.latest.json"))?;
+    let log = temp.path().join("child.log");
+    let fake_node = write_fake_child(temp.path(), 0, &log)?;
+    let input_path = temp.path().join("request.json");
+    let result_path = temp.path().join("post-write-result.json");
+    fs::write(
+        &input_path,
+        serde_json::to_string(&request(temp.path(), &out, &fake_node, Some(&advisory)))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("execute-post-write")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("## post-write delta"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("[post-write] diagnostic"));
+    let result: Value = serde_json::from_str(&fs::read_to_string(result_path)?)?;
+    assert_eq!(result["block"]["ran"], true);
+    assert!(result.get("stdout").is_none());
+    assert!(result.get("stderr").is_none());
+    Ok(())
+}
+
 fn write_delta(path: &Path) -> Result<()> {
     fs::write(
         path,
