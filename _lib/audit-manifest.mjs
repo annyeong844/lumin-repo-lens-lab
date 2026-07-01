@@ -122,6 +122,7 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
   autoExcludes = [],
   generatedArtifactsMode = 'default',
   rustAnalysisRun = null,
+  mergeRustAnalysisRun = false,
 } = {}) {
   const args = [
     'manifest-evidence-summary',
@@ -131,14 +132,20 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
     includeTests ? '--include-tests' : '--no-include-tests',
     production ? '--production' : '--no-production',
   ];
-  if (rustAnalysisRun?.ran === true) args.push('--rust-analysis-ran');
+  const runOptions = {};
+  if (mergeRustAnalysisRun && rustAnalysisRun) {
+    args.push('--rust-analysis-run-block', '-');
+    runOptions.input = JSON.stringify(rustAnalysisRun);
+  } else if (rustAnalysisRun?.ran === true) {
+    args.push('--rust-analysis-ran');
+  }
   for (const exclude of excludes) {
     args.push('--exclude', exclude);
   }
   for (const autoExclude of autoExcludes) {
     args.push('--auto-exclude', autoExclude);
   }
-  return runAuditCoreJson(args, 'buildManifestEvidenceSummary');
+  return runAuditCoreJson(args, 'buildManifestEvidenceSummary', runOptions);
 }
 
 export function collectProducedArtifacts(outDir, options = {}) {
@@ -385,6 +392,7 @@ export function buildManifestEvidence({
   autoExcludes = [],
   generatedArtifactsMode = 'default',
   rustAnalysisRun = null,
+  mergeRustAnalysisRun = false,
   onArtifactRead,
 }) {
   loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
@@ -403,6 +411,7 @@ export function buildManifestEvidence({
     autoExcludes,
     generatedArtifactsMode,
     rustAnalysisRun,
+    mergeRustAnalysisRun,
   });
   return manifestEvidence;
 }

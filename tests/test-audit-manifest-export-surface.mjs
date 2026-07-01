@@ -32,6 +32,48 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   }
 });
 
+check('AMES1b. buildManifestEvidence can merge rustAnalysis run state in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-rust-run-'));
+  const out = path.join(fx, 'out');
+  mkdirSync(out, { recursive: true });
+  try {
+    writeFileSync(path.join(out, 'rust-analyzer-health.latest.json'), JSON.stringify({
+      schemaVersion: 'lumin-rust-analyzer.v1',
+      policyVersion: 'lumin-rust-analyzer-policy.v1',
+      meta: {
+        producer: 'lumin-rust-analyzer',
+        mode: 'rust-main',
+        input: { root: fx },
+      },
+      summary: { files: 1, syntaxReviewSignals: 0 },
+    }));
+
+    const evidence = auditManifest.buildManifestEvidence({
+      root: fx,
+      outDir: out,
+      includeTests: true,
+      production: false,
+      rustAnalysisRun: {
+        requested: true,
+        ran: true,
+        status: 'complete',
+        rustFiles: 1,
+        sourceCommit: 'abc123',
+      },
+      mergeRustAnalysisRun: true,
+    });
+
+    assert.equal(evidence.rustAnalysis?.requested, true);
+    assert.equal(evidence.rustAnalysis?.ran, true);
+    assert.equal(evidence.rustAnalysis?.status, 'complete');
+    assert.equal(evidence.rustAnalysis?.available, true);
+    assert.equal(evidence.rustAnalysis?.files, 1);
+    assert.equal(evidence.rustAnalysis?.sourceCommit, 'abc123');
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
 check('AMES2. buildManifestEvidence summarizes generated artifact misses', () => {
   const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-generated-'));
   const out = path.join(fx, 'out');

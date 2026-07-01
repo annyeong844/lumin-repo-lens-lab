@@ -120,6 +120,7 @@ fn manifest_evidence_composes_rust_owned_fields_with_blind_zones() -> Result<()>
             auto_excludes: vec![".audit".to_string()],
             generated_artifacts_mode: GeneratedArtifactsMode::Present,
             rust_analysis_ran: false,
+            rust_analysis_run: None,
         },
         ManifestEvidenceArtifacts {
             triage: Some(&triage),
@@ -133,7 +134,7 @@ fn manifest_evidence_composes_rust_owned_fields_with_blind_zones() -> Result<()>
             entry_surface: None,
             rust_analysis: None,
         },
-    ))?;
+    )?)?;
 
     let blind_zones = summary["blindZones"].as_array().ok_or_else(|| {
         anyhow::anyhow!("blindZones should be serialized by manifest evidence summary")
@@ -291,6 +292,71 @@ fn cli_manifest_evidence_summary_preserves_current_run_rust_blind_zone_gate() ->
             .any(|zone| zone.get("area").and_then(|area| area.as_str()) == Some("rs"))
     }));
     assert_eq!(current["rustAnalysis"]["status"], "complete");
+    Ok(())
+}
+
+#[test]
+fn cli_manifest_evidence_summary_merges_rust_analysis_run_block() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let output_dir = root.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        output_dir.join("triage.json"),
+        serde_json::to_vec(&json!({ "byLanguage": { "rs": 1 } }))?,
+    )?;
+    fs::write(
+        output_dir.join("rust-analyzer-health.latest.json"),
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-rust-analyzer.v1",
+            "policyVersion": "lumin-rust-analyzer-policy.v1",
+            "meta": {
+                "producer": "lumin-rust-analyzer",
+                "mode": "rust-main",
+                "input": { "root": root.path().display().to_string() }
+            },
+            "summary": { "files": 1, "syntaxReviewSignals": 0 }
+        }))?,
+    )?;
+    let run_path = output_dir.join("rust-run.json");
+    fs::write(
+        &run_path,
+        serde_json::to_vec(&json!({
+            "requested": true,
+            "ran": true,
+            "status": "complete",
+            "rustFiles": 1,
+            "sourceCommit": "abc123",
+            "producer": "lumin-rust-analyzer"
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-evidence-summary")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--rust-analysis-run-block")
+        .arg(&run_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(stdout["rustAnalysis"]["requested"], true);
+    assert_eq!(stdout["rustAnalysis"]["ran"], true);
+    assert_eq!(stdout["rustAnalysis"]["status"], "complete");
+    assert_eq!(stdout["rustAnalysis"]["available"], true);
+    assert_eq!(stdout["rustAnalysis"]["files"], 1);
+    assert_eq!(stdout["rustAnalysis"]["sourceCommit"], "abc123");
+    assert!(!stdout["blindZones"].as_array().is_some_and(|zones| {
+        zones
+            .iter()
+            .any(|zone| zone.get("area").and_then(|area| area.as_str()) == Some("rs"))
+    }));
     Ok(())
 }
 

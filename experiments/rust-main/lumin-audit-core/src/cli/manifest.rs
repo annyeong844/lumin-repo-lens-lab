@@ -20,6 +20,7 @@ use lumin_audit_core::manifest_root::{
     build_manifest_evidence_update, build_manifest_root, ManifestEvidenceUpdateInput,
     ManifestRootInput,
 };
+use lumin_audit_core::rust_analysis::RustAnalysisRunObservation;
 
 pub(super) fn run_manifest_meta(args: Vec<String>) -> Result<()> {
     let mut generated = None;
@@ -188,6 +189,10 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
             "--production" => parsed.production = true,
             "--no-production" => parsed.production = false,
             "--rust-analysis-ran" => parsed.rust_analysis_ran = true,
+            "--rust-analysis-run-block" => {
+                parsed.rust_analysis_run_block =
+                    Some(take_string(&mut args, "--rust-analysis-run-block")?)
+            }
             "--exclude" => parsed.excludes.push(take_string(&mut args, "--exclude")?),
             "--auto-exclude" => parsed
                 .auto_excludes
@@ -216,6 +221,11 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
     let entry_surface = read_optional_output_json_tolerant(&output, "entry-surface.json");
     let rust_analysis =
         read_optional_output_json_tolerant(&output, "rust-analyzer-health.latest.json");
+    let rust_analysis_run =
+        read_optional_json_input(parsed.rust_analysis_run_block, "manifest-evidence-summary")?
+            .map(serde_json::from_value::<RustAnalysisRunObservation>)
+            .transpose()
+            .context("manifest-evidence-summary: invalid --rust-analysis-run-block shape")?;
 
     let summary = summarize_manifest_evidence(
         ManifestEvidenceOptions {
@@ -226,6 +236,7 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
             auto_excludes: parsed.auto_excludes,
             generated_artifacts_mode: parsed.generated_artifacts_mode,
             rust_analysis_ran: parsed.rust_analysis_ran,
+            rust_analysis_run,
         },
         ManifestEvidenceArtifacts {
             triage: triage.as_ref(),
@@ -239,6 +250,6 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
             entry_surface: entry_surface.as_ref(),
             rust_analysis: rust_analysis.as_ref(),
         },
-    );
+    )?;
     write_stdout_json(&summary)
 }

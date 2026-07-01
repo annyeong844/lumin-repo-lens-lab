@@ -40,6 +40,44 @@ describe("audit-manifest public surface", () => {
 });
 
 describe("audit-manifest evidence summaries", () => {
+  it("AMES1b. buildManifestEvidence can merge rustAnalysis run state in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "rust-analyzer-health.latest.json",
+        {
+          schemaVersion: "lumin-rust-analyzer.v1",
+          policyVersion: "lumin-rust-analyzer-policy.v1",
+          meta: {
+            producer: "lumin-rust-analyzer",
+            mode: "rust-main",
+            input: { root: fixture.root },
+          },
+          summary: { files: 1, syntaxReviewSignals: 0 },
+        },
+        { to: "output" },
+      );
+
+      const evidence = buildManifestEvidence(fixture, {
+        rustAnalysisRun: {
+          requested: true,
+          ran: true,
+          status: "complete",
+          rustFiles: 1,
+          sourceCommit: "abc123",
+        },
+        mergeRustAnalysisRun: true,
+      });
+
+      expect(evidence.rustAnalysis).toMatchObject({
+        requested: true,
+        ran: true,
+        status: "complete",
+        available: true,
+        files: 1,
+        sourceCommit: "abc123",
+      });
+    }));
+
   it("AMES2. buildManifestEvidence summarizes generated artifact misses", () =>
     withManifestFixture((fixture) => {
       fixture.writeJson(

@@ -82,7 +82,6 @@ import {
   buildManifestEvidence,
   collectProducedArtifacts,
   refreshManifestEvidence,
-  mergeRustAnalysisRun,
 } from '../lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from '../lib/generated-artifact-mode.mjs';
 import { repoRelativeFileList } from '../lib/post-write-file-delta.mjs';
@@ -472,6 +471,7 @@ function manifestEvidenceOptions() {
     autoExcludes: AUTO_EXCLUDES,
     generatedArtifactsMode: GENERATED_ARTIFACTS_MODE,
     rustAnalysisRun,
+    mergeRustAnalysisRun: true,
     onArtifactRead: artifactReadMetrics.observeRead,
   };
 }
@@ -705,11 +705,6 @@ const basePipelineExitCode = Number(baseExecution.exitPolicy?.recommendedExitCod
 
 // ─── Build manifest ───────────────────────────────────────
 const initialEvidence = buildManifestEvidence(manifestEvidenceOptions());
-
-const initialRustAnalysis = mergeRustAnalysisRun({
-  evidence: initialEvidence.rustAnalysis,
-  run: rustAnalysisRun,
-});
 const manifestGenerated = new Date().toISOString();
 const manifest = buildManifestRoot({
   generated: manifestGenerated,
@@ -718,12 +713,9 @@ const manifest = buildManifestRoot({
   output: OUT,
   commandsRun,
   skipped,
-  evidence: {
-    ...initialEvidence,
-    rustAnalysis: initialRustAnalysis,
-  },
+  evidence: initialEvidence,
   artifactsProduced: collectProducedArtifacts(OUT, {
-    rustAnalysis: initialRustAnalysis,
+    rustAnalysis: initialEvidence.rustAnalysis,
   }),
 });
 
@@ -903,10 +895,6 @@ if (typeof lifecycleExitPolicy.stderr === 'string' && lifecycleExitPolicy.stderr
 finalExitCode = lifecycleExitPolicy.exitCode;
 
 refreshManifestEvidence(manifest, manifestEvidenceOptions());
-manifest.rustAnalysis = mergeRustAnalysisRun({
-  evidence: manifest.rustAnalysis,
-  run: rustAnalysisRun,
-});
 const topologyArtifact = loadIfExists('topology.json');
 const moduleReachabilityArtifact = loadIfExists('module-reachability.json');
 if (topologyArtifact) {
