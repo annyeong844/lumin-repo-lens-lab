@@ -119,6 +119,8 @@ Rust source health does not own a JavaScript wrapper surface anymore. It is a
 Rust library phase with a thin compatibility CLI. The product execution surface
 is the unified Rust analyzer. New `rust-source-health` `.mjs` wrappers are
 forbidden unless this canonical file is amended with a migration reason.
+The generic JS tree-sitter fallback must not register `.rs`; Rust syntax
+belongs to `lumin-rust-analyzer` / `rust-source-health`, not a JS parser lane.
 
 ## 7. Canonical Constructors And Helpers
 

@@ -2,8 +2,9 @@
 //
 // Wraps `web-tree-sitter` + `@vscode/tree-sitter-wasm` to provide AST extraction
 // for languages that don't ship a first-party Node parser. Zero toolchain —
-// WASM grammars are bundled in the tree-sitter-wasm npm package (Go, Rust,
-// Java, Python, Ruby, PHP, C#, C++, Bash, CSS, and more).
+// WASM grammars are bundled in the tree-sitter-wasm npm package (Go, Java,
+// Python, Ruby, PHP, C#, C++, Bash, CSS, and more). Rust is intentionally not
+// routed through this JS fallback; use the Rust-owned lumin-rust-analyzer path.
 //
 // Public surface:
 //   isTreeSitterAvailable()           → Promise<boolean>
@@ -36,7 +37,6 @@ const RUNTIME_WASM = path.join(WEB_TREE_SITTER_ROOT, 'web-tree-sitter.wasm');
 const REGISTRY = {
   '.go': 'go',
   // Extend here — add mapping + extractor below.
-  // '.rs': 'rust',
   // '.java': 'java',
 };
 

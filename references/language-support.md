@@ -91,6 +91,8 @@ Boundary:
 - use `manifest.rustAnalysis.scanScope` as the quick range cue, but use the
   native Rust artifact for exact Rust evidence
 - do not use JS/TS `symbols.json` absence as Rust evidence
+- do not register `.rs` in the JS tree-sitter fallback; Rust syntax evidence
+  belongs to `lumin-rust-analyzer`
 - if `manifest.rustAnalysis.status !== "complete"`, keep Rust claims at
   scan-range/blind-zone level
 
