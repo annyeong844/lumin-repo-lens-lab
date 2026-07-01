@@ -27,4 +27,5 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core producer-performance-summary --artifact <path>
        lumin-audit-core producer-performance-artifact --input <path|->
        lumin-audit-core producer-performance-runtime-artifact --input <path|->
+       lumin-audit-core producer-performance-audit-run-artifact --input <path|-> --generated <iso> --root <repo> --output <dir> --profile <quick|full|ci> [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...] [--no-incremental] --cache-root <dir> [--clear-incremental-cache] --generated-artifacts <default|present|prepared>
        lumin-audit-core living-audit-summary --root <repo>"#;

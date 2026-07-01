@@ -66,7 +66,7 @@ import {
 } from './_lib/incremental-cache-store.mjs';
 import {
   createArtifactReadMetrics,
-  buildProducerPerformanceArtifactFromRuntime,
+  buildProducerPerformanceArtifactForAuditRun,
   buildOrchestrationPlan,
   executeBasePlan,
   executeCanonDraftLifecycle,
@@ -478,34 +478,6 @@ function manifestEvidenceOptions() {
 
 function performanceCacheRoot() {
   return path.resolve(values['cache-root'] ?? path.join(ROOT, '.audit', '.cache'));
-}
-
-function buildProducerPerformanceArtifact(generated, artifactsProduced) {
-  return buildProducerPerformanceArtifactFromRuntime({
-    schemaVersion: 'lumin-audit-producer-performance-runtime.v1',
-    generated,
-    root: ROOT,
-    output: OUT,
-    profile: PROFILE,
-    scanRange: {
-      includeTests: INCLUDE_TESTS,
-      production: PRODUCTION,
-      excludes: EFFECTIVE_EXCLUDES,
-      autoExcludes: AUTO_EXCLUDES,
-    },
-    cache: {
-      noIncremental: values['no-incremental'] === true,
-      cacheRoot: performanceCacheRoot(),
-      clearIncrementalCache: values['clear-incremental-cache'] === true,
-    },
-    generatedArtifacts: {
-      mode: GENERATED_ARTIFACTS_MODE,
-    },
-    artifactReads: artifactReadMetrics.summary(),
-    artifactsProduced,
-    commandsRun,
-    skipped,
-  });
 }
 
 function rustAnalyzerInvocationOrNull() {
@@ -960,10 +932,24 @@ if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
     use: 'main assistant reads lanes as artifact briefs; if using built-in reviewer subagents, translate lanes into focused codebase-reading tasks with file:line evidence; the engine never calls external APIs',
   };
 }
-const producerPerformance = buildProducerPerformanceArtifact(
-  manifest.meta.generated,
-  collectProducedArtifacts(OUT, { rustAnalysis: manifest.rustAnalysis })
-);
+const producerPerformance = buildProducerPerformanceArtifactForAuditRun({
+  generated: manifest.meta.generated,
+  root: ROOT,
+  outDir: OUT,
+  profile: PROFILE,
+  includeTests: INCLUDE_TESTS,
+  production: PRODUCTION,
+  excludes: EFFECTIVE_EXCLUDES,
+  autoExcludes: AUTO_EXCLUDES,
+  noIncremental: values['no-incremental'] === true,
+  cacheRoot: performanceCacheRoot(),
+  clearIncrementalCache: values['clear-incremental-cache'] === true,
+  generatedArtifactsMode: GENERATED_ARTIFACTS_MODE,
+  artifactReads: artifactReadMetrics.summary(),
+  artifactsProduced: collectProducedArtifacts(OUT, { rustAnalysis: manifest.rustAnalysis }),
+  commandsRun,
+  skipped,
+});
 const producerPerformancePath = path.join(OUT, 'producer-performance.json');
 atomicWrite(
   producerPerformancePath,

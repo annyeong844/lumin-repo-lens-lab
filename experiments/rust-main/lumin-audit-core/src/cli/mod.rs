@@ -48,6 +48,9 @@ pub fn run() -> Result<()> {
         Some("producer-performance-runtime-artifact") => {
             run_producer_performance_runtime_artifact(args.collect())
         }
+        Some("producer-performance-audit-run-artifact") => {
+            run_producer_performance_audit_run_artifact(args.collect())
+        }
         Some("living-audit-summary") => run_living_audit_summary(args.collect()),
         _ => bail!(USAGE),
     }

@@ -23,6 +23,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.buildManifestEvidence, 'function');
   assert.equal(typeof auditManifest.refreshManifestEvidence, 'function');
   assert.equal(typeof auditManifest.collectProducedArtifacts, 'function');
+  assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
 
   for (const symbol of [
     'LIVING_AUDIT_DOC_CANDIDATES',
@@ -30,10 +31,61 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
     'mergeRustAnalysisRun',
     'buildArtifactSizeSummary',
     'buildArtifactReadMetricsSummary',
+    'buildProducerPerformanceArtifactFromRuntime',
     'buildManifestMeta',
     'buildManifestEvidenceUpdate',
   ]) {
     assert.equal(Object.hasOwn(auditManifest, symbol), false, symbol);
+  }
+});
+
+check('AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-producer-performance-'));
+  const out = path.join(fx, 'out');
+  mkdirSync(out, { recursive: true });
+  try {
+    writeFileSync(path.join(out, 'triage.json'), '{}');
+    const artifact = auditManifest.buildProducerPerformanceArtifactForAuditRun({
+      generated: '2026-07-01T00:00:00.000Z',
+      root: fx,
+      outDir: out,
+      profile: 'quick',
+      includeTests: true,
+      production: false,
+      excludes: ['dist'],
+      autoExcludes: ['.audit'],
+      noIncremental: true,
+      cacheRoot: path.join(out, '.cache'),
+      clearIncrementalCache: true,
+      generatedArtifactsMode: 'prepared',
+      artifactReads: {
+        schemaVersion: 'artifact-read-metrics.v1',
+        measurement: 'audit-repo-orchestrator-json-reads',
+        totalReadCount: 0,
+        totalReadBytes: 0,
+        totalReadMs: 0,
+        totalJsonParseMs: 0,
+        parseFailureCount: 0,
+        byName: {},
+      },
+      artifactsProduced: ['triage.json'],
+      commandsRun: [{ step: 'triage-repo.mjs', status: 'ok', ms: 3 }],
+      skipped: [{ step: 'emit-sarif.mjs', reason: 'not in --sarif mode' }],
+    });
+
+    assert.equal(artifact.schemaVersion, 'producer-performance.v1');
+    assert.equal(artifact.profile, 'quick');
+    assert.deepEqual(artifact.scanRange.excludes, ['dist']);
+    assert.deepEqual(artifact.scanRange.autoExcludes, ['.audit']);
+    assert.equal(artifact.cache.noIncremental, true);
+    assert.equal(artifact.cache.clearIncrementalCache, true);
+    assert.equal(artifact.generatedArtifacts.mode, 'prepared');
+    assert.equal(artifact.summary.producerCount, 1);
+    assert.equal(artifact.summary.okCount, 1);
+    assert.equal(artifact.summary.skippedCount, 1);
+    assert.equal(artifact.summary.artifactCount, 1);
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
   }
 });
 

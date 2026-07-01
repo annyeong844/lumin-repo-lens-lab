@@ -29,6 +29,9 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.buildManifestEvidence).toBe("function");
     expect(typeof auditManifest.refreshManifestEvidence).toBe("function");
     expect(typeof auditManifest.collectProducedArtifacts).toBe("function");
+    expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
+      "function",
+    );
 
     for (const symbol of [
       "LIVING_AUDIT_DOC_CANDIDATES",
@@ -36,12 +39,67 @@ describe("audit-manifest public surface", () => {
       "mergeRustAnalysisRun",
       "buildArtifactSizeSummary",
       "buildArtifactReadMetricsSummary",
+      "buildProducerPerformanceArtifactFromRuntime",
       "buildManifestMeta",
       "buildManifestEvidenceUpdate",
     ]) {
       expect(Object.hasOwn(auditManifest, symbol)).toBe(false);
     }
   });
+
+  it("AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.write("triage.json", "{}", { to: "output" });
+      const artifact = auditManifest.buildProducerPerformanceArtifactForAuditRun({
+        generated: "2026-07-01T00:00:00.000Z",
+        root: fixture.root,
+        outDir: fixture.output,
+        profile: "quick",
+        includeTests: true,
+        production: false,
+        excludes: ["dist"],
+        autoExcludes: [".audit"],
+        noIncremental: true,
+        cacheRoot: fixture.path(".audit/.cache"),
+        clearIncrementalCache: true,
+        generatedArtifactsMode: "prepared",
+        artifactReads: {
+          schemaVersion: "artifact-read-metrics.v1",
+          measurement: "audit-repo-orchestrator-json-reads",
+          totalReadCount: 0,
+          totalReadBytes: 0,
+          totalReadMs: 0,
+          totalJsonParseMs: 0,
+          parseFailureCount: 0,
+          byName: {},
+        },
+        artifactsProduced: ["triage.json"],
+        commandsRun: [{ step: "triage-repo.mjs", status: "ok", ms: 3 }],
+        skipped: [{ step: "emit-sarif.mjs", reason: "not in --sarif mode" }],
+      });
+
+      expect(artifact).toMatchObject({
+        schemaVersion: "producer-performance.v1",
+        profile: "quick",
+        scanRange: {
+          includeTests: true,
+          production: false,
+          excludes: ["dist"],
+          autoExcludes: [".audit"],
+        },
+        cache: {
+          noIncremental: true,
+          clearIncrementalCache: true,
+        },
+        generatedArtifacts: { mode: "prepared" },
+        summary: {
+          producerCount: 1,
+          okCount: 1,
+          skippedCount: 1,
+          artifactCount: 1,
+        },
+      });
+    }));
 });
 
 describe("audit-manifest evidence summaries", () => {

@@ -155,20 +155,29 @@ function cargoBuildAuditCore() {
 }
 
 function validateRunnableAuditCoreBinary(binaryPath) {
-  const result = spawnSync(binaryPath, [
-    'producer-performance-runtime-artifact',
-  ], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  });
-  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-  if (result.error) {
-    throw new Error(`failed to start built lumin-audit-core at ${binaryPath}: ${result.error.message}`);
-  }
-  if (!output.includes('producer-performance-runtime-artifact: missing --input')) {
-    throw new Error(
-      `built lumin-audit-core at ${binaryPath} does not expose the current CLI contract`
-    );
+  for (const [command, expected] of [
+    [
+      'producer-performance-runtime-artifact',
+      'producer-performance-runtime-artifact: missing --input',
+    ],
+    [
+      'producer-performance-audit-run-artifact',
+      'producer-performance-audit-run-artifact: missing --input',
+    ],
+  ]) {
+    const result = spawnSync(binaryPath, [command], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+    if (result.error) {
+      throw new Error(`failed to start built lumin-audit-core at ${binaryPath}: ${result.error.message}`);
+    }
+    if (!output.includes(expected)) {
+      throw new Error(
+        `built lumin-audit-core at ${binaryPath} does not expose the current CLI contract for ${command}`
+      );
+    }
   }
 }
 

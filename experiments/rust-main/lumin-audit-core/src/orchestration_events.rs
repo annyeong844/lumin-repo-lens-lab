@@ -56,6 +56,38 @@ pub struct ProducerPerformanceRuntimeInput {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProducerPerformanceAuditRunContext {
+    pub generated: String,
+    pub root: String,
+    pub output: String,
+    pub profile: String,
+    pub include_tests: bool,
+    pub production: bool,
+    #[serde(default)]
+    pub excludes: Vec<String>,
+    #[serde(default)]
+    pub auto_excludes: Vec<String>,
+    pub no_incremental: bool,
+    pub cache_root: String,
+    pub clear_incremental_cache: bool,
+    pub generated_artifacts_mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProducerPerformanceRuntimeObservations {
+    #[serde(default = "ArtifactReadSummary::empty")]
+    pub artifact_reads: ArtifactReadSummary,
+    #[serde(default)]
+    pub artifacts_produced: Vec<String>,
+    #[serde(default)]
+    pub commands_run: Vec<RuntimeCommandRun>,
+    #[serde(default)]
+    pub skipped: Vec<RuntimeSkippedRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeCommandRun {
     pub step: String,
     pub status: String,
@@ -247,10 +279,6 @@ pub struct SkippedPerformanceEntry {
 pub fn build_producer_performance_artifact_from_runtime(
     input: ProducerPerformanceRuntimeInput,
 ) -> Result<ProducerPerformanceArtifact> {
-    validate_required("generated", &input.generated)?;
-    validate_required("root", &input.root)?;
-    validate_required("output", &input.output)?;
-    validate_required("profile", &input.profile)?;
     if input.schema_version != PRODUCER_PERFORMANCE_RUNTIME_INPUT_SCHEMA_VERSION {
         bail!(
             "producer-performance-runtime-artifact: unsupported schemaVersion '{}'",
@@ -258,25 +286,71 @@ pub fn build_producer_performance_artifact_from_runtime(
         );
     }
 
-    let output = PathBuf::from(&input.output);
-    let mut artifact_reads = input.artifact_reads;
+    build_producer_performance_artifact_for_audit_run(
+        ProducerPerformanceAuditRunContext {
+            generated: input.generated,
+            root: input.root,
+            output: input.output,
+            profile: input.profile,
+            include_tests: input.scan_range.include_tests,
+            production: input.scan_range.production,
+            excludes: input.scan_range.excludes,
+            auto_excludes: input.scan_range.auto_excludes,
+            no_incremental: input.cache.no_incremental,
+            cache_root: input.cache.cache_root,
+            clear_incremental_cache: input.cache.clear_incremental_cache,
+            generated_artifacts_mode: input.generated_artifacts.mode,
+        },
+        ProducerPerformanceRuntimeObservations {
+            artifact_reads: input.artifact_reads,
+            artifacts_produced: input.artifacts_produced,
+            commands_run: input.commands_run,
+            skipped: input.skipped,
+        },
+    )
+}
+
+pub fn build_producer_performance_artifact_for_audit_run(
+    context: ProducerPerformanceAuditRunContext,
+    observations: ProducerPerformanceRuntimeObservations,
+) -> Result<ProducerPerformanceArtifact> {
+    validate_required("generated", &context.generated)?;
+    validate_required("root", &context.root)?;
+    validate_required("output", &context.output)?;
+    validate_required("profile", &context.profile)?;
+    validate_required("cacheRoot", &context.cache_root)?;
+    validate_required("generatedArtifacts.mode", &context.generated_artifacts_mode)?;
+
+    let output = PathBuf::from(&context.output);
+    let mut artifact_reads = observations.artifact_reads;
     let events = runtime_events(
         &output,
         &mut artifact_reads,
-        &input.commands_run,
-        &input.skipped,
+        &observations.commands_run,
+        &observations.skipped,
     )?;
-    let artifacts = measure_artifact_sizes(&output, &input.artifacts_produced);
+    let artifacts = measure_artifact_sizes(&output, &observations.artifacts_produced);
 
     build_producer_performance_artifact(OrchestrationLedger {
         schema_version: ORCHESTRATION_LEDGER_SCHEMA_VERSION.to_string(),
-        generated: input.generated,
-        root: input.root,
-        output: input.output,
-        profile: input.profile,
-        scan_range: input.scan_range,
-        cache: input.cache,
-        generated_artifacts: input.generated_artifacts,
+        generated: context.generated,
+        root: context.root,
+        output: context.output,
+        profile: context.profile,
+        scan_range: LedgerScanRange {
+            include_tests: context.include_tests,
+            production: context.production,
+            excludes: context.excludes,
+            auto_excludes: context.auto_excludes,
+        },
+        cache: LedgerCache {
+            no_incremental: context.no_incremental,
+            cache_root: context.cache_root,
+            clear_incremental_cache: context.clear_incremental_cache,
+        },
+        generated_artifacts: LedgerGeneratedArtifacts {
+            mode: context.generated_artifacts_mode,
+        },
         artifact_reads,
         artifacts,
         events,

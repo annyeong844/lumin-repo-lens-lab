@@ -199,12 +199,47 @@ export function createArtifactReadMetrics({ rootDir, largestLimit = 10 } = {}) {
   return { observeRead, summary };
 }
 
-export function buildProducerPerformanceArtifactFromRuntime(input) {
-  return runAuditCoreJson([
-    'producer-performance-runtime-artifact',
+export function buildProducerPerformanceArtifactForAuditRun({
+  generated,
+  root,
+  outDir,
+  profile,
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  noIncremental = false,
+  cacheRoot,
+  clearIncrementalCache = false,
+  generatedArtifactsMode = 'default',
+  artifactReads,
+  artifactsProduced = [],
+  commandsRun = [],
+  skipped = [],
+}) {
+  const args = [
+    'producer-performance-audit-run-artifact',
     '--input', '-',
-  ], 'buildProducerPerformanceArtifactFromRuntime', {
-    input: JSON.stringify(input ?? {}),
+    '--generated', generated,
+    '--root', root,
+    '--output', outDir,
+    '--profile', profile,
+    includeTests ? '--include-tests' : '--no-include-tests',
+    production ? '--production' : '--no-production',
+    '--cache-root', cacheRoot,
+    ...(noIncremental ? ['--no-incremental'] : []),
+    ...(clearIncrementalCache ? ['--clear-incremental-cache'] : []),
+    '--generated-artifacts', generatedArtifactsMode,
+  ];
+  for (const exclude of excludes) args.push('--exclude', exclude);
+  for (const autoExclude of autoExcludes) args.push('--auto-exclude', autoExclude);
+  return runAuditCoreJson(args, 'buildProducerPerformanceArtifactForAuditRun', {
+    input: JSON.stringify({
+      artifactReads,
+      artifactsProduced,
+      commandsRun,
+      skipped,
+    }),
   });
 }
 

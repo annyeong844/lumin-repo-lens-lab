@@ -4,8 +4,10 @@ use std::fs;
 use std::process::Command;
 
 use lumin_audit_core::orchestration_events::{
-    build_producer_performance_artifact, build_producer_performance_artifact_from_runtime,
-    OrchestrationLedger, ProducerPerformanceRuntimeInput,
+    build_producer_performance_artifact, build_producer_performance_artifact_for_audit_run,
+    build_producer_performance_artifact_from_runtime, OrchestrationLedger,
+    ProducerPerformanceAuditRunContext, ProducerPerformanceRuntimeInput,
+    ProducerPerformanceRuntimeObservations,
 };
 
 fn ledger(value: Value) -> Result<OrchestrationLedger> {
@@ -13,6 +15,14 @@ fn ledger(value: Value) -> Result<OrchestrationLedger> {
 }
 
 fn runtime_input(value: Value) -> Result<ProducerPerformanceRuntimeInput> {
+    Ok(serde_json::from_value(value)?)
+}
+
+fn audit_run_context(value: Value) -> Result<ProducerPerformanceAuditRunContext> {
+    Ok(serde_json::from_value(value)?)
+}
+
+fn runtime_observations(value: Value) -> Result<ProducerPerformanceRuntimeObservations> {
     Ok(serde_json::from_value(value)?)
 }
 
@@ -236,6 +246,67 @@ fn runtime_input_projects_phase_sidecars_artifact_sizes_and_runtime_events() -> 
 }
 
 #[test]
+fn audit_run_context_projects_scan_cache_and_runtime_observations() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output = temp.path().join("out");
+    fs::create_dir_all(&output)?;
+    fs::write(output.join("triage.json"), "{}")?;
+
+    let context = audit_run_context(json!({
+        "generated": "2026-07-01T00:00:00.000Z",
+        "root": temp.path().to_string_lossy(),
+        "output": output.to_string_lossy(),
+        "profile": "full",
+        "includeTests": false,
+        "production": true,
+        "excludes": ["dist"],
+        "autoExcludes": [".audit"],
+        "noIncremental": true,
+        "cacheRoot": output.join(".cache").to_string_lossy(),
+        "clearIncrementalCache": true,
+        "generatedArtifactsMode": "prepared"
+    }))?;
+    let observations = runtime_observations(json!({
+        "artifactReads": {
+            "schemaVersion": "artifact-read-metrics.v1",
+            "measurement": "audit-repo-orchestrator-json-reads",
+            "totalReadCount": 1,
+            "totalReadBytes": 2,
+            "totalReadMs": 3,
+            "totalJsonParseMs": 4,
+            "parseFailureCount": 0,
+            "byName": {}
+        },
+        "artifactsProduced": ["triage.json"],
+        "commandsRun": [
+            { "step": "triage-repo.mjs", "status": "ok", "ms": 3 }
+        ],
+        "skipped": [
+            { "step": "emit-sarif.mjs", "reason": "not in --sarif mode" }
+        ]
+    }))?;
+
+    let artifact = serde_json::to_value(build_producer_performance_artifact_for_audit_run(
+        context,
+        observations,
+    )?)?;
+
+    assert_eq!(artifact["schemaVersion"], "producer-performance.v1");
+    assert_eq!(artifact["profile"], "full");
+    assert_eq!(artifact["scanRange"]["includeTests"], false);
+    assert_eq!(artifact["scanRange"]["production"], true);
+    assert_eq!(artifact["scanRange"]["excludes"], json!(["dist"]));
+    assert_eq!(artifact["scanRange"]["autoExcludes"], json!([".audit"]));
+    assert_eq!(artifact["cache"]["noIncremental"], true);
+    assert_eq!(artifact["cache"]["clearIncrementalCache"], true);
+    assert_eq!(artifact["generatedArtifacts"]["mode"], "prepared");
+    assert_eq!(artifact["summary"]["producerCount"], 1);
+    assert_eq!(artifact["summary"]["skippedCount"], 1);
+    assert_eq!(artifact["summary"]["artifactCount"], 1);
+    Ok(())
+}
+
+#[test]
 fn runtime_input_records_malformed_phase_sidecar_as_read_failure_without_phase_claim() -> Result<()>
 {
     let temp = tempfile::tempdir()?;
@@ -390,6 +461,73 @@ fn cli_producer_performance_runtime_artifact_emits_json() -> Result<()> {
     let stdout = serde_json::from_slice::<Value>(&output.stdout)?;
     assert_eq!(stdout["schemaVersion"], "producer-performance.v1");
     assert_eq!(stdout["summary"]["okCount"], 1);
+    Ok(())
+}
+
+#[test]
+fn cli_producer_performance_audit_run_artifact_emits_json() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join("out");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("triage.json"), "{}")?;
+    let input_path = temp.path().join("runtime-observations.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "artifactReads": {
+                "schemaVersion": "artifact-read-metrics.v1",
+                "measurement": "audit-repo-orchestrator-json-reads",
+                "totalReadCount": 0,
+                "totalReadBytes": 0,
+                "totalReadMs": 0,
+                "totalJsonParseMs": 0,
+                "parseFailureCount": 0,
+                "byName": {}
+            },
+            "artifactsProduced": ["triage.json"],
+            "commandsRun": [
+                { "step": "triage-repo.mjs", "status": "ok", "ms": 3 }
+            ],
+            "skipped": []
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("producer-performance-audit-run-artifact")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--generated")
+        .arg("2026-07-01T00:00:00.000Z")
+        .arg("--root")
+        .arg(temp.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--profile")
+        .arg("quick")
+        .arg("--include-tests")
+        .arg("--no-production")
+        .arg("--exclude")
+        .arg("dist")
+        .arg("--auto-exclude")
+        .arg(".audit")
+        .arg("--no-incremental")
+        .arg("--cache-root")
+        .arg(output_dir.join(".cache"))
+        .arg("--clear-incremental-cache")
+        .arg("--generated-artifacts")
+        .arg("default")
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<Value>(&output.stdout)?;
+    assert_eq!(stdout["schemaVersion"], "producer-performance.v1");
+    assert_eq!(stdout["scanRange"]["excludes"], json!(["dist"]));
+    assert_eq!(stdout["summary"]["okCount"], 1);
+    assert_eq!(stdout["summary"]["artifactCount"], 1);
     Ok(())
 }
 

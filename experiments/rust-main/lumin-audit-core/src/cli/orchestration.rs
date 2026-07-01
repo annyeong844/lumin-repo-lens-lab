@@ -7,8 +7,10 @@ use super::io_support::{
 use super::usage::USAGE;
 use lumin_audit_core::living_audit::summarize_living_audit;
 use lumin_audit_core::orchestration_events::{
-    build_producer_performance_artifact, build_producer_performance_artifact_from_runtime,
-    OrchestrationLedger, ProducerPerformanceRuntimeInput,
+    build_producer_performance_artifact, build_producer_performance_artifact_for_audit_run,
+    build_producer_performance_artifact_from_runtime, OrchestrationLedger,
+    ProducerPerformanceAuditRunContext, ProducerPerformanceRuntimeInput,
+    ProducerPerformanceRuntimeObservations,
 };
 use lumin_audit_core::orchestration_executor::{execute_base_plan, ExecutorRequest};
 use lumin_audit_core::orchestration_plan::{
@@ -66,6 +68,84 @@ pub(super) fn run_producer_performance_runtime_artifact(args: Vec<String>) -> Re
     let input = serde_json::from_value::<ProducerPerformanceRuntimeInput>(input_json)
         .context("producer-performance-runtime-artifact: invalid input shape")?;
     let artifact = build_producer_performance_artifact_from_runtime(input)?;
+    write_stdout_json(&artifact)
+}
+
+pub(super) fn run_producer_performance_audit_run_artifact(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut generated = None;
+    let mut root = None;
+    let mut output = None;
+    let mut profile = None;
+    let mut include_tests = None;
+    let mut production = None;
+    let mut excludes = Vec::new();
+    let mut auto_excludes = Vec::new();
+    let mut no_incremental = false;
+    let mut cache_root = None;
+    let mut clear_incremental_cache = false;
+    let mut generated_artifacts_mode = None;
+
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            "--generated" => generated = Some(take_string(&mut args, "--generated")?),
+            "--root" => root = Some(take_string(&mut args, "--root")?),
+            "--output" => output = Some(take_string(&mut args, "--output")?),
+            "--profile" => profile = Some(take_string(&mut args, "--profile")?),
+            "--include-tests" => include_tests = Some(true),
+            "--no-include-tests" => include_tests = Some(false),
+            "--production" => production = Some(true),
+            "--no-production" => production = Some(false),
+            "--exclude" => excludes.push(take_string(&mut args, "--exclude")?),
+            "--auto-exclude" => auto_excludes.push(take_string(&mut args, "--auto-exclude")?),
+            "--no-incremental" => no_incremental = true,
+            "--cache-root" => cache_root = Some(take_string(&mut args, "--cache-root")?),
+            "--clear-incremental-cache" => clear_incremental_cache = true,
+            "--generated-artifacts" => {
+                generated_artifacts_mode = Some(take_string(&mut args, "--generated-artifacts")?)
+            }
+            _ => {
+                bail!("producer-performance-audit-run-artifact: unknown argument '{arg}'\n{USAGE}")
+            }
+        }
+    }
+
+    let input =
+        input.context("producer-performance-audit-run-artifact: missing --input <path|->")?;
+    let observations_json = read_json_input(&input, "producer-performance-audit-run-artifact")?;
+    let observations =
+        serde_json::from_value::<ProducerPerformanceRuntimeObservations>(observations_json)
+            .context(
+                "producer-performance-audit-run-artifact: invalid runtime observation shape",
+            )?;
+    let context = ProducerPerformanceAuditRunContext {
+        generated: generated
+            .context("producer-performance-audit-run-artifact: missing --generated <iso>")?,
+        root: root.context("producer-performance-audit-run-artifact: missing --root <repo>")?,
+        output: output
+            .context("producer-performance-audit-run-artifact: missing --output <dir>")?,
+        profile: profile.context(
+            "producer-performance-audit-run-artifact: missing --profile <quick|full|ci>",
+        )?,
+        include_tests: include_tests.context(
+            "producer-performance-audit-run-artifact: missing --include-tests|--no-include-tests",
+        )?,
+        production: production.context(
+            "producer-performance-audit-run-artifact: missing --production|--no-production",
+        )?,
+        excludes,
+        auto_excludes,
+        no_incremental,
+        cache_root: cache_root
+            .context("producer-performance-audit-run-artifact: missing --cache-root <dir>")?,
+        clear_incremental_cache,
+        generated_artifacts_mode: generated_artifacts_mode.context(
+            "producer-performance-audit-run-artifact: missing --generated-artifacts <mode>",
+        )?,
+    };
+    let artifact = build_producer_performance_artifact_for_audit_run(context, observations)?;
     write_stdout_json(&artifact)
 }
 
