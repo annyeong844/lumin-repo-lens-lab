@@ -1,5 +1,6 @@
 pub mod artifact_registry;
 pub mod artifact_summaries;
+pub mod blind_zones;
 pub mod generated_artifacts;
 pub mod living_audit;
 pub mod manifest_core;
