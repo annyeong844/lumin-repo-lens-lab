@@ -10,32 +10,6 @@ import { fileURLToPath } from 'node:url';
 import { detectBlindZones } from './blind-zones.mjs';
 import { loadIfExists as loadArtifact } from './artifacts.mjs';
 
-const LIVING_AUDIT_DOC_CANDIDATES = [
-  'docs/current/audit/lumin-structural-audit.md',
-  'LUMIN_REPO_LENS.md',
-  'LUMIN_AUDIT.md',
-  'TECH_DEBT_AUDIT.md',
-];
-
-function detectLivingAuditDocs(root) {
-  const docs = [];
-  for (const rel of LIVING_AUDIT_DOC_CANDIDATES) {
-    const abs = path.join(root, rel);
-    if (!existsSync(abs)) continue;
-    docs.push({
-      path: rel,
-      absolutePath: abs,
-    });
-  }
-  return {
-    preferredPath: LIVING_AUDIT_DOC_CANDIDATES[0],
-    existingDocs: docs,
-    action: docs.length > 0
-      ? 'read-and-update-before-final-answer'
-      : 'create-only-on-explicit-tracking-request',
-  };
-}
-
 function auditCoreBinary() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
@@ -157,6 +131,13 @@ function buildManifestCoreSummaryFromFile(root, outDir, {
   return runAuditCoreJson(args, 'buildManifestCoreSummary');
 }
 
+function buildLivingAuditSummaryFromFile(root) {
+  return runAuditCoreJson([
+    'living-audit-summary',
+    '--root', root,
+  ], 'buildLivingAuditSummary');
+}
+
 export function collectProducedArtifacts(outDir, options = {}) {
   const rustAnalysisUsable = options.rustAnalysisUsable ?? true;
   return runAuditCoreJson([
@@ -243,7 +224,7 @@ export function buildManifestEvidence({
       'buildBlockClonesSummary',
     ),
     sfcEvidence: manifestCore.sfcEvidence,
-    livingAudit: detectLivingAuditDocs(root),
+    livingAudit: buildLivingAuditSummaryFromFile(root),
   };
 }
 
