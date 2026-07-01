@@ -32,6 +32,27 @@ fn zone_by_area<'a>(zones: &'a Value, area: &str) -> Result<&'a Value> {
         .ok_or_else(|| anyhow::anyhow!("missing zone area {area}: {zones}"))
 }
 
+fn value_at_path<'a>(value: &'a Value, path: &[&str]) -> Result<&'a Value> {
+    let mut current = value;
+    for part in path {
+        current = match current {
+            Value::Array(items) => {
+                let index = part
+                    .parse::<usize>()
+                    .map_err(|_| anyhow::anyhow!("array path segment must be numeric: {part}"))?;
+                items
+                    .get(index)
+                    .ok_or_else(|| anyhow::anyhow!("missing array index {index}"))?
+            }
+            Value::Object(object) => object
+                .get(*part)
+                .ok_or_else(|| anyhow::anyhow!("missing object path segment {part}"))?,
+            _ => bail!("cannot descend into scalar value at path segment {part}"),
+        };
+    }
+    Ok(current)
+}
+
 fn case_by_name<'a>(cases: &'a Value, name: &str) -> Result<&'a Value> {
     cases
         .as_array()
@@ -90,6 +111,38 @@ fn shared_parity_fixture_cases_cover_expected_blind_zones() -> Result<()> {
                     "{name}: wrong severity for {area}: {zones}"
                 );
             }
+        }
+        for expected in case
+            .get("expectedDetails")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
+            let area = expected
+                .get("area")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("{name}: expected detail missing area"))?;
+            let path_values = expected
+                .get("path")
+                .and_then(Value::as_array)
+                .ok_or_else(|| anyhow::anyhow!("{name}: expected detail missing path"))?;
+            let mut path = Vec::new();
+            for part in path_values {
+                path.push(part.as_str().ok_or_else(|| {
+                    anyhow::anyhow!("{name}: expected detail path segments must be strings")
+                })?);
+            }
+            let expected_value = expected
+                .get("equals")
+                .ok_or_else(|| anyhow::anyhow!("{name}: expected detail missing equals"))?;
+            let zone =
+                zone_by_area(&zones, area).map_err(|error| anyhow::anyhow!("{name}: {error}"))?;
+            let actual = value_at_path(zone, &path)
+                .map_err(|error| anyhow::anyhow!("{name}: {area}.{path:?}: {error}"))?;
+            assert_eq!(
+                actual, expected_value,
+                "{name}: wrong detail for {area}.{path:?}: {zones}"
+            );
         }
         for area in case
             .get("absentAreas")

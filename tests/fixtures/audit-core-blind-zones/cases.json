@@ -19,6 +19,14 @@
     "expectedZones": [
       { "area": "rust", "severity": "scan-gap" }
     ],
+    "expectedDetails": [
+      { "area": "rust", "path": ["details", "files"], "equals": 2 },
+      {
+        "area": "rust",
+        "path": ["details", "reason"],
+        "equals": "rust-owned-analysis-not-registered-in-this-audit-run"
+      }
+    ],
     "absentAreas": []
   },
   {
@@ -48,6 +56,17 @@
     "expectedZones": [
       { "area": "sfc-scan-gap", "severity": "scan-gap" }
     ],
+    "expectedDetails": [
+      { "area": "sfc-scan-gap", "path": ["details", "files"], "equals": 3 },
+      { "area": "sfc-scan-gap", "path": ["details", "languages", "vue"], "equals": 1 },
+      { "area": "sfc-scan-gap", "path": ["details", "languages", "svelte"], "equals": 1 },
+      { "area": "sfc-scan-gap", "path": ["details", "languages", "astro"], "equals": 1 },
+      {
+        "area": "sfc-scan-gap",
+        "path": ["details", "reason"],
+        "equals": "sfc-extractor-not-registered"
+      }
+    ],
     "absentAreas": ["vue", "svelte", "astro"]
   },
   {
@@ -75,6 +94,20 @@
       { "area": "python-scan-gap", "severity": "scan-gap" },
       { "area": "go-scan-gap", "severity": "scan-gap" }
     ],
+    "expectedDetails": [
+      { "area": "python-scan-gap", "path": ["details", "files"], "equals": 1 },
+      {
+        "area": "python-scan-gap",
+        "path": ["details", "reason"],
+        "equals": "python executable unavailable"
+      },
+      { "area": "go-scan-gap", "path": ["details", "files"], "equals": 1 },
+      {
+        "area": "go-scan-gap",
+        "path": ["details", "reason"],
+        "equals": "tree-sitter unavailable"
+      }
+    ],
     "absentAreas": ["python-method-resolution", "go-method-resolution"]
   },
   {
@@ -99,6 +132,21 @@
     },
     "expectedZones": [
       { "area": "resolver", "severity": "confidence-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "resolver", "path": ["details", "sourceArtifact"], "equals": "symbols.json" },
+      { "area": "resolver", "path": ["details", "trigger"], "equals": "absolute-count" },
+      { "area": "resolver", "path": ["details", "unresolvedInternal"], "equals": 1300 },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "reason"],
+        "equals": "workspace-package-subpath-target-missing"
+      },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "spaces", "type"],
+        "equals": 12
+      }
     ],
     "absentAreas": []
   },
@@ -131,6 +179,38 @@
       { "area": "commonjs-export-surface", "severity": "precision-gap" },
       { "area": "commonjs-dynamic-require", "severity": "precision-gap" },
       { "area": "html-entry-surface", "severity": "confidence-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "parser", "path": ["details", "count"], "equals": 2 },
+      { "area": "parser", "path": ["details", "message"], "equals": "parse failed" },
+      { "area": "commonjs-export-surface", "path": ["details", "files"], "equals": 1 },
+      {
+        "area": "commonjs-export-surface",
+        "path": ["details", "opaqueForms", "0", "file"],
+        "equals": "src/opaque.cjs"
+      },
+      {
+        "area": "commonjs-export-surface",
+        "path": ["details", "opaqueForms", "0", "kinds", "0"],
+        "equals": "module-exports-assignment"
+      },
+      { "area": "commonjs-dynamic-require", "path": ["details", "calls"], "equals": 1 },
+      { "area": "commonjs-dynamic-require", "path": ["details", "files"], "equals": 1 },
+      {
+        "area": "commonjs-dynamic-require",
+        "path": ["details", "examples", "0", "consumerFile"],
+        "equals": "src/consumer.js"
+      },
+      {
+        "area": "html-entry-surface",
+        "path": ["details", "unresolvedHtmlEntrypoints"],
+        "equals": 1
+      },
+      {
+        "area": "html-entry-surface",
+        "path": ["details", "examples", "0", "reason"],
+        "equals": "html-module-script-target-missing"
+      }
     ],
     "absentAreas": []
   },
