@@ -2,6 +2,7 @@ pub mod artifact_measurement;
 pub mod artifact_registry;
 pub mod artifact_summaries;
 pub mod blind_zones;
+pub mod canon_draft_lifecycle;
 pub mod generated_artifacts;
 pub mod lifecycle;
 pub mod living_audit;

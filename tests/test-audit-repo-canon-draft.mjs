@@ -438,9 +438,10 @@ function readManifest(out) {
   assert('C1. audit-canon-draft.mjs references CANON_DRAFT_SOURCES + imports from canon-draft-utils.mjs',
     helperHasImport);
 
-  assert('C1b. audit-repo.mjs delegates canon-draft lifecycle to helper',
-    /runCanonDraftLifecycle/.test(stripped) &&
-    /audit-canon-draft\.mjs/.test(stripped));
+  assert('C1b. audit-repo.mjs delegates canon-draft lifecycle to Rust audit-core',
+    /executeCanonDraftLifecycle/.test(stripped) &&
+    !/runCanonDraftLifecycle/.test(stripped) &&
+    !/audit-canon-draft\.mjs/.test(stripped));
 
   // Must NOT locally define the 4-element source array.
   const suspect = /CANON_DRAFT_SOURCES\s*=\s*\[/;

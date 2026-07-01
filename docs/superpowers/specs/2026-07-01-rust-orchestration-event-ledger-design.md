@@ -182,6 +182,34 @@ After that wiring, JS should no longer hand-build:
 - `skipped[]`;
 - the top-level `producer-performance.json` object.
 
+The next wrapper-thinning slice moves the remaining base runtime ledger
+projection into Rust as well. `audit-repo.mjs` should pass typed
+`commandsRun[]`, `skipped[]`, the already-observed ordinary `artifactReads`
+summary, and the produced artifact name list to audit-core. Rust then:
+
+- converts `commandsRun[]` and `skipped[]` into typed ledger events;
+- reads base producer phase timing sidecars from `.producer-phases/`;
+- merges those phase sidecar reads into the supplied artifact-read metrics;
+- measures produced artifact sizes from the JS-supplied artifact names; and
+- builds the same `producer-performance.json` artifact.
+
+This is still not lifecycle execution ownership. Lifecycle raw blocks and
+ordinary JSON artifact reads remain JS-owned until a separate parity plan moves
+them.
+
+The wrapper-thinning CLI is:
+
+```text
+lumin-audit-core producer-performance-runtime-artifact --input <runtime.json|->
+```
+
+The runtime input schema is
+`lumin-audit-producer-performance-runtime.v1`. The older
+`lumin-audit-orchestration-ledger.v1` input remains a typed lower-level
+compatibility contract, but `audit-repo.mjs` should call the runtime input
+wrapper so event construction, phase sidecar reads, artifact-size measurement,
+and `producer-performance.json` projection stay Rust-owned for base audit runs.
+
 ## Why Not Rust Executor Yet
 
 Moving execution first would mix several contracts in one risky change:
@@ -275,4 +303,3 @@ This design is satisfied when:
   existing Rust summary projections;
 - no JS/TS producer behavior changes;
 - no elapsed-time cap, repository-size cap, timeout, or quota is introduced.
-

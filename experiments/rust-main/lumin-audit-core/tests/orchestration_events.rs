@@ -4,10 +4,15 @@ use std::fs;
 use std::process::Command;
 
 use lumin_audit_core::orchestration_events::{
-    build_producer_performance_artifact, OrchestrationLedger,
+    build_producer_performance_artifact, build_producer_performance_artifact_from_runtime,
+    OrchestrationLedger, ProducerPerformanceRuntimeInput,
 };
 
 fn ledger(value: Value) -> Result<OrchestrationLedger> {
+    Ok(serde_json::from_value(value)?)
+}
+
+fn runtime_input(value: Value) -> Result<ProducerPerformanceRuntimeInput> {
     Ok(serde_json::from_value(value)?)
 }
 
@@ -142,6 +147,146 @@ fn producer_performance_artifact_rejects_wrong_ledger_schema() -> Result<()> {
 }
 
 #[test]
+fn runtime_input_projects_phase_sidecars_artifact_sizes_and_runtime_events() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output = temp.path().join("out");
+    fs::create_dir_all(output.join(".producer-phases"))?;
+    fs::write(output.join("triage.json"), "{}")?;
+    fs::write(
+        output.join(".producer-phases").join("triage-repo.mjs.json"),
+        serde_json::to_vec(&json!({
+            "schemaVersion": "producer-phase-timing.v1",
+            "producer": "triage-repo.mjs",
+            "phases": [
+                { "name": "scan", "wallMs": 7.4 },
+                { "name": "", "wallMs": -2 }
+            ],
+            "counters": { "files": 10.2, "ignored": "bad" }
+        }))?,
+    )?;
+
+    let input = runtime_input(json!({
+        "schemaVersion": "lumin-audit-producer-performance-runtime.v1",
+        "generated": "2026-07-01T00:00:00.000Z",
+        "root": temp.path().to_string_lossy(),
+        "output": output.to_string_lossy(),
+        "profile": "quick",
+        "scanRange": { "includeTests": true, "production": false },
+        "cache": {
+            "noIncremental": false,
+            "cacheRoot": output.join(".cache").to_string_lossy(),
+            "clearIncrementalCache": false
+        },
+        "generatedArtifacts": { "mode": "default" },
+        "artifactReads": {
+            "schemaVersion": "artifact-read-metrics.v1",
+            "measurement": "audit-repo-orchestrator-json-reads",
+            "totalReadCount": 1,
+            "totalReadBytes": 2,
+            "totalReadMs": 3,
+            "totalJsonParseMs": 4,
+            "parseFailureCount": 0,
+            "largestReads": [],
+            "slowestJsonParses": [],
+            "byName": {
+                "manifest.json": {
+                    "readCount": 1,
+                    "totalBytes": 2,
+                    "totalReadMs": 3,
+                    "totalJsonParseMs": 4,
+                    "parseFailureCount": 0
+                }
+            }
+        },
+        "artifactsProduced": ["triage.json", "missing.json"],
+        "commandsRun": [
+            {
+                "step": "triage-repo.mjs",
+                "status": "ok",
+                "ms": 12,
+                "memory": {
+                    "before": { "rssBytes": 100 },
+                    "after": { "rssBytes": 120 },
+                    "delta": { "rssBytes": 20 }
+                }
+            }
+        ],
+        "skipped": [
+            { "step": "emit-sarif.mjs", "reason": "not in --sarif mode" }
+        ]
+    }))?;
+
+    let artifact = serde_json::to_value(build_producer_performance_artifact_from_runtime(input)?)?;
+
+    assert_eq!(artifact["schemaVersion"], "producer-performance.v1");
+    assert_eq!(artifact["summary"]["producerCount"], 1);
+    assert_eq!(artifact["summary"]["skippedCount"], 1);
+    assert_eq!(artifact["summary"]["artifactCount"], 1);
+    assert_eq!(artifact["summary"]["artifactReadCount"], 2);
+    assert_eq!(artifact["summary"]["phaseSupportCount"], 1);
+    assert_eq!(artifact["producers"][0]["phases"][0]["name"], "scan");
+    assert_eq!(artifact["producers"][0]["phases"][0]["wallMs"], 7);
+    assert_eq!(artifact["producers"][0]["counters"]["files"], 10);
+    assert_eq!(
+        artifact["artifactReads"]["byName"][".producer-phases/triage-repo.mjs.json"]["readCount"],
+        1
+    );
+    assert_eq!(artifact["skipped"][0]["name"], "emit-sarif.mjs");
+    Ok(())
+}
+
+#[test]
+fn runtime_input_records_malformed_phase_sidecar_as_read_failure_without_phase_claim() -> Result<()>
+{
+    let temp = tempfile::tempdir()?;
+    let output = temp.path().join("out");
+    fs::create_dir_all(output.join(".producer-phases"))?;
+    fs::write(
+        output.join(".producer-phases").join("triage-repo.mjs.json"),
+        "{not json",
+    )?;
+
+    let input = runtime_input(json!({
+        "schemaVersion": "lumin-audit-producer-performance-runtime.v1",
+        "generated": "2026-07-01T00:00:00.000Z",
+        "root": temp.path().to_string_lossy(),
+        "output": output.to_string_lossy(),
+        "profile": "quick",
+        "scanRange": { "includeTests": true, "production": false },
+        "cache": {
+            "noIncremental": false,
+            "cacheRoot": output.join(".cache").to_string_lossy(),
+            "clearIncrementalCache": false
+        },
+        "generatedArtifacts": { "mode": "default" },
+        "artifactReads": {
+            "schemaVersion": "artifact-read-metrics.v1",
+            "measurement": "audit-repo-orchestrator-json-reads",
+            "totalReadCount": 0,
+            "totalReadBytes": 0,
+            "totalReadMs": 0,
+            "totalJsonParseMs": 0,
+            "parseFailureCount": 0,
+            "byName": {}
+        },
+        "artifactsProduced": [],
+        "commandsRun": [{ "step": "triage-repo.mjs", "status": "ok", "ms": 1 }],
+        "skipped": []
+    }))?;
+
+    let artifact = serde_json::to_value(build_producer_performance_artifact_from_runtime(input)?)?;
+
+    assert!(artifact["producers"][0].get("phases").is_none());
+    assert_eq!(artifact["artifactReads"]["parseFailureCount"], 1);
+    assert_eq!(
+        artifact["artifactReads"]["byName"][".producer-phases/triage-repo.mjs.json"]
+            ["parseFailureCount"],
+        1
+    );
+    Ok(())
+}
+
+#[test]
 fn cli_producer_performance_artifact_emits_json() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let input_path = temp.path().join("ledger.json");
@@ -178,6 +323,61 @@ fn cli_producer_performance_artifact_emits_json() -> Result<()> {
 
     let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
         .arg("producer-performance-artifact")
+        .arg("--input")
+        .arg(&input_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<Value>(&output.stdout)?;
+    assert_eq!(stdout["schemaVersion"], "producer-performance.v1");
+    assert_eq!(stdout["summary"]["okCount"], 1);
+    Ok(())
+}
+
+#[test]
+fn cli_producer_performance_runtime_artifact_emits_json() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join("out");
+    fs::create_dir_all(&output_dir)?;
+    let input_path = temp.path().join("runtime.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-audit-producer-performance-runtime.v1",
+            "generated": "2026-07-01T00:00:00.000Z",
+            "root": temp.path().to_string_lossy(),
+            "output": output_dir.to_string_lossy(),
+            "profile": "quick",
+            "scanRange": { "includeTests": true, "production": false },
+            "cache": {
+                "noIncremental": false,
+                "cacheRoot": output_dir.join(".cache").to_string_lossy(),
+                "clearIncrementalCache": false
+            },
+            "generatedArtifacts": { "mode": "default" },
+            "artifactReads": {
+                "schemaVersion": "artifact-read-metrics.v1",
+                "measurement": "audit-repo-orchestrator-json-reads",
+                "totalReadCount": 0,
+                "totalReadBytes": 0,
+                "totalReadMs": 0,
+                "totalJsonParseMs": 0,
+                "parseFailureCount": 0,
+                "byName": {}
+            },
+            "commandsRun": [
+                { "step": "triage-repo.mjs", "status": "ok", "ms": 3 }
+            ],
+            "skipped": []
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("producer-performance-runtime-artifact")
         .arg("--input")
         .arg(&input_path)
         .output()?;

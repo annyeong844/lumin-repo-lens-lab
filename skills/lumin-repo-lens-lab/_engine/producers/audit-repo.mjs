@@ -62,17 +62,16 @@ import { renderAuditReviewPack } from '../lib/audit-review-pack.mjs';
 import { renderTopologyMermaid } from '../lib/topology-mermaid.mjs';
 import { assertRuntimeSetup, formatRuntimeSetupError } from '../lib/dependency-guard.mjs';
 import { detectMaintainerSelfAuditExcludes, mergeExcludes } from '../lib/self-audit-excludes.mjs';
-import { runCanonDraftLifecycle } from '../lib/audit-canon-draft.mjs';
 import { runCheckCanonLifecycle } from '../lib/audit-check-canon.mjs';
 import {
   clearIncrementalCache,
   openIncrementalCacheStore,
 } from '../lib/incremental-cache-store.mjs';
 import {
-  buildProducerPerformanceArtifactFromLedger,
-  buildArtifactSizeSummary,
+  buildProducerPerformanceArtifactFromRuntime,
   buildOrchestrationPlan,
   executeBasePlan,
+  executeCanonDraftLifecycle,
   buildManifestFinalSummaryUpdate,
   buildLifecycleSummary,
   buildManifestRoot,
@@ -82,9 +81,6 @@ import {
   mergeRustAnalysisRun,
 } from '../lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from '../lib/generated-artifact-mode.mjs';
-import {
-  readProducerPhaseTiming,
-} from '../lib/producer-phase-timing.mjs';
 import { collectFiles } from '../lib/collect-files.mjs';
 import { repoRelativeFileList } from '../lib/post-write-file-delta.mjs';
 import {
@@ -647,29 +643,8 @@ function performanceCacheRoot() {
 }
 
 function buildProducerPerformanceArtifact(generated, artifactsProduced) {
-  const producerEvents = commandsRun.map((entry) => {
-    const phaseTiming = readProducerPhaseTiming(OUT, entry.step, {
-      onRead: artifactReadMetrics.observeRead,
-    });
-    return {
-      kind: 'producer',
-      name: entry.step,
-      status: entry.status,
-      wallMs: typeof entry.ms === 'number' ? entry.ms : null,
-      ...(phaseTiming?.phases?.length > 0 ? { phases: phaseTiming.phases } : {}),
-      ...(phaseTiming?.counters ? { counters: phaseTiming.counters } : {}),
-      ...(entry.memory ? { memory: entry.memory } : {}),
-      ...(entry.stderr ? { stderrSnippet: entry.stderr } : {}),
-    };
-  });
-  const skippedEvents = skipped.map((entry) => ({
-    kind: 'skipped',
-    name: entry.step,
-    reason: entry.reason,
-  }));
-
-  return buildProducerPerformanceArtifactFromLedger({
-    schemaVersion: 'lumin-audit-orchestration-ledger.v1',
+  return buildProducerPerformanceArtifactFromRuntime({
+    schemaVersion: 'lumin-audit-producer-performance-runtime.v1',
     generated,
     root: ROOT,
     output: OUT,
@@ -689,8 +664,9 @@ function buildProducerPerformanceArtifact(generated, artifactsProduced) {
       mode: GENERATED_ARTIFACTS_MODE,
     },
     artifactReads: artifactReadMetrics.summary(),
-    artifacts: buildArtifactSizeSummary(OUT, artifactsProduced),
-    events: [...producerEvents, ...skippedEvents],
+    artifactsProduced,
+    commandsRun,
+    skipped,
   });
 }
 
@@ -738,6 +714,19 @@ function buildExecutorRequest() {
       invocation: values['rust-analyzer'] === true ? rustAnalyzerInvocationOrNull() : null,
       forwardedArgs: forwardedRustAnalyzerArgs(),
     },
+  };
+}
+
+function buildCanonDraftLifecycleRequest() {
+  return {
+    schemaVersion: 'lumin-canon-draft-lifecycle-request.v1',
+    sourcesValue: SOURCES_VALUE ?? null,
+    root: ROOT,
+    output: OUT,
+    canonOutput: values['canon-output'] ? path.resolve(values['canon-output']) : null,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    scanArgs: forwardedScanArgs(),
   };
 }
 
@@ -1055,14 +1044,7 @@ manifest.postWrite = postWriteBlock;
 //     OR if --sources contained an unknown value.
 
 if (values['canon-draft']) {
-  const result = runCanonDraftLifecycle({
-    sourcesValue: SOURCES_VALUE,
-    root: ROOT,
-    outDir: OUT,
-    canonOutput: values['canon-output'],
-    scriptsDir: __dirname,
-    scanArgs: forwardedScanArgs(),
-  });
+  const result = executeCanonDraftLifecycle(buildCanonDraftLifecycleRequest());
   manifest.canonDraft = result.block;
   if (result.forceExitCode || finalExitCode === 0) finalExitCode = result.exitCode;
 }

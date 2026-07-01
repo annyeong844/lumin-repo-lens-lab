@@ -30,7 +30,7 @@ Still JS-owned:
 - runtime status observation, stderr snippet extraction, wall-clock timing, and
   orchestrator memory snapshots;
 - pre/post-write, canon-draft, and check-canon child lifecycle blocks;
-- artifact-read timing and phase timing reads;
+- ordinary artifact-read timing and lifecycle phase timing reads;
 - human companion renderers;
 - final `manifest.json` write.
 
@@ -138,10 +138,9 @@ The output should be a typed execution result:
 
 The duplicated `commandsRun`, `skipped`, and `events` surfaces are intentional
 for the first compatibility slice: `manifest_root.rs` already consumes the
-runtime-log fields, while the final `producer-performance.json` ledger is still
-assembled after JS-owned artifact-read metrics, phase timing reads, and final
-artifact-size measurement are available. They must be built from the same typed
-observed events so they cannot drift.
+runtime-log fields, while later `producer-performance.json` projection consumes
+the same observations through the Rust runtime input. They must be built from
+the same typed observed events so they cannot drift.
 
 ## Step Execution Contract
 
@@ -238,8 +237,8 @@ Rust executor owns only what it can observe while running children:
 
 It does not yet own:
 
-- artifact-read metrics from `_lib/artifacts.mjs`;
-- phase timing file reads from `_lib/producer-phase-timing.mjs`;
+- ordinary artifact-read metrics from `_lib/artifacts.mjs`;
+- lifecycle phase timing file reads from `_lib/producer-phase-timing.mjs`;
 - final produced-artifact enumeration;
 - final `manifest.json` write.
 

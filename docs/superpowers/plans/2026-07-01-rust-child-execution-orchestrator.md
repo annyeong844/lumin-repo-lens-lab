@@ -4,7 +4,7 @@
 
 **Goal:** Move base audit child-process execution from `audit-repo.mjs` into `lumin-audit-core` while keeping JS/MJS producers, lifecycle helpers, `blindZones`, human renderers, and final manifest writing outside this slice.
 
-**Architecture:** Add a typed Rust executor that consumes the existing Rust orchestration plan, runs only the base audit pipeline, and emits one execution result containing `commandsRun`, `skipped`, `rustAnalysisRun`, and typed execution events built from the same observations. The JS runner becomes a wrapper around this executor for base pipeline execution and still assembles the final producer-performance ledger after JS-owned artifact-read metrics, phase timing reads, and final artifact-size measurement are available.
+**Architecture:** Add a typed Rust executor that consumes the existing Rust orchestration plan, runs only the base audit pipeline, and emits one execution result containing `commandsRun`, `skipped`, `rustAnalysisRun`, and typed execution events built from the same observations. The JS runner becomes a wrapper around this executor for base pipeline execution and passes runtime observations to Rust for `producer-performance.json`; ordinary artifact-read metrics, lifecycle helpers, and final manifest writing remain JS-owned.
 
 **Tech Stack:** Rust 2021, `lumin-audit-core`, `serde`, `serde_json`, `anyhow`, `std::process::Command`, current JS wrapper in `audit-repo.mjs` and `skills/lumin-repo-lens-lab/_engine/producers/audit-repo.mjs`.
 
@@ -31,10 +31,10 @@
   - Add `executeBasePlan(...)` wrapper around the Rust CLI.
 - Modify `audit-repo.mjs` and `skills/lumin-repo-lens-lab/_engine/producers/audit-repo.mjs`
   - Replace base `runStep` / `runRustAnalyzerStep` execution with the Rust executor result.
-  - Keep lifecycle helpers, artifact reads, phase timing reads, `blindZones`, human renderers, and final manifest write JS-owned.
+  - Keep lifecycle helpers, ordinary artifact reads, `blindZones`, human renderers, and final manifest write JS-owned.
 - Modify `canonical/audit-core.md`
   - Add `orchestration_executor.rs` as owner of base child execution and typed runtime observations.
-  - Keep lifecycle child execution, artifact-read timing, phase timing reads, renderers, `blindZones`, and final manifest write outside scope.
+  - Keep lifecycle child execution, ordinary artifact-read timing, renderers, `blindZones`, and final manifest write outside scope.
 
 ---
 
@@ -1528,10 +1528,11 @@ let finalExitCode = basePipelineExitCode;
 
 Do not remove lifecycle execution paths in this task.
 
-Keep `buildProducerPerformanceArtifact(...)` as the final ledger assembly point
-for this slice. It must continue to use final `artifactReadMetrics.summary()`,
-phase timing reads, and `buildArtifactSizeSummary(...)` after manifest evidence
-and human companion artifacts have been read/written.
+Keep `buildProducerPerformanceArtifact(...)` as the final JS wrapper point for
+this slice. It passes `artifactReadMetrics.summary()`, produced artifact names,
+`commandsRun`, and `skipped` into Rust; Rust owns event construction, base
+phase timing sidecar reads, artifact-size measurement, and the final
+`producer-performance.json` shape.
 
 - [ ] **Step 5: Delete base JS execution helpers after wiring**
 

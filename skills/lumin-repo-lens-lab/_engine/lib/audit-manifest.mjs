@@ -89,12 +89,12 @@ export function buildArtifactSizeSummary(outDir, artifacts) {
   });
 }
 
-export function buildProducerPerformanceArtifactFromLedger(ledger) {
+export function buildProducerPerformanceArtifactFromRuntime(input) {
   return runAuditCoreJson([
-    'producer-performance-artifact',
+    'producer-performance-runtime-artifact',
     '--input', '-',
-  ], 'buildProducerPerformanceArtifact', {
-    input: JSON.stringify(ledger ?? {}),
+  ], 'buildProducerPerformanceArtifactFromRuntime', {
+    input: JSON.stringify(input ?? {}),
   });
 }
 
@@ -103,6 +103,15 @@ export function executeBasePlan(request) {
     'execute-base-plan',
     '--input', '-',
   ], 'executeBasePlan', {
+    input: JSON.stringify(request ?? {}),
+  });
+}
+
+export function executeCanonDraftLifecycle(request) {
+  return runAuditCoreJson([
+    'execute-canon-draft',
+    '--input', '-',
+  ], 'executeCanonDraftLifecycle', {
     input: JSON.stringify(request ?? {}),
   });
 }

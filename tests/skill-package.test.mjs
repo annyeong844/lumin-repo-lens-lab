@@ -534,7 +534,8 @@ try {
     "SP7. generated producer imports are rewritten from ./_lib to ../lib",
     auditProducer.includes("from '../lib/blind-zones.mjs'") &&
       auditProducer.includes("from '../lib/dependency-guard.mjs'") &&
-      auditProducer.includes("from '../lib/audit-canon-draft.mjs'") &&
+      auditProducer.includes("from '../lib/audit-manifest.mjs'") &&
+      auditProducer.includes("executeCanonDraftLifecycle") &&
       auditProducer.includes("from '../lib/audit-check-canon.mjs'") &&
       !auditProducer.includes("from './_lib/") &&
       !auditProducer.includes("import('./_lib/"),
