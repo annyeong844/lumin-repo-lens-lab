@@ -634,6 +634,7 @@ function buildPreWriteFileInventory(failures) {
     const files = repoRelativeFileList(ROOT, collectFiles(ROOT, {
       includeTests: INCLUDE_TESTS,
       exclude: EFFECTIVE_EXCLUDES,
+      languages: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'rs'],
     }));
     return {
       status: 'available',

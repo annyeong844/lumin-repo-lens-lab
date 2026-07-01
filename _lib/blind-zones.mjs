@@ -13,7 +13,7 @@
 // structured list the orchestrator can write into manifest.json:
 //
 //   [
-//     { area: 'rust',                     severity: 'scan-gap',
+//     { area: 'rs',                       severity: 'scan-gap',
 //       files: 18, effect: 'Do not make repo-wide absence claims.' },
 //     { area: 'resolver',                 severity: 'confidence-gap',
 //       unresolvedInternalRatio: 0.22,
@@ -123,7 +123,7 @@ function goZone(files, support) {
 
 function rustZone(files) {
   return {
-    area: 'rust',
+    area: 'rs',
     severity: 'scan-gap',
     effect:
       'Rust files were counted by triage, but the JS/TS symbol graph does not own Rust absence claims; ' +
@@ -219,7 +219,7 @@ function detectByLanguageZones(triage, support, existingZones, { rustAnalysis } 
     if (SFC_LANGS.has(lang)) continue;
     const allZones = [...existingZones, ...zones];
     if (lang === 'rs') {
-      if (!rustOwnedAnalysisAvailable && !hasArea(allZones, 'rust')) zones.push(rustZone(n));
+      if (!rustOwnedAnalysisAvailable && !hasArea(allZones, 'rs')) zones.push(rustZone(n));
       continue;
     }
     if (!SUPPORTED_LANGS.has(lang) && !hasArea(allZones, 'unclassified-files', lang)) {

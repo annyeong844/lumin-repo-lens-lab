@@ -24,6 +24,8 @@ fn produced_artifacts_include_static_and_dynamic_names_in_order() -> Result<()> 
         "post-write-delta.xyz.json",
         "any-inventory.pre.123.json",
         "any-inventory.post.456.json",
+        "rust-pre-write-artifact.INV-1.json",
+        "rust-pre-write-artifact.latest.json",
         "audit-summary.latest.md",
     ] {
         fs::write(temp.path().join(name), "{}\n")?;
@@ -42,6 +44,8 @@ fn produced_artifacts_include_static_and_dynamic_names_in_order() -> Result<()> 
             "post-write-delta.xyz.json",
             "pre-write-advisory.abc.json",
             "pre-write-advisory.json",
+            "rust-pre-write-artifact.INV-1.json",
+            "rust-pre-write-artifact.latest.json",
             "symbols.json",
         ])
     );
@@ -54,6 +58,8 @@ fn malformed_dynamic_artifact_names_are_not_reported() -> Result<()> {
     for name in [
         "canon-drift.md",
         "pre-write-advisory.txt",
+        "rust-pre-write-artifact.json",
+        "rust-pre-write-artifact.txt",
         "post-write-delta.txt",
         "any-inventory.pre.json",
         "any-inventory.post.json",

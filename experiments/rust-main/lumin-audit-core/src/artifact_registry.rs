@@ -90,6 +90,7 @@ pub fn rust_analysis_artifact_usable(rust_analysis: Option<&Value>) -> bool {
 fn is_dynamic_artifact_name(name: &str) -> bool {
     is_canon_drift_markdown(name)
         || is_pre_write_advisory(name)
+        || is_rust_pre_write_artifact(name)
         || is_post_write_delta(name)
         || is_any_inventory(name, "pre")
         || is_any_inventory(name, "post")
@@ -102,6 +103,11 @@ fn is_canon_drift_markdown(name: &str) -> bool {
 fn is_pre_write_advisory(name: &str) -> bool {
     name == "pre-write-advisory.json"
         || has_required_middle(name, "pre-write-advisory.", JSON_SUFFIX)
+}
+
+fn is_rust_pre_write_artifact(name: &str) -> bool {
+    name == "rust-pre-write-artifact.latest.json"
+        || has_required_middle(name, "rust-pre-write-artifact.", JSON_SUFFIX)
 }
 
 fn is_post_write_delta(name: &str) -> bool {

@@ -14,6 +14,8 @@ import { loadIfExists as loadArtifact } from './artifacts.mjs';
 function auditCoreBinary() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
+  const packaged = path.resolve(here, '../bin', exe);
+  if (existsSync(packaged)) return packaged;
   const fallback = path.join(path.resolve(here, '..'), 'experiments', 'target', 'debug', exe);
   let cursor = here;
   for (;;) {

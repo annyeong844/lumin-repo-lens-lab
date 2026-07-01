@@ -168,7 +168,7 @@ fn rust_scan_gap_depends_on_current_run_rust_analysis() -> Result<()> {
         triage: Some(&triage),
         ..empty_input()
     })?;
-    let rust = zone_by_area(&zones, "rust")?;
+    let rust = zone_by_area(&zones, "rs")?;
     assert_eq!(rust["severity"], "scan-gap");
     assert!(rust["effect"]
         .as_str()
@@ -182,7 +182,7 @@ fn rust_scan_gap_depends_on_current_run_rust_analysis() -> Result<()> {
         ..empty_input()
     })?;
     assert!(
-        zone_by_area(&zones, "rust").is_err(),
+        zone_by_area(&zones, "rs").is_err(),
         "complete Rust analysis should clear rust scan-gap: {zones}"
     );
     Ok(())
@@ -392,7 +392,7 @@ fn cli_blind_zones_summary_emits_shared_case_batch_json() -> Result<()> {
 
     let rust_gap = case_by_name(&stdout, "rust-scan-gap-without-current-rust-analysis")?;
     assert_eq!(
-        zone_by_area(&rust_gap["blindZones"], "rust")?["severity"],
+        zone_by_area(&rust_gap["blindZones"], "rs")?["severity"],
         "scan-gap"
     );
 

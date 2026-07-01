@@ -120,6 +120,21 @@ const RUNTIME_CANON_FILES = [
   'pre-write-gate.md',
 ];
 
+function auditCoreExecutableName() {
+  return process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
+}
+
+function auditCoreBinarySource() {
+  const exe = auditCoreExecutableName();
+  const configured = process.env.LUMIN_AUDIT_CORE_BIN;
+  const candidates = [
+    configured ? path.resolve(configured) : null,
+    path.join(ROOT, 'experiments', 'target', 'release', exe),
+    path.join(ROOT, 'experiments', 'target', 'debug', exe),
+  ].filter(Boolean);
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
 function parseArgs(argv) {
   const out = { output: DEFAULT_OUT };
   for (let i = 0; i < argv.length; i++) {
@@ -394,6 +409,18 @@ function writeOpenAiYaml(outDir, metadata) {
   ].join('\n'));
 }
 
+function copyAuditCoreBinary(outDir) {
+  const src = auditCoreBinarySource();
+  if (!src) {
+    throw new Error(
+      'missing lumin-audit-core binary; run `cargo build --manifest-path experiments/Cargo.toml -p lumin-audit-core` or set LUMIN_AUDIT_CORE_BIN before building the skill package'
+    );
+  }
+  const dest = path.join(outDir, '_engine', 'bin', auditCoreExecutableName());
+  ensureDir(dest);
+  cpSync(src, dest);
+}
+
 function build(outDir) {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
@@ -403,6 +430,7 @@ function build(outDir) {
   copyDirRel('templates', 'templates', outDir);
   copyDirRel('references', 'references', outDir);
   copyDirRel('_lib', '_engine/lib', outDir);
+  copyAuditCoreBinary(outDir);
 
   for (const script of PRODUCER_SCRIPTS) writeProducerScript(script, outDir);
   for (const command of PUBLIC_COMMANDS) writePublicWrapper(command, outDir);

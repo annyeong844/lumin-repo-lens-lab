@@ -423,6 +423,13 @@ try {
     existsSync(path.join(OUT, "_engine/_README.md")) &&
       existsSync(path.join(OUT, "_engine/lib/cli.mjs")) &&
       existsSync(path.join(OUT, "_engine/lib/dependency-guard.mjs")) &&
+      existsSync(
+        path.join(
+          OUT,
+          "_engine/bin",
+          process.platform === "win32" ? "lumin-audit-core.exe" : "lumin-audit-core",
+        ),
+      ) &&
       existsSync(path.join(OUT, "_engine/producers/audit-repo.mjs")) &&
       existsSync(
         path.join(
@@ -477,7 +484,7 @@ try {
       !Object.hasOwn(pkg.bin ?? {}, "grounded-audit") &&
       pkg.scripts?.audit === "node scripts/audit-repo.mjs" &&
       pkg.scripts?.["pre-write"] ===
-        "node scripts/audit-repo.mjs --pre-write" &&
+        "node scripts/audit-repo.mjs --pre-write --pre-write-engine auto" &&
       pkg.scripts?.["post-write"] ===
         "node scripts/audit-repo.mjs --post-write" &&
       pkg.scripts?.["canon-draft"] ===
@@ -635,8 +642,9 @@ try {
   ];
   assert(
     "SP9b. generated package excludes maintainer self-audit canonical fact snapshots",
-    packagedCanonFiles.length === 10 &&
+    packagedCanonFiles.length === 11 &&
       selfAuditCanonFacts.every((name) => !packagedCanonFiles.includes(name)) &&
+      packagedCanonFiles.includes("audit-core.md") &&
       packagedCanonFiles.includes("index.md") &&
       packagedCanonFiles.includes("invariants.md") &&
       packagedCanonFiles.includes("mode-contract.md") &&

@@ -49,7 +49,7 @@ fn manifest_root_projects_typed_runtime_log_and_places_rust_owned_fields() -> Re
             "confidence": { "parseErrors": 0, "unresolvedInternal": 2 },
             "blindZones": [
                 {
-                    "area": "rust",
+                    "area": "rs",
                     "severity": "scan-gap",
                     "effect": "read rust artifact first",
                     "details": { "files": 2 }
@@ -91,7 +91,7 @@ fn manifest_root_projects_typed_runtime_log_and_places_rust_owned_fields() -> Re
         "resolver diagnostics unavailable"
     );
     assert_eq!(manifest["skipped"][0]["reason"], "not in --sarif mode");
-    assert_eq!(manifest["blindZones"][0]["area"], "rust");
+    assert_eq!(manifest["blindZones"][0]["area"], "rs");
     assert_eq!(manifest["blindZones"][0]["details"]["files"], 2);
     assert_eq!(manifest["rustAnalysis"]["available"], true);
     assert_eq!(

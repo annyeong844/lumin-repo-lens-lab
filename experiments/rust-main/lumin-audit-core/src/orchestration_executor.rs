@@ -484,6 +484,22 @@ fn run_child(command: &str, args: &[String], verbose: bool) -> Result<ChildObser
     })
 }
 
+fn failed_child_observation_from_spawn_error(error: &dyn std::fmt::Display) -> ChildObservation {
+    let before = memory_snapshot();
+    let after = memory_snapshot();
+    let stderr = format!("failed to start child process: {error}");
+    ChildObservation {
+        status: "failed".to_string(),
+        ms: 0,
+        stderr_snippet: Some(stderr.chars().take(500).collect()),
+        memory: ExecutorMemoryObservation {
+            delta: memory_delta(&before, &after),
+            before,
+            after,
+        },
+    }
+}
+
 fn command_status(observed: &ChildObservation, required: bool) -> String {
     if observed.status == "ok" {
         "ok"
@@ -696,7 +712,8 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
     args.extend(request.rust_analyzer.forwarded_args.clone());
 
     remove_file_if_present(&artifact_path);
-    let observed = run_child(&invocation.command, &args, request.verbose)?;
+    let observed = run_child(&invocation.command, &args, request.verbose)
+        .unwrap_or_else(|error| failed_child_observation_from_spawn_error(&error));
     if observed.status == "ok" {
         let command = CommandRun {
             step: RUST_ANALYZER_STEP.to_string(),
@@ -752,7 +769,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
             ran: false,
             status: "failed-optional".to_string(),
             rust_files,
-            reason: Some("lumin-rust-analyzer exited non-zero".to_string()),
+            reason: Some("lumin-rust-analyzer did not complete".to_string()),
             artifact: None,
             path: None,
             source_commit: request.rust_analyzer.source_commit.clone(),

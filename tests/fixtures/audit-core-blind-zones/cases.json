@@ -9,7 +9,7 @@
       }
     },
     "expectedZones": [],
-    "absentAreas": ["rust", "resolver", "parser", "sfc-scan-gap"]
+    "absentAreas": ["rs", "resolver", "parser", "sfc-scan-gap"]
   },
   {
     "name": "rust-scan-gap-without-current-rust-analysis",
@@ -17,12 +17,12 @@
       "triage": { "byLanguage": { "ts": 3, "rs": 2 } }
     },
     "expectedZones": [
-      { "area": "rust", "severity": "scan-gap" }
+      { "area": "rs", "severity": "scan-gap" }
     ],
     "expectedDetails": [
-      { "area": "rust", "path": ["details", "files"], "equals": 2 },
+      { "area": "rs", "path": ["details", "files"], "equals": 2 },
       {
-        "area": "rust",
+        "area": "rs",
         "path": ["details", "reason"],
         "equals": "rust-owned-analysis-not-registered-in-this-audit-run"
       }
@@ -36,7 +36,7 @@
       "rustAnalysis": { "status": "complete", "available": true }
     },
     "expectedZones": [],
-    "absentAreas": ["rust"]
+    "absentAreas": ["rs"]
   },
   {
     "name": "grouped-sfc-scan-gap",
@@ -162,7 +162,7 @@
       { "area": "unclassified-files", "path": ["details", "unknownFiles"], "equals": 2 },
       { "area": "unclassified-files", "path": ["details", "totalFiles"], "equals": 10 }
     ],
-    "absentAreas": ["rust", "python-method-resolution", "go-method-resolution"]
+    "absentAreas": ["rs", "python-method-resolution", "go-method-resolution"]
   },
   {
     "name": "resolver-absolute-count-with-grouped-reasons",
@@ -346,6 +346,6 @@
     "name": "missing-inputs-do-not-invent-zones",
     "input": {},
     "expectedZones": [],
-    "absentAreas": ["rust", "resolver", "parser", "python-scan-gap", "go-scan-gap"]
+    "absentAreas": ["rs", "resolver", "parser", "python-scan-gap", "go-scan-gap"]
   }
 ]

@@ -301,6 +301,28 @@ fn rust_analyzer_failure_records_optional_event_without_public_invocation() -> R
 }
 
 #[test]
+fn rust_analyzer_spawn_failure_records_optional_event() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let missing = temp.path().join("missing-analyzer");
+    let result = execute_base_plan(request(rust_analyzer_request(temp.path(), &missing))?)?;
+
+    assert_eq!(result.commands_run.len(), 1);
+    assert_eq!(result.commands_run[0].status, "failed-optional");
+    assert_eq!(result.rust_analysis_run.status, "failed-optional");
+    assert_eq!(
+        result.rust_analysis_run.reason.as_deref(),
+        Some("lumin-rust-analyzer did not complete")
+    );
+    assert!(result.commands_run[0]
+        .stderr
+        .as_deref()
+        .unwrap_or_default()
+        .contains("failed to start child process"));
+    assert_eq!(result.exit_policy.recommended_exit_code, 0);
+    Ok(())
+}
+
+#[test]
 fn rust_analyzer_failure_removes_stale_artifact_before_running() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let analyzer = write_fake_analyzer(temp.path(), false)?;

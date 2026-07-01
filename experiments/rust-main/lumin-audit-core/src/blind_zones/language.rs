@@ -111,7 +111,7 @@ pub(crate) fn detect_by_language_zones(
         }
         let lang_str = lang.as_str();
         if lang_str == "rs" {
-            if !rust_analysis_complete && !has_area_many(existing_zones, &zones, &["rust"]) {
+            if !rust_analysis_complete && !has_area_many(existing_zones, &zones, &["rs"]) {
                 zones.push(rust_zone(count));
             }
             continue;
@@ -209,7 +209,7 @@ fn language_support_reason(support: LanguageSupportState<'_>, key: &str, fallbac
 
 fn rust_zone(files: u64) -> BlindZoneSummary {
     zone(
-        "rust",
+        "rs",
         BlindZoneSeverity::ScanGap,
         "Rust files were counted by triage, but the JS/TS symbol graph does not own Rust absence claims; read the lumin-rust-analyzer artifact before making Rust findings.",
         Some(json!({

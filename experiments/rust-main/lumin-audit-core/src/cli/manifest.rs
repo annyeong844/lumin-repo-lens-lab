@@ -3,7 +3,8 @@ use anyhow::{bail, Context, Result};
 use super::args::{ManifestCoreSummaryArgs, ManifestEvidenceSummaryArgs};
 use super::io_support::{
     read_json_input, read_optional_json, read_optional_json_input, read_optional_output_json,
-    read_required_json, take_path, take_string, write_stdout_json,
+    read_optional_output_json_tolerant, read_required_json, take_path, take_string,
+    write_stdout_json,
 };
 use super::usage::USAGE;
 use lumin_audit_core::generated_artifacts::GeneratedArtifactsMode;
@@ -202,30 +203,16 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
         .context("manifest-evidence-summary: missing --output <dir>")?;
     let triage = read_optional_output_json(&output, "triage.json", "manifest-evidence-summary")?;
     let symbols = read_optional_output_json(&output, "symbols.json", "manifest-evidence-summary")?;
-    let resolver_capabilities = read_optional_output_json(
-        &output,
-        "resolver-capabilities.json",
-        "manifest-evidence-summary",
-    )?;
-    let resolver_diagnostics = read_optional_output_json(
-        &output,
-        "resolver-diagnostics.json",
-        "manifest-evidence-summary",
-    )?;
-    let framework_resource_surfaces = read_optional_output_json(
-        &output,
-        "framework-resource-surfaces.json",
-        "manifest-evidence-summary",
-    )?;
-    let unused_deps =
-        read_optional_output_json(&output, "unused-deps.json", "manifest-evidence-summary")?;
-    let block_clones =
-        read_optional_output_json(&output, "block-clones.json", "manifest-evidence-summary")?;
-    let rust_analysis = read_optional_output_json(
-        &output,
-        "rust-analyzer-health.latest.json",
-        "manifest-evidence-summary",
-    )?;
+    let resolver_capabilities =
+        read_optional_output_json_tolerant(&output, "resolver-capabilities.json");
+    let resolver_diagnostics =
+        read_optional_output_json_tolerant(&output, "resolver-diagnostics.json");
+    let framework_resource_surfaces =
+        read_optional_output_json_tolerant(&output, "framework-resource-surfaces.json");
+    let unused_deps = read_optional_output_json_tolerant(&output, "unused-deps.json");
+    let block_clones = read_optional_output_json_tolerant(&output, "block-clones.json");
+    let rust_analysis =
+        read_optional_output_json_tolerant(&output, "rust-analyzer-health.latest.json");
 
     let summary = summarize_manifest_evidence(
         ManifestEvidenceOptions {

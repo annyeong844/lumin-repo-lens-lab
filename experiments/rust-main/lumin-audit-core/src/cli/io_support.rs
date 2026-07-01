@@ -57,6 +57,23 @@ pub(super) fn read_optional_output_json(
     read_optional_json(Some(path), label)
 }
 
+pub(super) fn read_optional_output_json_tolerant(
+    output: &Path,
+    artifact_name: &str,
+) -> Option<Value> {
+    let path = output.join(artifact_name);
+    if !path.exists() {
+        return None;
+    }
+    let Ok(text) = fs::read_to_string(&path) else {
+        return None;
+    };
+    let Ok(json) = serde_json::from_str::<Value>(&text) else {
+        return None;
+    };
+    Some(json)
+}
+
 pub(super) fn take_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf> {
     let Some(value) = args.next() else {
         bail!("{flag} requires a value");
