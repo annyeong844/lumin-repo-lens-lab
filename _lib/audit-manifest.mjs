@@ -192,7 +192,7 @@ function buildArtifactReadMetricsSummary(input) {
   });
 }
 
-export const ARTIFACT_READ_EVENTS_SCHEMA_VERSION = 'lumin-audit-artifact-read-events.v1';
+const ARTIFACT_READ_EVENTS_SCHEMA_VERSION = 'lumin-audit-artifact-read-events.v1';
 
 export function createArtifactReadMetrics({ rootDir, largestLimit = 10 } = {}) {
   const reads = [];

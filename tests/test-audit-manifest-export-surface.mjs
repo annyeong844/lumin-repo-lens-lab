@@ -35,6 +35,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
     'buildProducerPerformanceArtifactFromRuntime',
     'buildManifestMeta',
     'buildManifestEvidenceUpdate',
+    'ARTIFACT_READ_EVENTS_SCHEMA_VERSION',
   ]) {
     assert.equal(Object.hasOwn(auditManifest, symbol), false, symbol);
   }

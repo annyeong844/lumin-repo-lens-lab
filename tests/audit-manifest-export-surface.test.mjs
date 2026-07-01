@@ -43,6 +43,7 @@ describe("audit-manifest public surface", () => {
       "buildProducerPerformanceArtifactFromRuntime",
       "buildManifestMeta",
       "buildManifestEvidenceUpdate",
+      "ARTIFACT_READ_EVENTS_SCHEMA_VERSION",
     ]) {
       expect(Object.hasOwn(auditManifest, symbol)).toBe(false);
     }
