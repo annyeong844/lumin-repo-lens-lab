@@ -21,8 +21,6 @@ function auditCoreBinary() {
   }
   const packagedPlatform = path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe);
   if (existsSync(packagedPlatform)) return packagedPlatform;
-  const packaged = path.resolve(here, '../bin', exe);
-  if (existsSync(packaged)) return packaged;
   const fallback = path.join(path.resolve(here, '..'), 'experiments', 'target', 'debug', exe);
   let cursor = here;
   for (;;) {

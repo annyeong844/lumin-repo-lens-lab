@@ -62,6 +62,11 @@ the intent JSON by hand.
 > 💡 First run installs parser dependencies once (~30 seconds). After that, fast.
 > For tiny follow-up checks after a fresh baseline, `/lumin-repo-lens-lab` uses the quick path.
 
+> ⚙️ Packages that include the Rust `lumin-audit-core` helper are
+> platform-scoped. Use a package built for your runtime platform, or point
+> `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` / `LUMIN_AUDIT_CORE_BIN` at a
+> matching external binary before running the skill.
+
 For very large repos, do not auto-trigger full profile on every edit. Run
 `:full` once per branch, first checkup, or major refactor review, then use
 pre-write/post-write and quick follow-ups during the agent loop.

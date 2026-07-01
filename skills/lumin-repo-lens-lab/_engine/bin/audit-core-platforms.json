@@ -9,6 +9,11 @@
       "executable": "lumin-audit-core.exe"
     }
   ],
+  "fallback": {
+    "kind": "external-binary-env",
+    "requiredWhenRuntimePlatformMissing": true,
+    "message": "Use a package built for the runtime platform or set LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH> / LUMIN_AUDIT_CORE_BIN to a matching external binary."
+  },
   "overrideEnv": {
     "platformSpecific": "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
     "generic": "LUMIN_AUDIT_CORE_BIN"

@@ -14,7 +14,13 @@ not copied. Additional platform binaries can be supplied with
 `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>`.
 
 A package built with only one platform binary is platform-scoped, not
-a cross-platform binary bundle. Runtime override variables
-`LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` and `LUMIN_AUDIT_CORE_BIN`
-can point to an external audit-core binary when this package does not
-include one for the current platform.
+a cross-platform binary bundle. Install or build a package for the
+runtime platform, or set a runtime override variable:
+
+- `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` for one platform
+- `LUMIN_AUDIT_CORE_BIN` as a generic external binary override
+
+Those overrides must point to a real audit-core binary for the current
+runtime platform. They are the only supported fallback when this
+package does not include `_engine/bin/<platform>-<arch>/` for the
+current platform.
