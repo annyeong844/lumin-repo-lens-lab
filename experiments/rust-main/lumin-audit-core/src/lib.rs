@@ -6,6 +6,7 @@ pub mod lifecycle;
 pub mod living_audit;
 pub mod manifest_core;
 pub mod manifest_evidence;
+pub mod manifest_final;
 pub mod manifest_meta;
 pub mod manifest_root;
 pub mod orchestration_events;

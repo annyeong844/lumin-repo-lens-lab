@@ -73,13 +73,6 @@ export function collectProducedArtifacts(outDir, options = {}) {
   ], 'collectProducedArtifacts');
 }
 
-export function buildProducerPerformanceSummaryFromFile(artifactPath) {
-  return runAuditCoreJson([
-    'producer-performance-summary',
-    '--artifact', artifactPath,
-  ], 'buildProducerPerformanceSummary');
-}
-
 export function buildProducerPerformanceArtifactFromLedger(ledger) {
   return runAuditCoreJson([
     'producer-performance-artifact',
@@ -110,11 +103,17 @@ export function buildOrchestrationPlan({
   ], 'buildOrchestrationPlan');
 }
 
-export function buildOrchestrationResultSummaryFromFile(artifactPath) {
+export function buildManifestFinalSummaryUpdate({
+  outDir,
+  producerPerformancePath,
+  rustAnalysisUsable = true,
+}) {
   return runAuditCoreJson([
-    'orchestration-result-summary',
-    '--artifact', artifactPath,
-  ], 'buildOrchestrationResultSummary');
+    'manifest-final-summary-update',
+    '--output', outDir,
+    '--producer-performance', producerPerformancePath,
+    ...(rustAnalysisUsable ? ['--rust-analysis-ran'] : []),
+  ], 'buildManifestFinalSummaryUpdate');
 }
 
 export function buildLifecycleSummary(blocks) {
