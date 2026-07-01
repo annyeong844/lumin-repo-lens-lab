@@ -181,6 +181,19 @@ export function collectProducedArtifacts(outDir, options = {}) {
   return runAuditCoreJson(args, 'collectProducedArtifacts', runOptions);
 }
 
+export function buildManifestArtifactsProducedUpdate(outDir, options = {}) {
+  const args = [
+    'manifest-artifacts-produced-update',
+    '--output', outDir,
+  ];
+  const runOptions = {};
+  if (Object.hasOwn(options, 'rustAnalysis')) {
+    args.push('--rust-analysis-block', '-');
+    runOptions.input = JSON.stringify(options.rustAnalysis ?? null);
+  }
+  return runAuditCoreJson(args, 'buildManifestArtifactsProducedUpdate', runOptions);
+}
+
 function buildArtifactReadMetricsSummary(input) {
   return runAuditCoreJson([
     'artifact-read-metrics-summary',

@@ -24,6 +24,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.refreshManifestEvidence, 'function');
   assert.equal(typeof auditManifest.collectProducedArtifacts, 'function');
   assert.equal(typeof auditManifest.buildManifestCompanionUpdate, 'function');
+  assert.equal(typeof auditManifest.buildManifestArtifactsProducedUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
   assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
 
@@ -99,6 +100,44 @@ check('AMES1g. lifecycle update wrapper leaves raw block placement and summary i
   assert.equal(update.lifecycle.notRunCount, 1);
   assert.equal(update.lifecycle.preWrite.status, 'complete');
   assert.equal(update.lifecycle.canonDraft.status, 'not-run');
+});
+
+check('AMES1h. artifacts-produced wrapper leaves manifest patch shape in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-artifacts-produced-'));
+  const out = path.join(fx, 'out');
+  try {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(path.join(out, 'triage.json'), '{}');
+    writeFileSync(
+      path.join(out, 'rust-analyzer-health.latest.json'),
+      JSON.stringify({
+        schemaVersion: 'lumin-rust-analyzer-health.v1',
+      }),
+    );
+
+    assert.deepEqual(
+      auditManifest.buildManifestArtifactsProducedUpdate(out, {
+        rustAnalysis: {
+          status: 'unavailable',
+          available: false,
+        },
+      }),
+      {
+        artifactsProduced: ['triage.json'],
+      },
+    );
+    assert.deepEqual(
+      auditManifest.buildManifestArtifactsProducedUpdate(out, {
+        rustAnalysis: {
+          status: 'complete',
+          available: true,
+        },
+      }).artifactsProduced,
+      ['rust-analyzer-health.latest.json', 'triage.json'],
+    );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
 });
 
 check('AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback', () => {

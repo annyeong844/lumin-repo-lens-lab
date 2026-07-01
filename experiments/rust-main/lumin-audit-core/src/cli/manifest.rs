@@ -17,7 +17,8 @@ use lumin_audit_core::manifest_evidence::{
     ManifestEvidenceSummary,
 };
 use lumin_audit_core::manifest_final::{
-    build_manifest_final_summary_update, build_manifest_final_summary_update_for_rust_analysis,
+    build_manifest_artifacts_produced_update, build_manifest_final_summary_update,
+    build_manifest_final_summary_update_for_rust_analysis,
 };
 use lumin_audit_core::manifest_meta::{build_manifest_meta, ManifestMetaInput};
 use lumin_audit_core::manifest_root::{
@@ -105,6 +106,27 @@ pub(super) fn run_manifest_companion_update(args: Vec<String>) -> Result<()> {
     let request = serde_json::from_value::<ManifestCompanionUpdateInput>(json)
         .context("manifest-companion-update: invalid request shape")?;
     let update = build_manifest_companion_update(request)?;
+    write_stdout_json(&update)
+}
+
+pub(super) fn run_manifest_artifacts_produced_update(args: Vec<String>) -> Result<()> {
+    let mut output = None;
+    let mut rust_analysis_block = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--output" => output = Some(take_path(&mut args, "--output")?),
+            "--rust-analysis-block" => {
+                rust_analysis_block = Some(take_string(&mut args, "--rust-analysis-block")?)
+            }
+            _ => bail!("manifest-artifacts-produced-update: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let output = output.context("manifest-artifacts-produced-update: missing --output <dir>")?;
+    let rust_analysis_block =
+        read_optional_json_input(rust_analysis_block, "manifest-artifacts-produced-update")?;
+    let update = build_manifest_artifacts_produced_update(&output, rust_analysis_block.as_ref())?;
     write_stdout_json(&update)
 }
 

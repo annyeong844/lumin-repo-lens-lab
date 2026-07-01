@@ -30,6 +30,9 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.refreshManifestEvidence).toBe("function");
     expect(typeof auditManifest.collectProducedArtifacts).toBe("function");
     expect(typeof auditManifest.buildManifestCompanionUpdate).toBe("function");
+    expect(typeof auditManifest.buildManifestArtifactsProducedUpdate).toBe(
+      "function",
+    );
     expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
     expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
       "function",
@@ -117,6 +120,38 @@ describe("audit-manifest public surface", () => {
     expect(update.lifecycle.preWrite.status).toBe("complete");
     expect(update.lifecycle.canonDraft.status).toBe("not-run");
   });
+
+  it("AMES1h. artifacts-produced wrapper leaves manifest patch shape in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson("triage.json", {}, { to: "output" });
+      fixture.writeJson(
+        "rust-analyzer-health.latest.json",
+        {
+          schemaVersion: "lumin-rust-analyzer-health.v1",
+        },
+        { to: "output" },
+      );
+
+      expect(
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output, {
+          rustAnalysis: {
+            status: "unavailable",
+            available: false,
+          },
+        }),
+      ).toEqual({
+        artifactsProduced: ["triage.json"],
+      });
+
+      expect(
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output, {
+          rustAnalysis: {
+            status: "complete",
+            available: true,
+          },
+        }).artifactsProduced,
+      ).toEqual(["rust-analyzer-health.latest.json", "triage.json"]);
+    }));
 
   it("AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback", () =>
     withManifestFixture((fixture) => {

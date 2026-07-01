@@ -17,6 +17,21 @@ pub struct ManifestFinalSummaryUpdate {
     pub artifacts_produced: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestArtifactsProducedUpdate {
+    pub artifacts_produced: Vec<String>,
+}
+
+pub fn build_manifest_artifacts_produced_update(
+    output: &Path,
+    rust_analysis: Option<&Value>,
+) -> Result<ManifestArtifactsProducedUpdate> {
+    Ok(ManifestArtifactsProducedUpdate {
+        artifacts_produced: collect_produced_artifacts_for_manifest(output, rust_analysis)?,
+    })
+}
+
 pub fn build_manifest_final_summary_update(
     output: &Path,
     producer_performance: &Value,

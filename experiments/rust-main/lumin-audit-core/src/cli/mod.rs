@@ -35,6 +35,9 @@ pub fn run() -> Result<()> {
         Some("manifest-evidence-update") => run_manifest_evidence_update(args.collect()),
         Some("manifest-evidence-refresh") => run_manifest_evidence_refresh(args.collect()),
         Some("manifest-companion-update") => run_manifest_companion_update(args.collect()),
+        Some("manifest-artifacts-produced-update") => {
+            run_manifest_artifacts_produced_update(args.collect())
+        }
         Some("manifest-final-summary-update") => run_manifest_final_summary_update(args.collect()),
         Some("manifest-core-summary") => run_manifest_core_summary(args.collect()),
         Some("manifest-evidence-summary") => run_manifest_evidence_summary(args.collect()),

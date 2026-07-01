@@ -172,6 +172,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-evidence-refresh',
       'manifest-evidence-refresh: missing --root <repo>',
     ],
+    [
+      'manifest-artifacts-produced-update',
+      'manifest-artifacts-produced-update: missing --output <dir>',
+    ],
   ]) {
     const result = spawnSync(binaryPath, [command], {
       cwd: ROOT,

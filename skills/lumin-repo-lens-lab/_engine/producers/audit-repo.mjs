@@ -79,6 +79,7 @@ import {
   buildManifestFinalSummaryUpdate,
   buildManifestLifecycleUpdate,
   buildManifestCompanionUpdate,
+  buildManifestArtifactsProducedUpdate,
   buildManifestRoot,
   buildManifestEvidence,
   collectProducedArtifacts,
@@ -875,9 +876,9 @@ let reviewPackPath = null;
 if (topologyArtifact) {
   topologyMermaidPath = path.join(OUT, 'topology.mermaid.md');
   atomicWrite(topologyMermaidPath, renderTopologyMermaid(topologyArtifact));
-  manifest.artifactsProduced = collectProducedArtifacts(OUT, {
+  Object.assign(manifest, buildManifestArtifactsProducedUpdate(OUT, {
     rustAnalysis: manifest.rustAnalysis,
-  });
+  }));
 }
 const SHOULD_WRITE_SUMMARY = (
   RUN_BASE_PIPELINE ||

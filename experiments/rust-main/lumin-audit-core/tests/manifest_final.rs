@@ -1,11 +1,70 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::json;
 use std::fs;
 use std::process::Command;
 
 use lumin_audit_core::manifest_final::{
-    build_manifest_final_summary_update, build_manifest_final_summary_update_for_rust_analysis,
+    build_manifest_artifacts_produced_update, build_manifest_final_summary_update,
+    build_manifest_final_summary_update_for_rust_analysis,
 };
+
+#[test]
+fn manifest_artifacts_produced_update_projects_patch_shape() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("topology.mermaid.md"), "flowchart TD\n")?;
+    fs::write(output_dir.join("rust-analyzer-health.latest.json"), "{}")?;
+
+    let update = serde_json::to_value(build_manifest_artifacts_produced_update(
+        &output_dir,
+        Some(&json!({ "status": "complete", "available": true })),
+    )?)?;
+
+    assert_eq!(
+        update,
+        json!({
+            "artifactsProduced": [
+                "rust-analyzer-health.latest.json",
+                "topology.mermaid.md"
+            ]
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn cli_manifest_artifacts_produced_update_emits_patch_json() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("triage.json"), "{}")?;
+    fs::write(output_dir.join("rust-analyzer-health.latest.json"), "{}")?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-artifacts-produced-update")
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--rust-analysis-block")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+    let mut child = output;
+    use std::io::Write;
+    let mut stdin = child.stdin.take().context("stdin is piped")?;
+    stdin.write_all(br#"{"status":"complete","available":true}"#)?;
+    drop(stdin);
+    let output = child.wait_with_output()?;
+
+    assert!(output.status.success());
+    let update = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(
+        update["artifactsProduced"],
+        json!(["rust-analyzer-health.latest.json", "triage.json"])
+    );
+    Ok(())
+}
 
 #[test]
 fn manifest_final_summary_update_projects_last_manifest_patch() -> Result<()> {
