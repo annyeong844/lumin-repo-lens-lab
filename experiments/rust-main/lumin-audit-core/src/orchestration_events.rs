@@ -10,6 +10,7 @@ use crate::artifact_measurement::measure_artifact_sizes;
 use crate::artifact_read_metrics::{
     record_artifact_read, ArtifactReadRecord, ArtifactReadSummary, DEFAULT_LARGEST_READ_LIMIT,
 };
+use crate::artifact_registry::collect_produced_artifacts_for_manifest;
 use crate::orchestration_plan::AuditProfile;
 
 pub const ORCHESTRATION_LEDGER_SCHEMA_VERSION: &str = "lumin-audit-orchestration-ledger.v1";
@@ -80,6 +81,8 @@ pub struct ProducerPerformanceRuntimeObservations {
     pub artifact_reads: ArtifactReadSummary,
     #[serde(default)]
     pub artifacts_produced: Vec<String>,
+    #[serde(default)]
+    pub rust_analysis: Option<Value>,
     #[serde(default)]
     pub commands_run: Vec<RuntimeCommandRun>,
     #[serde(default)]
@@ -304,10 +307,23 @@ pub fn build_producer_performance_artifact_from_runtime(
         ProducerPerformanceRuntimeObservations {
             artifact_reads: input.artifact_reads,
             artifacts_produced: input.artifacts_produced,
+            rust_analysis: None,
             commands_run: input.commands_run,
             skipped: input.skipped,
         },
     )
+}
+
+pub fn build_producer_performance_artifact_for_audit_run_from_output(
+    context: ProducerPerformanceAuditRunContext,
+    mut observations: ProducerPerformanceRuntimeObservations,
+) -> Result<ProducerPerformanceArtifact> {
+    validate_required("output", &context.output)?;
+    let output = PathBuf::from(&context.output);
+    let rust_analysis = observations.rust_analysis.take();
+    observations.artifacts_produced =
+        collect_produced_artifacts_for_manifest(&output, rust_analysis.as_ref())?;
+    build_producer_performance_artifact_for_audit_run(context, observations)
 }
 
 pub fn build_producer_performance_artifact_for_audit_run(

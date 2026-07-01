@@ -940,7 +940,7 @@ const producerPerformance = buildProducerPerformanceArtifactForAuditRun({
   clearIncrementalCache: values['clear-incremental-cache'] === true,
   generatedArtifactsMode: GENERATED_ARTIFACTS_MODE,
   artifactReads: artifactReadMetrics.summary(),
-  artifactsProduced: collectProducedArtifacts(OUT, { rustAnalysis: manifest.rustAnalysis }),
+  rustAnalysis: manifest.rustAnalysis,
   commandsRun,
   skipped,
 });

@@ -272,7 +272,7 @@ export function buildProducerPerformanceArtifactForAuditRun({
   clearIncrementalCache = false,
   generatedArtifactsMode = 'default',
   artifactReads,
-  artifactsProduced = [],
+  rustAnalysis = null,
   commandsRun = [],
   skipped = [],
 }) {
@@ -295,7 +295,7 @@ export function buildProducerPerformanceArtifactForAuditRun({
   return runAuditCoreJson(args, 'buildProducerPerformanceArtifactForAuditRun', {
     input: JSON.stringify({
       artifactReads,
-      artifactsProduced,
+      rustAnalysis,
       commandsRun,
       skipped,
     }),

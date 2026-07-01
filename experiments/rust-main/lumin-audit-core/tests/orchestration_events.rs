@@ -5,6 +5,7 @@ use std::process::Command;
 
 use lumin_audit_core::orchestration_events::{
     build_producer_performance_artifact, build_producer_performance_artifact_for_audit_run,
+    build_producer_performance_artifact_for_audit_run_from_output,
     build_producer_performance_artifact_from_runtime, OrchestrationLedger,
     ProducerPerformanceAuditRunContext, ProducerPerformanceRuntimeInput,
     ProducerPerformanceRuntimeObservations,
@@ -307,6 +308,60 @@ fn audit_run_context_projects_scan_cache_and_runtime_observations() -> Result<()
 }
 
 #[test]
+fn audit_run_context_collects_artifacts_from_output_and_rust_analysis() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output = temp.path().join("out");
+    fs::create_dir_all(&output)?;
+    fs::write(output.join("triage.json"), "{}")?;
+    fs::write(output.join("rust-analyzer-health.latest.json"), "{}")?;
+
+    let context = audit_run_context(json!({
+        "generated": "2026-07-01T00:00:00.000Z",
+        "root": temp.path().to_string_lossy(),
+        "output": output.to_string_lossy(),
+        "profile": "quick",
+        "includeTests": true,
+        "production": false,
+        "noIncremental": false,
+        "cacheRoot": output.join(".cache").to_string_lossy(),
+        "clearIncrementalCache": false,
+        "generatedArtifactsMode": "default"
+    }))?;
+    let observations = runtime_observations(json!({
+        "artifactReads": {
+            "schemaVersion": "artifact-read-metrics.v1",
+            "measurement": "audit-repo-orchestrator-json-reads",
+            "totalReadCount": 0,
+            "totalReadBytes": 0,
+            "totalReadMs": 0,
+            "totalJsonParseMs": 0,
+            "parseFailureCount": 0,
+            "byName": {}
+        },
+        "rustAnalysis": {
+            "status": "complete",
+            "available": true
+        },
+        "commandsRun": [
+            { "step": "triage-repo.mjs", "status": "ok", "ms": 3 }
+        ],
+        "skipped": []
+    }))?;
+
+    let artifact = serde_json::to_value(
+        build_producer_performance_artifact_for_audit_run_from_output(context, observations)?,
+    )?;
+
+    assert_eq!(artifact["summary"]["artifactCount"], 2);
+    assert_eq!(artifact["artifacts"]["byName"]["triage.json"]["bytes"], 2);
+    assert_eq!(
+        artifact["artifacts"]["byName"]["rust-analyzer-health.latest.json"]["bytes"],
+        2
+    );
+    Ok(())
+}
+
+#[test]
 fn runtime_input_records_malformed_phase_sidecar_as_read_failure_without_phase_claim() -> Result<()>
 {
     let temp = tempfile::tempdir()?;
@@ -470,6 +525,7 @@ fn cli_producer_performance_audit_run_artifact_emits_json() -> Result<()> {
     let output_dir = temp.path().join("out");
     fs::create_dir_all(&output_dir)?;
     fs::write(output_dir.join("triage.json"), "{}")?;
+    fs::write(output_dir.join("rust-analyzer-health.latest.json"), "{}")?;
     let input_path = temp.path().join("runtime-observations.json");
     fs::write(
         &input_path,
@@ -484,7 +540,10 @@ fn cli_producer_performance_audit_run_artifact_emits_json() -> Result<()> {
                 "parseFailureCount": 0,
                 "byName": {}
             },
-            "artifactsProduced": ["triage.json"],
+            "rustAnalysis": {
+                "status": "complete",
+                "available": true
+            },
             "commandsRun": [
                 { "step": "triage-repo.mjs", "status": "ok", "ms": 3 }
             ],
@@ -527,7 +586,11 @@ fn cli_producer_performance_audit_run_artifact_emits_json() -> Result<()> {
     assert_eq!(stdout["schemaVersion"], "producer-performance.v1");
     assert_eq!(stdout["scanRange"]["excludes"], json!(["dist"]));
     assert_eq!(stdout["summary"]["okCount"], 1);
-    assert_eq!(stdout["summary"]["artifactCount"], 1);
+    assert_eq!(stdout["summary"]["artifactCount"], 2);
+    assert_eq!(
+        stdout["artifacts"]["byName"]["rust-analyzer-health.latest.json"]["bytes"],
+        2
+    );
     Ok(())
 }
 

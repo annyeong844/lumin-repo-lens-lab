@@ -7,7 +7,8 @@ use super::io_support::{
 use super::usage::USAGE;
 use lumin_audit_core::living_audit::summarize_living_audit;
 use lumin_audit_core::orchestration_events::{
-    build_producer_performance_artifact, build_producer_performance_artifact_for_audit_run,
+    build_producer_performance_artifact,
+    build_producer_performance_artifact_for_audit_run_from_output,
     build_producer_performance_artifact_from_runtime, OrchestrationLedger,
     ProducerPerformanceAuditRunContext, ProducerPerformanceRuntimeInput,
     ProducerPerformanceRuntimeObservations,
@@ -145,7 +146,8 @@ pub(super) fn run_producer_performance_audit_run_artifact(args: Vec<String>) -> 
             "producer-performance-audit-run-artifact: missing --generated-artifacts <mode>",
         )?,
     };
-    let artifact = build_producer_performance_artifact_for_audit_run(context, observations)?;
+    let artifact =
+        build_producer_performance_artifact_for_audit_run_from_output(context, observations)?;
     write_stdout_json(&artifact)
 }
 

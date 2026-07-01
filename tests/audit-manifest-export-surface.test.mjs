@@ -256,6 +256,7 @@ describe("audit-manifest public surface", () => {
   it("AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core", () =>
     withManifestFixture((fixture) => {
       fixture.write("triage.json", "{}", { to: "output" });
+      fixture.write("rust-analyzer-health.latest.json", "{}", { to: "output" });
       const artifact = auditManifest.buildProducerPerformanceArtifactForAuditRun({
         generated: "2026-07-01T00:00:00.000Z",
         root: fixture.root,
@@ -279,7 +280,10 @@ describe("audit-manifest public surface", () => {
           parseFailureCount: 0,
           byName: {},
         },
-        artifactsProduced: ["triage.json"],
+        rustAnalysis: {
+          status: "complete",
+          available: true,
+        },
         commandsRun: [{ step: "triage-repo.mjs", status: "ok", ms: 3 }],
         skipped: [{ step: "emit-sarif.mjs", reason: "not in --sarif mode" }],
       });
@@ -302,9 +306,12 @@ describe("audit-manifest public surface", () => {
           producerCount: 1,
           okCount: 1,
           skippedCount: 1,
-          artifactCount: 1,
+          artifactCount: 2,
         },
       });
+      expect(artifact.artifacts.byName).toHaveProperty(
+        "rust-analyzer-health.latest.json",
+      );
     }));
 });
 

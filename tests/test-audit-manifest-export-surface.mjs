@@ -249,6 +249,7 @@ check('AMES1c. producer performance audit-run wrapper leaves audit context proje
   mkdirSync(out, { recursive: true });
   try {
     writeFileSync(path.join(out, 'triage.json'), '{}');
+    writeFileSync(path.join(out, 'rust-analyzer-health.latest.json'), '{}');
     const artifact = auditManifest.buildProducerPerformanceArtifactForAuditRun({
       generated: '2026-07-01T00:00:00.000Z',
       root: fx,
@@ -272,7 +273,10 @@ check('AMES1c. producer performance audit-run wrapper leaves audit context proje
         parseFailureCount: 0,
         byName: {},
       },
-      artifactsProduced: ['triage.json'],
+      rustAnalysis: {
+        status: 'complete',
+        available: true,
+      },
       commandsRun: [{ step: 'triage-repo.mjs', status: 'ok', ms: 3 }],
       skipped: [{ step: 'emit-sarif.mjs', reason: 'not in --sarif mode' }],
     });
@@ -287,7 +291,8 @@ check('AMES1c. producer performance audit-run wrapper leaves audit context proje
     assert.equal(artifact.summary.producerCount, 1);
     assert.equal(artifact.summary.okCount, 1);
     assert.equal(artifact.summary.skippedCount, 1);
-    assert.equal(artifact.summary.artifactCount, 1);
+    assert.equal(artifact.summary.artifactCount, 2);
+    assert.ok(Object.hasOwn(artifact.artifacts.byName, 'rust-analyzer-health.latest.json'));
   } finally {
     rmSync(fx, { recursive: true, force: true });
   }
