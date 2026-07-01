@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -51,12 +51,32 @@ pub struct OrchestrationStepExample {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OrchestrationResultArtifactInput {
+    #[serde(default)]
+    schema_version: Value,
+    producers: Vec<OrchestrationProducerInput>,
+    skipped: Vec<OrchestrationSkippedInput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OrchestrationProducerInput {
+    name: String,
+    status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OrchestrationSkippedInput {
+    name: String,
+    reason: String,
+}
+
 pub fn summarize_orchestration_result(artifact: &Value) -> OrchestrationResultSummary {
     let schema_version = field_or_null(artifact, "schemaVersion");
-    let Some(producers) = artifact.get("producers").and_then(Value::as_array) else {
-        return unavailable_summary(schema_version);
-    };
-    let Some(skipped) = artifact.get("skipped").and_then(Value::as_array) else {
+    let Ok(input) = OrchestrationResultArtifactInput::deserialize(artifact) else {
         return unavailable_summary(schema_version);
     };
 
@@ -68,22 +88,22 @@ pub fn summarize_orchestration_result(artifact: &Value) -> OrchestrationResultSu
     let mut required_failure_examples = Vec::new();
     let mut optional_failure_examples = Vec::new();
 
-    for producer in producers {
-        let status = string_field(producer, "status").unwrap_or_else(|| "unknown".to_string());
+    for producer in &input.producers {
+        let status = producer.status.clone();
         *observed_status_counts.entry(status.clone()).or_insert(0) += 1;
         match status.as_str() {
             "ok" => ok_count += 1,
             "failed-required" => {
                 failed_required_count += 1;
-                push_example(&mut required_failure_examples, producer, status, None);
+                push_producer_example(&mut required_failure_examples, producer, status, None);
             }
             "failed-optional" => {
                 failed_optional_count += 1;
-                push_example(&mut optional_failure_examples, producer, status, None);
+                push_producer_example(&mut optional_failure_examples, producer, status, None);
             }
             status if status.starts_with("failed") => {
                 failed_other_count += 1;
-                push_example(
+                push_producer_example(
                     &mut optional_failure_examples,
                     producer,
                     status.to_string(),
@@ -95,12 +115,12 @@ pub fn summarize_orchestration_result(artifact: &Value) -> OrchestrationResultSu
     }
 
     let mut skipped_examples = Vec::new();
-    for skipped_step in skipped {
-        push_example(
+    for skipped_step in &input.skipped {
+        push_skipped_example(
             &mut skipped_examples,
             skipped_step,
             "skipped".to_string(),
-            string_field(skipped_step, "reason"),
+            Some(skipped_step.reason.clone()),
         );
     }
 
@@ -115,18 +135,18 @@ pub fn summarize_orchestration_result(artifact: &Value) -> OrchestrationResultSu
 
     OrchestrationResultSummary {
         artifact: "producer-performance.json",
-        schema_version,
+        schema_version: input.schema_version,
         summary_owner: "lumin-audit-core",
         execution_owner: "audit-repo.mjs",
         source_status: OrchestrationSourceStatus::Available,
         status,
-        executed_step_count: producers.len() as u64,
+        executed_step_count: input.producers.len() as u64,
         ok_count,
         failed_step_count,
         failed_required_count,
         failed_optional_count,
         failed_other_count,
-        skipped_step_count: skipped.len() as u64,
+        skipped_step_count: input.skipped.len() as u64,
         observed_status_counts,
         required_failure_examples,
         optional_failure_examples,
@@ -160,22 +180,9 @@ fn field_or_null(value: &Value, key: &str) -> Value {
     value.get(key).cloned().unwrap_or(Value::Null)
 }
 
-fn string_field(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-}
-
-fn step_name(value: &Value) -> String {
-    string_field(value, "name")
-        .or_else(|| string_field(value, "step"))
-        .unwrap_or_else(|| "<unknown>".to_string())
-}
-
-fn push_example(
+fn push_producer_example(
     examples: &mut Vec<OrchestrationStepExample>,
-    value: &Value,
+    value: &OrchestrationProducerInput,
     status: String,
     reason: Option<String>,
 ) {
@@ -183,7 +190,23 @@ fn push_example(
         return;
     }
     examples.push(OrchestrationStepExample {
-        name: step_name(value),
+        name: value.name.clone(),
+        status,
+        reason,
+    });
+}
+
+fn push_skipped_example(
+    examples: &mut Vec<OrchestrationStepExample>,
+    value: &OrchestrationSkippedInput,
+    status: String,
+    reason: Option<String>,
+) {
+    if examples.len() >= ORCHESTRATION_EXAMPLE_LIMIT {
+        return;
+    }
+    examples.push(OrchestrationStepExample {
+        name: value.name.clone(),
         status,
         reason,
     });

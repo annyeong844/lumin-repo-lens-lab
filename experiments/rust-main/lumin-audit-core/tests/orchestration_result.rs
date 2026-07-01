@@ -85,6 +85,26 @@ fn orchestration_result_summary_makes_malformed_source_unavailable() -> Result<(
 }
 
 #[test]
+fn orchestration_result_summary_rejects_incomplete_typed_entries() -> Result<()> {
+    let missing_producer_status = serde_json::to_value(summarize_orchestration_result(&json!({
+        "schemaVersion": "producer-performance.v1",
+        "producers": [{ "name": "triage-repo.mjs" }],
+        "skipped": []
+    })))?;
+    assert_eq!(missing_producer_status["sourceStatus"], "invalid-shape");
+    assert_eq!(missing_producer_status["status"], "unavailable");
+
+    let missing_skip_reason = serde_json::to_value(summarize_orchestration_result(&json!({
+        "schemaVersion": "producer-performance.v1",
+        "producers": [],
+        "skipped": [{ "name": "emit-sarif.mjs" }]
+    })))?;
+    assert_eq!(missing_skip_reason["sourceStatus"], "invalid-shape");
+    assert_eq!(missing_skip_reason["status"], "unavailable");
+    Ok(())
+}
+
+#[test]
 fn cli_orchestration_result_summary_emits_json() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let artifact_path = temp.path().join("producer-performance.json");
