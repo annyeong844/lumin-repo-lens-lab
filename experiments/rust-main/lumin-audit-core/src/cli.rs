@@ -49,13 +49,17 @@ use lumin_audit_core::orchestration_result::summarize_orchestration_result;
 use lumin_audit_core::post_write_lifecycle::{
     execute_post_write_lifecycle, execute_post_write_lifecycle_streaming, PostWriteLifecycleRequest,
 };
+use lumin_audit_core::pre_write_lifecycle::{
+    execute_rust_pre_write_lifecycle, execute_rust_pre_write_lifecycle_streaming,
+    RustPreWriteLifecycleRequest,
+};
 use lumin_audit_core::producer_performance::summarize_producer_performance;
 use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::{
     merge_rust_analysis_run, summarize_rust_analysis_artifact, RustAnalysisRunMergeInput,
 };
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core artifact-size-summary --output <dir> --input <path|->\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core rust-analysis-run-merge --input <path|->\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core lifecycle-exit-policy --input <path|->\n       lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>\n       lumin-audit-core manifest-root --input <path|->\n       lumin-audit-core manifest-evidence-update --input <path|->\n       lumin-audit-core manifest-final-summary-update --output <dir> --producer-performance <path> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core execute-base-plan --input <path|->\n       lumin-audit-core execute-canon-draft --input <path|->\n       lumin-audit-core execute-check-canon --input <path|->\n       lumin-audit-core execute-post-write --input <path|->\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core producer-performance-artifact --input <path|->\n       lumin-audit-core producer-performance-runtime-artifact --input <path|->\n       lumin-audit-core living-audit-summary --root <repo>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core artifact-size-summary --output <dir> --input <path|->\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core rust-analysis-run-merge --input <path|->\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core lifecycle-exit-policy --input <path|->\n       lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>\n       lumin-audit-core manifest-root --input <path|->\n       lumin-audit-core manifest-evidence-update --input <path|->\n       lumin-audit-core manifest-final-summary-update --output <dir> --producer-performance <path> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core execute-base-plan --input <path|->\n       lumin-audit-core execute-canon-draft --input <path|->\n       lumin-audit-core execute-check-canon --input <path|->\n       lumin-audit-core execute-rust-pre-write --input <path|-> [--result-output <path>]\n       lumin-audit-core execute-post-write --input <path|->\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core producer-performance-artifact --input <path|->\n       lumin-audit-core producer-performance-runtime-artifact --input <path|->\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -80,6 +84,7 @@ pub fn run() -> Result<()> {
         Some("execute-base-plan") => run_execute_base_plan(args.collect()),
         Some("execute-canon-draft") => run_execute_canon_draft(args.collect()),
         Some("execute-check-canon") => run_execute_check_canon(args.collect()),
+        Some("execute-rust-pre-write") => run_execute_rust_pre_write(args.collect()),
         Some("execute-post-write") => run_execute_post_write(args.collect()),
         Some("orchestration-result-summary") => run_orchestration_result_summary(args.collect()),
         Some("producer-performance-summary") => run_producer_performance_summary(args.collect()),
@@ -758,6 +763,43 @@ fn run_execute_check_canon(args: Vec<String>) -> Result<()> {
         .context("execute-check-canon: invalid request shape")?;
     let result = execute_check_canon_lifecycle(request)?;
     write_stdout_json(&result)
+}
+
+fn run_execute_rust_pre_write(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut result_output = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            "--result-output" => result_output = Some(take_path(&mut args, "--result-output")?),
+            _ => bail!("execute-rust-pre-write: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("execute-rust-pre-write: missing --input <path|->")?;
+    let json = read_json_input(&input, "execute-rust-pre-write")?;
+    let request = serde_json::from_value::<RustPreWriteLifecycleRequest>(json)
+        .context("execute-rust-pre-write: invalid request shape")?;
+    if let Some(result_output) = result_output {
+        let mut result = execute_rust_pre_write_lifecycle_streaming(request)?;
+        if let Some(stdout) = result.stdout.as_deref() {
+            io::stdout()
+                .write_all(stdout.as_bytes())
+                .context("failed to replay rust pre-write stdout")?;
+        }
+        if let Some(stderr) = result.stderr.as_deref() {
+            io::stderr()
+                .write_all(stderr.as_bytes())
+                .context("failed to replay rust pre-write stderr")?;
+        }
+        result.stdout = None;
+        result.stderr = None;
+        write_json_file(&result_output, &result)
+    } else {
+        let result = execute_rust_pre_write_lifecycle(request)?;
+        write_stdout_json(&result)
+    }
 }
 
 fn run_execute_post_write(args: Vec<String>) -> Result<()> {

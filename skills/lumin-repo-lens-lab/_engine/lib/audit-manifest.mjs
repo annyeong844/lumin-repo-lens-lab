@@ -146,6 +146,15 @@ export function executeCheckCanonLifecycle(request) {
   });
 }
 
+export function executeRustPreWriteLifecycle(request) {
+  return runAuditCoreJsonResultFile([
+    'execute-rust-pre-write',
+    '--input', '-',
+  ], 'executeRustPreWriteLifecycle', {
+    input: JSON.stringify(request ?? {}),
+  });
+}
+
 export function executePostWriteLifecycle(request) {
   return runAuditCoreJsonResultFile([
     'execute-post-write',

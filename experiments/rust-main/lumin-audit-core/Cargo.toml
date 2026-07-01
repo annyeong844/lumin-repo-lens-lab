@@ -14,7 +14,7 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-lumin-rust-common = { workspace = true, features = ["hash"] }
+lumin-rust-common = { workspace = true, features = ["hash", "json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
