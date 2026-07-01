@@ -8,9 +8,9 @@
 ## Scope
 
 `lumin-audit-core` owns typed audit artifact registry, manifest evidence
-summary contracts, the audit orchestration plan contract, lifecycle summary
-projection, and orchestration result summary projection that are not
-source-language analysis.
+summary contracts, manifest metadata projection, the audit orchestration plan
+contract, lifecycle summary projection, and orchestration result summary
+projection that are not source-language analysis.
 
 It does not own JS/TS producer behavior, Rust source-health syntax analysis,
 Cargo semantic oracle behavior, child-process execution, or final
@@ -45,6 +45,7 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/generated_artifacts.rs` | `manifest.json.generatedArtifacts` projection from already-produced `symbols.json`, generated-artifact mode validation, generated miss grouping, blind-zone grouping, and present/prepared out-of-scope evidence | package resolution, generator execution, generated-artifact producer evidence construction |
 | `experiments/rust-main/lumin-audit-core/src/lifecycle.rs` | `manifest.json.lifecycle` projection from completed raw `preWrite`, `postWrite`, `canonDraft`, and `checkCanon` manifest blocks | lifecycle child execution, advisory generation, post-write delta production, canon draft/check producer behavior, raw lifecycle block ownership |
 | `experiments/rust-main/lumin-audit-core/src/manifest_evidence.rs` | Composition of Rust-owned `manifest.json` evidence fields from already-produced artifacts, excluding `blindZones` | blind-zone detection, producer orchestration, manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/manifest_meta.rs` | `manifest.json.meta` shape projection from JS-provided run timestamp, profile, root, and output values | clock reading, profile flag parsing before CLI dispatch, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/orchestration_plan.rs` | Typed audit profile command graph, lifecycle request plan, profile/SARIF/base-pipeline skip semantics, and planned precondition metadata consumed by `audit-repo.mjs` | child process execution, filesystem precondition evaluation, command telemetry, producer-performance measurement |
 | `experiments/rust-main/lumin-audit-core/src/orchestration_result.rs` | `manifest.json.orchestration` projection from already-produced `producer-performance.json`, including execution status counts, required/optional failure counts, skipped counts, and capped examples | child process execution, live telemetry collection, raw `commandsRun`/`skipped` ownership, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/producer_performance.rs` | `manifest.json.performance` projection from already-produced `producer-performance.json` | producer execution, memory measurement, artifact read measurement, producer-performance artifact writing |

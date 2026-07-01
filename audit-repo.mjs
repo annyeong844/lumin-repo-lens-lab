@@ -73,6 +73,7 @@ import {
   buildOrchestrationPlan,
   buildOrchestrationResultSummaryFromFile,
   buildLifecycleSummary,
+  buildManifestMeta,
   buildManifestEvidence,
   collectProducedArtifacts,
   refreshManifestEvidence,
@@ -1140,14 +1141,14 @@ if (!RUN_BASE_PIPELINE) {
 const initialEvidence = buildManifestEvidence(manifestEvidenceOptions());
 
 const initialRustAnalysis = mergeRustAnalysisBlocks(initialEvidence.rustAnalysis, rustAnalysisRun);
+const manifestGenerated = new Date().toISOString();
 const manifest = {
-  meta: {
-    generated: new Date().toISOString(),
-    tool: 'audit-repo.mjs',
+  meta: buildManifestMeta({
+    generated: manifestGenerated,
     profile: PROFILE,
     root: ROOT,
-    output: OUT,
-  },
+    outDir: OUT,
+  }),
   profile: PROFILE,
   commandsRun,
   skipped,

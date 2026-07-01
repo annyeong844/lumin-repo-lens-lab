@@ -17,6 +17,7 @@ use lumin_audit_core::manifest_core::{summarize_manifest_core, ManifestCoreOptio
 use lumin_audit_core::manifest_evidence::{
     summarize_manifest_evidence, ManifestEvidenceArtifacts, ManifestEvidenceOptions,
 };
+use lumin_audit_core::manifest_meta::{build_manifest_meta, ManifestMetaInput};
 use lumin_audit_core::orchestration_plan::{
     build_orchestration_plan, AuditProfile, OrchestrationPlanOptions,
 };
@@ -25,7 +26,7 @@ use lumin_audit_core::producer_performance::summarize_producer_performance;
 use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::summarize_rust_analysis_artifact;
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core living-audit-summary --root <repo>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -37,6 +38,7 @@ pub fn run() -> Result<()> {
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         Some("blind-zones-summary") => run_blind_zones_summary(args.collect()),
         Some("lifecycle-summary") => run_lifecycle_summary(args.collect()),
+        Some("manifest-meta") => run_manifest_meta(args.collect()),
         Some("manifest-core-summary") => run_manifest_core_summary(args.collect()),
         Some("manifest-evidence-summary") => run_manifest_evidence_summary(args.collect()),
         Some("orchestration-plan") => run_orchestration_plan(args.collect()),
@@ -289,6 +291,31 @@ fn run_lifecycle_summary(args: Vec<String>) -> Result<()> {
     let lifecycle_json = read_json_input(&input, "lifecycle-summary")?;
     let summary = summarize_lifecycle(&lifecycle_json);
     write_stdout_json(&summary)
+}
+
+fn run_manifest_meta(args: Vec<String>) -> Result<()> {
+    let mut generated = None;
+    let mut profile = None;
+    let mut root = None;
+    let mut output = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--generated" => generated = Some(take_string(&mut args, "--generated")?),
+            "--profile" => profile = Some(take_string(&mut args, "--profile")?),
+            "--root" => root = Some(take_string(&mut args, "--root")?),
+            "--output" => output = Some(take_string(&mut args, "--output")?),
+            _ => bail!("manifest-meta: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let meta = build_manifest_meta(ManifestMetaInput {
+        generated: generated.context("manifest-meta: missing --generated <iso>")?,
+        profile: profile.context("manifest-meta: missing --profile <quick|full|ci>")?,
+        root: root.context("manifest-meta: missing --root <repo>")?,
+        output: output.context("manifest-meta: missing --output <dir>")?,
+    })?;
+    write_stdout_json(&meta)
 }
 
 fn run_manifest_core_summary(args: Vec<String>) -> Result<()> {

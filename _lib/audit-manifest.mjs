@@ -117,6 +117,21 @@ export function buildLifecycleSummary(blocks) {
   });
 }
 
+export function buildManifestMeta({
+  generated,
+  profile,
+  root,
+  outDir,
+}) {
+  return runAuditCoreJson([
+    'manifest-meta',
+    '--generated', generated,
+    '--profile', profile,
+    '--root', root,
+    '--output', outDir,
+  ], 'buildManifestMeta');
+}
+
 export function buildManifestEvidence({
   root,
   outDir,
