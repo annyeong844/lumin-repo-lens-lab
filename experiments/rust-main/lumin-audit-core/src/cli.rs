@@ -10,10 +10,11 @@ use lumin_audit_core::artifact_summaries::{summarize_artifact, ArtifactSummaryKi
 use lumin_audit_core::generated_artifacts::{
     summarize_generated_artifacts, GeneratedArtifactsMode, GeneratedArtifactsOptions,
 };
+use lumin_audit_core::manifest_core::{summarize_manifest_core, ManifestCoreOptions};
 use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::summarize_rust_analysis_artifact;
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -23,6 +24,7 @@ pub fn run() -> Result<()> {
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
         Some("artifact-summary") => run_artifact_summary(args.collect()),
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
+        Some("manifest-core-summary") => run_manifest_core_summary(args.collect()),
         _ => bail!(USAGE),
     }
 }
@@ -192,6 +194,49 @@ fn run_resolver_diagnostics_summary(args: Vec<String>) -> Result<()> {
     write_stdout_json(&summary)
 }
 
+fn run_manifest_core_summary(args: Vec<String>) -> Result<()> {
+    let mut parsed = ManifestCoreSummaryArgs {
+        include_tests: true,
+        production: false,
+        ..ManifestCoreSummaryArgs::default()
+    };
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--root" => parsed.root = Some(take_string(&mut args, "--root")?),
+            "--triage" => parsed.triage = Some(take_path(&mut args, "--triage")?),
+            "--symbols" => parsed.symbols = Some(take_path(&mut args, "--symbols")?),
+            "--include-tests" => parsed.include_tests = true,
+            "--no-include-tests" => parsed.include_tests = false,
+            "--production" => parsed.production = true,
+            "--no-production" => parsed.production = false,
+            "--exclude" => parsed.excludes.push(take_string(&mut args, "--exclude")?),
+            "--auto-exclude" => parsed
+                .auto_excludes
+                .push(take_string(&mut args, "--auto-exclude")?),
+            _ => bail!("manifest-core-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let root = parsed
+        .root
+        .context("manifest-core-summary: missing --root <repo>")?;
+    let triage = read_optional_json(parsed.triage, "manifest-core-summary")?;
+    let symbols = read_optional_json(parsed.symbols, "manifest-core-summary")?;
+    let summary = summarize_manifest_core(
+        ManifestCoreOptions {
+            root,
+            include_tests: parsed.include_tests,
+            production: parsed.production,
+            excludes: parsed.excludes,
+            auto_excludes: parsed.auto_excludes,
+        },
+        triage.as_ref(),
+        symbols.as_ref(),
+    );
+    write_stdout_json(&summary)
+}
+
 fn read_optional_json(path: Option<PathBuf>, label: &str) -> Result<Option<Value>> {
     let Some(path) = path else {
         return Ok(None);
@@ -264,4 +309,15 @@ struct ResolverDiagnosticsSummaryArgs {
     symbols: Option<PathBuf>,
     resolver_capabilities: Option<PathBuf>,
     resolver_diagnostics: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct ManifestCoreSummaryArgs {
+    root: Option<String>,
+    triage: Option<PathBuf>,
+    symbols: Option<PathBuf>,
+    include_tests: bool,
+    production: bool,
+    excludes: Vec<String>,
+    auto_excludes: Vec<String>,
 }

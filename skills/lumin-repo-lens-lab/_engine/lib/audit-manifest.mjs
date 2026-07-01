@@ -17,20 +17,6 @@ const LIVING_AUDIT_DOC_CANDIDATES = [
   'TECH_DEBT_AUDIT.md',
 ];
 
-function languagesFromTriage(triage) {
-  const byLanguage = triage?.byLanguage ?? triage?.languages ?? triage?.summary?.byLanguage;
-  if (byLanguage && typeof byLanguage === 'object') return Object.keys(byLanguage);
-
-  const shape = triage?.shape ?? {};
-  const languages = [];
-  if ((shape.tsFiles ?? 0) > 0) languages.push('ts');
-  if ((shape.jsFiles ?? 0) > 0) languages.push('js');
-  if ((shape.pyFiles ?? 0) > 0) languages.push('py');
-  if ((shape.goFiles ?? 0) > 0) languages.push('go');
-  if ((shape.rustFiles ?? shape.rsFiles ?? 0) > 0) languages.push('rs');
-  return languages.length > 0 ? languages : null;
-}
-
 function detectLivingAuditDocs(root) {
   const docs = [];
   for (const rel of LIVING_AUDIT_DOC_CANDIDATES) {
@@ -48,10 +34,6 @@ function detectLivingAuditDocs(root) {
       ? 'read-and-update-before-final-answer'
       : 'create-only-on-explicit-tracking-request',
   };
-}
-
-function numberOrZero(value) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 function auditCoreBinary() {
@@ -150,39 +132,29 @@ function buildResolverDiagnosticsSummaryFromFile(outDir, {
   return runAuditCoreJson(args, 'buildResolverDiagnosticsSummary');
 }
 
-function buildSfcEvidenceSummary(symbols) {
-  if (!symbols || typeof symbols !== 'object') return null;
-  const uses = symbols.uses && typeof symbols.uses === 'object'
-    ? symbols.uses
-    : {};
-  const byLane = {
-    scriptImportConsumers: numberOrZero(uses.sfcScriptConsumers),
-    scriptSrcReachability: numberOrZero(uses.sfcScriptSrcReachability),
-    styleAssetReferences: numberOrZero(uses.sfcStyleAssetReferences),
-    templateComponentRefs: numberOrZero(uses.sfcTemplateComponentRefs),
-    globalComponentRegistrations: numberOrZero(uses.sfcGlobalComponentRegistrations),
-    generatedComponentManifests: numberOrZero(uses.sfcGeneratedComponentManifests),
-    frameworkConventionComponents: numberOrZero(uses.sfcFrameworkConventionComponents),
-  };
-  const totalEvidenceCount = Object.values(byLane)
-    .reduce((sum, count) => sum + count, 0);
-  if (totalEvidenceCount <= 0) return null;
-
-  return {
-    artifact: 'symbols.json',
-    status: 'complete',
-    scriptImportConsumerCount: byLane.scriptImportConsumers,
-    reachabilityOnlyCount: byLane.scriptSrcReachability,
-    reviewOnlyEvidenceCount:
-      byLane.styleAssetReferences +
-      byLane.templateComponentRefs +
-      byLane.globalComponentRegistrations +
-      byLane.generatedComponentManifests +
-      byLane.frameworkConventionComponents,
-    totalEvidenceCount,
-    byLane,
-    scanGapStillApplies: true,
-  };
+function buildManifestCoreSummaryFromFile(root, outDir, {
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  triage = null,
+  symbols = null,
+} = {}) {
+  const args = [
+    'manifest-core-summary',
+    '--root', root,
+    includeTests ? '--include-tests' : '--no-include-tests',
+    production ? '--production' : '--no-production',
+  ];
+  pushArtifactPathArg(args, '--triage', triage, outDir, 'triage.json');
+  pushArtifactPathArg(args, '--symbols', symbols, outDir, 'symbols.json');
+  for (const exclude of excludes) {
+    args.push('--exclude', exclude);
+  }
+  for (const autoExclude of autoExcludes) {
+    args.push('--auto-exclude', autoExclude);
+  }
+  return runAuditCoreJson(args, 'buildManifestCoreSummary');
 }
 
 export function collectProducedArtifacts(outDir, options = {}) {
@@ -217,29 +189,18 @@ export function buildManifestEvidence({
   const rustAnalysis = buildRustAnalysisSummaryFromFile(root, outDir);
   const rustAnalysisForBlindZones = rustAnalysisRun?.ran === true ? rustAnalysis : null;
 
-  const parseErrors = (() => {
-    const w = (symbols?.meta?.warnings ?? []).find((x) =>
-      x?.kind === 'parse-errors' || x?.type === 'parse-errors' || x?.code === 'parse-errors');
-    return w?.count ?? symbols?.filesWithParseErrors?.length ?? 0;
-  })();
+  const manifestCore = buildManifestCoreSummaryFromFile(root, outDir, {
+    includeTests,
+    production,
+    excludes,
+    autoExcludes,
+    triage,
+    symbols,
+  });
 
   return {
-    scanRange: {
-      root,
-      includeTests,
-      production,
-      excludes,
-      autoExcludes,
-      languages: languagesFromTriage(triage),
-      files: triage?.summary?.files ?? triage?.files ?? triage?.shape?.totalFiles ?? null,
-    },
-    confidence: {
-      parseErrors,
-      unresolvedInternalRatio: symbols?.uses?.unresolvedInternalRatio ?? null,
-      externalImports: symbols?.uses?.external ?? null,
-      resolvedInternal: symbols?.uses?.resolvedInternal ?? null,
-      unresolvedInternal: symbols?.uses?.unresolvedInternal ?? null,
-    },
+    scanRange: manifestCore.scanRange,
+    confidence: manifestCore.confidence,
     resolverDiagnostics: buildResolverDiagnosticsSummaryFromFile(outDir, {
       symbols,
       resolverCapabilities,
@@ -281,7 +242,7 @@ export function buildManifestEvidence({
       'block-clones',
       'buildBlockClonesSummary',
     ),
-    sfcEvidence: buildSfcEvidenceSummary(symbols),
+    sfcEvidence: manifestCore.sfcEvidence,
     livingAudit: detectLivingAuditDocs(root),
   };
 }
