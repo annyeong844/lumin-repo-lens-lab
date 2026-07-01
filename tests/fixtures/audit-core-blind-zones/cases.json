@@ -111,6 +111,60 @@
     "absentAreas": ["python-method-resolution", "go-method-resolution"]
   },
   {
+    "name": "python-go-enabled-precision-gaps",
+    "input": {
+      "triage": {
+        "shape": {
+          "totalFiles": 4,
+          "tsFiles": 2,
+          "jsFiles": 0,
+          "pyFiles": 1,
+          "goFiles": 1
+        }
+      },
+      "symbols": {
+        "meta": {
+          "languageSupport": {
+            "python": { "enabled": true },
+            "go": { "enabled": true }
+          }
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "python-method-resolution", "severity": "precision-gap" },
+      { "area": "go-method-resolution", "severity": "precision-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "python-method-resolution", "path": ["details", "files"], "equals": 1 },
+      { "area": "go-method-resolution", "path": ["details", "files"], "equals": 1 }
+    ],
+    "absentAreas": ["python-scan-gap", "go-scan-gap"]
+  },
+  {
+    "name": "unclassified-files-from-shape-unknown-share",
+    "input": {
+      "triage": {
+        "shape": {
+          "totalFiles": 10,
+          "tsFiles": 6,
+          "jsFiles": 2,
+          "pyFiles": 0,
+          "goFiles": 0,
+          "sfcFiles": 0
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "unclassified-files", "severity": "scan-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "unclassified-files", "path": ["details", "unknownFiles"], "equals": 2 },
+      { "area": "unclassified-files", "path": ["details", "totalFiles"], "equals": 10 }
+    ],
+    "absentAreas": ["rust", "python-method-resolution", "go-method-resolution"]
+  },
+  {
     "name": "resolver-absolute-count-with-grouped-reasons",
     "input": {
       "symbols": {
@@ -146,6 +200,80 @@
         "area": "resolver",
         "path": ["details", "topUnresolvedReasons", "0", "spaces", "type"],
         "equals": 12
+      }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "resolver-ratio-trigger-with-raw-specifier-reasons",
+    "input": {
+      "symbols": {
+        "uses": { "unresolvedInternalRatio": 0.16, "unresolvedInternal": 10 },
+        "topUnresolvedSpecifiers": [{ "specifierPrefix": "@ratio/", "count": 2 }],
+        "unresolvedInternalSpecifierRecords": [
+          { "specifier": "@ratio/a", "reason": "tsconfig-path-target-missing" },
+          { "specifier": "@ratio/b", "reason": "tsconfig-path-target-missing" },
+          { "specifier": "@ratio/c", "reason": "package-export-missing" }
+        ]
+      }
+    },
+    "expectedZones": [
+      { "area": "resolver", "severity": "confidence-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "resolver", "path": ["details", "sourceArtifact"], "equals": "symbols.json" },
+      { "area": "resolver", "path": ["details", "trigger"], "equals": "ratio" },
+      { "area": "resolver", "path": ["details", "unresolvedInternalRatio"], "equals": 0.16 },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "reason"],
+        "equals": "tsconfig-path-target-missing"
+      },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "count"],
+        "equals": 2
+      }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "resolver-prefix-trigger-prefers-diagnostics-reasons",
+    "input": {
+      "symbols": {
+        "unresolvedInternalSummaryByReason": {
+          "symbols-summary-should-not-win": { "count": 99 }
+        }
+      },
+      "resolverDiagnostics": {
+        "resolverVersion": "resolver-test-v1",
+        "summary": {
+          "unresolvedInternal": 200,
+          "unresolvedInternalRatio": 0.02,
+          "topUnresolvedSpecifiers": [{ "specifierPrefix": "@app/", "count": 180 }],
+          "topUnresolvedReasons": [
+            { "reason": "diagnostic-preferred", "count": 9 }
+          ],
+          "reasonCounts": { "diagnostic-preferred": 9 }
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "resolver", "severity": "confidence-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "resolver", "path": ["details", "sourceArtifact"], "equals": "resolver-diagnostics.json" },
+      { "area": "resolver", "path": ["details", "trigger"], "equals": "prefix-concentration" },
+      { "area": "resolver", "path": ["details", "resolverVersion"], "equals": "resolver-test-v1" },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedSpecifiers", "0"],
+        "equals": "@app/"
+      },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "reason"],
+        "equals": "diagnostic-preferred"
       }
     ],
     "absentAreas": []
