@@ -38,104 +38,28 @@ function runAuditCoreJson(args, label) {
   return JSON.parse(stdout);
 }
 
-function buildRustAnalysisSummaryFromFile(root, outDir) {
-  const artifactPath = path.join(outDir, 'rust-analyzer-health.latest.json');
-  if (!existsSync(artifactPath)) return null;
-  return runAuditCoreJson([
-    'rust-analysis-summary',
-    '--root', root,
-    '--artifact', artifactPath,
-  ], 'buildRustAnalysisSummary');
-}
-
-function buildGeneratedArtifactsSummaryFromFile(root, outDir, symbols, {
-  includeTests = true,
-  excludes = [],
-  generatedArtifactsMode = 'default',
-} = {}) {
-  const args = [
-    'generated-artifacts-summary',
-    '--root', root,
-    '--generated-artifacts', generatedArtifactsMode,
-    includeTests ? '--include-tests' : '--no-include-tests',
-  ];
-  if (symbols && typeof symbols === 'object') {
-    args.push('--symbols', path.join(outDir, 'symbols.json'));
-  }
-  for (const exclude of excludes) {
-    args.push('--exclude', exclude);
-  }
-  return runAuditCoreJson(args, 'buildGeneratedArtifactsSummary');
-}
-
-function buildArtifactSummaryFromFile(outDir, artifact, artifactName, artifactKind, label) {
-  if (!artifact || typeof artifact !== 'object') return null;
-  return runAuditCoreJson([
-    'artifact-summary',
-    '--artifact-kind', artifactKind,
-    '--artifact', path.join(outDir, artifactName),
-  ], label);
-}
-
-function pushArtifactPathArg(args, flag, artifact, outDir, artifactName) {
-  if (!artifact || typeof artifact !== 'object') return;
-  args.push(flag, path.join(outDir, artifactName));
-}
-
-function buildResolverDiagnosticsSummaryFromFile(outDir, {
-  symbols = null,
-  resolverCapabilities = null,
-  resolverDiagnostics = null,
-} = {}) {
-  const args = ['resolver-diagnostics-summary'];
-  pushArtifactPathArg(args, '--symbols', symbols, outDir, 'symbols.json');
-  pushArtifactPathArg(
-    args,
-    '--resolver-capabilities',
-    resolverCapabilities,
-    outDir,
-    'resolver-capabilities.json'
-  );
-  pushArtifactPathArg(
-    args,
-    '--resolver-diagnostics',
-    resolverDiagnostics,
-    outDir,
-    'resolver-diagnostics.json'
-  );
-  return runAuditCoreJson(args, 'buildResolverDiagnosticsSummary');
-}
-
-function buildManifestCoreSummaryFromFile(root, outDir, {
+function buildManifestEvidenceSummaryFromFile(root, outDir, {
   includeTests,
   production,
   excludes = [],
   autoExcludes = [],
-  triage = null,
-  symbols = null,
+  generatedArtifactsMode = 'default',
 } = {}) {
   const args = [
-    'manifest-core-summary',
+    'manifest-evidence-summary',
     '--root', root,
+    '--output', outDir,
+    '--generated-artifacts', generatedArtifactsMode,
     includeTests ? '--include-tests' : '--no-include-tests',
     production ? '--production' : '--no-production',
   ];
-  pushArtifactPathArg(args, '--triage', triage, outDir, 'triage.json');
-  pushArtifactPathArg(args, '--symbols', symbols, outDir, 'symbols.json');
   for (const exclude of excludes) {
     args.push('--exclude', exclude);
   }
   for (const autoExclude of autoExcludes) {
     args.push('--auto-exclude', autoExclude);
   }
-  return runAuditCoreJson(args, 'buildManifestCoreSummary');
-}
-
-function buildLivingAuditSummaryFromFile(root) {
-  return runAuditCoreJson([
-    'living-audit-summary',
-    '--root', root,
-  ], 'buildLivingAuditSummary');
+  return runAuditCoreJson(args, 'buildManifestEvidenceSummary');
 }
 
 export function collectProducedArtifacts(outDir, options = {}) {
@@ -160,33 +84,26 @@ export function buildManifestEvidence({
 }) {
   const triage = loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
   const symbols = loadArtifact(outDir, 'symbols.json', { onRead: onArtifactRead });
-  const resolverCapabilities = loadArtifact(outDir, 'resolver-capabilities.json', { onRead: onArtifactRead });
   const resolverDiagnostics = loadArtifact(outDir, 'resolver-diagnostics.json', { onRead: onArtifactRead });
-  const frameworkResourceSurfaces = loadArtifact(outDir, 'framework-resource-surfaces.json', { onRead: onArtifactRead });
-  const unusedDeps = loadArtifact(outDir, 'unused-deps.json', { onRead: onArtifactRead });
-  const blockClones = loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'resolver-capabilities.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'framework-resource-surfaces.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'unused-deps.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
   const entrySurface = loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
   const deadClassify = loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
-  const rustAnalysis = buildRustAnalysisSummaryFromFile(root, outDir);
-  const rustAnalysisForBlindZones = rustAnalysisRun?.ran === true ? rustAnalysis : null;
-
-  const manifestCore = buildManifestCoreSummaryFromFile(root, outDir, {
+  const manifestEvidence = buildManifestEvidenceSummaryFromFile(root, outDir, {
     includeTests,
     production,
     excludes,
     autoExcludes,
-    triage,
-    symbols,
+    generatedArtifactsMode,
   });
+  const rustAnalysisForBlindZones = rustAnalysisRun?.ran === true ? manifestEvidence.rustAnalysis : null;
 
   return {
-    scanRange: manifestCore.scanRange,
-    confidence: manifestCore.confidence,
-    resolverDiagnostics: buildResolverDiagnosticsSummaryFromFile(outDir, {
-      symbols,
-      resolverCapabilities,
-      resolverDiagnostics,
-    }),
+    scanRange: manifestEvidence.scanRange,
+    confidence: manifestEvidence.confidence,
+    resolverDiagnostics: manifestEvidence.resolverDiagnostics,
     blindZones: detectBlindZones({
       triage,
       symbols,
@@ -195,36 +112,13 @@ export function buildManifestEvidence({
       resolverDiagnostics,
       rustAnalysis: rustAnalysisForBlindZones,
     }),
-    rustAnalysis,
-    generatedArtifacts: buildGeneratedArtifactsSummaryFromFile(root, outDir, symbols, {
-      root,
-      includeTests,
-      excludes,
-      generatedArtifactsMode,
-    }),
-    frameworkResourceSurfaces: buildArtifactSummaryFromFile(
-      outDir,
-      frameworkResourceSurfaces,
-      'framework-resource-surfaces.json',
-      'framework-resource-surfaces',
-      'buildFrameworkResourceSurfacesSummary',
-    ),
-    unusedDependencies: buildArtifactSummaryFromFile(
-      outDir,
-      unusedDeps,
-      'unused-deps.json',
-      'unused-deps',
-      'buildUnusedDependenciesSummary',
-    ),
-    blockClones: buildArtifactSummaryFromFile(
-      outDir,
-      blockClones,
-      'block-clones.json',
-      'block-clones',
-      'buildBlockClonesSummary',
-    ),
-    sfcEvidence: manifestCore.sfcEvidence,
-    livingAudit: buildLivingAuditSummaryFromFile(root),
+    rustAnalysis: manifestEvidence.rustAnalysis,
+    generatedArtifacts: manifestEvidence.generatedArtifacts,
+    frameworkResourceSurfaces: manifestEvidence.frameworkResourceSurfaces,
+    unusedDependencies: manifestEvidence.unusedDependencies,
+    blockClones: manifestEvidence.blockClones,
+    sfcEvidence: manifestEvidence.sfcEvidence,
+    livingAudit: manifestEvidence.livingAudit,
   };
 }
 

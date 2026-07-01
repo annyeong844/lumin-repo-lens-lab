@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lumin_audit_core::artifact_registry::collect_produced_artifacts;
 use lumin_audit_core::artifact_summaries::{summarize_artifact, ArtifactSummaryKind};
@@ -12,10 +12,13 @@ use lumin_audit_core::generated_artifacts::{
 };
 use lumin_audit_core::living_audit::summarize_living_audit;
 use lumin_audit_core::manifest_core::{summarize_manifest_core, ManifestCoreOptions};
+use lumin_audit_core::manifest_evidence::{
+    summarize_manifest_evidence, ManifestEvidenceArtifacts, ManifestEvidenceOptions,
+};
 use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::summarize_rust_analysis_artifact;
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core living-audit-summary --root <repo>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -26,6 +29,7 @@ pub fn run() -> Result<()> {
         Some("artifact-summary") => run_artifact_summary(args.collect()),
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         Some("manifest-core-summary") => run_manifest_core_summary(args.collect()),
+        Some("manifest-evidence-summary") => run_manifest_evidence_summary(args.collect()),
         Some("living-audit-summary") => run_living_audit_summary(args.collect()),
         _ => bail!(USAGE),
     }
@@ -239,6 +243,90 @@ fn run_manifest_core_summary(args: Vec<String>) -> Result<()> {
     write_stdout_json(&summary)
 }
 
+fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
+    let mut parsed = ManifestEvidenceSummaryArgs {
+        include_tests: true,
+        production: false,
+        generated_artifacts_mode: GeneratedArtifactsMode::Default,
+        ..ManifestEvidenceSummaryArgs::default()
+    };
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--root" => parsed.root = Some(take_string(&mut args, "--root")?),
+            "--output" => parsed.output = Some(take_path(&mut args, "--output")?),
+            "--generated-artifacts" => {
+                let mode = take_string(&mut args, "--generated-artifacts")?;
+                parsed.generated_artifacts_mode = GeneratedArtifactsMode::parse(&mode)?;
+            }
+            "--include-tests" => parsed.include_tests = true,
+            "--no-include-tests" => parsed.include_tests = false,
+            "--production" => parsed.production = true,
+            "--no-production" => parsed.production = false,
+            "--exclude" => parsed.excludes.push(take_string(&mut args, "--exclude")?),
+            "--auto-exclude" => parsed
+                .auto_excludes
+                .push(take_string(&mut args, "--auto-exclude")?),
+            _ => bail!("manifest-evidence-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let root = parsed
+        .root
+        .context("manifest-evidence-summary: missing --root <repo>")?;
+    let output = parsed
+        .output
+        .context("manifest-evidence-summary: missing --output <dir>")?;
+    let triage = read_optional_output_json(&output, "triage.json", "manifest-evidence-summary")?;
+    let symbols = read_optional_output_json(&output, "symbols.json", "manifest-evidence-summary")?;
+    let resolver_capabilities = read_optional_output_json(
+        &output,
+        "resolver-capabilities.json",
+        "manifest-evidence-summary",
+    )?;
+    let resolver_diagnostics = read_optional_output_json(
+        &output,
+        "resolver-diagnostics.json",
+        "manifest-evidence-summary",
+    )?;
+    let framework_resource_surfaces = read_optional_output_json(
+        &output,
+        "framework-resource-surfaces.json",
+        "manifest-evidence-summary",
+    )?;
+    let unused_deps =
+        read_optional_output_json(&output, "unused-deps.json", "manifest-evidence-summary")?;
+    let block_clones =
+        read_optional_output_json(&output, "block-clones.json", "manifest-evidence-summary")?;
+    let rust_analysis = read_optional_output_json(
+        &output,
+        "rust-analyzer-health.latest.json",
+        "manifest-evidence-summary",
+    )?;
+
+    let summary = summarize_manifest_evidence(
+        ManifestEvidenceOptions {
+            root,
+            include_tests: parsed.include_tests,
+            production: parsed.production,
+            excludes: parsed.excludes,
+            auto_excludes: parsed.auto_excludes,
+            generated_artifacts_mode: parsed.generated_artifacts_mode,
+        },
+        ManifestEvidenceArtifacts {
+            triage: triage.as_ref(),
+            symbols: symbols.as_ref(),
+            resolver_capabilities: resolver_capabilities.as_ref(),
+            resolver_diagnostics: resolver_diagnostics.as_ref(),
+            framework_resource_surfaces: framework_resource_surfaces.as_ref(),
+            unused_deps: unused_deps.as_ref(),
+            block_clones: block_clones.as_ref(),
+            rust_analysis: rust_analysis.as_ref(),
+        },
+    );
+    write_stdout_json(&summary)
+}
+
 fn run_living_audit_summary(args: Vec<String>) -> Result<()> {
     let mut root = None;
     let mut args = args.into_iter();
@@ -263,6 +351,18 @@ fn read_optional_json(path: Option<PathBuf>, label: &str) -> Result<Option<Value
     let json = serde_json::from_str::<Value>(&text)
         .with_context(|| format!("{label}: invalid JSON in {}", path.display()))?;
     Ok(Some(json))
+}
+
+fn read_optional_output_json(
+    output: &Path,
+    artifact_name: &str,
+    label: &str,
+) -> Result<Option<Value>> {
+    let path = output.join(artifact_name);
+    if !path.exists() {
+        return Ok(None);
+    }
+    read_optional_json(Some(path), label)
 }
 
 fn take_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf> {
@@ -337,4 +437,15 @@ struct ManifestCoreSummaryArgs {
     production: bool,
     excludes: Vec<String>,
     auto_excludes: Vec<String>,
+}
+
+#[derive(Default)]
+struct ManifestEvidenceSummaryArgs {
+    root: Option<String>,
+    output: Option<PathBuf>,
+    include_tests: bool,
+    production: bool,
+    excludes: Vec<String>,
+    auto_excludes: Vec<String>,
+    generated_artifacts_mode: GeneratedArtifactsMode,
 }

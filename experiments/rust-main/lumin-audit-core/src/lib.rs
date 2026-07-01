@@ -3,6 +3,7 @@ pub mod artifact_summaries;
 pub mod generated_artifacts;
 pub mod living_audit;
 pub mod manifest_core;
+pub mod manifest_evidence;
 pub mod resolver_diagnostics;
 pub mod rust_analysis;
 pub mod scan_scope;
