@@ -74,6 +74,53 @@ describe("audit-manifest public surface", () => {
     expect(update.reviewPack.use).toContain("the engine never calls external APIs");
   });
 
+  it("AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "triage.json",
+        {
+          shape: {
+            totalFiles: 2,
+            tsFiles: 1,
+            rsFiles: 1,
+          },
+        },
+        { to: "output" },
+      );
+      fixture.writeJson(
+        "symbols.json",
+        {
+          uses: {
+            external: 0,
+            resolvedInternal: 0,
+            unresolvedInternal: 0,
+            unresolvedInternalRatio: 0,
+          },
+        },
+        { to: "output" },
+      );
+      fixture.write("framework-resource-surfaces.json", "{not-json", {
+        to: "output",
+      });
+
+      const manifest = {};
+      auditManifest.refreshManifestEvidence(manifest, {
+        root: fixture.root,
+        outDir: fixture.output,
+        includeTests: false,
+        production: true,
+      });
+
+      expect(manifest.scanRange.files).toBe(2);
+      expect(manifest.scanRange.includeTests).toBe(false);
+      expect(manifest.scanRange.production).toBe(true);
+      expect(manifest.blindZones).toEqual(expect.any(Array));
+      expect(manifest.frameworkResourceSurfaces?.status).toBe("unavailable");
+      expect(manifest.frameworkResourceSurfaces?.reason?.kind).toBe(
+        "malformed-json",
+      );
+    }));
+
   it("AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core", () =>
     withManifestFixture((fixture) => {
       fixture.write("triage.json", "{}", { to: "output" });

@@ -14,14 +14,15 @@ use lumin_audit_core::manifest_companion::{
 use lumin_audit_core::manifest_core::{summarize_manifest_core, ManifestCoreOptions};
 use lumin_audit_core::manifest_evidence::{
     summarize_manifest_evidence, ManifestEvidenceArtifacts, ManifestEvidenceOptions,
+    ManifestEvidenceSummary,
 };
 use lumin_audit_core::manifest_final::{
     build_manifest_final_summary_update, build_manifest_final_summary_update_for_rust_analysis,
 };
 use lumin_audit_core::manifest_meta::{build_manifest_meta, ManifestMetaInput};
 use lumin_audit_core::manifest_root::{
-    build_manifest_evidence_update, build_manifest_root, ManifestEvidenceUpdateInput,
-    ManifestRootInput,
+    build_manifest_evidence_update, build_manifest_root, ManifestEvidenceUpdateFields,
+    ManifestEvidenceUpdateInput, ManifestRootInput,
 };
 use lumin_audit_core::rust_analysis::RustAnalysisRunObservation;
 
@@ -193,6 +194,25 @@ pub(super) fn run_manifest_core_summary(args: Vec<String>) -> Result<()> {
 }
 
 pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
+    let summary = read_manifest_evidence_summary(args, "manifest-evidence-summary")?;
+    write_stdout_json(&summary)
+}
+
+pub(super) fn run_manifest_evidence_refresh(args: Vec<String>) -> Result<()> {
+    let summary = read_manifest_evidence_summary(args, "manifest-evidence-refresh")?;
+    let evidence = serde_json::from_value::<ManifestEvidenceUpdateFields>(
+        serde_json::to_value(summary)
+            .context("manifest-evidence-refresh: invalid summary shape")?,
+    )
+    .context("manifest-evidence-refresh: invalid evidence update shape")?;
+    let update = build_manifest_evidence_update(ManifestEvidenceUpdateInput { evidence });
+    write_stdout_json(&update)
+}
+
+fn read_manifest_evidence_summary(
+    args: Vec<String>,
+    label: &str,
+) -> Result<ManifestEvidenceSummary> {
     let mut parsed = ManifestEvidenceSummaryArgs {
         include_tests: true,
         production: false,
@@ -221,18 +241,18 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
             "--auto-exclude" => parsed
                 .auto_excludes
                 .push(take_string(&mut args, "--auto-exclude")?),
-            _ => bail!("manifest-evidence-summary: unknown argument '{arg}'\n{USAGE}"),
+            _ => bail!("{label}: unknown argument '{arg}'\n{USAGE}"),
         }
     }
 
     let root = parsed
         .root
-        .context("manifest-evidence-summary: missing --root <repo>")?;
+        .with_context(|| format!("{label}: missing --root <repo>"))?;
     let output = parsed
         .output
-        .context("manifest-evidence-summary: missing --output <dir>")?;
-    let triage = read_optional_output_json(&output, "triage.json", "manifest-evidence-summary")?;
-    let symbols = read_optional_output_json(&output, "symbols.json", "manifest-evidence-summary")?;
+        .with_context(|| format!("{label}: missing --output <dir>"))?;
+    let triage = read_optional_output_json(&output, "triage.json", label)?;
+    let symbols = read_optional_output_json(&output, "symbols.json", label)?;
     let resolver_capabilities =
         read_optional_output_json_tolerant(&output, "resolver-capabilities.json");
     let resolver_diagnostics =
@@ -245,13 +265,12 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
     let entry_surface = read_optional_output_json_tolerant(&output, "entry-surface.json");
     let rust_analysis =
         read_optional_output_json_tolerant(&output, "rust-analyzer-health.latest.json");
-    let rust_analysis_run =
-        read_optional_json_input(parsed.rust_analysis_run_block, "manifest-evidence-summary")?
-            .map(serde_json::from_value::<RustAnalysisRunObservation>)
-            .transpose()
-            .context("manifest-evidence-summary: invalid --rust-analysis-run-block shape")?;
+    let rust_analysis_run = read_optional_json_input(parsed.rust_analysis_run_block, label)?
+        .map(serde_json::from_value::<RustAnalysisRunObservation>)
+        .transpose()
+        .with_context(|| format!("{label}: invalid --rust-analysis-run-block shape"))?;
 
-    let summary = summarize_manifest_evidence(
+    summarize_manifest_evidence(
         ManifestEvidenceOptions {
             root,
             include_tests: parsed.include_tests,
@@ -274,6 +293,5 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
             entry_surface: entry_surface.as_ref(),
             rust_analysis: rust_analysis.as_ref(),
         },
-    )?;
-    write_stdout_json(&summary)
+    )
 }

@@ -444,3 +444,66 @@ fn cli_manifest_evidence_summary_degrades_malformed_optional_artifacts() -> Resu
     );
     Ok(())
 }
+
+#[test]
+fn cli_manifest_evidence_refresh_emits_manifest_patch_shape() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let output_dir = root.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        output_dir.join("triage.json"),
+        serde_json::to_vec(&json!({
+            "shape": {
+                "totalFiles": 2,
+                "tsFiles": 1,
+                "rsFiles": 1
+            }
+        }))?,
+    )?;
+    fs::write(
+        output_dir.join("symbols.json"),
+        serde_json::to_vec(&json!({
+            "uses": {
+                "external": 0,
+                "resolvedInternal": 0,
+                "unresolvedInternal": 0,
+                "unresolvedInternalRatio": 0
+            }
+        }))?,
+    )?;
+    fs::write(
+        output_dir.join("framework-resource-surfaces.json"),
+        "{not-json",
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-evidence-refresh")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--no-include-tests")
+        .arg("--production")
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(stdout["scanRange"]["files"], 2);
+    assert_eq!(stdout["scanRange"]["includeTests"], false);
+    assert_eq!(stdout["scanRange"]["production"], true);
+    assert!(stdout["blindZones"].is_array());
+    assert_eq!(stdout["frameworkResourceSurfaces"]["status"], "unavailable");
+    assert_eq!(
+        stdout["frameworkResourceSurfaces"]["reason"]["kind"],
+        "malformed-json"
+    );
+    assert_eq!(
+        stdout["frameworkResourceSurfaces"]["totalFilesWithSurfaces"],
+        json!(null)
+    );
+    Ok(())
+}

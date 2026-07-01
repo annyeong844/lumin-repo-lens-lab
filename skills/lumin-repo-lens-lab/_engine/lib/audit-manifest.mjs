@@ -115,7 +115,7 @@ function runAuditCoreJsonResultFile(args, label, options = {}) {
   }
 }
 
-function buildManifestEvidenceSummaryFromFile(root, outDir, {
+function runManifestEvidenceCommand(command, label, root, outDir, {
   includeTests,
   production,
   excludes = [],
@@ -125,7 +125,7 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
   mergeRustAnalysisRun = false,
 } = {}) {
   const args = [
-    'manifest-evidence-summary',
+    command,
     '--root', root,
     '--output', outDir,
     '--generated-artifacts', generatedArtifactsMode,
@@ -145,7 +145,27 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
   for (const autoExclude of autoExcludes) {
     args.push('--auto-exclude', autoExclude);
   }
-  return runAuditCoreJson(args, 'buildManifestEvidenceSummary', runOptions);
+  return runAuditCoreJson(args, label, runOptions);
+}
+
+function buildManifestEvidenceSummaryFromFile(root, outDir, options = {}) {
+  return runManifestEvidenceCommand(
+    'manifest-evidence-summary',
+    'buildManifestEvidenceSummary',
+    root,
+    outDir,
+    options,
+  );
+}
+
+function buildManifestEvidenceRefreshFromFile(root, outDir, options = {}) {
+  return runManifestEvidenceCommand(
+    'manifest-evidence-refresh',
+    'refreshManifestEvidence',
+    root,
+    outDir,
+    options,
+  );
 }
 
 export function collectProducedArtifacts(outDir, options = {}) {
@@ -384,15 +404,6 @@ export function buildManifestCompanionUpdate(input) {
   });
 }
 
-function buildManifestEvidenceUpdate(evidence) {
-  return runAuditCoreJson([
-    'manifest-evidence-update',
-    '--input', '-',
-  ], 'buildManifestEvidenceUpdate', {
-    input: JSON.stringify({ evidence }),
-  });
-}
-
 export function buildManifestEvidence({
   root,
   outDir,
@@ -427,6 +438,8 @@ export function buildManifestEvidence({
 }
 
 export function refreshManifestEvidence(manifest, options) {
-  const evidence = buildManifestEvidence(options);
-  Object.assign(manifest, buildManifestEvidenceUpdate(evidence));
+  Object.assign(
+    manifest,
+    buildManifestEvidenceRefreshFromFile(options.root, options.outDir, options),
+  );
 }

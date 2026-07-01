@@ -63,6 +63,53 @@ check('AMES1d. companion manifest wrapper leaves companion block shapes in audit
   assert.match(update.reviewPack.use, /the engine never calls external APIs/);
 });
 
+check('AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-refresh-'));
+  const out = path.join(fx, 'out');
+  try {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(
+      path.join(out, 'triage.json'),
+      JSON.stringify({
+        shape: {
+          totalFiles: 2,
+          tsFiles: 1,
+          rsFiles: 1,
+        },
+      }),
+    );
+    writeFileSync(
+      path.join(out, 'symbols.json'),
+      JSON.stringify({
+        uses: {
+          external: 0,
+          resolvedInternal: 0,
+          unresolvedInternal: 0,
+          unresolvedInternalRatio: 0,
+        },
+      }),
+    );
+    writeFileSync(path.join(out, 'framework-resource-surfaces.json'), '{not-json');
+
+    const manifest = {};
+    auditManifest.refreshManifestEvidence(manifest, {
+      root: fx,
+      outDir: out,
+      includeTests: false,
+      production: true,
+    });
+
+    assert.equal(manifest.scanRange.files, 2);
+    assert.equal(manifest.scanRange.includeTests, false);
+    assert.equal(manifest.scanRange.production, true);
+    assert.ok(Array.isArray(manifest.blindZones));
+    assert.equal(manifest.frameworkResourceSurfaces?.status, 'unavailable');
+    assert.equal(manifest.frameworkResourceSurfaces?.reason?.kind, 'malformed-json');
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
 check('AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core', () => {
   const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-producer-performance-'));
   const out = path.join(fx, 'out');

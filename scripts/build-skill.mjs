@@ -168,6 +168,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-companion-update',
       'manifest-companion-update: missing --input',
     ],
+    [
+      'manifest-evidence-refresh',
+      'manifest-evidence-refresh: missing --root <repo>',
+    ],
   ]) {
     const result = spawnSync(binaryPath, [command], {
       cwd: ROOT,
