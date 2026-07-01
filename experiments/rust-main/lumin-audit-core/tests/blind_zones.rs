@@ -32,6 +32,17 @@ fn zone_by_area<'a>(zones: &'a Value, area: &str) -> Result<&'a Value> {
         .ok_or_else(|| anyhow::anyhow!("missing zone area {area}: {zones}"))
 }
 
+fn case_by_name<'a>(cases: &'a Value, name: &str) -> Result<&'a Value> {
+    cases
+        .as_array()
+        .and_then(|cases| {
+            cases
+                .iter()
+                .find(|case| case.get("name").and_then(Value::as_str) == Some(name))
+        })
+        .ok_or_else(|| anyhow::anyhow!("missing case {name}: {cases}"))
+}
+
 fn shared_fixture_cases_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../tests/fixtures/audit-core-blind-zones/cases.json")
@@ -308,6 +319,73 @@ fn cli_blind_zones_summary_emits_fixture_json() -> Result<()> {
         zone_by_area(&stdout, "python-scan-gap")?["severity"],
         "scan-gap"
     );
+    Ok(())
+}
+
+#[test]
+fn cli_blind_zones_summary_emits_shared_case_batch_json() -> Result<()> {
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("blind-zones-summary")
+        .arg("--cases")
+        .arg(shared_fixture_cases_path())
+        .output()?;
+
+    if !output.status.success() {
+        bail!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    let stdout = serde_json::from_slice::<Value>(&output.stdout)?;
+    let clean = case_by_name(&stdout, "clean-ts-js")?;
+    assert_eq!(clean["blindZones"], json!([]));
+
+    let rust_gap = case_by_name(&stdout, "rust-scan-gap-without-current-rust-analysis")?;
+    assert_eq!(
+        zone_by_area(&rust_gap["blindZones"], "rust")?["severity"],
+        "scan-gap"
+    );
+
+    let parser_gap = case_by_name(&stdout, "parser-cjs-html-precision-gaps")?;
+    assert_eq!(
+        zone_by_area(&parser_gap["blindZones"], "commonjs-dynamic-require")?["severity"],
+        "precision-gap"
+    );
+    Ok(())
+}
+
+#[test]
+fn cli_blind_zones_summary_hard_stops_on_broken_case_batch() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let cases_path = temp.path().join("blind-zone-cases.json");
+    fs::write(&cases_path, r#"[{"name":"broken"}]"#)?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("blind-zones-summary")
+        .arg("--cases")
+        .arg(&cases_path)
+        .output()?;
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("blind-zones-summary: case 'broken' missing input"));
+    Ok(())
+}
+
+#[test]
+fn cli_blind_zones_summary_rejects_input_and_cases_together() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("blind-zones-fixture.json");
+    fs::write(&input_path, "{}")?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("blind-zones-summary")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--cases")
+        .arg(shared_fixture_cases_path())
+        .output()?;
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("use either --input"));
     Ok(())
 }
 

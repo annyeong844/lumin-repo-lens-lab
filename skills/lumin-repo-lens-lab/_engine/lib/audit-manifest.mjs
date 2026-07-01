@@ -26,15 +26,17 @@ function auditCoreBinary() {
   }
 }
 
-function runAuditCoreJson(args, label) {
+function runAuditCoreJson(args, label, options = {}) {
   const command = auditCoreBinary();
   if (!existsSync(command)) {
     throw new Error(`${label}: lumin-audit-core binary missing at ${command}; run cargo build --manifest-path experiments/Cargo.toml -p lumin-audit-core`);
   }
-  const stdout = execFileSync(command, args, {
+  const childOptions = {
     encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+    stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+  };
+  if (options.input !== undefined) childOptions.input = options.input;
+  const stdout = execFileSync(command, args, childOptions);
   return JSON.parse(stdout);
 }
 
@@ -104,6 +106,15 @@ export function buildOrchestrationResultSummaryFromFile(artifactPath) {
     'orchestration-result-summary',
     '--artifact', artifactPath,
   ], 'buildOrchestrationResultSummary');
+}
+
+export function buildLifecycleSummary(blocks) {
+  return runAuditCoreJson([
+    'lifecycle-summary',
+    '--input', '-',
+  ], 'buildLifecycleSummary', {
+    input: JSON.stringify(blocks ?? {}),
+  });
 }
 
 export function buildManifestEvidence({

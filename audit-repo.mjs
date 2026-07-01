@@ -72,6 +72,7 @@ import {
   buildProducerPerformanceSummaryFromFile,
   buildOrchestrationPlan,
   buildOrchestrationResultSummaryFromFile,
+  buildLifecycleSummary,
   buildManifestEvidence,
   collectProducedArtifacts,
   refreshManifestEvidence,
@@ -1436,6 +1437,13 @@ if (values['check-canon']) {
   manifest.checkCanon = result.block;
   if (finalExitCode === 0) finalExitCode = result.exitCode;
 }
+
+manifest.lifecycle = buildLifecycleSummary({
+  preWrite: manifest.preWrite ?? null,
+  postWrite: manifest.postWrite ?? null,
+  canonDraft: manifest.canonDraft ?? null,
+  checkCanon: manifest.checkCanon ?? null,
+});
 
 // Strict post-write: if --strict-post-write is set AND the post-write step
 // was requested but did not run (spawn failure), escalate to exit 2. The

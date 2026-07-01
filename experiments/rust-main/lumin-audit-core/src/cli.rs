@@ -2,15 +2,16 @@ use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use lumin_audit_core::artifact_registry::collect_produced_artifacts;
 use lumin_audit_core::artifact_summaries::{summarize_artifact, ArtifactSummaryKind};
-use lumin_audit_core::blind_zones::{summarize_blind_zones, BlindZoneInput};
+use lumin_audit_core::blind_zones::{summarize_blind_zones, BlindZoneInput, BlindZoneSummary};
 use lumin_audit_core::generated_artifacts::{
     summarize_generated_artifacts, GeneratedArtifactsMode, GeneratedArtifactsOptions,
 };
+use lumin_audit_core::lifecycle::summarize_lifecycle;
 use lumin_audit_core::living_audit::summarize_living_audit;
 use lumin_audit_core::manifest_core::{summarize_manifest_core, ManifestCoreOptions};
 use lumin_audit_core::manifest_evidence::{
@@ -24,7 +25,7 @@ use lumin_audit_core::producer_performance::summarize_producer_performance;
 use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::summarize_rust_analysis_artifact;
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary --input <fixture.json>\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core living-audit-summary --root <repo>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -35,6 +36,7 @@ pub fn run() -> Result<()> {
         Some("artifact-summary") => run_artifact_summary(args.collect()),
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         Some("blind-zones-summary") => run_blind_zones_summary(args.collect()),
+        Some("lifecycle-summary") => run_lifecycle_summary(args.collect()),
         Some("manifest-core-summary") => run_manifest_core_summary(args.collect()),
         Some("manifest-evidence-summary") => run_manifest_evidence_summary(args.collect()),
         Some("orchestration-plan") => run_orchestration_plan(args.collect()),
@@ -216,22 +218,76 @@ fn run_blind_zones_summary(args: Vec<String>) -> Result<()> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--input" => parsed.input = Some(take_path(&mut args, "--input")?),
+            "--cases" => parsed.cases = Some(take_path(&mut args, "--cases")?),
             _ => bail!("blind-zones-summary: unknown argument '{arg}'\n{USAGE}"),
         }
     }
 
-    let input = parsed
-        .input
-        .context("blind-zones-summary: missing --input <fixture.json>")?;
-    let fixture = read_required_json(&input, "blind-zones-summary")?;
-    let summary = summarize_blind_zones(BlindZoneInput {
+    match (parsed.input, parsed.cases) {
+        (Some(input), None) => {
+            let fixture = read_required_json(&input, "blind-zones-summary")?;
+            let summary = summarize_blind_zone_fixture(&fixture);
+            write_stdout_json(&summary)
+        }
+        (None, Some(cases_path)) => {
+            let cases_json = read_required_json(&cases_path, "blind-zones-summary")?;
+            let cases = cases_json
+                .as_array()
+                .context("blind-zones-summary: --cases fixture must be an array")?;
+            let mut summaries = Vec::new();
+            for case in cases {
+                summaries.push(summarize_blind_zone_case(case)?);
+            }
+            write_stdout_json(&summaries)
+        }
+        (None, None) => {
+            bail!("blind-zones-summary: missing --input <fixture.json> or --cases <cases.json>")
+        }
+        (Some(_), Some(_)) => bail!(
+            "blind-zones-summary: use either --input <fixture.json> or --cases <cases.json>, not both"
+        ),
+    }
+}
+
+fn summarize_blind_zone_fixture(fixture: &Value) -> Vec<BlindZoneSummary> {
+    summarize_blind_zones(BlindZoneInput {
         triage: fixture.get("triage"),
         symbols: fixture.get("symbols"),
         dead_classify: fixture.get("deadClassify"),
         entry_surface: fixture.get("entrySurface"),
         resolver_diagnostics: fixture.get("resolverDiagnostics"),
         rust_analysis: fixture.get("rustAnalysis"),
-    });
+    })
+}
+
+fn summarize_blind_zone_case(case: &Value) -> Result<BlindZoneCaseSummary> {
+    let name = case
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("<unnamed>")
+        .to_string();
+    let input = case
+        .get("input")
+        .with_context(|| format!("blind-zones-summary: case '{name}' missing input"))?;
+    Ok(BlindZoneCaseSummary {
+        name,
+        blind_zones: summarize_blind_zone_fixture(input),
+    })
+}
+
+fn run_lifecycle_summary(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("lifecycle-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("lifecycle-summary: missing --input <path|->")?;
+    let lifecycle_json = read_json_input(&input, "lifecycle-summary")?;
+    let summary = summarize_lifecycle(&lifecycle_json);
     write_stdout_json(&summary)
 }
 
@@ -461,6 +517,18 @@ fn read_required_json(path: &Path, label: &str) -> Result<Value> {
         .with_context(|| format!("{label}: invalid JSON in {}", path.display()))
 }
 
+fn read_json_input(input: &str, label: &str) -> Result<Value> {
+    if input == "-" {
+        let mut text = String::new();
+        io::stdin()
+            .read_to_string(&mut text)
+            .with_context(|| format!("{label}: failed to read stdin"))?;
+        return serde_json::from_str::<Value>(&text)
+            .with_context(|| format!("{label}: invalid JSON in stdin"));
+    }
+    read_required_json(Path::new(input), label)
+}
+
 fn read_optional_output_json(
     output: &Path,
     artifact_name: &str,
@@ -539,6 +607,14 @@ struct ResolverDiagnosticsSummaryArgs {
 #[derive(Default)]
 struct BlindZonesSummaryArgs {
     input: Option<PathBuf>,
+    cases: Option<PathBuf>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BlindZoneCaseSummary {
+    name: String,
+    blind_zones: Vec<BlindZoneSummary>,
 }
 
 #[derive(Default)]

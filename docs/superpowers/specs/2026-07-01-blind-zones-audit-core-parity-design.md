@@ -101,6 +101,16 @@ The first Rust CLI should consume a single fixture payload containing the same
 objects the JS helper receives: `triage`, `symbols`, `deadClassify`,
 `entrySurface`, `resolverDiagnostics`, and `rustAnalysis`. Keeping the first CLI
 fixture-based avoids changing orchestrator wiring before parity is proven.
+It may also accept the shared parity corpus as a batch fixture:
+
+```text
+lumin-audit-core blind-zones-summary --cases <cases.json>
+```
+
+The batch output is parity-runner evidence shaped as
+`[{ "name": "...", "blindZones": [...] }]`. It is not a `manifest.json`
+surface and must not be wired into `_lib/audit-manifest.mjs` until the JS
+producer output has been compared against the same cases.
 
 Only after parity is proven should `manifest-evidence-summary` grow an optional
 blind-zone projection and `_lib/audit-manifest.mjs` become a thin wrapper for
