@@ -1,9 +1,15 @@
 use anyhow::{bail, Context, Result};
-use serde::Serialize;
 use serde_json::Value;
 use std::fs;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::{self, Write};
+
+mod args;
+mod io_support;
+mod usage;
+
+use args::*;
+use io_support::*;
+use usage::USAGE;
 
 use lumin_audit_core::artifact_measurement::measure_artifact_sizes;
 use lumin_audit_core::artifact_read_metrics::{
@@ -65,8 +71,6 @@ use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::{
     merge_rust_analysis_run, summarize_rust_analysis_artifact, RustAnalysisRunMergeInput,
 };
-
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core artifact-size-summary --output <dir> --input <path|->\n       lumin-audit-core artifact-read-metrics-summary --input <path|->\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core rust-analysis-run-merge --input <path|->\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]\n       lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>]\n       lumin-audit-core lifecycle-summary --input <path|->\n       lumin-audit-core lifecycle-exit-policy --input <path|->\n       lumin-audit-core lifecycle-request-guard --input <path|->\n       lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>\n       lumin-audit-core manifest-root --input <path|->\n       lumin-audit-core manifest-evidence-update --input <path|->\n       lumin-audit-core manifest-final-summary-update --output <dir> --producer-performance <path> [--rust-analysis-ran|--rust-analysis-block <path|->]\n       lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]\n       lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]\n       lumin-audit-core execute-base-plan --input <path|->\n       lumin-audit-core execute-canon-draft --input <path|->\n       lumin-audit-core execute-check-canon --input <path|->\n       lumin-audit-core pre-write-route --input <path|->\n       lumin-audit-core execute-rust-pre-write --input <path|-> [--result-output <path>]\n       lumin-audit-core execute-post-write --input <path|->\n       lumin-audit-core orchestration-result-summary --artifact <path>\n       lumin-audit-core producer-performance-summary --artifact <path>\n       lumin-audit-core producer-performance-artifact --input <path|->\n       lumin-audit-core producer-performance-runtime-artifact --input <path|->\n       lumin-audit-core living-audit-summary --root <repo>";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -950,171 +954,4 @@ fn run_living_audit_summary(args: Vec<String>) -> Result<()> {
     let root = root.context("living-audit-summary: missing --root <repo>")?;
     let summary = summarize_living_audit(&root);
     write_stdout_json(&summary)
-}
-
-fn read_optional_json(path: Option<PathBuf>, label: &str) -> Result<Option<Value>> {
-    let Some(path) = path else {
-        return Ok(None);
-    };
-    let text = fs::read_to_string(&path)
-        .with_context(|| format!("{label}: failed to read {}", path.display()))?;
-    let json = serde_json::from_str::<Value>(&text)
-        .with_context(|| format!("{label}: invalid JSON in {}", path.display()))?;
-    Ok(Some(json))
-}
-
-fn read_required_json(path: &Path, label: &str) -> Result<Value> {
-    let text = fs::read_to_string(path)
-        .with_context(|| format!("{label}: failed to read {}", path.display()))?;
-    serde_json::from_str::<Value>(&text)
-        .with_context(|| format!("{label}: invalid JSON in {}", path.display()))
-}
-
-fn read_json_input(input: &str, label: &str) -> Result<Value> {
-    if input == "-" {
-        let mut text = String::new();
-        io::stdin()
-            .read_to_string(&mut text)
-            .with_context(|| format!("{label}: failed to read stdin"))?;
-        return serde_json::from_str::<Value>(&text)
-            .with_context(|| format!("{label}: invalid JSON in stdin"));
-    }
-    read_required_json(Path::new(input), label)
-}
-
-fn read_optional_json_input(input: Option<String>, label: &str) -> Result<Option<Value>> {
-    input
-        .as_deref()
-        .map(|input| read_json_input(input, label))
-        .transpose()
-}
-
-fn read_optional_output_json(
-    output: &Path,
-    artifact_name: &str,
-    label: &str,
-) -> Result<Option<Value>> {
-    let path = output.join(artifact_name);
-    if !path.exists() {
-        return Ok(None);
-    }
-    read_optional_json(Some(path), label)
-}
-
-fn take_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf> {
-    let Some(value) = args.next() else {
-        bail!("{flag} requires a value");
-    };
-    if value.starts_with("--") {
-        bail!("{flag} requires a value");
-    }
-    Ok(PathBuf::from(value))
-}
-
-fn take_string(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<String> {
-    let Some(value) = args.next() else {
-        bail!("{flag} requires a value");
-    };
-    if value.starts_with("--") {
-        bail!("{flag} requires a value");
-    }
-    Ok(value)
-}
-
-fn write_stdout_json<T: Serialize>(value: &T) -> Result<()> {
-    let stdout = io::stdout();
-    let mut stdout = stdout.lock();
-    serde_json::to_writer(&mut stdout, value).context("failed to write audit-core JSON stdout")?;
-    stdout
-        .write_all(b"\n")
-        .context("failed to write audit-core JSON newline")
-}
-
-fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    let mut bytes =
-        serde_json::to_vec(value).context("failed to serialize audit-core JSON file")?;
-    bytes.push(b'\n');
-    fs::write(path, bytes)
-        .with_context(|| format!("failed to write audit-core JSON file {}", path.display()))
-}
-
-#[derive(Default)]
-struct ArtifactRegistryArgs {
-    output: Option<PathBuf>,
-    rust_analysis_ran: bool,
-    rust_analysis_block: Option<String>,
-}
-
-#[derive(Default)]
-struct RustAnalysisSummaryArgs {
-    root: Option<PathBuf>,
-    artifact: Option<PathBuf>,
-}
-
-#[derive(Default)]
-struct GeneratedArtifactsSummaryArgs {
-    root: Option<PathBuf>,
-    symbols: Option<PathBuf>,
-    include_tests: bool,
-    excludes: Vec<String>,
-    generated_artifacts_mode: GeneratedArtifactsMode,
-}
-
-#[derive(Default)]
-struct ArtifactSummaryArgs {
-    kind: Option<ArtifactSummaryKind>,
-    artifact: Option<PathBuf>,
-}
-
-#[derive(Default)]
-struct ResolverDiagnosticsSummaryArgs {
-    symbols: Option<PathBuf>,
-    resolver_capabilities: Option<PathBuf>,
-    resolver_diagnostics: Option<PathBuf>,
-}
-
-#[derive(Default)]
-struct BlindZonesSummaryArgs {
-    input: Option<PathBuf>,
-    cases: Option<PathBuf>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BlindZoneCaseSummary {
-    name: String,
-    blind_zones: Vec<BlindZoneSummary>,
-}
-
-#[derive(Default)]
-struct ManifestCoreSummaryArgs {
-    root: Option<String>,
-    triage: Option<PathBuf>,
-    symbols: Option<PathBuf>,
-    include_tests: bool,
-    production: bool,
-    excludes: Vec<String>,
-    auto_excludes: Vec<String>,
-}
-
-#[derive(Default)]
-struct ManifestEvidenceSummaryArgs {
-    root: Option<String>,
-    output: Option<PathBuf>,
-    include_tests: bool,
-    production: bool,
-    excludes: Vec<String>,
-    auto_excludes: Vec<String>,
-    generated_artifacts_mode: GeneratedArtifactsMode,
-}
-
-#[derive(Default)]
-struct OrchestrationPlanArgs {
-    profile: AuditProfile,
-    sarif: bool,
-    pre_write: bool,
-    post_write: bool,
-    canon_draft: bool,
-    check_canon: bool,
-    rust_analyzer: bool,
 }
