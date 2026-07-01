@@ -1,0 +1,143 @@
+[
+  {
+    "name": "clean-ts-js",
+    "input": {
+      "triage": { "byLanguage": { "ts": 100, "tsx": 50 } },
+      "symbols": {
+        "uses": { "unresolvedInternalRatio": 0.02 },
+        "meta": { "warnings": [] }
+      }
+    },
+    "expectedZones": [],
+    "absentAreas": ["rust", "resolver", "parser", "sfc-scan-gap"]
+  },
+  {
+    "name": "rust-scan-gap-without-current-rust-analysis",
+    "input": {
+      "triage": { "byLanguage": { "ts": 3, "rs": 2 } }
+    },
+    "expectedZones": [
+      { "area": "rust", "severity": "scan-gap" }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "rust-analysis-clears-rust-scan-gap",
+    "input": {
+      "triage": { "byLanguage": { "ts": 3, "rs": 2 } },
+      "rustAnalysis": { "status": "complete", "available": true }
+    },
+    "expectedZones": [],
+    "absentAreas": ["rust"]
+  },
+  {
+    "name": "grouped-sfc-scan-gap",
+    "input": {
+      "triage": {
+        "shape": {
+          "totalFiles": 4,
+          "tsFiles": 1,
+          "jsFiles": 0,
+          "pyFiles": 0,
+          "goFiles": 0,
+          "sfcFiles": 3
+        },
+        "byLanguage": { "ts": 1, "vue": 1, "svelte": 1, "astro": 1 }
+      }
+    },
+    "expectedZones": [
+      { "area": "sfc-scan-gap", "severity": "scan-gap" }
+    ],
+    "absentAreas": ["vue", "svelte", "astro"]
+  },
+  {
+    "name": "python-go-unavailable-scan-gaps",
+    "input": {
+      "triage": {
+        "shape": {
+          "totalFiles": 4,
+          "tsFiles": 2,
+          "jsFiles": 0,
+          "pyFiles": 1,
+          "goFiles": 1
+        }
+      },
+      "symbols": {
+        "meta": {
+          "languageSupport": {
+            "python": { "enabled": false, "reason": "python executable unavailable" },
+            "go": { "enabled": false, "reason": "tree-sitter unavailable" }
+          }
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "python-scan-gap", "severity": "scan-gap" },
+      { "area": "go-scan-gap", "severity": "scan-gap" }
+    ],
+    "absentAreas": ["python-method-resolution", "go-method-resolution"]
+  },
+  {
+    "name": "resolver-absolute-count-with-grouped-reasons",
+    "input": {
+      "symbols": {
+        "uses": { "unresolvedInternalRatio": 0.06, "unresolvedInternal": 1300 },
+        "topUnresolvedSpecifiers": [{ "specifierPrefix": "@workspace/", "count": 800 }],
+        "unresolvedInternalSummaryByReason": {
+          "workspace-package-subpath-target-missing": {
+            "count": 12,
+            "spaces": { "type": 12, "value": 0, "unknown": 0 },
+            "resolverStages": { "workspacePackageSubpath": 12 }
+          },
+          "tsconfig-path-target-missing": {
+            "count": 4,
+            "spaces": { "type": 1, "value": 3, "unknown": 0 },
+            "hints": { "generated-artifact-missing": 4 }
+          }
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "resolver", "severity": "confidence-gap" }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "parser-cjs-html-precision-gaps",
+    "input": {
+      "symbols": {
+        "meta": {
+          "warnings": [{ "kind": "parse-errors", "count": 2, "message": "parse failed" }]
+        },
+        "cjsExportSurfaceByFile": {
+          "src/exact.cjs": { "exact": [{ "name": "foo" }], "opaque": [] },
+          "src/opaque.cjs": {
+            "exact": [],
+            "opaque": [{ "kind": "module-exports-assignment" }]
+          }
+        },
+        "cjsRequireOpacity": [
+          { "consumerFile": "src/consumer.js", "line": 2, "kind": "dynamic-require" }
+        ]
+      },
+      "entrySurface": {
+        "unresolvedHtmlEntrypoints": [
+          { "htmlFile": "index.html", "src": "./missing.js", "resolvedFile": "missing.js" }
+        ]
+      }
+    },
+    "expectedZones": [
+      { "area": "parser", "severity": "precision-gap" },
+      { "area": "commonjs-export-surface", "severity": "precision-gap" },
+      { "area": "commonjs-dynamic-require", "severity": "precision-gap" },
+      { "area": "html-entry-surface", "severity": "confidence-gap" }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "missing-inputs-do-not-invent-zones",
+    "input": {},
+    "expectedZones": [],
+    "absentAreas": ["rust", "resolver", "parser", "python-scan-gap", "go-scan-gap"]
+  }
+]
