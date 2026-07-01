@@ -404,6 +404,19 @@ export function buildManifestCompanionUpdate(input) {
   });
 }
 
+function observeManifestEvidenceArtifacts(outDir, onArtifactRead) {
+  loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'symbols.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'resolver-diagnostics.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'resolver-capabilities.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'framework-resource-surfaces.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'unused-deps.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'rust-analyzer-health.latest.json', { onRead: onArtifactRead });
+}
+
 export function buildManifestEvidence({
   root,
   outDir,
@@ -416,15 +429,7 @@ export function buildManifestEvidence({
   mergeRustAnalysisRun = false,
   onArtifactRead,
 }) {
-  loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'symbols.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'resolver-diagnostics.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'resolver-capabilities.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'framework-resource-surfaces.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'unused-deps.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
+  observeManifestEvidenceArtifacts(outDir, onArtifactRead);
   const manifestEvidence = buildManifestEvidenceSummaryFromFile(root, outDir, {
     includeTests,
     production,
@@ -438,6 +443,7 @@ export function buildManifestEvidence({
 }
 
 export function refreshManifestEvidence(manifest, options) {
+  observeManifestEvidenceArtifacts(options.outDir, options.onArtifactRead);
   Object.assign(
     manifest,
     buildManifestEvidenceRefreshFromFile(options.root, options.outDir, options),

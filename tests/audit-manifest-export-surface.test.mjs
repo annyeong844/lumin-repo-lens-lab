@@ -103,13 +103,22 @@ describe("audit-manifest public surface", () => {
       fixture.write("framework-resource-surfaces.json", "{not-json", {
         to: "output",
       });
+      fixture.write(
+        "rust-analyzer-health.latest.json",
+        JSON.stringify({
+          schemaVersion: "lumin-rust-analyzer-health.v1",
+        }),
+        { to: "output" },
+      );
 
+      const reads = [];
       const manifest = {};
       auditManifest.refreshManifestEvidence(manifest, {
         root: fixture.root,
         outDir: fixture.output,
         includeTests: false,
         production: true,
+        onArtifactRead: (read) => reads.push(read),
       });
 
       expect(manifest.scanRange.files).toBe(2);
@@ -120,6 +129,17 @@ describe("audit-manifest public surface", () => {
       expect(manifest.frameworkResourceSurfaces?.reason?.kind).toBe(
         "malformed-json",
       );
+      expect(reads.some((read) => read.filePath.endsWith("triage.json"))).toBe(
+        true,
+      );
+      expect(reads.some((read) => read.filePath.endsWith("symbols.json"))).toBe(
+        true,
+      );
+      expect(
+        reads.some((read) =>
+          read.filePath.endsWith("rust-analyzer-health.latest.json"),
+        ),
+      ).toBe(true);
     }));
 
   it("AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core", () =>

@@ -91,13 +91,21 @@ check('AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch', (
       }),
     );
     writeFileSync(path.join(out, 'framework-resource-surfaces.json'), '{not-json');
+    writeFileSync(
+      path.join(out, 'rust-analyzer-health.latest.json'),
+      JSON.stringify({
+        schemaVersion: 'lumin-rust-analyzer-health.v1',
+      }),
+    );
 
+    const reads = [];
     const manifest = {};
     auditManifest.refreshManifestEvidence(manifest, {
       root: fx,
       outDir: out,
       includeTests: false,
       production: true,
+      onArtifactRead: (read) => reads.push(read),
     });
 
     assert.equal(manifest.scanRange.files, 2);
@@ -106,6 +114,9 @@ check('AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch', (
     assert.ok(Array.isArray(manifest.blindZones));
     assert.equal(manifest.frameworkResourceSurfaces?.status, 'unavailable');
     assert.equal(manifest.frameworkResourceSurfaces?.reason?.kind, 'malformed-json');
+    assert.ok(reads.some((read) => read.filePath.endsWith('triage.json')));
+    assert.ok(reads.some((read) => read.filePath.endsWith('symbols.json')));
+    assert.ok(reads.some((read) => read.filePath.endsWith('rust-analyzer-health.latest.json')));
   } finally {
     rmSync(fx, { recursive: true, force: true });
   }
