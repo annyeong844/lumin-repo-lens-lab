@@ -17,14 +17,15 @@ contract, base audit child-process executor core, typed orchestration event
 ledger, producer-performance artifact construction from completed execution
 observations, artifact-size measurement from JS-supplied produced artifact
 names, base producer phase timing sidecar reads, lifecycle summary projection,
-and orchestration result summary projection that are not source-language
+orchestration result summary projection, and the migrated canon-draft /
+check-canon lifecycle child-process wrappers that are not source-language
 analysis.
 
 It does not own JS/TS producer behavior, Rust source-health syntax analysis,
 Cargo semantic oracle behavior outside the explicitly migrated canon-draft
-lifecycle child-process wrapper, ordinary artifact-read measurement, lifecycle
-phase timing reads, human companion rendering, or final `manifest.json` writing
-yet.
+lifecycle child-process wrapper, check-canon lifecycle child-process wrapper,
+ordinary artifact-read measurement, lifecycle phase timing reads, human
+companion rendering, or final `manifest.json` writing yet.
 
 ## Remaining JS-Owned Manifest Boundaries
 
@@ -34,12 +35,12 @@ or orchestration ownership before migration.
 | Manifest area | Current owner | Why it stays JS-owned for now | Next migration gate |
 |---|---|---|---|
 | `manifest.json.blindZones` | `_lib/blind-zones.mjs` through `_lib/audit-manifest.mjs` | Blind-zone detection combines TS/JS producer semantics from `triage.json`, `symbols.json`, `dead-classify.json`, `entry-surface.json`, resolver diagnostics, and Rust analysis availability. Rust audit-core must not reinterpret those claims until parity is checked. | Follow `docs/superpowers/specs/2026-07-01-blind-zones-audit-core-parity-design.md`: compare JS blind-zone outputs against a typed Rust port on protected fixtures and real artifacts, including missing/partial producer artifacts, before changing the owner. |
-| Producer runtime observation values (`commandsRun`, `skipped`) | Base audit profile: `orchestration_executor.rs` through the `execute-base-plan` wrapper; canon-draft lifecycle raw block: `canon_draft_lifecycle.rs` through the `execute-canon-draft` wrapper; remaining lifecycle helpers: `audit-repo.mjs` | Rust now owns base-step skip decisions, statuses, stderr snippets, wall-clock measurements, orchestrator memory snapshots, and canon-draft child execution aggregation. JS still builds executor requests, invokes Rust CLIs, owns pre-write/post-write/check-canon lifecycle observations, and assembles the final manifest. | Migrate remaining lifecycle helpers only with their own raw-block parity plans; keep JS/TS producer internals outside audit-core. |
+| Producer runtime observation values (`commandsRun`, `skipped`) | Base audit profile: `orchestration_executor.rs` through the `execute-base-plan` wrapper; canon-draft lifecycle raw block: `canon_draft_lifecycle.rs` through the `execute-canon-draft` wrapper; check-canon lifecycle raw block: `check_canon_lifecycle.rs` through the `execute-check-canon` wrapper; remaining lifecycle helpers: `audit-repo.mjs` | Rust now owns base-step skip decisions, statuses, stderr snippets, wall-clock measurements, orchestrator memory snapshots, canon-draft child execution aggregation, and check-canon child execution aggregation. JS still builds executor requests, invokes Rust CLIs, owns pre-write/post-write lifecycle observations, and assembles the final manifest. | Migrate remaining lifecycle helpers only with their own raw-block parity plans; keep JS/TS producer internals outside audit-core. |
 | Producer performance measurement inputs | Base audit profile: `orchestration_events.rs` from typed runtime observations; lifecycle helpers and JSON artifact read observation: `audit-repo.mjs` | Rust owns base child status/wall/stderr/memory observations, base producer phase sidecar reads, artifact-size measurement for JS-supplied produced artifact names, and final `producer-performance.json` construction. JS still observes ordinary JSON artifact reads, builds the runtime request, owns lifecycle observations, and assembles the final manifest. | Move lifecycle observations and ordinary artifact-read measurement only with explicit Rust owners. |
-| Raw lifecycle blocks (`preWrite`, `postWrite`, `canonDraft`, `checkCanon`) | `canonDraft`: `canon_draft_lifecycle.rs` through the `execute-canon-draft` wrapper; `preWrite` / `postWrite` / `checkCanon`: `audit-repo.mjs` plus lifecycle helpers | `canonDraft` now records `executionOwner: "lumin-audit-core"` and preserves the checked JS helper contract: source expansion, unknown-source failure, per-source child exit projection, fallback draft paths, and advisory all-failed exit semantics. The other raw blocks still describe JS-run helper execution and strict-mode exit policy. | Migrate pre-write, post-write, and check-canon only after each raw-block contract has its own parity plan. |
+| Raw lifecycle blocks (`preWrite`, `postWrite`, `canonDraft`, `checkCanon`) | `canonDraft`: `canon_draft_lifecycle.rs` through the `execute-canon-draft` wrapper; `checkCanon`: `check_canon_lifecycle.rs` through the `execute-check-canon` wrapper; `preWrite` / `postWrite`: `audit-repo.mjs` plus lifecycle helpers | `canonDraft` records `executionOwner: "lumin-audit-core"` and preserves the checked JS helper contract: source expansion, unknown-source failure, per-source child exit projection, fallback draft paths, and advisory all-failed exit semantics. `checkCanon` records `executionOwner: "lumin-audit-core"` and preserves the checked JS helper contract: source expansion, all/per-source child selection, `canon-drift.json` per-source projection, and advisory/strict exit semantics. Pre/post-write still describe JS-run helper execution and advisory/delta semantics. | Migrate pre-write and post-write only after each raw-block contract has its own parity plan. |
 | Human companion artifacts (`auditSummary`, `reviewPack`, `topologyMermaid`) | `audit-repo.mjs` plus renderer modules | These are presentation/rendering outputs, not typed manifest evidence summaries. | Migrate only through a separate renderer parity plan. |
 | Final `manifest.json` file write | `audit-repo.mjs` | The manifest root still joins Rust summaries with JS producer orchestration and optional pre/post-write lifecycle blocks. | Migrate after all manifest fields have typed Rust owners or an explicit Rust orchestrator owns the final write. |
-| Lifecycle child process execution | `canonDraft`: `canon_draft_lifecycle.rs`; remaining lifecycle helpers: `audit-repo.mjs` | Rust audit-core owns the base audit profile executor and the canon-draft lifecycle child spawner. Pre-write, post-write, and check-canon raw lifecycle blocks still describe JS-run helper execution. | Migrate check-canon next only after porting the `canon-drift.json` aggregation contract; migrate pre/post-write separately because they own advisory and delta semantics. |
+| Lifecycle child process execution | `canonDraft`: `canon_draft_lifecycle.rs`; `checkCanon`: `check_canon_lifecycle.rs`; remaining lifecycle helpers: `audit-repo.mjs` | Rust audit-core owns the base audit profile executor, the canon-draft lifecycle child spawner, and the check-canon lifecycle child spawner. Pre-write and post-write raw lifecycle blocks still describe JS-run helper execution. | Migrate pre/post-write separately because they own advisory and delta semantics. |
 
 ## Canonical Rust Modules
 
@@ -50,6 +51,7 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/artifact_summaries.rs` | `manifest.json.frameworkResourceSurfaces`, `manifest.json.unusedDependencies`, and `manifest.json.blockClones` projections from already-produced artifact JSON | framework/resource scanning, unused-dependency analysis, block-clone detection |
 | `experiments/rust-main/lumin-audit-core/src/blind_zones.rs` | Typed `manifest.json.blindZones` parity projection from JS-owned producer artifacts behind a fixture-based CLI gate | JS/TS producer behavior, final manifest wiring before parity, console summary rendering |
 | `experiments/rust-main/lumin-audit-core/src/canon_draft_lifecycle.rs` | `manifest.canonDraft` raw lifecycle block execution for `--canon-draft`: source selection, unknown-source failure, `generate-canon-draft.mjs` child spawning, per-source exit projection, fallback draft path projection, and advisory exit code result | canon draft source-specific content generation, markdown proposal rendering, check-canon drift reading, pre/post-write lifecycle execution, final manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/check_canon_lifecycle.rs` | `manifest.checkCanon` raw lifecycle block execution for `--check-canon`: source selection, unknown-source failure, all/per-source `check-canon.mjs` child spawning, `canon-drift.json` per-source projection, logical per-source exit projection, and advisory/strict exit code result | canon drift detection, canonical parser semantics, drift report rendering, pre/post-write lifecycle execution, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/living_audit.rs` | `manifest.json.livingAudit` projection from known living-audit document candidate paths under the audited root | audit document authoring, final answer policy, producer orchestration |
 | `experiments/rust-main/lumin-audit-core/src/manifest_core.rs` | `manifest.json.scanRange`, `manifest.json.confidence`, and `manifest.json.sfcEvidence` projections from already-produced `triage.json` and `symbols.json` | blind-zone detection, living-audit document discovery, producer execution |
 | `experiments/rust-main/lumin-audit-core/src/resolver_diagnostics.rs` | `manifest.json.resolverDiagnostics` projection from already-produced `symbols.json`, `resolver-capabilities.json`, and `resolver-diagnostics.json` | module resolution, blocked-hint production, blind-zone detection |
@@ -73,9 +75,9 @@ or orchestration ownership before migration.
 
 - Most audit-core modules read already-produced artifacts. `orchestration_executor.rs`
   is the explicit exception for base audit profile child execution, and
-  `canon_draft_lifecycle.rs` is the explicit exception for canon-draft lifecycle
-  child execution. They run existing JS/MJS entrypoints but do not interpret
-  JS/TS producer semantics.
+  `canon_draft_lifecycle.rs` and `check_canon_lifecycle.rs` are explicit
+  exceptions for lifecycle child execution. They run existing JS/MJS entrypoints
+  but do not interpret JS/TS producer semantics.
 - Audit-core may own an orchestration plan separately from execution. The plan
   is declarative profile/lifecycle evidence; Rust child execution must live in
   a named owner module with an artifact-visible owner boundary.

@@ -13,15 +13,19 @@ projection, manifest evidence refresh patch projection, final manifest summary
 patch projection, `manifest.json.rustAnalysis` run/evidence merge projection,
 current Rust-analysis artifact usability projection for produced-artifact lists,
 typed `commandsRun` / `skipped` runtime-log shape, the audit orchestration plan
-contract, typed orchestration event ledger,
-producer-performance artifact construction from completed execution
-observations, lifecycle summary projection, and orchestration result summary
-projection that are not source-language analysis.
+contract, base audit child-process executor core, typed orchestration event
+ledger, producer-performance artifact construction from completed execution
+observations, artifact-size measurement from JS-supplied produced artifact
+names, base producer phase timing sidecar reads, lifecycle summary projection,
+orchestration result summary projection, and the migrated canon-draft /
+check-canon lifecycle child-process wrappers that are not source-language
+analysis.
 
 It does not own JS/TS producer behavior, Rust source-health syntax analysis,
-Cargo semantic oracle behavior, child-process execution, live telemetry
-collection, artifact-size measurement, artifact-read measurement, or final
-`manifest.json` writing yet.
+Cargo semantic oracle behavior outside the explicitly migrated canon-draft
+lifecycle child-process wrapper, check-canon lifecycle child-process wrapper,
+ordinary artifact-read measurement, lifecycle phase timing reads, human
+companion rendering, or final `manifest.json` writing yet.
 
 ## Remaining JS-Owned Manifest Boundaries
 
@@ -31,20 +35,23 @@ or orchestration ownership before migration.
 | Manifest area | Current owner | Why it stays JS-owned for now | Next migration gate |
 |---|---|---|---|
 | `manifest.json.blindZones` | `_lib/blind-zones.mjs` through `_lib/audit-manifest.mjs` | Blind-zone detection combines TS/JS producer semantics from `triage.json`, `symbols.json`, `dead-classify.json`, `entry-surface.json`, resolver diagnostics, and Rust analysis availability. Rust audit-core must not reinterpret those claims until parity is checked. | Follow `docs/superpowers/specs/2026-07-01-blind-zones-audit-core-parity-design.md`: compare JS blind-zone outputs against a typed Rust port on protected fixtures and real artifacts, including missing/partial producer artifacts, before changing the owner. |
-| Producer runtime observation values (`commandsRun`, `skipped`) | `audit-repo.mjs` | JS still executes child processes and observes skip decisions, statuses, stderr snippets, wall-clock measurements, and orchestrator memory snapshots. Audit-core owns the typed manifest runtime-log shape, the typed ledger, and `producer-performance.json` construction from those completed observations, but it does not execute producers yet. | Migrate value production only after the Rust orchestrator can execute the existing producer graph while preserving the ledger contract and manifest summaries. |
-| Producer performance measurement inputs | `audit-repo.mjs` plus `_lib/artifacts.mjs` | Artifact size enumeration, artifact read metrics, phase timing reads, and orchestrator memory snapshots are still observed by the JS runner. Rust owns the product artifact shape once those observations are supplied through the ledger. | Move these inputs only with Rust executor or a separate Rust measurement owner. |
-| Raw lifecycle blocks (`preWrite`, `postWrite`, `canonDraft`, `checkCanon`) | `audit-repo.mjs` plus lifecycle helpers | These raw blocks describe child lifecycle execution, advisory paths, spawned producer outcomes, and strict-mode exit policy. Audit-core owns only the typed `manifest.json.lifecycle` summary projection from those completed blocks. | Migrate raw blocks only after Rust owns lifecycle child execution or each lifecycle helper has a Rust parity plan. |
+| Producer runtime observation values (`commandsRun`, `skipped`) | Base audit profile: `orchestration_executor.rs` through the `execute-base-plan` wrapper; canon-draft lifecycle raw block: `canon_draft_lifecycle.rs` through the `execute-canon-draft` wrapper; check-canon lifecycle raw block: `check_canon_lifecycle.rs` through the `execute-check-canon` wrapper; remaining lifecycle helpers: `audit-repo.mjs` | Rust now owns base-step skip decisions, statuses, stderr snippets, wall-clock measurements, orchestrator memory snapshots, canon-draft child execution aggregation, and check-canon child execution aggregation. JS still builds executor requests, invokes Rust CLIs, owns pre-write/post-write lifecycle observations, and assembles the final manifest. | Migrate remaining lifecycle helpers only with their own raw-block parity plans; keep JS/TS producer internals outside audit-core. |
+| Producer performance measurement inputs | Base audit profile: `orchestration_events.rs` from typed runtime observations; lifecycle helpers and JSON artifact read observation: `audit-repo.mjs` | Rust owns base child status/wall/stderr/memory observations, base producer phase sidecar reads, artifact-size measurement for JS-supplied produced artifact names, and final `producer-performance.json` construction. JS still observes ordinary JSON artifact reads, builds the runtime request, owns lifecycle observations, and assembles the final manifest. | Move lifecycle observations and ordinary artifact-read measurement only with explicit Rust owners. |
+| Raw lifecycle blocks (`preWrite`, `postWrite`, `canonDraft`, `checkCanon`) | `canonDraft`: `canon_draft_lifecycle.rs` through the `execute-canon-draft` wrapper; `checkCanon`: `check_canon_lifecycle.rs` through the `execute-check-canon` wrapper; `preWrite` / `postWrite`: `audit-repo.mjs` plus lifecycle helpers | `canonDraft` records `executionOwner: "lumin-audit-core"` and preserves the checked JS helper contract: source expansion, unknown-source failure, per-source child exit projection, fallback draft paths, and advisory all-failed exit semantics. `checkCanon` records `executionOwner: "lumin-audit-core"` and preserves the checked JS helper contract: source expansion, all/per-source child selection, `canon-drift.json` per-source projection, and advisory/strict exit semantics. Pre/post-write still describe JS-run helper execution and advisory/delta semantics. | Migrate pre-write and post-write only after each raw-block contract has its own parity plan. |
 | Human companion artifacts (`auditSummary`, `reviewPack`, `topologyMermaid`) | `audit-repo.mjs` plus renderer modules | These are presentation/rendering outputs, not typed manifest evidence summaries. | Migrate only through a separate renderer parity plan. |
 | Final `manifest.json` file write | `audit-repo.mjs` | The manifest root still joins Rust summaries with JS producer orchestration and optional pre/post-write lifecycle blocks. | Migrate after all manifest fields have typed Rust owners or an explicit Rust orchestrator owns the final write. |
-| Child process execution | `audit-repo.mjs` | Rust audit-core owns the typed orchestration plan and the JS runner follows that plan, but Rust does not spawn JS/MJS producers or observe runtime command results yet. | Migrate only after the Rust orchestrator can execute the existing producer graph while preserving `commandsRun`, `skipped`, and producer-performance semantics. |
+| Lifecycle child process execution | `canonDraft`: `canon_draft_lifecycle.rs`; `checkCanon`: `check_canon_lifecycle.rs`; remaining lifecycle helpers: `audit-repo.mjs` | Rust audit-core owns the base audit profile executor, the canon-draft lifecycle child spawner, and the check-canon lifecycle child spawner. Pre-write and post-write raw lifecycle blocks still describe JS-run helper execution. | Migrate pre/post-write separately because they own advisory and delta semantics. |
 
 ## Canonical Rust Modules
 
 | File | Owns | Must not own |
 |---|---|---|
 | `experiments/rust-main/lumin-audit-core/src/artifact_registry.rs` | Known artifact names, dynamic artifact filename matching, deterministic produced-artifact enumeration, and current Rust-analysis artifact usability from `manifest.json.rustAnalysis` blocks | child process execution, JSON artifact parsing beyond artifact usability fields |
+| `experiments/rust-main/lumin-audit-core/src/artifact_measurement.rs` | Producer-performance artifact-size measurement for JS-supplied produced artifact names, including best-effort missing/non-file exclusion and largest-artifact projection | produced-artifact discovery, artifact JSON parsing, artifact-read timing, producer execution |
 | `experiments/rust-main/lumin-audit-core/src/artifact_summaries.rs` | `manifest.json.frameworkResourceSurfaces`, `manifest.json.unusedDependencies`, and `manifest.json.blockClones` projections from already-produced artifact JSON | framework/resource scanning, unused-dependency analysis, block-clone detection |
 | `experiments/rust-main/lumin-audit-core/src/blind_zones.rs` | Typed `manifest.json.blindZones` parity projection from JS-owned producer artifacts behind a fixture-based CLI gate | JS/TS producer behavior, final manifest wiring before parity, console summary rendering |
+| `experiments/rust-main/lumin-audit-core/src/canon_draft_lifecycle.rs` | `manifest.canonDraft` raw lifecycle block execution for `--canon-draft`: source selection, unknown-source failure, `generate-canon-draft.mjs` child spawning, per-source exit projection, fallback draft path projection, and advisory exit code result | canon draft source-specific content generation, markdown proposal rendering, check-canon drift reading, pre/post-write lifecycle execution, final manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/check_canon_lifecycle.rs` | `manifest.checkCanon` raw lifecycle block execution for `--check-canon`: source selection, unknown-source failure, all/per-source `check-canon.mjs` child spawning, `canon-drift.json` per-source projection, logical per-source exit projection, and advisory/strict exit code result | canon drift detection, canonical parser semantics, drift report rendering, pre/post-write lifecycle execution, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/living_audit.rs` | `manifest.json.livingAudit` projection from known living-audit document candidate paths under the audited root | audit document authoring, final answer policy, producer orchestration |
 | `experiments/rust-main/lumin-audit-core/src/manifest_core.rs` | `manifest.json.scanRange`, `manifest.json.confidence`, and `manifest.json.sfcEvidence` projections from already-produced `triage.json` and `symbols.json` | blind-zone detection, living-audit document discovery, producer execution |
 | `experiments/rust-main/lumin-audit-core/src/resolver_diagnostics.rs` | `manifest.json.resolverDiagnostics` projection from already-produced `symbols.json`, `resolver-capabilities.json`, and `resolver-diagnostics.json` | module resolution, blocked-hint production, blind-zone detection |
@@ -55,8 +62,9 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/manifest_final.rs` | Final pre-write `manifest.json` summary patch projection for `performance`, `orchestration`, and `artifactsProduced` from already-produced `producer-performance.json`, output artifact names, and the merged Rust analysis block | producer execution, producer-performance artifact writing, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/manifest_meta.rs` | `manifest.json.meta` shape projection from JS-provided run timestamp, profile, root, and output values | clock reading, profile flag parsing before CLI dispatch, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/manifest_root.rs` | Initial `manifest.json` root shell projection and manifest evidence refresh patch projection from Rust-owned summary fields, typed JS-observed `commandsRun` / `skipped` runtime logs, produced-artifact list, and JS-owned pass-through `blindZones` blocks | producer execution, blind-zone interpretation, lifecycle raw block construction, human companion renderers, final manifest file writing |
-| `experiments/rust-main/lumin-audit-core/src/orchestration_events.rs` | Typed `lumin-audit-orchestration-ledger.v1` input contract and `producer-performance.json` construction from completed JS executor observations | child process execution, live telemetry collection, artifact size enumeration, artifact read measurement, phase timing file reads, final manifest file writing |
-| `experiments/rust-main/lumin-audit-core/src/orchestration_plan.rs` | Typed audit profile command graph, lifecycle request plan, profile/SARIF/base-pipeline skip semantics, and planned precondition metadata consumed by `audit-repo.mjs` | child process execution, filesystem precondition evaluation, command telemetry, producer-performance measurement |
+| `experiments/rust-main/lumin-audit-core/src/orchestration_events.rs` | Typed `lumin-audit-orchestration-ledger.v1` input contract, typed runtime-observation-to-ledger projection for base audit runs, base producer phase timing sidecar reads with artifact-read metric merging, and `producer-performance.json` construction from completed execution observations | child process execution, lifecycle telemetry collection, ordinary JSON artifact read measurement, final manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/orchestration_executor.rs` | Base audit child-process execution for planned base pipeline steps, filesystem precondition evaluation using the existing plan reasons, JS/MJS child argv construction, typed `commandsRun` / `skipped` value production, `LedgerEvent` value production from the same observations, child status/wall/stderr observation, and orchestrator memory snapshots before and after base children | JS/TS producer internals, lifecycle child execution, artifact-read timing, phase timing reads, human renderers, `blindZones`, final `manifest.json` writing |
+| `experiments/rust-main/lumin-audit-core/src/orchestration_plan.rs` | Typed audit profile command graph, lifecycle request plan, profile/SARIF/base-pipeline skip semantics, base-step `executionOwner` metadata consumed by `orchestration_executor.rs`, and lifecycle `executionOwner` metadata consumed by the JS wrapper | child process execution, filesystem precondition evaluation, command telemetry, producer-performance measurement |
 | `experiments/rust-main/lumin-audit-core/src/orchestration_result.rs` | `manifest.json.orchestration` projection from the typed `producer-performance.json` source shape, including execution status counts, required/optional failure counts, skipped counts, and capped examples | child process execution, live telemetry collection, raw `commandsRun`/`skipped` value production, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/producer_performance.rs` | `manifest.json.performance` projection from already-produced `producer-performance.json` | producer execution, memory measurement, artifact read measurement, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/scan_scope.rs` | Audit manifest scan-scope path inclusion policy used by migrated manifest summaries, matching the JS `scanScopeStatusForPath` contract | source walking, parsing, producer orchestration |
@@ -65,10 +73,14 @@ or orchestration ownership before migration.
 
 ## Rules
 
-- Audit-core reads already-produced artifacts. It does not execute producers.
-- Audit-core may own an orchestration plan before it owns orchestration
-  execution. A plan is declarative profile/lifecycle evidence; it must not
-  spawn child processes, read producer outputs, or claim a precondition passed.
+- Most audit-core modules read already-produced artifacts. `orchestration_executor.rs`
+  is the explicit exception for base audit profile child execution, and
+  `canon_draft_lifecycle.rs` and `check_canon_lifecycle.rs` are explicit
+  exceptions for lifecycle child execution. They run existing JS/MJS entrypoints
+  but do not interpret JS/TS producer semantics.
+- Audit-core may own an orchestration plan separately from execution. The plan
+  is declarative profile/lifecycle evidence; Rust child execution must live in
+  a named owner module with an artifact-visible owner boundary.
 - Audit-core may emit JSON to stdout for JS compatibility, but the library owns
   typed Rust structs first.
 - JS/TS producer lanes remain JS-owned until a lane-specific Rust parity proof

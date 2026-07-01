@@ -360,7 +360,8 @@ try {
     auditProducer.includes("from '../lib/dependency-guard.mjs'") &&
     auditProducer.includes("from '../lib/audit-manifest.mjs'") &&
     auditProducer.includes("executeCanonDraftLifecycle") &&
-    auditProducer.includes("from '../lib/audit-check-canon.mjs'") &&
+    auditProducer.includes("executeCheckCanonLifecycle") &&
+    !auditProducer.includes("audit-check-canon.mjs") &&
     !auditProducer.includes("from './_lib/") &&
     !auditProducer.includes("import('./_lib/"),
     auditProducer.slice(0, 1200));

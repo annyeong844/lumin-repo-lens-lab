@@ -301,27 +301,35 @@ function mkFixture() {
     `executionMode=${m.checkCanon?.executionMode}, childInvocations=${m.checkCanon?.childInvocations}`);
 }
 
-// ═══ CK-12: audit-repo delegates check-canon lifecycle to helper ═══
+// ═══ CK-12: audit-repo delegates check-canon lifecycle to audit-core ═══
 
 {
   const src = readFileSync(path.join(DIR, 'audit-repo.mjs'), 'utf8');
-  const helper = readFileSync(path.join(DIR, '_lib', 'audit-check-canon.mjs'), 'utf8');
+  const wrapper = readFileSync(path.join(DIR, '_lib', 'audit-manifest.mjs'), 'utf8');
+  const rustOwner = readFileSync(
+    path.join(DIR, 'experiments', 'rust-main', 'lumin-audit-core', 'src', 'check_canon_lifecycle.rs'),
+    'utf8',
+  );
   const stripped = src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '');
-  const strippedHelper = helper
+  const strippedWrapper = wrapper
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+  const strippedRustOwner = rustOwner
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '');
 
-  assert('CK-12a. audit-repo.mjs delegates check-canon lifecycle to helper',
-    /runCheckCanonLifecycle/.test(stripped) &&
-    /audit-check-canon\.mjs/.test(stripped));
-  assert('CK-12b. audit-check-canon.mjs owns CHECK_CANON_SOURCES',
-    /CHECK_CANON_SOURCES/.test(strippedHelper) &&
-    /type-ownership/.test(strippedHelper) &&
-    /helper-registry/.test(strippedHelper) &&
-    /topology/.test(strippedHelper) &&
-    /naming/.test(strippedHelper));
+  assert('CK-12a. audit-repo.mjs delegates check-canon lifecycle to audit-core wrapper',
+    /executeCheckCanonLifecycle/.test(stripped) &&
+    /buildCheckCanonLifecycleRequest/.test(stripped) &&
+    /execute-check-canon/.test(strippedWrapper));
+  assert('CK-12b. check_canon_lifecycle.rs owns CHECK_CANON_SOURCES',
+    /CHECK_CANON_SOURCES/.test(strippedRustOwner) &&
+    /type-ownership/.test(strippedRustOwner) &&
+    /helper-registry/.test(strippedRustOwner) &&
+    /topology/.test(strippedRustOwner) &&
+    /naming/.test(strippedRustOwner));
 }
 
 for (const p of cleanup) {

@@ -62,7 +62,6 @@ import { renderAuditReviewPack } from './_lib/audit-review-pack.mjs';
 import { renderTopologyMermaid } from './_lib/topology-mermaid.mjs';
 import { assertRuntimeSetup, formatRuntimeSetupError } from './_lib/dependency-guard.mjs';
 import { detectMaintainerSelfAuditExcludes, mergeExcludes } from './_lib/self-audit-excludes.mjs';
-import { runCheckCanonLifecycle } from './_lib/audit-check-canon.mjs';
 import {
   clearIncrementalCache,
   openIncrementalCacheStore,
@@ -72,6 +71,7 @@ import {
   buildOrchestrationPlan,
   executeBasePlan,
   executeCanonDraftLifecycle,
+  executeCheckCanonLifecycle,
   buildManifestFinalSummaryUpdate,
   buildLifecycleSummary,
   buildManifestRoot,
@@ -730,6 +730,19 @@ function buildCanonDraftLifecycleRequest() {
   };
 }
 
+function buildCheckCanonLifecycleRequest() {
+  return {
+    schemaVersion: 'lumin-check-canon-lifecycle-request.v1',
+    sourcesValue: SOURCES_VALUE ?? null,
+    strict: !!values['strict-check-canon'],
+    root: ROOT,
+    output: OUT,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    scanArgs: forwardedScanArgs(),
+  };
+}
+
 function shortenConsoleLine(line, max = 150) {
   const normalized = String(line ?? '').replace(/\s+/g, ' ').trim();
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
@@ -1065,14 +1078,7 @@ if (values['canon-draft']) {
 //   summary.sourcesChecked === 0 → orchestrator exit 2
 
 if (values['check-canon']) {
-  const result = runCheckCanonLifecycle({
-    sourcesValue: SOURCES_VALUE,
-    strict: !!values['strict-check-canon'],
-    root: ROOT,
-    outDir: OUT,
-    scriptsDir: __dirname,
-    scanArgs: forwardedScanArgs(),
-  });
+  const result = executeCheckCanonLifecycle(buildCheckCanonLifecycleRequest());
   manifest.checkCanon = result.block;
   if (finalExitCode === 0) finalExitCode = result.exitCode;
 }

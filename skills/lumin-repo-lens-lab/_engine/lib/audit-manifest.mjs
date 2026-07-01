@@ -116,6 +116,15 @@ export function executeCanonDraftLifecycle(request) {
   });
 }
 
+export function executeCheckCanonLifecycle(request) {
+  return runAuditCoreJson([
+    'execute-check-canon',
+    '--input', '-',
+  ], 'executeCheckCanonLifecycle', {
+    input: JSON.stringify(request ?? {}),
+  });
+}
+
 export function buildOrchestrationPlan({
   profile = 'quick',
   sarif = false,
