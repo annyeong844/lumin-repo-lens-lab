@@ -372,11 +372,11 @@ export function buildManifestFinalSummaryUpdate({
   return runAuditCoreJson(args, 'buildManifestFinalSummaryUpdate', options);
 }
 
-export function buildLifecycleSummary(blocks) {
+export function buildManifestLifecycleUpdate(blocks) {
   return runAuditCoreJson([
-    'lifecycle-summary',
+    'manifest-lifecycle-update',
     '--input', '-',
-  ], 'buildLifecycleSummary', {
+  ], 'buildManifestLifecycleUpdate', {
     input: JSON.stringify(blocks ?? {}),
   });
 }

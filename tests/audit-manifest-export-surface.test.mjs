@@ -30,6 +30,7 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.refreshManifestEvidence).toBe("function");
     expect(typeof auditManifest.collectProducedArtifacts).toBe("function");
     expect(typeof auditManifest.buildManifestCompanionUpdate).toBe("function");
+    expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
     expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
       "function",
     );
@@ -44,6 +45,7 @@ describe("audit-manifest public surface", () => {
       "buildManifestMeta",
       "buildManifestEvidenceUpdate",
       "ARTIFACT_READ_EVENTS_SCHEMA_VERSION",
+      "buildLifecycleSummary",
     ]) {
       expect(Object.hasOwn(auditManifest, symbol)).toBe(false);
     }
@@ -73,6 +75,47 @@ describe("audit-manifest public surface", () => {
       },
     });
     expect(update.reviewPack.use).toContain("the engine never calls external APIs");
+  });
+
+  it("AMES1g. lifecycle update wrapper leaves raw block placement and summary in audit-core", () => {
+    const update = auditManifest.buildManifestLifecycleUpdate({
+      preWrite: {
+        requested: true,
+        ran: true,
+        engine: "rust",
+        language: "rust",
+        producer: "lumin-rust-analyzer",
+      },
+      postWrite: null,
+      canonDraft: {
+        requested: true,
+        ran: false,
+        reason: "unknown source",
+      },
+      checkCanon: null,
+    });
+
+    expect(update.preWrite).toMatchObject({
+      requested: true,
+      ran: true,
+      engine: "rust",
+    });
+    expect(Object.hasOwn(update, "postWrite")).toBe(false);
+    expect(update.canonDraft).toMatchObject({
+      requested: true,
+      ran: false,
+      reason: "unknown source",
+    });
+    expect(Object.hasOwn(update, "checkCanon")).toBe(false);
+    expect(update.lifecycle).toMatchObject({
+      summaryOwner: "lumin-audit-core",
+      executionOwner: "audit-repo.mjs",
+      requestedCount: 2,
+      ranCount: 1,
+      notRunCount: 1,
+    });
+    expect(update.lifecycle.preWrite.status).toBe("complete");
+    expect(update.lifecycle.canonDraft.status).toBe("not-run");
   });
 
   it("AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback", () =>

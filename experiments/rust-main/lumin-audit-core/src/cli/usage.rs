@@ -8,6 +8,7 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]
        lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>|--root <repo> --output <dir> [--rust-analysis-ran]]
        lumin-audit-core lifecycle-summary --input <path|->
+       lumin-audit-core manifest-lifecycle-update --input <path|->
        lumin-audit-core lifecycle-exit-policy --input <path|->
        lumin-audit-core lifecycle-request-guard --input <path|->
        lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>

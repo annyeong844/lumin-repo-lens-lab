@@ -11,7 +11,9 @@ use lumin_audit_core::canon_draft_lifecycle::{
 use lumin_audit_core::check_canon_lifecycle::{
     execute_check_canon_lifecycle, CheckCanonLifecycleRequest,
 };
-use lumin_audit_core::lifecycle::summarize_lifecycle;
+use lumin_audit_core::lifecycle::{
+    build_manifest_lifecycle_update, summarize_lifecycle, ManifestLifecycleUpdateInput,
+};
 use lumin_audit_core::lifecycle_exit_policy::{
     apply_lifecycle_exit_policy, LifecycleExitPolicyRequest,
 };
@@ -41,6 +43,24 @@ pub(super) fn run_lifecycle_summary(args: Vec<String>) -> Result<()> {
     let lifecycle_json = read_json_input(&input, "lifecycle-summary")?;
     let summary = summarize_lifecycle(&lifecycle_json);
     write_stdout_json(&summary)
+}
+
+pub(super) fn run_manifest_lifecycle_update(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("manifest-lifecycle-update: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("manifest-lifecycle-update: missing --input <path|->")?;
+    let json = read_json_input(&input, "manifest-lifecycle-update")?;
+    let request = serde_json::from_value::<ManifestLifecycleUpdateInput>(json)
+        .context("manifest-lifecycle-update: invalid request shape")?;
+    let update = build_manifest_lifecycle_update(request);
+    write_stdout_json(&update)
 }
 
 pub(super) fn run_lifecycle_exit_policy(args: Vec<String>) -> Result<()> {

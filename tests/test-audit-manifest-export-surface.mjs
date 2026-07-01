@@ -24,6 +24,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.refreshManifestEvidence, 'function');
   assert.equal(typeof auditManifest.collectProducedArtifacts, 'function');
   assert.equal(typeof auditManifest.buildManifestCompanionUpdate, 'function');
+  assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
   assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
 
   for (const symbol of [
@@ -36,6 +37,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
     'buildManifestMeta',
     'buildManifestEvidenceUpdate',
     'ARTIFACT_READ_EVENTS_SCHEMA_VERSION',
+    'buildLifecycleSummary',
   ]) {
     assert.equal(Object.hasOwn(auditManifest, symbol), false, symbol);
   }
@@ -62,6 +64,41 @@ check('AMES1d. companion manifest wrapper leaves companion block shapes in audit
   assert.equal(update.reviewPack.path, 'C:/repo/.audit/audit-review-pack.latest.md');
   assert.equal(update.reviewPack.format, 'markdown');
   assert.match(update.reviewPack.use, /the engine never calls external APIs/);
+});
+
+check('AMES1g. lifecycle update wrapper leaves raw block placement and summary in audit-core', () => {
+  const update = auditManifest.buildManifestLifecycleUpdate({
+    preWrite: {
+      requested: true,
+      ran: true,
+      engine: 'rust',
+      language: 'rust',
+      producer: 'lumin-rust-analyzer',
+    },
+    postWrite: null,
+    canonDraft: {
+      requested: true,
+      ran: false,
+      reason: 'unknown source',
+    },
+    checkCanon: null,
+  });
+
+  assert.equal(update.preWrite.requested, true);
+  assert.equal(update.preWrite.ran, true);
+  assert.equal(update.preWrite.engine, 'rust');
+  assert.equal(Object.hasOwn(update, 'postWrite'), false);
+  assert.equal(update.canonDraft.requested, true);
+  assert.equal(update.canonDraft.ran, false);
+  assert.equal(update.canonDraft.reason, 'unknown source');
+  assert.equal(Object.hasOwn(update, 'checkCanon'), false);
+  assert.equal(update.lifecycle.summaryOwner, 'lumin-audit-core');
+  assert.equal(update.lifecycle.executionOwner, 'audit-repo.mjs');
+  assert.equal(update.lifecycle.requestedCount, 2);
+  assert.equal(update.lifecycle.ranCount, 1);
+  assert.equal(update.lifecycle.notRunCount, 1);
+  assert.equal(update.lifecycle.preWrite.status, 'complete');
+  assert.equal(update.lifecycle.canonDraft.status, 'not-run');
 });
 
 check('AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback', () => {

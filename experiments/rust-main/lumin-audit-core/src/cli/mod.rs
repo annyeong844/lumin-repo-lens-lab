@@ -27,6 +27,7 @@ pub fn run() -> Result<()> {
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         Some("blind-zones-summary") => run_blind_zones_summary(args.collect()),
         Some("lifecycle-summary") => run_lifecycle_summary(args.collect()),
+        Some("manifest-lifecycle-update") => run_manifest_lifecycle_update(args.collect()),
         Some("lifecycle-exit-policy") => run_lifecycle_exit_policy(args.collect()),
         Some("lifecycle-request-guard") => run_lifecycle_request_guard(args.collect()),
         Some("manifest-meta") => run_manifest_meta(args.collect()),

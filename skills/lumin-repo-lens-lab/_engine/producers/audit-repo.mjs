@@ -77,7 +77,7 @@ import {
   applyLifecycleExitPolicy,
   evaluateLifecycleRequestGuard,
   buildManifestFinalSummaryUpdate,
-  buildLifecycleSummary,
+  buildManifestLifecycleUpdate,
   buildManifestCompanionUpdate,
   buildManifestRoot,
   buildManifestEvidence,
@@ -704,6 +704,8 @@ const manifest = buildManifestRoot({
 
 let preWriteBlock = undefined;
 let postWriteBlock = undefined;
+let canonDraftBlock = undefined;
+let checkCanonBlock = undefined;
 let finalExitCode = basePipelineExitCode;
 let auditSummaryPreview = null;
 
@@ -806,9 +808,6 @@ if (lifecycleRequestGuard.status === 'blocked') {
   if (finalExitCode === 0) finalExitCode = result.exitCode;
 }
 
-manifest.preWrite = preWriteBlock;
-manifest.postWrite = postWriteBlock;
-
 // ─── P3-4-b: opt-in canon-draft orchestrator ─────────────
 //
 // Thin spawn wrapper. Each source runs a separate `generate-canon-draft.mjs`
@@ -823,7 +822,7 @@ manifest.postWrite = postWriteBlock;
 
 if (values['canon-draft']) {
   const result = executeCanonDraftLifecycle(buildCanonDraftLifecycleRequest());
-  manifest.canonDraft = result.block;
+  canonDraftBlock = result.block;
   if (result.forceExitCode || finalExitCode === 0) finalExitCode = result.exitCode;
 }
 
@@ -844,16 +843,16 @@ if (values['canon-draft']) {
 
 if (values['check-canon']) {
   const result = executeCheckCanonLifecycle(buildCheckCanonLifecycleRequest());
-  manifest.checkCanon = result.block;
+  checkCanonBlock = result.block;
   if (finalExitCode === 0) finalExitCode = result.exitCode;
 }
 
-manifest.lifecycle = buildLifecycleSummary({
-  preWrite: manifest.preWrite ?? null,
-  postWrite: manifest.postWrite ?? null,
-  canonDraft: manifest.canonDraft ?? null,
-  checkCanon: manifest.checkCanon ?? null,
-});
+Object.assign(manifest, buildManifestLifecycleUpdate({
+  preWrite: preWriteBlock ?? null,
+  postWrite: postWriteBlock ?? null,
+  canonDraft: canonDraftBlock ?? null,
+  checkCanon: checkCanonBlock ?? null,
+}));
 
 const lifecycleExitPolicy = applyLifecycleExitPolicy({
   schemaVersion: 'lumin-lifecycle-exit-policy-request.v1',

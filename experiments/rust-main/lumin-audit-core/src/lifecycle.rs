@@ -1,5 +1,5 @@
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +14,33 @@ pub struct LifecycleSummary {
     pub post_write: LifecycleBlockSummary,
     pub canon_draft: LifecycleBlockSummary,
     pub check_canon: LifecycleBlockSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestLifecycleUpdateInput {
+    #[serde(default)]
+    pub pre_write: Option<Value>,
+    #[serde(default)]
+    pub post_write: Option<Value>,
+    #[serde(default)]
+    pub canon_draft: Option<Value>,
+    #[serde(default)]
+    pub check_canon: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestLifecycleUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_write: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_write: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canon_draft: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_canon: Option<Value>,
+    pub lifecycle: LifecycleSummary,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -125,6 +152,33 @@ pub fn summarize_lifecycle(input: &Value) -> LifecycleSummary {
         canon_draft,
         check_canon,
     }
+}
+
+pub fn build_manifest_lifecycle_update(
+    input: ManifestLifecycleUpdateInput,
+) -> ManifestLifecycleUpdate {
+    let pre_write = non_null_block(input.pre_write);
+    let post_write = non_null_block(input.post_write);
+    let canon_draft = non_null_block(input.canon_draft);
+    let check_canon = non_null_block(input.check_canon);
+    let summary_input = json!({
+        "preWrite": pre_write.as_ref().unwrap_or(&Value::Null),
+        "postWrite": post_write.as_ref().unwrap_or(&Value::Null),
+        "canonDraft": canon_draft.as_ref().unwrap_or(&Value::Null),
+        "checkCanon": check_canon.as_ref().unwrap_or(&Value::Null),
+    });
+
+    ManifestLifecycleUpdate {
+        pre_write,
+        post_write,
+        canon_draft,
+        check_canon,
+        lifecycle: summarize_lifecycle(&summary_input),
+    }
+}
+
+fn non_null_block(value: Option<Value>) -> Option<Value> {
+    value.filter(|value| !value.is_null())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
