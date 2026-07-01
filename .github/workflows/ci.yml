@@ -9,7 +9,6 @@ on:
 
 jobs:
   changes:
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Detect changed surfaces
     runs-on: ubuntu-latest
     outputs:
@@ -74,7 +73,7 @@ jobs:
 
   rust:
     needs: changes
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     name: Test (Rust)
     runs-on: ubuntu-latest
     env:
