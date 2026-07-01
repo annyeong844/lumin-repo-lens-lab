@@ -16,6 +16,7 @@ pub mod orchestration_events;
 pub mod orchestration_executor;
 pub mod orchestration_plan;
 pub mod orchestration_result;
+pub mod post_write_lifecycle;
 pub mod producer_performance;
 pub mod resolver_diagnostics;
 pub mod rust_analysis;

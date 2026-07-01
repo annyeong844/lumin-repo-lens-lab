@@ -72,6 +72,7 @@ import {
   executeBasePlan,
   executeCanonDraftLifecycle,
   executeCheckCanonLifecycle,
+  executePostWriteLifecycle,
   buildManifestFinalSummaryUpdate,
   buildLifecycleSummary,
   buildManifestRoot,
@@ -743,6 +744,26 @@ function buildCheckCanonLifecycleRequest() {
   };
 }
 
+function buildPostWriteLifecycleRequest() {
+  return {
+    schemaVersion: 'lumin-post-write-lifecycle-request.v1',
+    root: ROOT,
+    output: OUT,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    advisoryPath: values['pre-write-advisory'] ? path.resolve(values['pre-write-advisory']) : null,
+    deltaOut: values['delta-out'] ? path.resolve(values['delta-out']) : null,
+    noFreshAudit: values['no-fresh-audit'] === true,
+    scanArgs: forwardedScanArgs(),
+    incrementalArgs: forwardedIncrementalArgs(),
+  };
+}
+
+function replayPostWriteLifecycleOutput(result) {
+  if (typeof result?.stdout === 'string' && result.stdout.length > 0) process.stdout.write(result.stdout);
+  if (typeof result?.stderr === 'string' && result.stderr.length > 0) process.stderr.write(result.stderr);
+}
+
 function shortenConsoleLine(line, max = 150) {
   const normalized = String(line ?? '').replace(/\s+/g, ' ').trim();
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
@@ -986,59 +1007,10 @@ if (values['pre-write'] && values['post-write']) {
     }
   }
 } else if (values['post-write']) {
-  if (!values['pre-write-advisory']) {
-    process.stderr.write(`[audit-repo] --post-write requested but skipped: --pre-write-advisory <file> missing\n`);
-    postWriteBlock = {
-      requested: true,
-      ran: false,
-      reason: '--pre-write-advisory missing',
-    };
-    finalExitCode = 2;
-  } else {
-    const { execFileSync: _exec } = await import('node:child_process');
-    const postWritePath = path.join(__dirname, 'post-write.mjs');
-    const advisoryPath = path.resolve(values['pre-write-advisory']);
-    const deltaOutDir = values['delta-out'] ? path.resolve(values['delta-out']) : OUT;
-    const forwardedArgs = [
-      postWritePath,
-      '--root', ROOT,
-      '--output', OUT,
-      '--pre-write-advisory', advisoryPath,
-    ];
-    if (values['delta-out']) forwardedArgs.push('--delta-out', deltaOutDir);
-    if (values['no-fresh-audit']) forwardedArgs.push('--no-fresh-audit');
-    forwardedArgs.push(...forwardedScanArgs());
-    forwardedArgs.push(...forwardedIncrementalArgs());
-
-    try {
-      _exec(process.execPath, forwardedArgs, { stdio: ['ignore', 'inherit', 'inherit'] });
-      const deltaPath = path.join(deltaOutDir, 'post-write-delta.latest.json');
-      postWriteBlock = { requested: true, ran: true, deltaPath };
-      // Re-read the delta artifact to surface summary fields in the manifest.
-      // Honest signal: if the delta fails to parse, summary fields stay absent
-      // rather than defaulting to a "clean" value.
-      try {
-        const delta = JSON.parse(readFileSync(deltaPath, 'utf8'));
-        postWriteBlock.silentNew = delta.summary?.silentNew ?? 0;
-        postWriteBlock.requiredAcknowledgementCount =
-          (delta.entries ?? []).filter((e) => e.label === 'silent-new').length;
-        postWriteBlock.baselineStatus = delta.baseline?.status ?? 'missing';
-        postWriteBlock.scanRangeParity = delta.scanRangeParity?.status ?? 'baseline-missing';
-        postWriteBlock.typeEscapeDeltaStatus = delta.typeEscapeDelta?.status ?? 'computed';
-        postWriteBlock.afterComplete = delta.inventoryCompleteness?.afterComplete ??
-          (postWriteBlock.typeEscapeDeltaStatus === 'not-applicable' ? null : false);
-        postWriteBlock.fileDeltaStatus = delta.fileDelta?.status ?? 'missing';
-        postWriteBlock.unexpectedNewFileCount = delta.fileDelta?.summary?.unexpectedNew ?? 0;
-        postWriteBlock.plannedMissingFileCount = delta.fileDelta?.summary?.plannedMissing ?? 0;
-      } catch { /* delta unreadable — leave summary fields absent */ }
-    } catch (e) {
-      postWriteBlock = {
-        requested: true,
-        ran: false,
-        reason: `post-write.mjs exited non-zero: ${e.message}`,
-      };
-    }
-  }
+  const result = executePostWriteLifecycle(buildPostWriteLifecycleRequest());
+  replayPostWriteLifecycleOutput(result);
+  postWriteBlock = result.block;
+  if (finalExitCode === 0) finalExitCode = result.exitCode;
 }
 
 manifest.preWrite = preWriteBlock;

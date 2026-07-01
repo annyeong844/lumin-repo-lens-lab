@@ -4,7 +4,8 @@
 // NO producer orchestration. Migrated manifest contracts call lumin-audit-core.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectBlindZones } from './blind-zones.mjs';
@@ -38,6 +39,26 @@ function runAuditCoreJson(args, label, options = {}) {
   if (options.input !== undefined) childOptions.input = options.input;
   const stdout = execFileSync(command, args, childOptions);
   return JSON.parse(stdout);
+}
+
+function runAuditCoreJsonResultFile(args, label, options = {}) {
+  const command = auditCoreBinary();
+  if (!existsSync(command)) {
+    throw new Error(`${label}: lumin-audit-core binary missing at ${command}; run cargo build --manifest-path experiments/Cargo.toml -p lumin-audit-core`);
+  }
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-'));
+  const resultPath = path.join(tempDir, 'result.json');
+  try {
+    const childOptions = {
+      encoding: 'utf8',
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'inherit', 'inherit'],
+    };
+    if (options.input !== undefined) childOptions.input = options.input;
+    execFileSync(command, [...args, '--result-output', resultPath], childOptions);
+    return JSON.parse(readFileSync(resultPath, 'utf8'));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 function buildManifestEvidenceSummaryFromFile(root, outDir, {
@@ -121,6 +142,15 @@ export function executeCheckCanonLifecycle(request) {
     'execute-check-canon',
     '--input', '-',
   ], 'executeCheckCanonLifecycle', {
+    input: JSON.stringify(request ?? {}),
+  });
+}
+
+export function executePostWriteLifecycle(request) {
+  return runAuditCoreJsonResultFile([
+    'execute-post-write',
+    '--input', '-',
+  ], 'executePostWriteLifecycle', {
     input: JSON.stringify(request ?? {}),
   });
 }
