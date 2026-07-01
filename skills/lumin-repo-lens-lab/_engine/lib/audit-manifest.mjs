@@ -177,8 +177,6 @@ export function collectProducedArtifacts(outDir, options = {}) {
   if (Object.hasOwn(options, 'rustAnalysis')) {
     args.push('--rust-analysis-block', '-');
     runOptions.input = JSON.stringify(options.rustAnalysis ?? null);
-  } else if (options.rustAnalysisUsable ?? true) {
-    args.push('--rust-analysis-ran');
   }
   return runAuditCoreJson(args, 'collectProducedArtifacts', runOptions);
 }
@@ -360,7 +358,6 @@ export function buildManifestFinalSummaryUpdate({
   outDir,
   producerPerformancePath,
   rustAnalysis,
-  rustAnalysisUsable = true,
 }) {
   const args = [
     'manifest-final-summary-update',
@@ -371,8 +368,6 @@ export function buildManifestFinalSummaryUpdate({
   if (rustAnalysis !== undefined) {
     args.push('--rust-analysis-block', '-');
     options.input = JSON.stringify(rustAnalysis ?? null);
-  } else if (rustAnalysisUsable) {
-    args.push('--rust-analysis-ran');
   }
   return runAuditCoreJson(args, 'buildManifestFinalSummaryUpdate', options);
 }

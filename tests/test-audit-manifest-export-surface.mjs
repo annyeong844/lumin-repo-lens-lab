@@ -64,6 +64,51 @@ check('AMES1d. companion manifest wrapper leaves companion block shapes in audit
   assert.match(update.reviewPack.use, /the engine never calls external APIs/);
 });
 
+check('AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-produced-artifacts-'));
+  const out = path.join(fx, 'out');
+  try {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(
+      path.join(out, 'rust-analyzer-health.latest.json'),
+      JSON.stringify({
+        schemaVersion: 'lumin-rust-analyzer-health.v1',
+        status: 'complete',
+        available: true,
+      }),
+    );
+
+    assert.equal(
+      auditManifest.collectProducedArtifacts(out).includes('rust-analyzer-health.latest.json'),
+      false,
+    );
+    assert.equal(
+      auditManifest
+        .collectProducedArtifacts(out, {
+          rustAnalysis: {
+            status: 'complete',
+            available: true,
+          },
+        })
+        .includes('rust-analyzer-health.latest.json'),
+      true,
+    );
+    assert.equal(
+      auditManifest
+        .collectProducedArtifacts(out, {
+          rustAnalysis: {
+            status: 'unavailable',
+            available: false,
+          },
+        })
+        .includes('rust-analyzer-health.latest.json'),
+      false,
+    );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
 check('AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch', () => {
   const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-refresh-'));
   const out = path.join(fx, 'out');

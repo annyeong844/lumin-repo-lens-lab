@@ -75,6 +75,39 @@ describe("audit-manifest public surface", () => {
     expect(update.reviewPack.use).toContain("the engine never calls external APIs");
   });
 
+  it("AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "rust-analyzer-health.latest.json",
+        {
+          schemaVersion: "lumin-rust-analyzer-health.v1",
+          status: "complete",
+          available: true,
+        },
+        { to: "output" },
+      );
+
+      expect(auditManifest.collectProducedArtifacts(fixture.output)).not.toContain(
+        "rust-analyzer-health.latest.json",
+      );
+      expect(
+        auditManifest.collectProducedArtifacts(fixture.output, {
+          rustAnalysis: {
+            status: "complete",
+            available: true,
+          },
+        }),
+      ).toContain("rust-analyzer-health.latest.json");
+      expect(
+        auditManifest.collectProducedArtifacts(fixture.output, {
+          rustAnalysis: {
+            status: "unavailable",
+            available: false,
+          },
+        }),
+      ).not.toContain("rust-analyzer-health.latest.json");
+    }));
+
   it("AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch", () =>
     withManifestFixture((fixture) => {
       fixture.writeJson(
