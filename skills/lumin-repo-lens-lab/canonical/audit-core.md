@@ -7,11 +7,13 @@
 
 ## Scope
 
-`lumin-audit-core` owns typed audit artifact registry and manifest evidence
-summary contracts that are not source-language analysis.
+`lumin-audit-core` owns typed audit artifact registry, manifest evidence
+summary contracts, and the audit orchestration plan contract that are not
+source-language analysis.
 
 It does not own JS/TS producer behavior, Rust source-health syntax analysis,
-Cargo semantic oracle behavior, or final `audit-repo.mjs` orchestration yet.
+Cargo semantic oracle behavior, child-process execution, or final
+`manifest.json` writing yet.
 
 ## Remaining JS-Owned Manifest Boundaries
 
@@ -25,6 +27,7 @@ or orchestration ownership before migration.
 | `producer-performance.json` construction | `audit-repo.mjs` | The artifact records JS orchestrator observations: command timings, memory snapshots, phase timing reads, artifact read metrics, and skipped producer entries. Rust owns only the typed `manifest.json.performance` summary projection from that artifact. | Keep JS-owned unless the measurement source moves to Rust. |
 | Human companion artifacts (`auditSummary`, `reviewPack`, `topologyMermaid`) | `audit-repo.mjs` plus renderer modules | These are presentation/rendering outputs, not typed manifest evidence summaries. | Migrate only through a separate renderer parity plan. |
 | Final `manifest.json` file write | `audit-repo.mjs` | The manifest root still joins Rust summaries with JS producer orchestration and optional pre/post-write lifecycle blocks. | Migrate after all manifest fields have typed Rust owners or an explicit Rust orchestrator owns the final write. |
+| Child process execution | `audit-repo.mjs` | Rust audit-core owns the typed orchestration plan, but it does not spawn JS/MJS producers or observe runtime command results yet. | Migrate only after the Rust orchestrator can execute the existing producer graph while preserving `commandsRun`, `skipped`, and producer-performance semantics. |
 
 ## Canonical Rust Modules
 
@@ -32,12 +35,14 @@ or orchestration ownership before migration.
 |---|---|---|
 | `experiments/rust-main/lumin-audit-core/src/artifact_registry.rs` | Known artifact names, dynamic artifact filename matching, deterministic produced-artifact enumeration | child process execution, JSON artifact parsing beyond filenames |
 | `experiments/rust-main/lumin-audit-core/src/artifact_summaries.rs` | `manifest.json.frameworkResourceSurfaces`, `manifest.json.unusedDependencies`, and `manifest.json.blockClones` projections from already-produced artifact JSON | framework/resource scanning, unused-dependency analysis, block-clone detection |
+| `experiments/rust-main/lumin-audit-core/src/blind_zones.rs` | Typed `manifest.json.blindZones` parity projection from JS-owned producer artifacts behind a fixture-based CLI gate | JS/TS producer behavior, final manifest wiring before parity, console summary rendering |
 | `experiments/rust-main/lumin-audit-core/src/living_audit.rs` | `manifest.json.livingAudit` projection from known living-audit document candidate paths under the audited root | audit document authoring, final answer policy, producer orchestration |
 | `experiments/rust-main/lumin-audit-core/src/manifest_core.rs` | `manifest.json.scanRange`, `manifest.json.confidence`, and `manifest.json.sfcEvidence` projections from already-produced `triage.json` and `symbols.json` | blind-zone detection, living-audit document discovery, producer execution |
 | `experiments/rust-main/lumin-audit-core/src/resolver_diagnostics.rs` | `manifest.json.resolverDiagnostics` projection from already-produced `symbols.json`, `resolver-capabilities.json`, and `resolver-diagnostics.json` | module resolution, blocked-hint production, blind-zone detection |
 | `experiments/rust-main/lumin-audit-core/src/rust_analysis.rs` | `rust-analyzer-health.latest.json` manifest summary projection, root mismatch, invalid-shape, complete/available status | Rust source parsing, source-health analysis, Cargo oracle execution |
 | `experiments/rust-main/lumin-audit-core/src/generated_artifacts.rs` | `manifest.json.generatedArtifacts` projection from already-produced `symbols.json`, generated-artifact mode validation, generated miss grouping, blind-zone grouping, and present/prepared out-of-scope evidence | package resolution, generator execution, generated-artifact producer evidence construction |
 | `experiments/rust-main/lumin-audit-core/src/manifest_evidence.rs` | Composition of Rust-owned `manifest.json` evidence fields from already-produced artifacts, excluding `blindZones` | blind-zone detection, producer orchestration, manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/orchestration_plan.rs` | Typed audit profile command graph, lifecycle request plan, profile/SARIF/base-pipeline skip semantics, and planned precondition metadata | child process execution, filesystem precondition evaluation, command telemetry, producer-performance measurement |
 | `experiments/rust-main/lumin-audit-core/src/producer_performance.rs` | `manifest.json.performance` projection from already-produced `producer-performance.json` | producer execution, memory measurement, artifact read measurement, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/scan_scope.rs` | Audit manifest scan-scope path inclusion policy used by migrated manifest summaries, matching the JS `scanScopeStatusForPath` contract | source walking, parsing, producer orchestration |
 | `experiments/rust-main/lumin-audit-core/src/cli.rs` | CLI request parsing and stdout JSON dispatch for audit-core commands | producer orchestration, manifest file writing |
@@ -46,6 +51,9 @@ or orchestration ownership before migration.
 ## Rules
 
 - Audit-core reads already-produced artifacts. It does not execute producers.
+- Audit-core may own an orchestration plan before it owns orchestration
+  execution. A plan is declarative profile/lifecycle evidence; it must not
+  spawn child processes, read producer outputs, or claim a precondition passed.
 - Audit-core may emit JSON to stdout for JS compatibility, but the library owns
   typed Rust structs first.
 - JS/TS producer lanes remain JS-owned until a lane-specific Rust parity proof

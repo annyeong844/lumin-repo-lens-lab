@@ -78,6 +78,27 @@ export function buildProducerPerformanceSummaryFromFile(artifactPath) {
   ], 'buildProducerPerformanceSummary');
 }
 
+export function buildOrchestrationPlan({
+  profile = 'quick',
+  sarif = false,
+  preWrite = false,
+  postWrite = false,
+  canonDraft = false,
+  checkCanon = false,
+  rustAnalyzer = false,
+} = {}) {
+  return runAuditCoreJson([
+    'orchestration-plan',
+    '--profile', profile,
+    ...(sarif ? ['--sarif'] : []),
+    ...(preWrite ? ['--pre-write'] : []),
+    ...(postWrite ? ['--post-write'] : []),
+    ...(canonDraft ? ['--canon-draft'] : []),
+    ...(checkCanon ? ['--check-canon'] : []),
+    ...(rustAnalyzer ? ['--rust-analyzer'] : []),
+  ], 'buildOrchestrationPlan');
+}
+
 export function buildManifestEvidence({
   root,
   outDir,

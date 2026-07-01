@@ -4,6 +4,7 @@ pub mod generated_artifacts;
 pub mod living_audit;
 pub mod manifest_core;
 pub mod manifest_evidence;
+pub mod orchestration_plan;
 pub mod producer_performance;
 pub mod resolver_diagnostics;
 pub mod rust_analysis;
