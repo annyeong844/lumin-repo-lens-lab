@@ -46,7 +46,7 @@
 // any step is captured but never hidden.
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -72,6 +72,7 @@ import {
   buildProducerPerformanceArtifactFromLedger,
   buildArtifactSizeSummary,
   buildOrchestrationPlan,
+  executeBasePlan,
   buildManifestFinalSummaryUpdate,
   buildLifecycleSummary,
   buildManifestRoot,
@@ -82,7 +83,6 @@ import {
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
 import {
-  clearProducerPhaseTiming,
   readProducerPhaseTiming,
 } from './_lib/producer-phase-timing.mjs';
 import { collectFiles } from './_lib/collect-files.mjs';
@@ -321,7 +321,6 @@ const ORCHESTRATION_PLAN = buildOrchestrationPlan({
   checkCanon: values['check-canon'],
   rustAnalyzer: values['rust-analyzer'],
 });
-const EMIT_SARIF = ORCHESTRATION_PLAN.emitSarif === true;
 const RUN_BASE_PIPELINE = ORCHESTRATION_PLAN.basePipeline?.status === 'planned';
 
 if (values['clear-incremental-cache'] === true) {
@@ -335,14 +334,6 @@ if (values['clear-incremental-cache'] === true) {
 const commandsRun = [];
 const skipped = [];
 let rustAnalysisRun = { requested: values['rust-analyzer'] === true, ran: false, status: 'not-requested' };
-const INCREMENTAL_PRODUCER_STEPS = new Set([
-  'measure-topology.mjs',
-  'measure-staleness.mjs',
-  'build-block-clone-index.mjs',
-  'build-symbol-graph.mjs',
-  'build-shape-index.mjs',
-  'build-function-clone-index.mjs',
-]);
 
 const artifactReadMetrics = createArtifactReadMetrics({ rootDir: OUT });
 const loadIfExists = (name) => loadArtifact(OUT, name, {
@@ -361,12 +352,6 @@ function forwardedIncrementalArgs() {
   if (values['no-incremental'] === true) args.push('--no-incremental');
   if (values['cache-root']) args.push('--cache-root', path.resolve(values['cache-root']));
   return args;
-}
-
-function forwardedGeneratedArtifactArgs(stepName) {
-  return stepName === 'build-symbol-graph.mjs'
-    ? ['--generated-artifacts', GENERATED_ARTIFACTS_MODE]
-    : [];
 }
 
 function gitHeadCommit(root) {
@@ -417,17 +402,6 @@ function rustAnalyzerInvocation() {
     source: 'cargo:experiments',
     manifestPath,
   };
-}
-
-function rustFileCountFromTriage(triage) {
-  const byLanguage = triage?.byLanguage ?? triage?.languages ?? triage?.summary?.byLanguage;
-  if (byLanguage && typeof byLanguage === 'object') {
-    const count = byLanguage.rs;
-    const n = typeof count === 'number' ? count : (count?.files ?? 0);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  const shapeCount = triage?.shape?.rustFiles ?? triage?.shape?.rsFiles ?? 0;
-  return typeof shapeCount === 'number' && Number.isFinite(shapeCount) ? shapeCount : 0;
 }
 
 function forwardedRustAnalyzerArgs() {
@@ -672,27 +646,6 @@ function performanceCacheRoot() {
   return path.resolve(values['cache-root'] ?? path.join(ROOT, '.audit', '.cache'));
 }
 
-function memorySnapshot() {
-  const usage = process.memoryUsage();
-  return {
-    rssBytes: usage.rss,
-    heapTotalBytes: usage.heapTotal,
-    heapUsedBytes: usage.heapUsed,
-    externalBytes: usage.external,
-    arrayBuffersBytes: usage.arrayBuffers ?? 0,
-  };
-}
-
-function memoryDelta(before, after) {
-  return {
-    rssBytes: after.rssBytes - before.rssBytes,
-    heapTotalBytes: after.heapTotalBytes - before.heapTotalBytes,
-    heapUsedBytes: after.heapUsedBytes - before.heapUsedBytes,
-    externalBytes: after.externalBytes - before.externalBytes,
-    arrayBuffersBytes: after.arrayBuffersBytes - before.arrayBuffersBytes,
-  };
-}
-
 function buildProducerPerformanceArtifact(generated, artifactsProduced) {
   const producerEvents = commandsRun.map((entry) => {
     const phaseTiming = readProducerPhaseTiming(OUT, entry.step, {
@@ -741,6 +694,53 @@ function buildProducerPerformanceArtifact(generated, artifactsProduced) {
   });
 }
 
+function rustAnalyzerInvocationOrNull() {
+  try {
+    const invocation = rustAnalyzerInvocation();
+    return {
+      command: invocation.command,
+      prefixArgs: invocation.prefixArgs,
+      source: invocation.source,
+      ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildExecutorRequest() {
+  return {
+    schemaVersion: 'lumin-audit-executor-request.v1',
+    plan: ORCHESTRATION_PLAN,
+    root: ROOT,
+    output: OUT,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    verbose: values.verbose === true,
+    scanRange: {
+      includeTests: INCLUDE_TESTS,
+      production: PRODUCTION,
+      excludes: EFFECTIVE_EXCLUDES,
+      autoExcludes: AUTO_EXCLUDES,
+    },
+    cache: {
+      noIncremental: values['no-incremental'] === true,
+      cacheRoot: performanceCacheRoot(),
+      clearIncrementalCache: values['clear-incremental-cache'] === true,
+    },
+    generatedArtifacts: {
+      mode: GENERATED_ARTIFACTS_MODE,
+    },
+    rustAnalyzer: {
+      requested: values['rust-analyzer'] === true,
+      rustFiles: 0,
+      sourceCommit: values['rust-analyzer'] === true ? gitHeadCommit(ROOT) : null,
+      invocation: values['rust-analyzer'] === true ? rustAnalyzerInvocationOrNull() : null,
+      forwardedArgs: forwardedRustAnalyzerArgs(),
+    },
+  };
+}
+
 function shortenConsoleLine(line, max = 150) {
   const normalized = String(line ?? '').replace(/\s+/g, ' ').trim();
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
@@ -781,247 +781,13 @@ function renderSummaryConsolePreview(markdown) {
   return out.join('\n');
 }
 
-function runStep(scriptRelPath, { required = false, precondition = null, reason = '' } = {}) {
-  const name = path.basename(scriptRelPath);
-  if (precondition) {
-    const ok = precondition();
-    if (!ok) {
-      skipped.push({ step: name, reason });
-      console.log(`[audit-repo] skip  ${name}  (${reason})`);
-      return { status: 'skipped', reason };
-    }
-  }
-  // P1-3 shell-safety: spawn via argv array. Shell-string interpolation
-  // broke on paths with spaces / $ / parentheses. Keeping execSync's
-  // import for any future command-line composition outside of producer
-  // spawning.
-  const argv = [
-    path.join(__dirname, scriptRelPath),
-    '--root', ROOT,
-    '--output', OUT,
-    ...forwardedScanArgs(),
-    ...(INCREMENTAL_PRODUCER_STEPS.has(name) ? forwardedIncrementalArgs() : []),
-    ...forwardedGeneratedArtifactArgs(name),
-  ];
-  const t0 = Date.now();
-  const memoryBefore = memorySnapshot();
-  clearProducerPhaseTiming(OUT, name);
-  try {
-    const out = execFileSync(process.execPath, argv, {
-      stdio: values.verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    });
-    const ms = Date.now() - t0;
-    const memoryAfter = memorySnapshot();
-    commandsRun.push({
-      step: name,
-      status: 'ok',
-      ms,
-      memory: {
-        before: memoryBefore,
-        after: memoryAfter,
-        delta: memoryDelta(memoryBefore, memoryAfter),
-      },
-    });
-    console.log(`[audit-repo] ok    ${name}  (${ms}ms)`);
-    return { status: 'ok', out, ms };
-  } catch (e) {
-    const ms = Date.now() - t0;
-    const memoryAfter = memorySnapshot();
-    const status = required ? 'failed-required' : 'failed-optional';
-    commandsRun.push({
-      step: name, status, ms,
-      memory: {
-        before: memoryBefore,
-        after: memoryAfter,
-        delta: memoryDelta(memoryBefore, memoryAfter),
-      },
-      stderr: (e.stderr || e.message || '').toString().slice(0, 500),
-    });
-    console.log(`[audit-repo] ${required ? 'FAIL' : 'warn'}  ${name}  (${ms}ms) — ` +
-                `${required ? 'required, aborting' : 'optional, continuing'}`);
-    if (required) throw e;
-    return { status };
-  }
-}
-
-function runRustAnalyzerStep() {
-  const triage = loadIfExists('triage.json');
-  const rustFiles = rustFileCountFromTriage(triage);
-  if (values['rust-analyzer'] !== true) {
-    return { requested: false, ran: false, status: 'not-requested', rustFiles };
-  }
-  if (rustFiles <= 0) {
-    const reason = 'no Rust files counted by triage';
-    skipped.push({ step: 'lumin-rust-analyzer', reason });
-    console.log(`[audit-repo] skip  lumin-rust-analyzer  (${reason})`);
-    return { requested: true, ran: false, status: 'skipped', rustFiles, reason };
-  }
-
-  let invocation;
-  try {
-    invocation = rustAnalyzerInvocation();
-  } catch (error) {
-    const reason = error.message;
-    skipped.push({ step: 'lumin-rust-analyzer', reason });
-    console.log(`[audit-repo] skip  lumin-rust-analyzer  (${reason})`);
-    return { requested: true, ran: false, status: 'unavailable', rustFiles, reason };
-  }
-
-  const artifact = 'rust-analyzer-health.latest.json';
-  const artifactPath = path.join(OUT, artifact);
-  const sourceCommit = gitHeadCommit(ROOT);
-  const argv = [
-    ...invocation.prefixArgs,
-    '--root', ROOT,
-    '--source-commit', sourceCommit,
-    '--output', artifactPath,
-    '--source-health-profile', 'compact',
-    '--semantic-mode', 'metadata-only',
-    ...forwardedRustAnalyzerArgs(),
-  ];
-  const t0 = Date.now();
-  const memoryBefore = memorySnapshot();
-  try {
-    rmSync(artifactPath, { force: true });
-    execFileSync(invocation.command, argv, {
-      stdio: values.verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    });
-    const ms = Date.now() - t0;
-    const memoryAfter = memorySnapshot();
-    const analyzerInvocation = {
-      source: invocation.source,
-      ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
-    };
-    commandsRun.push({
-      step: 'lumin-rust-analyzer',
-      status: 'ok',
-      ms,
-      artifact,
-      rustFiles,
-      analyzerInvocation,
-      memory: {
-        before: memoryBefore,
-        after: memoryAfter,
-        delta: memoryDelta(memoryBefore, memoryAfter),
-      },
-    });
-    console.log(`[audit-repo] ok    lumin-rust-analyzer  (${ms}ms)`);
-    return {
-      requested: true,
-      ran: true,
-      status: 'complete',
-      rustFiles,
-      artifact,
-      path: artifactPath,
-      sourceCommit,
-      producer: 'lumin-rust-analyzer',
-      analyzerInvocation,
-    };
-  } catch (e) {
-    const ms = Date.now() - t0;
-    const memoryAfter = memorySnapshot();
-    const reason = Object.hasOwn(e ?? {}, 'status')
-      ? `lumin-rust-analyzer exited non-zero: ${e.message}`
-      : `lumin-rust-analyzer artifact refresh failed: ${e.message}`;
-    commandsRun.push({
-      step: 'lumin-rust-analyzer',
-      status: 'failed-optional',
-      ms,
-      rustFiles,
-      stderr: (e.stderr || e.message || '').toString().slice(0, 500),
-      memory: {
-        before: memoryBefore,
-        after: memoryAfter,
-        delta: memoryDelta(memoryBefore, memoryAfter),
-      },
-    });
-    console.log(`[audit-repo] warn  lumin-rust-analyzer  (${ms}ms) — optional, continuing`);
-    return { requested: true, ran: false, status: 'failed-optional', rustFiles, reason };
-  }
-}
-
-function hasCoverage() {
-  const candidates = [
-    path.join(ROOT, 'coverage', 'coverage-final.json'),
-    path.join(ROOT, '.nyc_output', 'coverage-final.json'),
-  ];
-  return candidates.some(existsSync);
-}
-
-function isGitWorkTree() {
-  try {
-    const out = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return out === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function plannedSkip(stepName) {
-  return ORCHESTRATION_PLAN.skipped?.find((entry) => entry.step === stepName) ?? null;
-}
-
-function recordPlannedSkip(stepName, fallbackReason) {
-  const reason = plannedSkip(stepName)?.reason ?? fallbackReason;
-  skipped.push({ step: stepName, reason });
-  console.log(`[audit-repo] skip  ${stepName}  (${reason})`);
-}
-
-function plannedStepPrecondition(step) {
-  switch (step.step) {
-    case 'build-resolver-diagnostics.mjs':
-    case 'build-entry-surface.mjs':
-      return () => existsSync(path.join(OUT, 'symbols.json'));
-    case 'build-module-reachability.mjs':
-      return () =>
-        existsSync(path.join(OUT, 'symbols.json')) &&
-        existsSync(path.join(OUT, 'entry-surface.json'));
-    case 'export-action-safety.mjs':
-    case 'rank-fixes.mjs':
-      return () => existsSync(path.join(OUT, 'dead-classify.json'));
-    case 'merge-runtime-evidence.mjs':
-      return hasCoverage;
-    case 'measure-staleness.mjs':
-      return isGitWorkTree;
-    default:
-      return null;
-  }
-}
-
-function runPlannedBaseStep(step) {
-  if (step.step === 'lumin-rust-analyzer') {
-    rustAnalysisRun = runRustAnalyzerStep();
-    return;
-  }
-  runStep(step.script, {
-    required: step.required === true,
-    precondition: plannedStepPrecondition(step),
-    reason: step.skipReasonWhenUnmet ?? '',
-  });
-}
-
-function runBasePipelineFromPlan(plan) {
-  for (const step of plan.steps ?? []) {
-    runPlannedBaseStep(step);
-  }
-}
-
 console.log(`[audit-repo] profile=${PROFILE}  root=${ROOT}  output=${OUT}`);
 
-if (!RUN_BASE_PIPELINE) {
-  recordPlannedSkip('base-audit-profile', 'base audit profile skipped by Rust orchestration plan');
-} else {
-  runBasePipelineFromPlan(ORCHESTRATION_PLAN);
-  if (!EMIT_SARIF && plannedSkip('emit-sarif.mjs')) {
-    recordPlannedSkip('emit-sarif.mjs', 'not in --sarif mode');
-  }
-}
+const baseExecution = executeBasePlan(buildExecutorRequest());
+commandsRun.push(...(baseExecution.commandsRun ?? []));
+skipped.push(...(baseExecution.skipped ?? []));
+rustAnalysisRun = baseExecution.rustAnalysisRun ?? rustAnalysisRun;
+const basePipelineExitCode = Number(baseExecution.exitPolicy?.recommendedExitCode ?? 0);
 
 // ─── Build manifest ───────────────────────────────────────
 const initialEvidence = buildManifestEvidence(manifestEvidenceOptions());
@@ -1063,7 +829,7 @@ const manifest = buildManifestRoot({
 
 let preWriteBlock = undefined;
 let postWriteBlock = undefined;
-let finalExitCode = 0;
+let finalExitCode = basePipelineExitCode;
 let auditSummaryPreview = null;
 
 if (values['pre-write'] && values['post-write']) {

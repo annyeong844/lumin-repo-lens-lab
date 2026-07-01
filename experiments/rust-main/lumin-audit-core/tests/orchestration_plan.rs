@@ -137,7 +137,15 @@ fn cli_orchestration_plan_emits_typed_json() -> Result<()> {
     let plan = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
     assert_eq!(plan["schemaVersion"], "lumin-audit-orchestration-plan.v1");
     assert_eq!(plan["planOwner"], "lumin-audit-core");
-    assert_eq!(plan["executionOwner"], "audit-repo.mjs");
+    assert_eq!(plan["executionOwner"], "lumin-audit-core");
+    assert_eq!(
+        plan["lifecycle"]["preWrite"]["executionOwner"],
+        "audit-repo.mjs"
+    );
+    assert_eq!(
+        plan["lifecycle"]["postWrite"]["executionOwner"],
+        "audit-repo.mjs"
+    );
     assert_eq!(plan["profile"], "ci");
     assert_eq!(plan["emitSarif"], true);
     assert_eq!(plan["summary"]["rustOwnedStepCount"], 1);
@@ -161,7 +169,7 @@ fn cli_orchestration_plan_rejects_unknown_profile() -> Result<()> {
 }
 
 #[test]
-fn serialized_step_preconditions_match_existing_js_orchestrator_contract() -> Result<()> {
+fn serialized_step_preconditions_keep_js_producer_with_rust_executor_contract() -> Result<()> {
     let plan = build_orchestration_plan(OrchestrationPlanOptions::default());
     let value = serde_json::to_value(plan)?;
     let steps = value["steps"]
@@ -181,7 +189,7 @@ fn serialized_step_preconditions_match_existing_js_orchestrator_contract() -> Re
             "phase": "resolver-diagnostics",
             "required": false,
             "producerOwner": "js-mjs",
-            "executionOwner": "audit-repo.mjs",
+            "executionOwner": "lumin-audit-core",
             "mode": "precondition",
             "requiresArtifacts": ["symbols.json"],
             "precondition": "symbols.json exists",

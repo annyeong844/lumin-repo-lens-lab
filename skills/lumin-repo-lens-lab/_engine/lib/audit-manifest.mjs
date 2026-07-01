@@ -98,6 +98,15 @@ export function buildProducerPerformanceArtifactFromLedger(ledger) {
   });
 }
 
+export function executeBasePlan(request) {
+  return runAuditCoreJson([
+    'execute-base-plan',
+    '--input', '-',
+  ], 'executeBasePlan', {
+    input: JSON.stringify(request ?? {}),
+  });
+}
+
 export function buildOrchestrationPlan({
   profile = 'quick',
   sarif = false,

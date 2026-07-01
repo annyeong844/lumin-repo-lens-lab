@@ -1467,7 +1467,6 @@ function buildExecutorRequest() {
     },
     rustAnalyzer: {
       requested: values['rust-analyzer'] === true,
-      rustFiles: rustFileCountFromTriage(loadIfExists('triage.json')),
       sourceCommit: gitHeadCommit(ROOT),
       invocation: values['rust-analyzer'] === true ? rustAnalyzerInvocationOrNull() : null,
       forwardedArgs: forwardedRustAnalyzerArgs(),
@@ -1491,6 +1490,10 @@ function rustAnalyzerInvocationOrNull() {
 ```
 
 This keeps invocation resolution in JS for the first slice, matching the spec.
+Do not read `triage.json` while building this request. At this point the base
+pipeline has not run yet, so `triage.json` may be missing or stale. The Rust
+executor must read the current output `triage.json` when it reaches the
+`lumin-rust-analyzer` step, matching the old JS `runRustAnalyzerStep()` timing.
 
 - [ ] **Step 4: Replace base pipeline execution**
 

@@ -141,6 +141,29 @@ fn js_step_argv_preserves_scan_incremental_and_generated_args() -> Result<()> {
 }
 
 #[test]
+fn base_step_removes_stale_phase_sidecar_before_running() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let fake_node = write_fake_node(temp.path())?;
+    let output = temp.path().join("out");
+    let phase_dir = output.join(".producer-phases");
+    fs::create_dir_all(&phase_dir)?;
+    let stale_phase = phase_dir.join("build-symbol-graph.mjs.json");
+    fs::write(
+        &stale_phase,
+        r#"{"schemaVersion":"producer-phase-timing.v1"}"#,
+    )?;
+
+    let mut value = request_with_fake_node(temp.path(), &fake_node);
+    value["plan"]["steps"] = json!([fixture_step("build-symbol-graph.mjs", true)]);
+    value["plan"]["skipped"] = json!([]);
+
+    let result = execute_base_plan(request(value)?)?;
+    assert_eq!(result.commands_run[0].status, "ok");
+    assert!(!stale_phase.exists());
+    Ok(())
+}
+
+#[test]
 fn optional_failure_continues_and_emits_typed_event() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let fake_node = write_fake_node(temp.path())?;
@@ -230,6 +253,26 @@ fn rust_analyzer_success_preserves_public_invocation_shape_without_command() -> 
 }
 
 #[test]
+fn rust_analyzer_uses_current_triage_over_stale_request_count() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let analyzer = write_fake_analyzer(temp.path(), true)?;
+    let output = temp.path().join("out");
+    fs::create_dir_all(&output)?;
+    fs::write(
+        output.join("triage.json"),
+        r#"{"byLanguage":{"rs":{"files":4}}}"#,
+    )?;
+    let mut value = rust_analyzer_request(temp.path(), &analyzer);
+    value["rustAnalyzer"]["rustFiles"] = json!(99);
+
+    let result = execute_base_plan(request(value)?)?;
+    assert_eq!(result.rust_analysis_run.status, "complete");
+    assert_eq!(result.rust_analysis_run.rust_files, 4);
+    assert_eq!(result.commands_run[0].rust_files, Some(4));
+    Ok(())
+}
+
+#[test]
 fn rust_analyzer_failure_records_optional_event_without_public_invocation() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let analyzer = write_fake_analyzer(temp.path(), false)?;
@@ -254,6 +297,22 @@ fn rust_analyzer_failure_records_optional_event_without_public_invocation() -> R
         .as_str()
         .unwrap_or_default()
         .contains("analyzer failure"));
+    Ok(())
+}
+
+#[test]
+fn rust_analyzer_failure_removes_stale_artifact_before_running() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let analyzer = write_fake_analyzer(temp.path(), false)?;
+    let output = temp.path().join("out");
+    fs::create_dir_all(&output)?;
+    let stale_artifact = output.join("rust-analyzer-health.latest.json");
+    fs::write(&stale_artifact, r#"{"stale":true}"#)?;
+
+    let result = execute_base_plan(request(rust_analyzer_request(temp.path(), &analyzer))?)?;
+
+    assert_eq!(result.rust_analysis_run.status, "failed-optional");
+    assert!(!stale_artifact.exists());
     Ok(())
 }
 

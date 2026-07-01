@@ -221,6 +221,11 @@ first slice, or Rust may resolve it if the resolution logic is explicitly
 ported. Either way, the result artifact must show which source was used
 (`env:LUMIN_RUST_ANALYZER_BIN` or `cargo:experiments`).
 
+The Rust-file count must be read when the executor reaches the
+`lumin-rust-analyzer` step. The JS wrapper must not pre-read `triage.json`
+while building the executor request, because the base pipeline may not have
+created the current `triage.json` yet.
+
 ## Measurement Contract
 
 Rust executor owns only what it can observe while running children:

@@ -1,5 +1,8 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::Instant;
@@ -276,6 +279,7 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
         }
 
         let argv = argv_for_js_step(&request, &step.script);
+        clear_producer_phase_timing(&request.output, &step.step);
         let observed = run_child(&request.node_executable, &argv, request.verbose)?;
         let status = command_status(&observed, step.required);
         if status == "failed-required" {
@@ -491,6 +495,40 @@ fn command_status(observed: &ChildObservation, required: bool) -> String {
     .to_string()
 }
 
+fn clear_producer_phase_timing(output: &Path, producer: &str) {
+    let phase_path = output
+        .join(".producer-phases")
+        .join(format!("{}.json", safe_producer_file_name(producer)));
+    remove_file_if_present(&phase_path);
+}
+
+fn remove_file_if_present(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(_) => {}
+    }
+}
+
+fn safe_producer_file_name(producer: &str) -> String {
+    let base = producer
+        .replace('\\', "/")
+        .rsplit('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_string();
+    base.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn push_command(
     commands_run: &mut Vec<CommandRun>,
     events: &mut Vec<LedgerEvent>,
@@ -557,6 +595,54 @@ fn not_requested_rust_analysis(request: &ExecutorRequest) -> RustAnalysisRunResu
     }
 }
 
+fn observed_rust_file_count(request: &ExecutorRequest) -> Result<u64> {
+    let path = request.output.join("triage.json");
+    if let Ok(text) = fs::read_to_string(path) {
+        let triage = serde_json::from_str::<Value>(&text)?;
+        let count = rust_file_count_from_triage(&triage);
+        if count > 0 {
+            return Ok(count);
+        }
+    }
+    Ok(request.rust_analyzer.rust_files)
+}
+
+fn rust_file_count_from_triage(triage: &Value) -> u64 {
+    for path in [
+        &["byLanguage"][..],
+        &["languages"][..],
+        &["summary", "byLanguage"][..],
+    ] {
+        let Some(count) = value_at(triage, path).and_then(|value| value.get("rs")) else {
+            continue;
+        };
+        if let Some(n) = count.as_u64() {
+            if n > 0 {
+                return n;
+            }
+        }
+        if let Some(n) = count.get("files").and_then(Value::as_u64) {
+            if n > 0 {
+                return n;
+            }
+        }
+    }
+    triage
+        .get("shape")
+        .and_then(|shape| {
+            shape
+                .get("rustFiles")
+                .or_else(|| shape.get("rsFiles"))
+                .and_then(Value::as_u64)
+        })
+        .unwrap_or(0)
+}
+
+fn value_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    path.iter()
+        .try_fold(value, |current, segment| current.get(*segment))
+}
+
 fn artifact_invocation(invocation: &RustAnalyzerInvocation) -> RustAnalyzerArtifactInvocation {
     RustAnalyzerArtifactInvocation {
         source: invocation.source.clone(),
@@ -573,14 +659,10 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
             rust_analysis_run: not_requested_rust_analysis(request),
         });
     }
-    if request.rust_analyzer.rust_files == 0 {
+    let rust_files = observed_rust_file_count(request)?;
+    if rust_files == 0 {
         let reason = "no Rust files counted by triage".to_string();
-        return Ok(rust_analyzer_skip(
-            request,
-            "skipped",
-            request.rust_analyzer.rust_files,
-            reason,
-        ));
+        return Ok(rust_analyzer_skip(request, "skipped", rust_files, reason));
     }
     let Some(invocation) = request.rust_analyzer.invocation.clone() else {
         let reason =
@@ -588,7 +670,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
         return Ok(rust_analyzer_skip(
             request,
             "unavailable",
-            request.rust_analyzer.rust_files,
+            rust_files,
             reason,
         ));
     };
@@ -613,6 +695,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
     ]);
     args.extend(request.rust_analyzer.forwarded_args.clone());
 
+    remove_file_if_present(&artifact_path);
     let observed = run_child(&invocation.command, &args, request.verbose)?;
     if observed.status == "ok" {
         let command = CommandRun {
@@ -620,7 +703,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
             status: "ok".to_string(),
             ms: observed.ms,
             artifact: Some(RUST_ANALYZER_ARTIFACT.to_string()),
-            rust_files: Some(request.rust_analyzer.rust_files),
+            rust_files: Some(rust_files),
             analyzer_invocation: Some(artifact_invocation(&invocation)),
             stderr: None,
             memory: observed.memory,
@@ -636,7 +719,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
                 requested: true,
                 ran: true,
                 status: "complete".to_string(),
-                rust_files: request.rust_analyzer.rust_files,
+                rust_files,
                 reason: None,
                 artifact: Some(RUST_ANALYZER_ARTIFACT.to_string()),
                 path: Some(artifact_path.to_string_lossy().to_string()),
@@ -652,7 +735,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
         status: "failed-optional".to_string(),
         ms: observed.ms,
         artifact: None,
-        rust_files: Some(request.rust_analyzer.rust_files),
+        rust_files: Some(rust_files),
         analyzer_invocation: None,
         stderr: observed.stderr_snippet,
         memory: observed.memory,
@@ -668,7 +751,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
             requested: true,
             ran: false,
             status: "failed-optional".to_string(),
-            rust_files: request.rust_analyzer.rust_files,
+            rust_files,
             reason: Some("lumin-rust-analyzer exited non-zero".to_string()),
             artifact: None,
             path: None,
