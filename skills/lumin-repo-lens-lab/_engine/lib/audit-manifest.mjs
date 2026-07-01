@@ -65,12 +65,18 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
 }
 
 export function collectProducedArtifacts(outDir, options = {}) {
-  const rustAnalysisUsable = options.rustAnalysisUsable ?? true;
-  return runAuditCoreJson([
+  const args = [
     'artifact-registry',
     '--output', outDir,
-    ...(rustAnalysisUsable ? ['--rust-analysis-ran'] : []),
-  ], 'collectProducedArtifacts');
+  ];
+  const runOptions = {};
+  if (Object.hasOwn(options, 'rustAnalysis')) {
+    args.push('--rust-analysis-block', '-');
+    runOptions.input = JSON.stringify(options.rustAnalysis ?? null);
+  } else if (options.rustAnalysisUsable ?? true) {
+    args.push('--rust-analysis-ran');
+  }
+  return runAuditCoreJson(args, 'collectProducedArtifacts', runOptions);
 }
 
 export function buildProducerPerformanceArtifactFromLedger(ledger) {
@@ -106,14 +112,22 @@ export function buildOrchestrationPlan({
 export function buildManifestFinalSummaryUpdate({
   outDir,
   producerPerformancePath,
+  rustAnalysis,
   rustAnalysisUsable = true,
 }) {
-  return runAuditCoreJson([
+  const args = [
     'manifest-final-summary-update',
     '--output', outDir,
     '--producer-performance', producerPerformancePath,
-    ...(rustAnalysisUsable ? ['--rust-analysis-ran'] : []),
-  ], 'buildManifestFinalSummaryUpdate');
+  ];
+  const options = {};
+  if (rustAnalysis !== undefined) {
+    args.push('--rust-analysis-block', '-');
+    options.input = JSON.stringify(rustAnalysis ?? null);
+  } else if (rustAnalysisUsable) {
+    args.push('--rust-analysis-ran');
+  }
+  return runAuditCoreJson(args, 'buildManifestFinalSummaryUpdate', options);
 }
 
 export function mergeRustAnalysisRun({ evidence = null, run }) {

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
@@ -68,6 +69,22 @@ pub fn collect_produced_artifacts(
     }
 
     Ok(produced.into_iter().collect())
+}
+
+pub fn collect_produced_artifacts_for_manifest(
+    out_dir: &Path,
+    rust_analysis: Option<&Value>,
+) -> Result<Vec<String>> {
+    collect_produced_artifacts(out_dir, rust_analysis_artifact_usable(rust_analysis))
+}
+
+pub fn rust_analysis_artifact_usable(rust_analysis: Option<&Value>) -> bool {
+    rust_analysis
+        .and_then(Value::as_object)
+        .is_some_and(|block| {
+            block.get("status").and_then(Value::as_str) == Some("complete")
+                && block.get("available").and_then(Value::as_bool) == Some(true)
+        })
 }
 
 fn is_dynamic_artifact_name(name: &str) -> bool {

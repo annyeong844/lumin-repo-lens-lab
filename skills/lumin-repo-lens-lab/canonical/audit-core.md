@@ -11,6 +11,7 @@
 summary contracts, manifest metadata projection, initial manifest root-shell
 projection, manifest evidence refresh patch projection, final manifest summary
 patch projection, `manifest.json.rustAnalysis` run/evidence merge projection,
+current Rust-analysis artifact usability projection for produced-artifact lists,
 typed `commandsRun` / `skipped` runtime-log shape, the audit orchestration plan
 contract, typed orchestration event ledger,
 producer-performance artifact construction from completed execution
@@ -41,7 +42,7 @@ or orchestration ownership before migration.
 
 | File | Owns | Must not own |
 |---|---|---|
-| `experiments/rust-main/lumin-audit-core/src/artifact_registry.rs` | Known artifact names, dynamic artifact filename matching, deterministic produced-artifact enumeration | child process execution, JSON artifact parsing beyond filenames |
+| `experiments/rust-main/lumin-audit-core/src/artifact_registry.rs` | Known artifact names, dynamic artifact filename matching, deterministic produced-artifact enumeration, and current Rust-analysis artifact usability from `manifest.json.rustAnalysis` blocks | child process execution, JSON artifact parsing beyond artifact usability fields |
 | `experiments/rust-main/lumin-audit-core/src/artifact_summaries.rs` | `manifest.json.frameworkResourceSurfaces`, `manifest.json.unusedDependencies`, and `manifest.json.blockClones` projections from already-produced artifact JSON | framework/resource scanning, unused-dependency analysis, block-clone detection |
 | `experiments/rust-main/lumin-audit-core/src/blind_zones.rs` | Typed `manifest.json.blindZones` parity projection from JS-owned producer artifacts behind a fixture-based CLI gate | JS/TS producer behavior, final manifest wiring before parity, console summary rendering |
 | `experiments/rust-main/lumin-audit-core/src/living_audit.rs` | `manifest.json.livingAudit` projection from known living-audit document candidate paths under the audited root | audit document authoring, final answer policy, producer orchestration |
@@ -51,7 +52,7 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/generated_artifacts.rs` | `manifest.json.generatedArtifacts` projection from already-produced `symbols.json`, generated-artifact mode validation, generated miss grouping, blind-zone grouping, and present/prepared out-of-scope evidence | package resolution, generator execution, generated-artifact producer evidence construction |
 | `experiments/rust-main/lumin-audit-core/src/lifecycle.rs` | `manifest.json.lifecycle` projection from completed raw `preWrite`, `postWrite`, `canonDraft`, and `checkCanon` manifest blocks | lifecycle child execution, advisory generation, post-write delta production, canon draft/check producer behavior, raw lifecycle block ownership |
 | `experiments/rust-main/lumin-audit-core/src/manifest_evidence.rs` | Composition of Rust-owned `manifest.json` evidence fields from already-produced artifacts, excluding `blindZones` | blind-zone detection, producer orchestration, manifest file writing |
-| `experiments/rust-main/lumin-audit-core/src/manifest_final.rs` | Final pre-write `manifest.json` summary patch projection for `performance`, `orchestration`, and `artifactsProduced` from already-produced `producer-performance.json` and output artifact names | producer execution, producer-performance artifact writing, final manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/manifest_final.rs` | Final pre-write `manifest.json` summary patch projection for `performance`, `orchestration`, and `artifactsProduced` from already-produced `producer-performance.json`, output artifact names, and the merged Rust analysis block | producer execution, producer-performance artifact writing, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/manifest_meta.rs` | `manifest.json.meta` shape projection from JS-provided run timestamp, profile, root, and output values | clock reading, profile flag parsing before CLI dispatch, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/manifest_root.rs` | Initial `manifest.json` root shell projection and manifest evidence refresh patch projection from Rust-owned summary fields, typed JS-observed `commandsRun` / `skipped` runtime logs, produced-artifact list, and JS-owned pass-through `blindZones` blocks | producer execution, blind-zone interpretation, lifecycle raw block construction, human companion renderers, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/orchestration_events.rs` | Typed `lumin-audit-orchestration-ledger.v1` input contract and `producer-performance.json` construction from completed JS executor observations | child process execution, live telemetry collection, artifact size enumeration, artifact read measurement, phase timing file reads, final manifest file writing |

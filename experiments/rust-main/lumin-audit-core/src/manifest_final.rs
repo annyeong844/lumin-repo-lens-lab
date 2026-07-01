@@ -3,7 +3,9 @@ use serde::Serialize;
 use serde_json::Value;
 use std::path::Path;
 
-use crate::artifact_registry::collect_produced_artifacts;
+use crate::artifact_registry::{
+    collect_produced_artifacts, collect_produced_artifacts_for_manifest,
+};
 use crate::orchestration_result::{summarize_orchestration_result, OrchestrationResultSummary};
 use crate::producer_performance::{summarize_producer_performance, ProducerPerformanceSummary};
 
@@ -24,5 +26,17 @@ pub fn build_manifest_final_summary_update(
         performance: summarize_producer_performance(producer_performance),
         orchestration: summarize_orchestration_result(producer_performance),
         artifacts_produced: collect_produced_artifacts(output, rust_analysis_usable)?,
+    })
+}
+
+pub fn build_manifest_final_summary_update_for_rust_analysis(
+    output: &Path,
+    producer_performance: &Value,
+    rust_analysis: Option<&Value>,
+) -> Result<ManifestFinalSummaryUpdate> {
+    Ok(ManifestFinalSummaryUpdate {
+        performance: summarize_producer_performance(producer_performance),
+        orchestration: summarize_orchestration_result(producer_performance),
+        artifacts_produced: collect_produced_artifacts_for_manifest(output, rust_analysis)?,
     })
 }

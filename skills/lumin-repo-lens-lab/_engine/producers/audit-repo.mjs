@@ -694,16 +694,6 @@ function memoryDelta(before, after) {
   };
 }
 
-function rustAnalysisArtifactUsable(rustAnalysis) {
-  return rustAnalysis?.status === 'complete' && rustAnalysis?.available === true;
-}
-
-function collectManifestProducedArtifacts(rustAnalysis) {
-  return collectProducedArtifacts(OUT, {
-    rustAnalysisUsable: rustAnalysisArtifactUsable(rustAnalysis),
-  });
-}
-
 function collectArtifactSizeSummary(artifacts = collectProducedArtifacts(OUT)) {
   const byName = Object.create(null);
   let totalBytes = 0;
@@ -1087,7 +1077,9 @@ const manifest = buildManifestRoot({
     generatedArtifacts: initialEvidence.generatedArtifacts,
     livingAudit: initialEvidence.livingAudit,
   },
-  artifactsProduced: collectManifestProducedArtifacts(initialRustAnalysis),
+  artifactsProduced: collectProducedArtifacts(OUT, {
+    rustAnalysis: initialRustAnalysis,
+  }),
 });
 
 // ─── P1-3: pre-write opt-in step ──────────────────────────
@@ -1422,7 +1414,9 @@ if (topologyArtifact) {
     source: 'topology.json',
     use: 'human visual companion; topology.json remains authoritative for exact citations',
   };
-  manifest.artifactsProduced = collectManifestProducedArtifacts(manifest.rustAnalysis);
+  manifest.artifactsProduced = collectProducedArtifacts(OUT, {
+    rustAnalysis: manifest.rustAnalysis,
+  });
 }
 const SHOULD_WRITE_SUMMARY = (
   RUN_BASE_PIPELINE ||
@@ -1476,7 +1470,7 @@ if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
 }
 const producerPerformance = buildProducerPerformanceArtifact(
   manifest.meta.generated,
-  collectManifestProducedArtifacts(manifest.rustAnalysis)
+  collectProducedArtifacts(OUT, { rustAnalysis: manifest.rustAnalysis })
 );
 const producerPerformancePath = path.join(OUT, 'producer-performance.json');
 atomicWrite(
@@ -1486,7 +1480,7 @@ atomicWrite(
 Object.assign(manifest, buildManifestFinalSummaryUpdate({
   outDir: OUT,
   producerPerformancePath,
-  rustAnalysisUsable: rustAnalysisArtifactUsable(manifest.rustAnalysis),
+  rustAnalysis: manifest.rustAnalysis,
 }));
 
 const manifestPath = path.join(OUT, 'manifest.json');

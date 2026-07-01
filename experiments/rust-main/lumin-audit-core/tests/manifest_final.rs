@@ -3,7 +3,9 @@ use serde_json::json;
 use std::fs;
 use std::process::Command;
 
-use lumin_audit_core::manifest_final::build_manifest_final_summary_update;
+use lumin_audit_core::manifest_final::{
+    build_manifest_final_summary_update, build_manifest_final_summary_update_for_rust_analysis,
+};
 
 #[test]
 fn manifest_final_summary_update_projects_last_manifest_patch() -> Result<()> {
@@ -86,6 +88,48 @@ fn manifest_final_summary_update_includes_current_rust_artifact_only_when_usable
     );
 
     let with_rust = build_manifest_final_summary_update(&output_dir, &producer_performance, true)?;
+    assert_eq!(
+        with_rust.artifacts_produced,
+        vec![
+            "producer-performance.json".to_string(),
+            "rust-analyzer-health.latest.json".to_string()
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn manifest_final_summary_update_uses_rust_analysis_block_for_current_artifact() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("producer-performance.json"), "{}")?;
+    fs::write(output_dir.join("rust-analyzer-health.latest.json"), "{}")?;
+
+    let producer_performance = json!({
+        "schemaVersion": "producer-performance.v1",
+        "summary": {},
+        "producers": [],
+        "skipped": []
+    });
+
+    let unavailable = json!({ "status": "invalid-shape", "available": false });
+    let without_rust = build_manifest_final_summary_update_for_rust_analysis(
+        &output_dir,
+        &producer_performance,
+        Some(&unavailable),
+    )?;
+    assert_eq!(
+        without_rust.artifacts_produced,
+        vec!["producer-performance.json".to_string()]
+    );
+
+    let complete = json!({ "status": "complete", "available": true });
+    let with_rust = build_manifest_final_summary_update_for_rust_analysis(
+        &output_dir,
+        &producer_performance,
+        Some(&complete),
+    )?;
     assert_eq!(
         with_rust.artifacts_produced,
         vec![

@@ -3,7 +3,10 @@ use serde_json::json;
 use std::fs;
 use std::process::Command;
 
-use lumin_audit_core::artifact_registry::collect_produced_artifacts;
+use lumin_audit_core::artifact_registry::{
+    collect_produced_artifacts, collect_produced_artifacts_for_manifest,
+    rust_analysis_artifact_usable,
+};
 use lumin_audit_core::rust_analysis::{
     merge_rust_analysis_run, summarize_rust_analysis_artifact, RustAnalysisRunMergeInput,
     RustAnalysisStatus,
@@ -94,6 +97,23 @@ fn current_rust_analyzer_artifact_is_produced_when_current_run_used_it() -> Resu
     let artifacts = collect_produced_artifacts(temp.path(), true)?;
 
     assert_eq!(artifacts, names(&["rust-analyzer-health.latest.json"]));
+    Ok(())
+}
+
+#[test]
+fn rust_analyzer_artifact_is_produced_only_when_manifest_block_is_usable() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    fs::write(temp.path().join("rust-analyzer-health.latest.json"), "{}\n")?;
+    let complete = json!({ "status": "complete", "available": true });
+    let unavailable = json!({ "status": "artifact-unavailable", "available": false });
+
+    assert!(rust_analysis_artifact_usable(Some(&complete)));
+    assert!(!rust_analysis_artifact_usable(Some(&unavailable)));
+    assert_eq!(
+        collect_produced_artifacts_for_manifest(temp.path(), Some(&complete))?,
+        names(&["rust-analyzer-health.latest.json"])
+    );
+    assert!(collect_produced_artifacts_for_manifest(temp.path(), Some(&unavailable))?.is_empty());
     Ok(())
 }
 
@@ -438,7 +458,7 @@ fn cli_rust_analysis_run_merge_reads_stdin_json() -> Result<()> {
         }
     });
 
-    let mut child = Command::new(audit_core_bin())
+    let child = Command::new(audit_core_bin())
         .arg("rust-analysis-run-merge")
         .arg("--input")
         .arg("-")
@@ -446,14 +466,7 @@ fn cli_rust_analysis_run_merge_reads_stdin_json() -> Result<()> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
-    {
-        use std::io::Write;
-        let stdin = child.stdin.as_mut().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin pipe missing")
-        })?;
-        stdin.write_all(input.to_string().as_bytes())?;
-    }
-    let output = child.wait_with_output()?;
+    let output = write_child_stdin_and_wait(child, &input.to_string())?;
 
     assert!(
         output.status.success(),
@@ -499,6 +512,59 @@ fn cli_artifact_registry_can_include_current_rust_analysis_artifact() -> Result<
 
     assert!(output.status.success());
     let artifacts = serde_json::from_slice::<Vec<String>>(&output.stdout)?;
+    assert_eq!(artifacts, names(&["rust-analyzer-health.latest.json"]));
+    Ok(())
+}
+
+#[test]
+fn cli_artifact_registry_uses_rust_analysis_block_for_current_artifact() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    fs::write(temp.path().join("rust-analyzer-health.latest.json"), "{}\n")?;
+
+    let unavailable = Command::new(audit_core_bin())
+        .arg("artifact-registry")
+        .arg("--output")
+        .arg(temp.path())
+        .arg("--rust-analysis-block")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    let unavailable = write_child_stdin_and_wait(
+        unavailable,
+        &json!({ "status": "artifact-unavailable", "available": false }).to_string(),
+    )?;
+
+    assert!(
+        unavailable.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&unavailable.stderr)
+    );
+    let artifacts = serde_json::from_slice::<Vec<String>>(&unavailable.stdout)?;
+    assert!(artifacts.is_empty());
+
+    let complete = Command::new(audit_core_bin())
+        .arg("artifact-registry")
+        .arg("--output")
+        .arg(temp.path())
+        .arg("--rust-analysis-block")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    let complete = write_child_stdin_and_wait(
+        complete,
+        &json!({ "status": "complete", "available": true }).to_string(),
+    )?;
+
+    assert!(
+        complete.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&complete.stderr)
+    );
+    let artifacts = serde_json::from_slice::<Vec<String>>(&complete.stdout)?;
     assert_eq!(artifacts, names(&["rust-analyzer-health.latest.json"]));
     Ok(())
 }
@@ -557,4 +623,18 @@ fn names(values: &[&str]) -> Vec<String> {
 
 fn audit_core_bin() -> &'static str {
     env!("CARGO_BIN_EXE_lumin-audit-core")
+}
+
+fn write_child_stdin_and_wait(
+    mut child: std::process::Child,
+    stdin_text: &str,
+) -> Result<std::process::Output> {
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin pipe missing")
+        })?;
+        stdin.write_all(stdin_text.as_bytes())?;
+    }
+    Ok(child.wait_with_output()?)
 }
