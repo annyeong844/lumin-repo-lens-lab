@@ -27,6 +27,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   for (const symbol of [
     'LIVING_AUDIT_DOC_CANDIDATES',
     'detectLivingAuditDocs',
+    'mergeRustAnalysisRun',
   ]) {
     assert.equal(Object.hasOwn(auditManifest, symbol), false, symbol);
   }

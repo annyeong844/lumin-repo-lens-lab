@@ -33,6 +33,7 @@ describe("audit-manifest public surface", () => {
     for (const symbol of [
       "LIVING_AUDIT_DOC_CANDIDATES",
       "detectLivingAuditDocs",
+      "mergeRustAnalysisRun",
     ]) {
       expect(Object.hasOwn(auditManifest, symbol)).toBe(false);
     }

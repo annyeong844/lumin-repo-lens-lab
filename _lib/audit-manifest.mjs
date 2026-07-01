@@ -332,15 +332,6 @@ export function buildManifestFinalSummaryUpdate({
   return runAuditCoreJson(args, 'buildManifestFinalSummaryUpdate', options);
 }
 
-export function mergeRustAnalysisRun({ evidence = null, run }) {
-  return runAuditCoreJson([
-    'rust-analysis-run-merge',
-    '--input', '-',
-  ], 'mergeRustAnalysisRun', {
-    input: JSON.stringify({ evidence, run }),
-  });
-}
-
 export function buildLifecycleSummary(blocks) {
   return runAuditCoreJson([
     'lifecycle-summary',
