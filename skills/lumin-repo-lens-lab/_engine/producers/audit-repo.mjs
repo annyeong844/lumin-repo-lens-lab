@@ -51,7 +51,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { formatBlindZonesSummary } from '../lib/blind-zones.mjs';
-import { createArtifactReadMetrics } from '../lib/artifact-read-metrics.mjs';
 import { loadIfExists as loadArtifact } from '../lib/artifacts.mjs';
 import { atomicWrite } from '../lib/atomic-write.mjs';
 import { normalizeIncludeTests } from '../lib/cli.mjs';
@@ -65,6 +64,7 @@ import {
   clearIncrementalCache,
   openIncrementalCacheStore,
 } from '../lib/incremental-cache-store.mjs';
+import { createArtifactReadMetrics } from '../lib/artifact-read-metrics.mjs';
 import {
   buildProducerPerformanceArtifactFromRuntime,
   buildOrchestrationPlan,
