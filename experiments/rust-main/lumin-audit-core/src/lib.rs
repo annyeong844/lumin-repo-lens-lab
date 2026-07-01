@@ -8,6 +8,7 @@ pub mod check_canon_lifecycle;
 pub mod generated_artifacts;
 pub mod lifecycle;
 pub mod lifecycle_exit_policy;
+pub mod lifecycle_request;
 pub mod living_audit;
 pub mod manifest_core;
 pub mod manifest_evidence;

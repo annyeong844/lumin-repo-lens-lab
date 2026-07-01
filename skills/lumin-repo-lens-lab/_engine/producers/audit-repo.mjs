@@ -64,8 +64,8 @@ import {
   clearIncrementalCache,
   openIncrementalCacheStore,
 } from '../lib/incremental-cache-store.mjs';
-import { createArtifactReadMetrics } from '../lib/artifact-read-metrics.mjs';
 import {
+  createArtifactReadMetrics,
   buildProducerPerformanceArtifactFromRuntime,
   buildOrchestrationPlan,
   executeBasePlan,
@@ -75,6 +75,7 @@ import {
   executeRustPreWriteLifecycle,
   executePostWriteLifecycle,
   applyLifecycleExitPolicy,
+  evaluateLifecycleRequestGuard,
   buildManifestFinalSummaryUpdate,
   buildLifecycleSummary,
   buildManifestRoot,
@@ -440,6 +441,16 @@ function buildPreWriteRoutingRequest(requestedEngine, intentFlag) {
   };
 }
 
+function buildLifecycleRequestGuardRequest() {
+  return {
+    schemaVersion: 'lumin-lifecycle-request-guard.v1',
+    preWriteRequested: values['pre-write'] === true,
+    postWriteRequested: values['post-write'] === true,
+    preWriteIntentPresent: Boolean(values.intent),
+    requestedPreWriteEngine: REQUESTED_PRE_WRITE_ENGINE,
+  };
+}
+
 function childProcessOptionsForIntent(route, originalIntentFlag) {
   if (route.childIntentInput !== null && route.childIntentInput !== undefined) {
     return {
@@ -735,110 +746,97 @@ let postWriteBlock = undefined;
 let finalExitCode = basePipelineExitCode;
 let auditSummaryPreview = null;
 
-if (values['pre-write'] && values['post-write']) {
-  const reason = '--pre-write and --post-write are mutually exclusive';
-  process.stderr.write(`[audit-repo] ${reason}\n`);
-  preWriteBlock = { requested: true, ran: false, reason };
-  postWriteBlock = { requested: true, ran: false, reason };
-  finalExitCode = 2;
+const lifecycleRequestGuard = evaluateLifecycleRequestGuard(buildLifecycleRequestGuardRequest());
+if (typeof lifecycleRequestGuard.stderr === 'string' && lifecycleRequestGuard.stderr.length > 0) {
+  process.stderr.write(lifecycleRequestGuard.stderr);
+}
+
+if (lifecycleRequestGuard.status === 'blocked') {
+  preWriteBlock = lifecycleRequestGuard.preWrite ?? undefined;
+  postWriteBlock = lifecycleRequestGuard.postWrite ?? undefined;
+  finalExitCode = lifecycleRequestGuard.exitCode;
 } else if (values['pre-write']) {
-  if (!values.intent) {
-    process.stderr.write(`[audit-repo] --pre-write requested but skipped: --intent <file|-> missing\n`);
+  let preWriteRoute = null;
+  try {
+    preWriteRoute = resolvePreWriteRoute(
+      buildPreWriteRoutingRequest(REQUESTED_PRE_WRITE_ENGINE, values.intent),
+    );
+  } catch (error) {
     preWriteBlock = {
       requested: true,
       ran: false,
       engine: REQUESTED_PRE_WRITE_ENGINE,
-      ...(REQUESTED_PRE_WRITE_ENGINE === 'auto'
-        ? {}
-        : REQUESTED_PRE_WRITE_ENGINE === 'rust'
-        ? { language: 'rust', producer: 'lumin-rust-analyzer' }
-        : { language: 'js-ts', producer: 'pre-write.mjs' }),
-      reason: '--intent missing',
+      reason: `pre-write engine selection failed: ${error.message}`,
     };
     finalExitCode = 2;
-  } else {
-    let preWriteRoute = null;
+  }
+
+  if (preWriteRoute?.engine === 'rust') {
+    const sourceCommit = gitHeadCommit(ROOT);
+    const advisoryInvocationId = generateInvocationId();
+    const rustNativePath = path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`);
+    const rustNativeLatestPath = path.join(OUT, 'rust-pre-write-artifact.latest.json');
+    const invocation = rustAnalyzerInvocation();
+    const result = executeRustPreWriteLifecycle(buildRustPreWriteLifecycleRequest({
+      invocation,
+      preWriteRoute,
+      advisoryInvocationId,
+      rustNativePath,
+      rustNativeLatestPath,
+      sourceCommit,
+    }));
+    preWriteBlock = result.block;
+    if (finalExitCode === 0) finalExitCode = result.exitCode;
+  } else if (preWriteRoute?.engine === 'js') {
+    const { execFileSync: _exec } = await import('node:child_process');
+    const preWritePath = path.join(__dirname, 'pre-write.mjs');
+    const preArgs = [
+      preWritePath,
+      '--root', ROOT,
+      '--output', OUT,
+      '--intent', preWriteRoute.childIntentFlag,
+      ...forwardedScanArgs(),
+    ];
+    if (values['no-fresh-audit']) preArgs.push('--no-fresh-audit');
     try {
-      preWriteRoute = resolvePreWriteRoute(
-        buildPreWriteRoutingRequest(REQUESTED_PRE_WRITE_ENGINE, values.intent),
-      );
-    } catch (error) {
+      _exec(process.execPath, preArgs, childProcessOptionsForIntent(preWriteRoute, values.intent));
+      const latestAdvisoryPath = path.join(OUT, 'pre-write-advisory.latest.json');
+      let advisoryPath = latestAdvisoryPath;
+      let advisoryInvocationId = null;
+      let advisoryEvidenceAvailability = null;
+      try {
+        const advisory = JSON.parse(readFileSync(latestAdvisoryPath, 'utf8'));
+        advisoryInvocationId = advisory.invocationId ?? null;
+        advisoryEvidenceAvailability = advisory.evidenceAvailability ?? null;
+        if (typeof advisory.artifactPaths?.invocationSpecific === 'string') {
+          advisoryPath = path.resolve(advisory.artifactPaths.invocationSpecific);
+        } else if (typeof advisory.invocationId === 'string') {
+          advisoryPath = path.join(OUT, `pre-write-advisory.${advisory.invocationId}.json`);
+        }
+      } catch { /* leave latest path fallback */ }
+      preWriteBlock = {
+        requested: true,
+        ran: true,
+        engine: 'js',
+        language: 'js-ts',
+        producer: 'pre-write.mjs',
+        engineSelection: preWriteRoute.engineSelection,
+        advisoryPath,
+        latestAdvisoryPath,
+        advisoryInvocationId,
+        evidenceAvailability: advisoryEvidenceAvailability,
+      };
+    } catch (e) {
       preWriteBlock = {
         requested: true,
         ran: false,
-        engine: REQUESTED_PRE_WRITE_ENGINE,
-        reason: `pre-write engine selection failed: ${error.message}`,
+        engine: 'js',
+        language: 'js-ts',
+        producer: 'pre-write.mjs',
+        engineSelection: preWriteRoute.engineSelection,
+        reason: `pre-write.mjs exited non-zero: ${e.message}`,
       };
-      finalExitCode = 2;
-    }
-
-    if (preWriteRoute?.engine === 'rust') {
-      const sourceCommit = gitHeadCommit(ROOT);
-      const advisoryInvocationId = generateInvocationId();
-      const rustNativePath = path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`);
-      const rustNativeLatestPath = path.join(OUT, 'rust-pre-write-artifact.latest.json');
-      const invocation = rustAnalyzerInvocation();
-      const result = executeRustPreWriteLifecycle(buildRustPreWriteLifecycleRequest({
-        invocation,
-        preWriteRoute,
-        advisoryInvocationId,
-        rustNativePath,
-        rustNativeLatestPath,
-        sourceCommit,
-      }));
-      preWriteBlock = result.block;
-      if (finalExitCode === 0) finalExitCode = result.exitCode;
-    } else if (preWriteRoute?.engine === 'js') {
-      const { execFileSync: _exec } = await import('node:child_process');
-      const preWritePath = path.join(__dirname, 'pre-write.mjs');
-      const preArgs = [
-        preWritePath,
-        '--root', ROOT,
-        '--output', OUT,
-        '--intent', preWriteRoute.childIntentFlag,
-        ...forwardedScanArgs(),
-      ];
-      if (values['no-fresh-audit']) preArgs.push('--no-fresh-audit');
-      try {
-        _exec(process.execPath, preArgs, childProcessOptionsForIntent(preWriteRoute, values.intent));
-        const latestAdvisoryPath = path.join(OUT, 'pre-write-advisory.latest.json');
-        let advisoryPath = latestAdvisoryPath;
-        let advisoryInvocationId = null;
-        let advisoryEvidenceAvailability = null;
-        try {
-          const advisory = JSON.parse(readFileSync(latestAdvisoryPath, 'utf8'));
-          advisoryInvocationId = advisory.invocationId ?? null;
-          advisoryEvidenceAvailability = advisory.evidenceAvailability ?? null;
-          if (typeof advisory.artifactPaths?.invocationSpecific === 'string') {
-            advisoryPath = path.resolve(advisory.artifactPaths.invocationSpecific);
-          } else if (typeof advisory.invocationId === 'string') {
-            advisoryPath = path.join(OUT, `pre-write-advisory.${advisory.invocationId}.json`);
-          }
-        } catch { /* leave latest path fallback */ }
-        preWriteBlock = {
-          requested: true,
-          ran: true,
-          engine: 'js',
-          language: 'js-ts',
-          producer: 'pre-write.mjs',
-          engineSelection: preWriteRoute.engineSelection,
-          advisoryPath,
-          latestAdvisoryPath,
-          advisoryInvocationId,
-          evidenceAvailability: advisoryEvidenceAvailability,
-        };
-      } catch (e) {
-        preWriteBlock = {
-          requested: true,
-          ran: false,
-          engine: 'js',
-          language: 'js-ts',
-          producer: 'pre-write.mjs',
-          engineSelection: preWriteRoute.engineSelection,
-          reason: `pre-write.mjs exited non-zero: ${e.message}`,
-        };
-        finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
-      }
+      finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
     }
   }
 } else if (values['post-write']) {
