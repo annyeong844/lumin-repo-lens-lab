@@ -497,7 +497,10 @@ fn resolver_diagnostics_skip_uses_plan_reason_when_symbols_missing() -> Result<(
         Some("symbols.json missing (symbol graph step failed or was skipped)")
     );
     assert_eq!(
-        super_precondition_for_test(&request, resolver.step)?,
+        lumin_audit_core::orchestration_executor::precondition_for_test(
+            &request,
+            resolver.step.as_str(),
+        )?,
         "unmet"
     );
     Ok(())
@@ -886,7 +889,7 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
     let mut failed_required = false;
     let mut rust_analysis_run = not_requested_rust_analysis(&request);
 
-    if request.plan.base_pipeline.status != crate::orchestration_plan::BasePipelineStatus::Planned {
+    if request.plan.base_pipeline.status != "planned" {
         for skip in &skipped {
             events.push(LedgerEvent::Skipped(Box::new(
                 crate::orchestration_events::SkippedLedgerEvent {
@@ -907,19 +910,22 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
             skipped.extend(observed.skipped);
             continue;
         }
-        if precondition_outcome(&request, step.step)? == PreconditionOutcome::Unmet {
-            let reason = step.skip_reason_when_unmet.unwrap_or("precondition unmet");
-            push_skip(&mut skipped, step.step, reason);
+        if precondition_outcome(&request, &step.step)? == PreconditionOutcome::Unmet {
+            let reason = step
+                .skip_reason_when_unmet
+                .as_deref()
+                .unwrap_or("precondition unmet");
+            push_skip(&mut skipped, &step.step, reason);
             events.push(LedgerEvent::Skipped(Box::new(
                 crate::orchestration_events::SkippedLedgerEvent {
-                    name: step.step.to_string(),
+                    name: step.step.clone(),
                     reason: reason.to_string(),
                 },
             )));
             continue;
         }
 
-        let argv = argv_for_js_step(&request, step.script);
+        let argv = argv_for_js_step(&request, &step.script);
         let observed = run_child(&request.node_executable, &argv, request.verbose)?;
         let status = if observed.status == "ok" {
             "ok".to_string()
@@ -930,7 +936,7 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
             "failed-optional".to_string()
         };
         commands_run.push(CommandRun {
-            step: step.step.to_string(),
+            step: step.step.clone(),
             status: status.clone(),
             ms: observed.ms,
             artifact: None,
@@ -941,7 +947,7 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
         });
         events.push(LedgerEvent::Producer(Box::new(
             crate::orchestration_events::ProducerLedgerEvent {
-                name: step.step.to_string(),
+                name: step.step.clone(),
                 status,
                 wall_ms: Some(observed.ms),
                 phases: None,
@@ -988,7 +994,7 @@ fn result_from_parts(
             generated: request.generated,
             root: request.root.to_string_lossy().to_string(),
             output: request.output.to_string_lossy().to_string(),
-            profile: request.plan.profile.to_string(),
+            profile: request.plan.profile.clone(),
             scan_range: request.scan_range,
             cache: request.cache,
             generated_artifacts: request.generated_artifacts,
@@ -1006,18 +1012,6 @@ fn result_from_parts(
     }
 }
 ```
-
-If `AuditProfile` has no `Display`, add:
-
-```rust
-impl std::fmt::Display for AuditProfile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-```
-
-Make `AuditProfile::as_str` public if needed.
 
 - [ ] **Step 3: Add rust analyzer request-state behavior**
 
