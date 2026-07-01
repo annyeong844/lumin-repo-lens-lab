@@ -119,8 +119,8 @@ fn resolver_diagnostics_summary_prefers_diagnostic_artifact_fields() -> Result<(
     );
     assert_eq!(summary["topSpecifierRoots"][0]["specifierRoot"], "@/");
     assert_eq!(
-        summary["topUnresolvedSpecifiers"].as_array().unwrap().len(),
-        2
+        summary["topUnresolvedSpecifiers"].as_array().map(Vec::len),
+        Some(2)
     );
     Ok(())
 }
@@ -226,8 +226,8 @@ fn resolver_diagnostics_summary_falls_back_to_symbols_records() -> Result<()> {
         ])
     );
     assert_eq!(
-        summary["topUnresolvedSpecifiers"].as_array().unwrap().len(),
-        20
+        summary["topUnresolvedSpecifiers"].as_array().map(Vec::len),
+        Some(20)
     );
     Ok(())
 }

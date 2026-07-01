@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::json;
 use std::fs;
 use std::process::Command;
@@ -177,7 +177,7 @@ fn generated_artifacts_present_mode_reports_existing_targets_excluded_by_scan_po
 {
     let root = tempfile::tempdir()?;
     let target = root.path().join("packages/prisma/generated/enums.ts");
-    fs::create_dir_all(target.parent().expect("fixture target has a parent"))?;
+    fs::create_dir_all(target.parent().context("fixture target has a parent")?)?;
     fs::write(&target, "export enum Kind { A = 'A' }\n")?;
     let symbols = json!({
         "unresolvedInternalSpecifierRecords": [
@@ -230,7 +230,7 @@ fn generated_artifacts_present_mode_reports_existing_targets_excluded_by_scan_po
 fn generated_artifacts_prepared_mode_marks_existing_excluded_targets_stale_unknown() -> Result<()> {
     let root = tempfile::tempdir()?;
     let target = root.path().join("packages/prisma/generated/enums.ts");
-    fs::create_dir_all(target.parent().expect("fixture target has a parent"))?;
+    fs::create_dir_all(target.parent().context("fixture target has a parent")?)?;
     fs::write(&target, "export enum Kind { A = 'A' }\n")?;
     let symbols = json!({
         "unresolvedInternalSpecifierRecords": [
@@ -277,7 +277,7 @@ fn generated_artifacts_prepared_mode_marks_existing_excluded_targets_stale_unkno
 fn cli_generated_artifacts_summary_emits_present_scope_json() -> Result<()> {
     let root = tempfile::tempdir()?;
     let target = root.path().join("packages/prisma/generated/enums.ts");
-    fs::create_dir_all(target.parent().expect("fixture target has a parent"))?;
+    fs::create_dir_all(target.parent().context("fixture target has a parent")?)?;
     fs::write(&target, "export enum Kind { A = 'A' }\n")?;
     let symbols = root.path().join("symbols.json");
     fs::write(

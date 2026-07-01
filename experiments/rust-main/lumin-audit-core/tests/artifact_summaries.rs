@@ -367,7 +367,7 @@ fn cli_artifact_summary_emits_framework_resource_surface_json() -> Result<()> {
 fn non_object_artifact_summary_returns_null() -> Result<()> {
     let summary = summarize_artifact(ArtifactSummaryKind::UnusedDeps, &json!(null));
 
-    assert!(matches!(summary, None));
+    assert!(summary.is_none());
     Ok(())
 }
 

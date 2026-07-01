@@ -109,7 +109,7 @@ fn manifest_evidence_composes_rust_owned_fields_without_blind_zones() -> Result<
 
     let summary = serde_json::to_value(summarize_manifest_evidence(
         ManifestEvidenceOptions {
-            root: root_text.clone(),
+            root: root_text,
             include_tests: false,
             production: true,
             excludes: vec!["dist".to_string()],

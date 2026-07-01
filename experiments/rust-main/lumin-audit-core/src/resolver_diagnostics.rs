@@ -460,8 +460,7 @@ impl TopSpecifierRootBuilder {
     }
 
     fn finish(mut self) -> TopSpecifierRoot {
-        self.examples
-            .sort_by(|left, right| example_sort_key(left).cmp(&example_sort_key(right)));
+        self.examples.sort_by_key(example_sort_key);
         self.examples.truncate(5);
         TopSpecifierRoot {
             specifier_root: self.specifier_root,

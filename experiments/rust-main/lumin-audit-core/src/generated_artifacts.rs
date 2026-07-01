@@ -26,17 +26,12 @@ impl Default for GeneratedArtifactsOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum GeneratedArtifactsMode {
+    #[default]
     Default,
     Present,
     Prepared,
-}
-
-impl Default for GeneratedArtifactsMode {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 impl GeneratedArtifactsMode {
@@ -159,6 +154,14 @@ struct BlindZoneGroup<'a> {
     zones: Vec<&'a Value>,
 }
 
+struct PresentOutOfScopeRecord<'a> {
+    target_candidates: Option<&'a Value>,
+    specifier: Option<String>,
+    consumer_file: Option<String>,
+    matched_package: Option<String>,
+    target_subpath: Option<String>,
+}
+
 pub fn summarize_generated_artifacts(
     root: &Path,
     symbols: Option<&Value>,
@@ -223,11 +226,13 @@ pub fn summarize_generated_artifacts(
         if options.mode.records_present_targets() {
             collect_present_out_of_scope(
                 root,
-                record.get("targetCandidates"),
-                specifier,
-                string_field(record.get("consumerFile")),
-                matched_package,
-                target_subpath,
+                PresentOutOfScopeRecord {
+                    target_candidates: record.get("targetCandidates"),
+                    specifier,
+                    consumer_file: string_field(record.get("consumerFile")),
+                    matched_package,
+                    target_subpath,
+                },
                 options,
                 &mut present_keys,
                 &mut present_but_out_of_scope,
@@ -285,16 +290,12 @@ pub fn summarize_generated_artifacts(
 
 fn collect_present_out_of_scope(
     root: &Path,
-    target_candidates: Option<&Value>,
-    specifier: Option<String>,
-    consumer_file: Option<String>,
-    matched_package: Option<String>,
-    target_subpath: Option<String>,
+    record: PresentOutOfScopeRecord<'_>,
     options: &GeneratedArtifactsOptions,
     present_keys: &mut BTreeSet<String>,
     present_but_out_of_scope: &mut Vec<PresentButOutOfScope>,
 ) {
-    let Some(candidates) = target_candidates.and_then(Value::as_array) else {
+    let Some(candidates) = record.target_candidates.and_then(Value::as_array) else {
         return;
     };
     for candidate in candidates {
@@ -321,8 +322,8 @@ fn collect_present_out_of_scope(
             continue;
         }
         let present_key = [
-            specifier.as_deref().unwrap_or(""),
-            consumer_file.as_deref().unwrap_or(""),
+            record.specifier.as_deref().unwrap_or(""),
+            record.consumer_file.as_deref().unwrap_or(""),
             candidate_path.as_str(),
             options.mode.as_str(),
         ]
@@ -337,10 +338,10 @@ fn collect_present_out_of_scope(
                 (None, None)
             };
         present_but_out_of_scope.push(PresentButOutOfScope {
-            specifier: specifier.clone(),
-            consumer_file: consumer_file.clone(),
-            matched_package: matched_package.clone(),
-            target_subpath: target_subpath.clone(),
+            specifier: record.specifier.clone(),
+            consumer_file: record.consumer_file.clone(),
+            matched_package: record.matched_package.clone(),
+            target_subpath: record.target_subpath.clone(),
             candidate_path,
             reason: "present-but-out-of-scope",
             mode: options.mode,

@@ -28,7 +28,7 @@ impl ArtifactSummaryKind {
 pub enum ArtifactSummary {
     FrameworkResourceSurfaces(FrameworkResourceSurfacesSummary),
     UnusedDeps(UnusedDependenciesSummary),
-    BlockClones(BlockClonesSummary),
+    BlockClones(Box<BlockClonesSummary>),
 }
 
 pub fn summarize_artifact(kind: ArtifactSummaryKind, artifact: &Value) -> Option<ArtifactSummary> {
@@ -40,9 +40,8 @@ pub fn summarize_artifact(kind: ArtifactSummaryKind, artifact: &Value) -> Option
         ArtifactSummaryKind::UnusedDeps => {
             summarize_unused_dependencies(artifact).map(ArtifactSummary::UnusedDeps)
         }
-        ArtifactSummaryKind::BlockClones => {
-            summarize_block_clones(artifact).map(ArtifactSummary::BlockClones)
-        }
+        ArtifactSummaryKind::BlockClones => summarize_block_clones(artifact)
+            .map(|summary| ArtifactSummary::BlockClones(Box::new(summary))),
     }
 }
 
