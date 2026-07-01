@@ -9,11 +9,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectBlindZones } from './blind-zones.mjs';
 import { loadIfExists as loadArtifact } from './artifacts.mjs';
-import {
-  buildBlockedCandidateHintFamilyCounts,
-  buildBlockedCandidateHintReasonCounts,
-  sortCounterObject,
-} from './resolver-blocked-hints.mjs';
 
 const LIVING_AUDIT_DOC_CANDIDATES = [
   'docs/current/audit/lumin-structural-audit.md',
@@ -21,8 +16,6 @@ const LIVING_AUDIT_DOC_CANDIDATES = [
   'LUMIN_AUDIT.md',
   'TECH_DEBT_AUDIT.md',
 ];
-
-const RESOLVER_BLOCKED_CANDIDATE_HINT_SAMPLE_LIMIT = 10;
 
 function languagesFromTriage(triage) {
   const byLanguage = triage?.byLanguage ?? triage?.languages ?? triage?.summary?.byLanguage;
@@ -54,127 +47,6 @@ function detectLivingAuditDocs(root) {
     action: docs.length > 0
       ? 'read-and-update-before-final-answer'
       : 'create-only-on-explicit-tracking-request',
-  };
-}
-
-function countObjectFromSummary(summary) {
-  if (!summary || typeof summary !== 'object') return null;
-  const out = [];
-  for (const [reason, value] of Object.entries(summary)) {
-    const count = typeof value?.count === 'number'
-      ? value.count
-      : typeof value === 'number'
-        ? value
-        : null;
-    if (count === null) continue;
-    out.push({ reason, count });
-  }
-  return out.length ? out : null;
-}
-
-function unresolvedSpecifierRoot(specifier) {
-  if (typeof specifier !== 'string' || specifier.length === 0) return null;
-  if (/^[@~#]\//.test(specifier)) return specifier.slice(0, 2);
-  if (specifier.startsWith('@')) {
-    const parts = specifier.split('/');
-    if (parts[0] && parts[1]) return `${parts[0]}/${parts[1]}`;
-  }
-  const first = specifier.split('/')[0];
-  return first || null;
-}
-
-function topUnresolvedReasons(symbols) {
-  const fromSummary = countObjectFromSummary(symbols?.unresolvedInternalSummaryByReason);
-  const reasons = fromSummary ?? (() => {
-    const counts = new Map();
-    for (const record of symbols?.unresolvedInternalSpecifierRecords ?? []) {
-      const reason = record?.reason ?? 'unknown-internal-resolution';
-      counts.set(reason, (counts.get(reason) ?? 0) + 1);
-    }
-    return [...counts.entries()].map(([reason, count]) => ({ reason, count }));
-  })();
-
-  return reasons
-    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
-    .slice(0, 10);
-}
-
-function buildTopSpecifierRoots(symbols) {
-  const groups = new Map();
-
-  for (const record of symbols?.unresolvedInternalSpecifierRecords ?? []) {
-    const specifierRoot = unresolvedSpecifierRoot(record?.specifier);
-    if (!specifierRoot) continue;
-    if (!groups.has(specifierRoot)) {
-      groups.set(specifierRoot, {
-        specifierRoot,
-        count: 0,
-        reasons: new Map(),
-        examples: [],
-      });
-    }
-    const group = groups.get(specifierRoot);
-    const reason = record?.reason ?? 'unknown-internal-resolution';
-    group.count++;
-    group.reasons.set(reason, (group.reasons.get(reason) ?? 0) + 1);
-    group.examples.push({
-      specifier: record.specifier,
-      consumerFile: record.consumerFile ?? null,
-    });
-  }
-
-  return [...groups.values()]
-    .map((group) => ({
-      specifierRoot: group.specifierRoot,
-      count: group.count,
-      reasons: sortCounterObject(group.reasons),
-      examples: group.examples
-        .sort((a, b) =>
-          `${a.consumerFile ?? ''}|${a.specifier ?? ''}`
-            .localeCompare(`${b.consumerFile ?? ''}|${b.specifier ?? ''}`))
-        .slice(0, 5),
-    }))
-    .sort((a, b) =>
-      b.count - a.count ||
-      a.specifierRoot.localeCompare(b.specifierRoot))
-    .slice(0, 20);
-}
-
-function buildResolverDiagnosticsSummary(symbols, {
-  resolverCapabilities = null,
-  resolverDiagnostics = null,
-} = {}) {
-  const blockedCandidateHints = Array.isArray(resolverDiagnostics?.blockedCandidateHints)
-    ? resolverDiagnostics.blockedCandidateHints.slice(0, RESOLVER_BLOCKED_CANDIDATE_HINT_SAMPLE_LIMIT)
-    : [];
-  return {
-    resolverVersion:
-      resolverDiagnostics?.resolverVersion ??
-      resolverCapabilities?.resolverVersion ??
-      null,
-    resolverCapabilityArtifact: resolverCapabilities ? 'resolver-capabilities.json' : null,
-    resolverDiagnosticsArtifact: resolverDiagnostics ? 'resolver-diagnostics.json' : null,
-    unresolvedInternal: symbols?.uses?.unresolvedInternal ?? null,
-    unresolvedInternalRatio: symbols?.uses?.unresolvedInternalRatio ?? null,
-    blindZoneCount: resolverDiagnostics?.summary?.blindZoneCount ?? null,
-    blockedCandidateHintCount: resolverDiagnostics?.summary?.blockedCandidateHintCount ?? null,
-    blockedCandidateHintSampleLimit: resolverDiagnostics ? RESOLVER_BLOCKED_CANDIDATE_HINT_SAMPLE_LIMIT : null,
-    blockedCandidateHints,
-    blockedCandidateHintReasonCounts: buildBlockedCandidateHintReasonCounts(
-      resolverDiagnostics?.blockedCandidateHints
-    ),
-    blockedCandidateHintFamilyCounts: buildBlockedCandidateHintFamilyCounts(
-      resolverDiagnostics?.blockedCandidateHints
-    ),
-    candidateTargetCount: resolverDiagnostics?.summary?.candidateTargetCount ?? null,
-    topFamilies: resolverDiagnostics?.summary?.topFamilies ?? [],
-    topAffectedPackageScopes:
-      resolverDiagnostics?.summary?.topAffectedPackageScopes ?? [],
-    topUnresolvedReasons:
-      resolverDiagnostics?.summary?.topUnresolvedReasons ?? topUnresolvedReasons(symbols),
-    topSpecifierRoots:
-      resolverDiagnostics?.summary?.topSpecifierRoots ?? buildTopSpecifierRoots(symbols),
-    topUnresolvedSpecifiers: (symbols?.topUnresolvedSpecifiers ?? []).slice(0, 20),
   };
 }
 
@@ -247,6 +119,35 @@ function buildArtifactSummaryFromFile(outDir, artifact, artifactName, artifactKi
     '--artifact-kind', artifactKind,
     '--artifact', path.join(outDir, artifactName),
   ], label);
+}
+
+function pushArtifactPathArg(args, flag, artifact, outDir, artifactName) {
+  if (!artifact || typeof artifact !== 'object') return;
+  args.push(flag, path.join(outDir, artifactName));
+}
+
+function buildResolverDiagnosticsSummaryFromFile(outDir, {
+  symbols = null,
+  resolverCapabilities = null,
+  resolverDiagnostics = null,
+} = {}) {
+  const args = ['resolver-diagnostics-summary'];
+  pushArtifactPathArg(args, '--symbols', symbols, outDir, 'symbols.json');
+  pushArtifactPathArg(
+    args,
+    '--resolver-capabilities',
+    resolverCapabilities,
+    outDir,
+    'resolver-capabilities.json'
+  );
+  pushArtifactPathArg(
+    args,
+    '--resolver-diagnostics',
+    resolverDiagnostics,
+    outDir,
+    'resolver-diagnostics.json'
+  );
+  return runAuditCoreJson(args, 'buildResolverDiagnosticsSummary');
 }
 
 function buildSfcEvidenceSummary(symbols) {
@@ -339,7 +240,8 @@ export function buildManifestEvidence({
       resolvedInternal: symbols?.uses?.resolvedInternal ?? null,
       unresolvedInternal: symbols?.uses?.unresolvedInternal ?? null,
     },
-    resolverDiagnostics: buildResolverDiagnosticsSummary(symbols, {
+    resolverDiagnostics: buildResolverDiagnosticsSummaryFromFile(outDir, {
+      symbols,
       resolverCapabilities,
       resolverDiagnostics,
     }),

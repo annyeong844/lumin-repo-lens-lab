@@ -10,9 +10,10 @@ use lumin_audit_core::artifact_summaries::{summarize_artifact, ArtifactSummaryKi
 use lumin_audit_core::generated_artifacts::{
     summarize_generated_artifacts, GeneratedArtifactsMode, GeneratedArtifactsOptions,
 };
+use lumin_audit_core::resolver_diagnostics::summarize_resolver_diagnostics;
 use lumin_audit_core::rust_analysis::summarize_rust_analysis_artifact;
 
-const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>";
+const USAGE: &str = "usage: lumin-audit-core artifact-registry --output <dir> [--rust-analysis-ran]\n       lumin-audit-core rust-analysis-summary --root <repo> --artifact <path>\n       lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]\n       lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>\n       lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]";
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -21,6 +22,7 @@ pub fn run() -> Result<()> {
         Some("rust-analysis-summary") => run_rust_analysis_summary(args.collect()),
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
         Some("artifact-summary") => run_artifact_summary(args.collect()),
+        Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         _ => bail!(USAGE),
     }
 }
@@ -160,6 +162,47 @@ fn run_artifact_summary(args: Vec<String>) -> Result<()> {
     write_stdout_json(&summary)
 }
 
+fn run_resolver_diagnostics_summary(args: Vec<String>) -> Result<()> {
+    let mut parsed = ResolverDiagnosticsSummaryArgs::default();
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--symbols" => parsed.symbols = Some(take_path(&mut args, "--symbols")?),
+            "--resolver-capabilities" => {
+                parsed.resolver_capabilities =
+                    Some(take_path(&mut args, "--resolver-capabilities")?);
+            }
+            "--resolver-diagnostics" => {
+                parsed.resolver_diagnostics = Some(take_path(&mut args, "--resolver-diagnostics")?);
+            }
+            _ => bail!("resolver-diagnostics-summary: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let symbols = read_optional_json(parsed.symbols, "resolver-diagnostics-summary")?;
+    let resolver_capabilities =
+        read_optional_json(parsed.resolver_capabilities, "resolver-diagnostics-summary")?;
+    let resolver_diagnostics =
+        read_optional_json(parsed.resolver_diagnostics, "resolver-diagnostics-summary")?;
+    let summary = summarize_resolver_diagnostics(
+        symbols.as_ref(),
+        resolver_capabilities.as_ref(),
+        resolver_diagnostics.as_ref(),
+    );
+    write_stdout_json(&summary)
+}
+
+fn read_optional_json(path: Option<PathBuf>, label: &str) -> Result<Option<Value>> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("{label}: failed to read {}", path.display()))?;
+    let json = serde_json::from_str::<Value>(&text)
+        .with_context(|| format!("{label}: invalid JSON in {}", path.display()))?;
+    Ok(Some(json))
+}
+
 fn take_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf> {
     let Some(value) = args.next() else {
         bail!("{flag} requires a value");
@@ -214,4 +257,11 @@ struct GeneratedArtifactsSummaryArgs {
 struct ArtifactSummaryArgs {
     kind: Option<ArtifactSummaryKind>,
     artifact: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct ResolverDiagnosticsSummaryArgs {
+    symbols: Option<PathBuf>,
+    resolver_capabilities: Option<PathBuf>,
+    resolver_diagnostics: Option<PathBuf>,
 }
