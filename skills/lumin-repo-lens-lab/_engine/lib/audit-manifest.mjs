@@ -8,7 +8,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { detectBlindZones } from './blind-zones.mjs';
 import { loadIfExists as loadArtifact } from './artifacts.mjs';
 
 function auditCoreBinary() {
@@ -126,6 +125,16 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, {
     args.push('--auto-exclude', autoExclude);
   }
   return runAuditCoreJson(args, 'buildManifestEvidenceSummary');
+}
+
+function buildBlindZonesFromOutputDir(root, outDir, rustAnalysisRun = null) {
+  const args = [
+    'blind-zones-summary',
+    '--root', root,
+    '--output', outDir,
+  ];
+  if (rustAnalysisRun?.ran === true) args.push('--rust-analysis-ran');
+  return runAuditCoreJson(args, 'buildBlindZonesFromOutputDir');
 }
 
 export function collectProducedArtifacts(outDir, options = {}) {
@@ -374,15 +383,15 @@ export function buildManifestEvidence({
   rustAnalysisRun = null,
   onArtifactRead,
 }) {
-  const triage = loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
-  const symbols = loadArtifact(outDir, 'symbols.json', { onRead: onArtifactRead });
-  const resolverDiagnostics = loadArtifact(outDir, 'resolver-diagnostics.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'symbols.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'resolver-diagnostics.json', { onRead: onArtifactRead });
   loadArtifact(outDir, 'resolver-capabilities.json', { onRead: onArtifactRead });
   loadArtifact(outDir, 'framework-resource-surfaces.json', { onRead: onArtifactRead });
   loadArtifact(outDir, 'unused-deps.json', { onRead: onArtifactRead });
   loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
-  const entrySurface = loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
-  const deadClassify = loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
+  loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
   const manifestEvidence = buildManifestEvidenceSummaryFromFile(root, outDir, {
     includeTests,
     production,
@@ -390,20 +399,12 @@ export function buildManifestEvidence({
     autoExcludes,
     generatedArtifactsMode,
   });
-  const rustAnalysisForBlindZones = rustAnalysisRun?.ran === true ? manifestEvidence.rustAnalysis : null;
 
   return {
     scanRange: manifestEvidence.scanRange,
     confidence: manifestEvidence.confidence,
     resolverDiagnostics: manifestEvidence.resolverDiagnostics,
-    blindZones: detectBlindZones({
-      triage,
-      symbols,
-      deadClassify,
-      entrySurface,
-      resolverDiagnostics,
-      rustAnalysis: rustAnalysisForBlindZones,
-    }),
+    blindZones: buildBlindZonesFromOutputDir(root, outDir, rustAnalysisRun),
     rustAnalysis: manifestEvidence.rustAnalysis,
     generatedArtifacts: manifestEvidence.generatedArtifacts,
     frameworkResourceSurfaces: manifestEvidence.frameworkResourceSurfaces,

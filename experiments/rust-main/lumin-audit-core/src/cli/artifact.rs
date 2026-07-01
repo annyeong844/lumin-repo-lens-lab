@@ -1,14 +1,16 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::fs;
+use std::path::Path;
 
 use super::args::{
     ArtifactRegistryArgs, ArtifactSummaryArgs, BlindZoneCaseSummary, BlindZonesSummaryArgs,
     GeneratedArtifactsSummaryArgs, ResolverDiagnosticsSummaryArgs, RustAnalysisSummaryArgs,
 };
 use super::io_support::{
-    read_json_input, read_optional_json, read_optional_json_input, read_required_json, take_path,
-    take_string, write_stdout_json,
+    read_json_input, read_optional_json, read_optional_json_input,
+    read_optional_output_json_tolerant, read_required_json, take_path, take_string,
+    write_stdout_json,
 };
 use super::usage::USAGE;
 use lumin_audit_core::artifact_measurement::measure_artifact_sizes;
@@ -272,17 +274,26 @@ pub(super) fn run_blind_zones_summary(args: Vec<String>) -> Result<()> {
         match arg.as_str() {
             "--input" => parsed.input = Some(take_path(&mut args, "--input")?),
             "--cases" => parsed.cases = Some(take_path(&mut args, "--cases")?),
+            "--root" => parsed.root = Some(take_path(&mut args, "--root")?),
+            "--output" => parsed.output = Some(take_path(&mut args, "--output")?),
+            "--rust-analysis-ran" => parsed.rust_analysis_ran = true,
             _ => bail!("blind-zones-summary: unknown argument '{arg}'\n{USAGE}"),
         }
     }
 
-    match (parsed.input, parsed.cases) {
-        (Some(input), None) => {
+    let fixture_mode = parsed.input.is_some() as usize + parsed.cases.is_some() as usize;
+    let output_mode = parsed.root.is_some() || parsed.output.is_some();
+    if fixture_mode > 0 && output_mode {
+        bail!("blind-zones-summary: use fixture mode or output-dir mode, not both")
+    }
+
+    match (parsed.input, parsed.cases, parsed.root, parsed.output) {
+        (Some(input), None, None, None) => {
             let fixture = read_required_json(&input, "blind-zones-summary")?;
             let summary = summarize_blind_zone_fixture(&fixture);
             write_stdout_json(&summary)
         }
-        (None, Some(cases_path)) => {
+        (None, Some(cases_path), None, None) => {
             let cases_json = read_required_json(&cases_path, "blind-zones-summary")?;
             let cases = cases_json
                 .as_array()
@@ -293,12 +304,17 @@ pub(super) fn run_blind_zones_summary(args: Vec<String>) -> Result<()> {
             }
             write_stdout_json(&summaries)
         }
-        (None, None) => {
-            bail!("blind-zones-summary: missing --input <fixture.json> or --cases <cases.json>")
+        (None, None, Some(root), Some(output)) => {
+            let summary = summarize_blind_zone_output_dir(&root, &output, parsed.rust_analysis_ran);
+            write_stdout_json(&summary)
         }
-        (Some(_), Some(_)) => bail!(
+        (Some(_), Some(_), None, None) => bail!(
             "blind-zones-summary: use either --input <fixture.json> or --cases <cases.json>, not both"
         ),
+        (None, None, _, _) => bail!(
+            "blind-zones-summary: missing --input <fixture.json>, --cases <cases.json>, or --root <repo> --output <dir>"
+        ),
+        _ => bail!("blind-zones-summary: invalid argument combination\n{USAGE}"),
     }
 }
 
@@ -325,5 +341,34 @@ fn summarize_blind_zone_case(case: &Value) -> Result<BlindZoneCaseSummary> {
     Ok(BlindZoneCaseSummary {
         name,
         blind_zones: summarize_blind_zone_fixture(input),
+    })
+}
+
+fn summarize_blind_zone_output_dir(
+    root: &Path,
+    output: &Path,
+    rust_analysis_ran: bool,
+) -> Vec<BlindZoneSummary> {
+    let triage = read_optional_output_json_tolerant(output, "triage.json");
+    let symbols = read_optional_output_json_tolerant(output, "symbols.json");
+    let dead_classify = read_optional_output_json_tolerant(output, "dead-classify.json");
+    let entry_surface = read_optional_output_json_tolerant(output, "entry-surface.json");
+    let resolver_diagnostics =
+        read_optional_output_json_tolerant(output, "resolver-diagnostics.json");
+    let rust_analysis = rust_analysis_ran
+        .then(|| read_optional_output_json_tolerant(output, "rust-analyzer-health.latest.json"))
+        .flatten()
+        .and_then(|artifact| {
+            summarize_rust_analysis_artifact(root, &artifact)
+                .and_then(|summary| serde_json::to_value(summary).ok())
+        });
+
+    summarize_blind_zones(BlindZoneInput {
+        triage: triage.as_ref(),
+        symbols: symbols.as_ref(),
+        dead_classify: dead_classify.as_ref(),
+        entry_surface: entry_surface.as_ref(),
+        resolver_diagnostics: resolver_diagnostics.as_ref(),
+        rust_analysis: rust_analysis.as_ref(),
     })
 }

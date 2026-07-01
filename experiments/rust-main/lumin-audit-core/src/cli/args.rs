@@ -45,6 +45,9 @@ pub(super) struct ResolverDiagnosticsSummaryArgs {
 pub(super) struct BlindZonesSummaryArgs {
     pub(super) input: Option<PathBuf>,
     pub(super) cases: Option<PathBuf>,
+    pub(super) root: Option<PathBuf>,
+    pub(super) output: Option<PathBuf>,
+    pub(super) rust_analysis_ran: bool,
 }
 
 #[derive(Serialize)]

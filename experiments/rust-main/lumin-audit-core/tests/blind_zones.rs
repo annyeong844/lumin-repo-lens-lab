@@ -405,6 +405,71 @@ fn cli_blind_zones_summary_emits_shared_case_batch_json() -> Result<()> {
 }
 
 #[test]
+fn cli_blind_zones_summary_reads_output_dir_and_preserves_current_rust_run_gate() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let output_dir = root.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        output_dir.join("triage.json"),
+        serde_json::to_vec(&json!({ "byLanguage": { "ts": 3, "rs": 2 } }))?,
+    )?;
+
+    let stale_output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("blind-zones-summary")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .output()?;
+
+    if !stale_output.status.success() {
+        bail!("stderr: {}", String::from_utf8_lossy(&stale_output.stderr));
+    }
+    let stale_zones = serde_json::from_slice::<Value>(&stale_output.stdout)?;
+    assert_eq!(
+        zone_by_area(&stale_zones, "rs")?["details"]["reason"],
+        "rust-owned-analysis-not-registered-in-this-audit-run"
+    );
+
+    fs::write(
+        output_dir.join("rust-analyzer-health.latest.json"),
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-rust-analyzer.v1",
+            "policyVersion": "lumin-rust-analyzer-policy.v1",
+            "meta": {
+                "producer": "lumin-rust-analyzer",
+                "mode": "rust-main",
+                "input": { "root": root.path().display().to_string() }
+            },
+            "summary": { "files": 2, "syntaxReviewSignals": 0 }
+        }))?,
+    )?;
+
+    let current_output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("blind-zones-summary")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--rust-analysis-ran")
+        .output()?;
+
+    if !current_output.status.success() {
+        bail!(
+            "stderr: {}",
+            String::from_utf8_lossy(&current_output.stderr)
+        );
+    }
+    let current_zones = serde_json::from_slice::<Value>(&current_output.stdout)?;
+    assert!(
+        zone_by_area(&current_zones, "rs").is_err(),
+        "current complete Rust analysis should clear rs blind zone: {current_zones}"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn cli_blind_zones_summary_hard_stops_on_broken_case_batch() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let cases_path = temp.path().join("blind-zone-cases.json");
