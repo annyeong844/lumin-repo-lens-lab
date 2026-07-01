@@ -24,3 +24,9 @@ runtime platform, or set a runtime override variable:
 Those fallback binaries must match the current runtime platform. They
 are supported when this package does not include
 `_engine/bin/<platform>-<arch>/` for the current platform.
+
+When the wrapper is running from a source checkout that still has
+`experiments/Cargo.toml`, it can build the current-platform helper with
+Cargo if no matching packaged/env/PATH binary exists. Set
+`LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` to disable that source-checkout
+fallback and fail fast instead.

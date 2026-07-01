@@ -427,8 +427,14 @@ try {
       readFileSync(path.join(OUT, "_engine/_README.md"), "utf8").includes(
         "`lumin-audit-core` / `lumin-audit-core.exe` on `PATH`",
       ) &&
+      readFileSync(path.join(OUT, "_engine/_README.md"), "utf8").includes(
+        "LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1",
+      ) &&
       readFileSync(path.join(OUT, "README.md"), "utf8").includes(
         "Packages that include the Rust `lumin-audit-core` helper are",
+      ) &&
+      readFileSync(path.join(OUT, "README.md"), "utf8").includes(
+        "experiments/Cargo.toml",
       ) &&
       existsSync(path.join(OUT, "_engine/lib/cli.mjs")) &&
       existsSync(path.join(OUT, "_engine/lib/dependency-guard.mjs")) &&
@@ -440,6 +446,9 @@ try {
       ) &&
       readFileSync(path.join(OUT, "_engine/lib/audit-manifest.mjs"), "utf8").includes(
         "LUMIN_AUDIT_CORE_BIN_",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-manifest.mjs"), "utf8").includes(
+        "LUMIN_AUDIT_CORE_NO_AUTO_BUILD",
       ) &&
       existsSync(
         path.join(

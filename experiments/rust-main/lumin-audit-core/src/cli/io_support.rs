@@ -90,6 +90,7 @@ fn malformed_optional_artifact(artifact_name: &str, kind: &str, message: String)
         "schemaVersion": Value::Null,
         "artifact": artifact_name,
         "status": "unavailable",
+        "available": false,
         "reason": {
             "kind": kind,
             "message": message,

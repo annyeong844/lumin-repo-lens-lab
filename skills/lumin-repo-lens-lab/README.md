@@ -66,7 +66,9 @@ the intent JSON by hand.
 > platform-scoped. Use a package built for your runtime platform, or point
 > `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` / `LUMIN_AUDIT_CORE_BIN` at a
 > matching external binary, or put `lumin-audit-core` on `PATH`, before running
-> the skill.
+> the skill. In a source checkout, the wrapper can build the current-platform
+> helper from `experiments/Cargo.toml`; set `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1`
+> if you want missing helper binaries to fail instead of invoking Cargo.
 
 For very large repos, do not auto-trigger full profile on every edit. Run
 `:full` once per branch, first checkup, or major refactor review, then use

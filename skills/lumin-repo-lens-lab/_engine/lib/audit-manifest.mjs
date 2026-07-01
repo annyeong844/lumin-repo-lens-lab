@@ -10,6 +10,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadIfExists as loadArtifact } from './artifacts.mjs';
 
+let auditCoreAutoBuildFailure = null;
+
 function executableOnPath(exe) {
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     if (!dir) continue;
@@ -33,18 +35,40 @@ function auditCoreBinary() {
   const pathBinary = executableOnPath(exe);
   if (pathBinary) return pathBinary;
   const packagedManifest = path.resolve(here, '../bin/audit-core-platforms.json');
-  if (existsSync(packagedManifest)) return packagedPlatform;
+  const hasPackagedManifest = existsSync(packagedManifest);
   const fallback = path.join(path.resolve(here, '..'), 'experiments', 'target', 'debug', exe);
   let cursor = here;
   for (;;) {
     const candidate = path.join(cursor, 'experiments', 'target', 'debug', exe);
-    if (existsSync(candidate) || existsSync(path.join(cursor, 'experiments', 'Cargo.toml'))) {
+    if (existsSync(candidate)) {
       return candidate;
     }
+    if (existsSync(path.join(cursor, 'experiments', 'Cargo.toml'))) {
+      return ensureAuditCoreBuiltFromSource(cursor, candidate);
+    }
     const parent = path.dirname(cursor);
-    if (parent === cursor) return fallback;
+    if (parent === cursor) return hasPackagedManifest ? packagedPlatform : fallback;
     cursor = parent;
   }
+}
+
+function ensureAuditCoreBuiltFromSource(repoRoot, candidate) {
+  if (process.env.LUMIN_AUDIT_CORE_NO_AUTO_BUILD === '1') return candidate;
+  try {
+    execFileSync('cargo', [
+      'build',
+      '--manifest-path',
+      path.join(repoRoot, 'experiments', 'Cargo.toml'),
+      '-p',
+      'lumin-audit-core',
+    ], {
+      cwd: repoRoot,
+      stdio: 'inherit',
+    });
+  } catch (error) {
+    auditCoreAutoBuildFailure = error?.message ?? String(error);
+  }
+  return candidate;
 }
 
 function auditCorePlatformHint() {
@@ -74,7 +98,11 @@ function auditCorePlatformHint() {
   const scopeText = packageScope && packageScope !== 'multi-platform'
     ? ` This skill package is scoped to ${packageScope}.`
     : '';
-  return `${supportedText}${scopeText} Provide ${platformEnv} or LUMIN_AUDIT_CORE_BIN for this platform, put ${exe} on PATH, or install a package built for ${process.platform}-${process.arch}.`;
+  const buildText = ' In a source checkout, the wrapper can build experiments/lumin-audit-core for the current platform with cargo; set LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1 to disable that fallback.';
+  const buildFailureText = auditCoreAutoBuildFailure
+    ? ` Last auto-build failure: ${auditCoreAutoBuildFailure}.`
+    : '';
+  return `${supportedText}${scopeText} Provide ${platformEnv} or LUMIN_AUDIT_CORE_BIN for this platform, put ${exe} on PATH, or install a package built for ${process.platform}-${process.arch}.${buildText}${buildFailureText}`;
 }
 
 function missingAuditCoreBinaryError(label, command) {

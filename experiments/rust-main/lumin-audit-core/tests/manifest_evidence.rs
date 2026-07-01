@@ -425,6 +425,7 @@ fn cli_manifest_evidence_summary_degrades_malformed_optional_artifacts() -> Resu
     assert_eq!(stdout["blockClones"]["status"], "unavailable");
     assert_eq!(stdout["blockClones"]["reason"]["kind"], "malformed-json");
     assert_eq!(stdout["frameworkResourceSurfaces"]["status"], "unavailable");
+    assert_eq!(stdout["frameworkResourceSurfaces"]["available"], false);
     assert_eq!(
         stdout["frameworkResourceSurfaces"]["reason"]["kind"],
         "malformed-json"
@@ -497,6 +498,7 @@ fn cli_manifest_evidence_refresh_emits_manifest_patch_shape() -> Result<()> {
     assert_eq!(stdout["scanRange"]["production"], true);
     assert!(stdout["blindZones"].is_array());
     assert_eq!(stdout["frameworkResourceSurfaces"]["status"], "unavailable");
+    assert_eq!(stdout["frameworkResourceSurfaces"]["available"], false);
     assert_eq!(
         stdout["frameworkResourceSurfaces"]["reason"]["kind"],
         "malformed-json"

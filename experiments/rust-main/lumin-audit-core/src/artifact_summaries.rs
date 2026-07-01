@@ -54,6 +54,8 @@ pub struct FrameworkResourceSurfacesSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<Value>,
     pub total_files_with_surfaces: Value,
     pub total_surface_lanes: Value,
@@ -146,6 +148,7 @@ pub fn summarize_framework_resource_surfaces(
             schema_version: field_or_null(artifact_object, "schemaVersion"),
             policy_version: field_or_null(artifact_object, "policyVersion"),
             status: Some(Value::String("unavailable".to_string())),
+            available: Some(false),
             reason: artifact_object
                 .get("reason")
                 .cloned()
@@ -176,6 +179,7 @@ pub fn summarize_framework_resource_surfaces(
         schema_version: field_or_null(artifact_object, "schemaVersion"),
         policy_version: field_or_null(artifact_object, "policyVersion"),
         status: None,
+        available: None,
         reason: None,
         total_files_with_surfaces: summary_number_or(
             summary,
