@@ -28,7 +28,6 @@ describe("audit-manifest public surface", () => {
   it("AMES1. exposes manifest builders, not living-audit internals", () => {
     expect(typeof auditManifest.buildManifestEvidence).toBe("function");
     expect(typeof auditManifest.refreshManifestEvidence).toBe("function");
-    expect(typeof auditManifest.collectProducedArtifacts).toBe("function");
     expect(typeof auditManifest.buildManifestArtifactsProducedUpdate).toBe(
       "function",
     );
@@ -50,6 +49,7 @@ describe("audit-manifest public surface", () => {
       "buildManifestEvidenceUpdate",
       "buildManifestFinalSummaryUpdate",
       "buildManifestCompanionUpdate",
+      "collectProducedArtifacts",
       "ARTIFACT_READ_EVENTS_SCHEMA_VERSION",
       "buildLifecycleSummary",
     ]) {
@@ -197,7 +197,7 @@ describe("audit-manifest public surface", () => {
       expect(update.reviewPack.format).toBe("markdown");
     }));
 
-  it("AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback", () =>
+  it("AMES1f. artifactsProduced patch uses typed rustAnalysis block instead of JS usability fallback", () =>
     withManifestFixture((fixture) => {
       fixture.writeJson(
         "rust-analyzer-health.latest.json",
@@ -209,24 +209,25 @@ describe("audit-manifest public surface", () => {
         { to: "output" },
       );
 
-      expect(auditManifest.collectProducedArtifacts(fixture.output)).not.toContain(
-        "rust-analyzer-health.latest.json",
-      );
       expect(
-        auditManifest.collectProducedArtifacts(fixture.output, {
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output)
+          .artifactsProduced,
+      ).not.toContain("rust-analyzer-health.latest.json");
+      expect(
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output, {
           rustAnalysis: {
             status: "complete",
             available: true,
           },
-        }),
+        }).artifactsProduced,
       ).toContain("rust-analyzer-health.latest.json");
       expect(
-        auditManifest.collectProducedArtifacts(fixture.output, {
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output, {
           rustAnalysis: {
             status: "unavailable",
             available: false,
           },
-        }),
+        }).artifactsProduced,
       ).not.toContain("rust-analyzer-health.latest.json");
     }));
 

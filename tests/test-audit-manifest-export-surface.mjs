@@ -22,7 +22,6 @@ function check(label, fn) {
 check('AMES1. audit-manifest exposes manifest builders, not living-audit internals', () => {
   assert.equal(typeof auditManifest.buildManifestEvidence, 'function');
   assert.equal(typeof auditManifest.refreshManifestEvidence, 'function');
-  assert.equal(typeof auditManifest.collectProducedArtifacts, 'function');
   assert.equal(typeof auditManifest.buildManifestArtifactsProducedUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestCloseoutUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
@@ -40,6 +39,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
     'buildManifestEvidenceUpdate',
     'buildManifestFinalSummaryUpdate',
     'buildManifestCompanionUpdate',
+    'collectProducedArtifacts',
     'ARTIFACT_READ_EVENTS_SCHEMA_VERSION',
     'buildLifecycleSummary',
   ]) {
@@ -191,7 +191,7 @@ check('AMES1j. closeout wrapper leaves final summary and companion patch in audi
   }
 });
 
-check('AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback', () => {
+check('AMES1f. artifactsProduced patch uses typed rustAnalysis block instead of JS usability fallback', () => {
   const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-produced-artifacts-'));
   const out = path.join(fx, 'out');
   try {
@@ -206,28 +206,32 @@ check('AMES1f. produced artifact registry uses typed rustAnalysis block instead 
     );
 
     assert.equal(
-      auditManifest.collectProducedArtifacts(out).includes('rust-analyzer-health.latest.json'),
+      auditManifest
+        .buildManifestArtifactsProducedUpdate(out)
+        .artifactsProduced.includes('rust-analyzer-health.latest.json'),
       false,
     );
     assert.equal(
       auditManifest
-        .collectProducedArtifacts(out, {
+        .buildManifestArtifactsProducedUpdate(out, {
           rustAnalysis: {
             status: 'complete',
             available: true,
           },
         })
+        .artifactsProduced
         .includes('rust-analyzer-health.latest.json'),
       true,
     );
     assert.equal(
       auditManifest
-        .collectProducedArtifacts(out, {
+        .buildManifestArtifactsProducedUpdate(out, {
           rustAnalysis: {
             status: 'unavailable',
             available: false,
           },
         })
+        .artifactsProduced
         .includes('rust-analyzer-health.latest.json'),
       false,
     );
