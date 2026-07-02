@@ -1,28 +1,45 @@
-# Blind Zones Audit-Core Parity Design
+# Blind Zones Audit-Core Owner Boundary
 
 ## Goal
 
-Prepare `manifest.json.blindZones` for a later Rust audit-core owner without
-changing the current JS-owned behavior.
+Keep `manifest.json.blindZones` Rust-owned while preserving the JS producer
+semantics that still feed the field.
 
-The migration target is a typed Rust projection in
-`experiments/rust-main/lumin-audit-core`, but this slice is a parity design only.
-`_lib/blind-zones.mjs` remains the product owner until the Rust port can prove
-the same outputs on the protected JS behavior cases and real audit artifacts.
+The current migration state is no longer "future Rust port". The typed Rust
+projection exists in `experiments/rust-main/lumin-audit-core/src/blind_zones.rs`
+and is wired into `manifest_evidence.rs`. `_lib/blind-zones.mjs` remains the JS
+parity oracle and console-summary owner until its remaining consumers are either
+retired or moved behind an explicit Rust-owned rendering contract.
 
 ## Current Owner
 
-`_lib/blind-zones.mjs` owns:
+Rust audit-core owns:
+
+- final `manifest.json.blindZones` projection through
+  `manifest_evidence.rs` calling `blind_zones.rs`
+- typed `BlindZoneSummary` shape and severity vocabulary
+- output-dir wiring through `lumin-audit-core manifest-evidence-summary`
+- fixture/case parity CLI through `lumin-audit-core blind-zones-summary`
+- current-run Rust-analysis gating for the `rs` scan-gap
+
+`_lib/blind-zones.mjs` still owns:
 
 - `detectBlindZones(...)`
 - `formatBlindZonesSummary(...)`
-- language support interpretation from `symbols.meta.languageSupport`
-- resolver confidence-gap policy through `resolver-blind-zone-policy`
-- parser, CommonJS, SFC, HTML-entry, and unsupported-language blind-zone
-  projection
+- the checked JS parity/reference behavior for the same artifact inputs
+- console one-line summary formatting
+- Vitest-facing JS helper import surface
 
-`_lib/audit-manifest.mjs` calls `detectBlindZones` after Rust-owned manifest
-evidence has been summarized. That call is intentionally still JS-owned.
+JS/TS producer artifacts still own their source semantics:
+
+| Source artifact | Still JS-owned meaning | Rust blind-zone use |
+|---|---|---|
+| `triage.json` | language/file counts and shape counters | input evidence for language, SFC, Rust, and unclassified scan gaps |
+| `symbols.json` | JS/TS graph, language support, parser warnings, CJS opacity, unresolved internal summaries | input evidence for precision and resolver confidence gaps |
+| `resolver-diagnostics.json` | resolver failure grouping and diagnostic summaries | preferred resolver blind-zone details when present |
+| `entry-surface.json` | HTML module entrypoint discovery | input evidence for `html-entry-surface` |
+| `dead-classify.json` | deadness producer evidence | carried in the input shape; currently not interpreted by Rust blind zones |
+| `rust-analyzer-health.latest.json` plus current run state | Rust analyzer availability and current-run freshness | clears or preserves the `rs` scan-gap |
 
 ## Non-Goals
 
@@ -30,16 +47,17 @@ evidence has been summarized. That call is intentionally still JS-owned.
 - Do not change threshold values or policy hashes.
 - Do not run JS/TS files through Rust analysis.
 - Do not replace `audit-repo.mjs` orchestration.
-- Do not remove the JS implementation before parity evidence exists.
+- Do not remove the JS helper while JS tests and console summaries still import
+  it.
 - Do not add elapsed-time caps, repository-size caps, or timeout behavior.
 
 ## Protected Semantics
 
-The Rust port must preserve these behaviors exactly.
+The Rust projection must preserve these behaviors exactly.
 
 ### Language And Shape Gaps
 
-- Rust files produce a `rust` scan-gap only when current-run Rust analysis is
+- Rust files produce an `rs` scan-gap only when current-run Rust analysis is
   not complete and available.
 - SFC files (`vue`, `svelte`, `astro`) produce one grouped `sfc-scan-gap`, not
   per-extension noise.
@@ -77,31 +95,29 @@ Missing artifacts do not invent blind zones. Each branch is skipped when its
 input artifact is missing or malformed for that branch. This is a product
 contract, not a convenience fallback.
 
-## Rust Port Shape
+## Implemented Rust Shape
 
-When implemented, use a new audit-core module:
+The Rust module exists here:
 
 `experiments/rust-main/lumin-audit-core/src/blind_zones.rs`
 
-It should expose typed structs first:
+It exposes typed structs first:
 
 ```rust
 pub struct BlindZoneSummary { ... }
-pub struct BlindZoneDetails { ... }
 pub fn summarize_blind_zones(input: BlindZoneInput<'_>) -> Vec<BlindZoneSummary>;
 ```
 
-The CLI surface should be separate from `manifest-evidence-summary` at first:
+The standalone parity CLI exists:
 
 ```text
 lumin-audit-core blind-zones-summary --input <fixture.json>
 ```
 
-The first Rust CLI should consume a single fixture payload containing the same
+The Rust CLI consumes a single fixture payload containing the same
 objects the JS helper receives: `triage`, `symbols`, `deadClassify`,
-`entrySurface`, `resolverDiagnostics`, and `rustAnalysis`. Keeping the first CLI
-fixture-based avoids changing orchestrator wiring before parity is proven.
-It may also accept the shared parity corpus as a batch fixture:
+`entrySurface`, `resolverDiagnostics`, and `rustAnalysis`. It also accepts the
+shared parity corpus as a batch fixture:
 
 ```text
 lumin-audit-core blind-zones-summary --cases <cases.json>
@@ -153,24 +169,43 @@ The comparison must be exact JSON equality after stable serialization. If field
 ordering differs internally, the harness should compare parsed values, not raw
 text.
 
-## Migration Sequence
+## Current Migration Sequence
 
-1. Keep current JS owner and this spec.
-2. Add Rust typed `blind_zones.rs` plus fixture-based CLI.
-3. Add Rust tests for the protected semantics above using real-shaped fixture
-   payloads, not scaffolding existence tests.
-4. When Node verification is allowed, run JS helper and Rust CLI against the
-   same fixtures and real artifacts.
-5. Only after parity passes, switch `_lib/audit-manifest.mjs` to call Rust for
-   `blindZones`.
-6. Keep `formatBlindZonesSummary` JS-owned unless console rendering also moves
-   to Rust; it is presentation, not typed manifest evidence.
+Completed:
+
+1. Rust typed `blind_zones.rs` plus fixture/case CLI.
+2. Rust tests for protected semantics using real-shaped payloads.
+3. Shared fixture corpus in `tests/fixtures/audit-core-blind-zones/cases.json`.
+4. `manifest_evidence.rs` wires `summarize_blind_zones` into final
+   `manifest.json.blindZones`.
+
+Still pending:
+
+1. JS helper vs Rust CLI exact parity runner over the shared cases.
+2. Real artifact parity over at least the four outputs listed above.
+3. A decision on whether to keep `formatBlindZonesSummary` JS-owned or move
+   console rendering into audit-core under a separate rendering owner.
+4. Removal or narrowing of `_lib/blind-zones.mjs` only after every JS consumer
+   has a replacement owner.
+
+Next safe implementation slice:
+
+1. Add a JS parity runner that imports `_lib/blind-zones.mjs`, invokes
+   `lumin-audit-core blind-zones-summary --cases`, and compares parsed JSON
+   outputs for `tests/fixtures/audit-core-blind-zones/cases.json`.
+2. Wire that runner into the existing focused blind-zone test surface, not the
+   full audit path.
+3. Keep `formatBlindZonesSummary` untouched.
+4. Do not change threshold policies, source artifact parsing, or final manifest
+   shape in the same slice.
 
 ## Acceptance
 
-This design is satisfied when:
+This owner boundary is satisfied when:
 
-- the owner boundary is documented in canonical audit-core notes;
-- the future Rust module has a named owner and non-goals;
-- the protected JS behaviors are explicitly listed;
-- no current JS behavior changes in this slice.
+- `canonical/audit-core.md` names Rust as the final `manifest.json.blindZones`
+  projection owner and `_lib/blind-zones.mjs` as JS parity/summary owner;
+- the protected semantics above match the Rust tests and shared fixture corpus;
+- `_lib/blind-zones.mjs` remains only for JS parity/reference and console
+  summary work until those consumers move;
+- no JS/TS producer behavior is reinterpreted in audit-core.
