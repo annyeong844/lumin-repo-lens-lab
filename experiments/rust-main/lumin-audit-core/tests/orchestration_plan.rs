@@ -140,11 +140,19 @@ fn cli_orchestration_plan_emits_typed_json() -> Result<()> {
     assert_eq!(plan["executionOwner"], "lumin-audit-core");
     assert_eq!(
         plan["lifecycle"]["preWrite"]["executionOwner"],
-        "audit-repo.mjs"
+        "lumin-audit-core"
     );
     assert_eq!(
         plan["lifecycle"]["postWrite"]["executionOwner"],
-        "audit-repo.mjs"
+        "lumin-audit-core"
+    );
+    assert_eq!(
+        plan["lifecycle"]["canonDraft"]["executionOwner"],
+        "lumin-audit-core"
+    );
+    assert_eq!(
+        plan["lifecycle"]["checkCanon"]["executionOwner"],
+        "lumin-audit-core"
     );
     assert_eq!(plan["profile"], "ci");
     assert_eq!(plan["emitSarif"], true);

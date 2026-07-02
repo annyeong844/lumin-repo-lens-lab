@@ -307,32 +307,32 @@ fn lifecycle_plan(options: OrchestrationPlanOptions) -> LifecyclePlan {
         pre_write: LifecycleModePlan {
             requested: options.pre_write,
             mode: LifecycleMode::MutuallyExclusive,
-            execution_owner: "audit-repo.mjs",
+            execution_owner: "lumin-audit-core",
             required_input: Some("--intent <file|->"),
             notes: Some(
-                "engine selection remains JS-owned until Rust orchestrator execution moves",
+                "pre-write engine routing and Rust pre-write execution are delegated to audit-core; JS/TS pre-write producer semantics remain JS-owned",
             ),
         },
         post_write: LifecycleModePlan {
             requested: options.post_write,
             mode: LifecycleMode::MutuallyExclusive,
-            execution_owner: "audit-repo.mjs",
+            execution_owner: "lumin-audit-core",
             required_input: Some("--pre-write-advisory <file>"),
-            notes: Some("post-write delta producer remains JS-owned"),
+            notes: Some("post-write child execution is delegated to audit-core; post-write delta producer semantics remain JS-owned"),
         },
         canon_draft: LifecycleModePlan {
             requested: options.canon_draft,
             mode: LifecycleMode::Orthogonal,
-            execution_owner: "audit-repo.mjs",
+            execution_owner: "lumin-audit-core",
             required_input: None,
-            notes: Some("canon-draft child execution remains JS-owned"),
+            notes: Some("canon-draft child execution is delegated to audit-core; draft content generation remains JS-owned"),
         },
         check_canon: LifecycleModePlan {
             requested: options.check_canon,
             mode: LifecycleMode::Orthogonal,
-            execution_owner: "audit-repo.mjs",
+            execution_owner: "lumin-audit-core",
             required_input: None,
-            notes: Some("check-canon child execution remains JS-owned"),
+            notes: Some("check-canon child execution is delegated to audit-core; drift detection remains JS-owned"),
         },
     }
 }
