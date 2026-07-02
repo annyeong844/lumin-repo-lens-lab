@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -25,6 +25,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.buildManifestArtifactsProducedUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestCloseoutUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
+  assert.equal(typeof auditManifest.writeManifestFile, 'function');
   assert.equal(typeof auditManifest.executeBaseRuntime, 'function');
   assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
 
@@ -237,6 +238,28 @@ check('AMES1f. artifactsProduced patch uses typed rustAnalysis block instead of 
         .includes('rust-analyzer-health.latest.json'),
       false,
     );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1k. writeManifestFile leaves the final manifest write in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-write-'));
+  const out = path.join(fx, 'out');
+  mkdirSync(out, { recursive: true });
+  try {
+    const result = auditManifest.writeManifestFile(out, {
+      meta: {
+        generated: '2026-07-02T00:00:00.000Z',
+      },
+      profile: 'quick',
+      artifactsProduced: [],
+    });
+
+    assert.match(result.manifestPath, /manifest\.json$/);
+    const manifest = JSON.parse(readFileSync(path.join(out, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.profile, 'quick');
+    assert.equal(manifest.meta.generated, '2026-07-02T00:00:00.000Z');
   } finally {
     rmSync(fx, { recursive: true, force: true });
   }

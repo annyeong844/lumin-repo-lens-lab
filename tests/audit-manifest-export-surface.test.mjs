@@ -33,6 +33,7 @@ describe("audit-manifest public surface", () => {
     );
     expect(typeof auditManifest.buildManifestCloseoutUpdate).toBe("function");
     expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
+    expect(typeof auditManifest.writeManifestFile).toBe("function");
     expect(typeof auditManifest.executeBaseRuntime).toBe("function");
     expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
       "function",
@@ -231,6 +232,25 @@ describe("audit-manifest public surface", () => {
           },
         }).artifactsProduced,
       ).not.toContain("rust-analyzer-health.latest.json");
+    }));
+
+  it("AMES1k. writeManifestFile leaves the final manifest write in audit-core", () =>
+    withManifestFixture((fixture) => {
+      const result = auditManifest.writeManifestFile(fixture.output, {
+        meta: {
+          generated: "2026-07-02T00:00:00.000Z",
+        },
+        profile: "quick",
+        artifactsProduced: [],
+      });
+
+      expect(result.manifestPath.endsWith("manifest.json")).toBe(true);
+      expect(fixture.readJson("manifest.json", { from: "output" })).toMatchObject({
+        profile: "quick",
+        meta: {
+          generated: "2026-07-02T00:00:00.000Z",
+        },
+      });
     }));
 
   it("AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch", () =>

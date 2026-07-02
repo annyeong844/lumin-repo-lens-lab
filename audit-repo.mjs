@@ -81,6 +81,7 @@ import {
   buildManifestRoot,
   buildManifestEvidence,
   refreshManifestEvidence,
+  writeManifestFile,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
 import { repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
@@ -944,11 +945,11 @@ Object.assign(manifest, buildManifestCloseoutUpdate({
 }));
 
 const manifestPath = path.join(OUT, 'manifest.json');
-writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+const manifestWrite = writeManifestFile(OUT, manifest);
 
 // ─── Console report ───────────────────────────────────────
 console.log('');
-console.log(`[audit-repo] wrote ${manifestPath}`);
+console.log(`[audit-repo] wrote ${manifestWrite.manifestPath ?? manifestPath}`);
 console.log(`[audit-repo] artifacts: ${manifest.artifactsProduced.length} produced`);
 if (manifest.auditSummary?.path) {
   console.log(`[audit-repo] summary: ${manifest.auditSummary.path}`);

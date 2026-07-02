@@ -32,6 +32,7 @@ pub fn run() -> Result<()> {
         Some("lifecycle-request-guard") => run_lifecycle_request_guard(args.collect()),
         Some("manifest-meta") => run_manifest_meta(args.collect()),
         Some("manifest-root") => run_manifest_root(args.collect()),
+        Some("manifest-write") => run_manifest_write(args.collect()),
         Some("manifest-evidence-update") => run_manifest_evidence_update(args.collect()),
         Some("manifest-evidence-refresh") => run_manifest_evidence_refresh(args.collect()),
         Some("manifest-evidence-refresh-with-reads") => {

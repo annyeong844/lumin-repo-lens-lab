@@ -250,6 +250,79 @@ fn cli_manifest_root_hard_stops_on_malformed_runtime_log() -> Result<()> {
 }
 
 #[test]
+fn cli_manifest_write_writes_pretty_manifest_json() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    let input_path = temp.path().join("manifest-write.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "manifest": {
+                "profile": "quick",
+                "meta": {
+                    "generated": "2026-07-02T00:00:00.000Z"
+                },
+                "artifactsProduced": []
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-write")
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--input")
+        .arg(&input_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<Value>(&output.stdout)?;
+    assert!(
+        stdout["manifestPath"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("manifest.json")),
+        "{stdout}"
+    );
+    let manifest_text = fs::read_to_string(output_dir.join("manifest.json"))?;
+    assert!(manifest_text.contains("\n  \"profile\": \"quick\""));
+    let manifest = serde_json::from_str::<Value>(&manifest_text)?;
+    assert_eq!(manifest["profile"], "quick");
+    assert_eq!(manifest["meta"]["generated"], "2026-07-02T00:00:00.000Z");
+    Ok(())
+}
+
+#[test]
+fn cli_manifest_write_rejects_non_object_manifest() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    let input_path = temp.path().join("manifest-write.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({ "manifest": null }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-write")
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--input")
+        .arg(&input_path)
+        .output()?;
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("manifest-write: manifest must be a JSON object"));
+    assert!(!output_dir.join("manifest.json").exists());
+    Ok(())
+}
+
+#[test]
 fn manifest_root_rejects_empty_skipped_reason() -> Result<()> {
     let input = serde_json::from_value::<ManifestRootInput>(json!({
         "generated": "2026-07-01T00:00:00.000Z",

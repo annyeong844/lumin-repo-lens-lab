@@ -40,6 +40,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'manifest-artifacts-produced-update',
     'manifest-artifacts-produced-update: missing --output <dir>',
   ],
+  [
+    'manifest-write',
+    'manifest-write: missing --output <dir>',
+  ],
 ];
 
 function executableOnPath(exe) {
@@ -469,6 +473,16 @@ export function buildManifestRoot(input) {
     '--input', '-',
   ], 'buildManifestRoot', {
     input: JSON.stringify(input ?? {}),
+  });
+}
+
+export function writeManifestFile(outDir, manifest) {
+  return runAuditCoreJson([
+    'manifest-write',
+    '--output', outDir,
+    '--input', '-',
+  ], 'writeManifestFile', {
+    input: JSON.stringify({ manifest: manifest ?? null }),
   });
 }
 

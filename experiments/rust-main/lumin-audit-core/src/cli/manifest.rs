@@ -1,11 +1,12 @@
 use anyhow::{bail, Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::args::{ManifestCoreSummaryArgs, ManifestEvidenceSummaryArgs};
 use super::io_support::{
     read_json_input, read_optional_json, read_optional_json_input,
     read_optional_output_json_observed, read_optional_output_json_tolerant_observed,
-    read_required_json, take_path, take_string, write_stdout_json, OptionalOutputJsonRead,
+    read_required_json, take_path, take_string, write_pretty_json_file, write_stdout_json,
+    OptionalOutputJsonRead,
 };
 use super::usage::USAGE;
 use lumin_audit_core::artifact_read_metrics::{
@@ -97,6 +98,45 @@ pub(super) fn run_manifest_root(args: Vec<String>) -> Result<()> {
         .context("manifest-root: invalid request shape")?;
     let manifest = build_manifest_root(request)?;
     write_stdout_json(&manifest)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestWriteCliInput {
+    manifest: serde_json::Value,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestWriteResult {
+    manifest_path: String,
+}
+
+pub(super) fn run_manifest_write(args: Vec<String>) -> Result<()> {
+    let mut output = None;
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--output" => output = Some(take_path(&mut args, "--output")?),
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("manifest-write: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let output = output.context("manifest-write: missing --output <dir>")?;
+    let input = input.context("manifest-write: missing --input <path|->")?;
+    let json = read_json_input(&input, "manifest-write")?;
+    let request = serde_json::from_value::<ManifestWriteCliInput>(json)
+        .context("manifest-write: invalid request shape")?;
+    if !request.manifest.is_object() {
+        bail!("manifest-write: manifest must be a JSON object");
+    }
+    let manifest_path = output.join("manifest.json");
+    write_pretty_json_file(&manifest_path, &request.manifest)?;
+    write_stdout_json(&ManifestWriteResult {
+        manifest_path: manifest_path.to_string_lossy().to_string(),
+    })
 }
 
 pub(super) fn run_manifest_evidence_update(args: Vec<String>) -> Result<()> {

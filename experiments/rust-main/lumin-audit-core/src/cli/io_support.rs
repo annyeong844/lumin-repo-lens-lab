@@ -221,3 +221,10 @@ pub(super) fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()
     fs::write(path, bytes)
         .with_context(|| format!("failed to write audit-core JSON file {}", path.display()))
 }
+
+pub(super) fn write_pretty_json_file<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    let bytes =
+        serde_json::to_vec_pretty(value).context("failed to serialize audit-core JSON file")?;
+    fs::write(path, bytes)
+        .with_context(|| format!("failed to write audit-core JSON file {}", path.display()))
+}

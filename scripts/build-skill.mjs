@@ -260,6 +260,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-artifacts-produced-update',
       'manifest-artifacts-produced-update: missing --output <dir>',
     ],
+    [
+      'manifest-write',
+      'manifest-write: missing --output <dir>',
+    ],
   ]) {
     const result = spawnSync(binaryPath, [command], {
       cwd: ROOT,
