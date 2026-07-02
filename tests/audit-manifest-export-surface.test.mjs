@@ -33,6 +33,7 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.buildManifestArtifactsProducedUpdate).toBe(
       "function",
     );
+    expect(typeof auditManifest.buildManifestCloseoutUpdate).toBe("function");
     expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
     expect(typeof auditManifest.executeBaseRuntime).toBe("function");
     expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
@@ -169,6 +170,51 @@ describe("audit-manifest public surface", () => {
           },
         }).artifactsProduced,
       ).toEqual(["rust-analyzer-health.latest.json", "triage.json"]);
+    }));
+
+  it("AMES1j. closeout wrapper leaves final summary and companion patch in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "producer-performance.json",
+        {
+          schemaVersion: "producer-performance.v1",
+          summary: {
+            producerCount: 1,
+            okCount: 1,
+            failedCount: 0,
+            skippedCount: 0,
+          },
+          producers: [{ name: "triage-repo.mjs", status: "ok" }],
+          skipped: [],
+        },
+        { to: "output" },
+      );
+      fixture.write("audit-summary.latest.md", "# Summary\n", { to: "output" });
+      fixture.write("audit-review-pack.latest.md", "# Review\n", { to: "output" });
+
+      const update = auditManifest.buildManifestCloseoutUpdate({
+        outDir: fixture.output,
+        producerPerformancePath: fixture.outputPath("producer-performance.json"),
+        rustAnalysis: {
+          status: "unavailable",
+          available: false,
+        },
+        auditSummaryPath: "C:/repo/.audit/audit-summary.latest.md",
+        reviewPackPath: "C:/repo/.audit/audit-review-pack.latest.md",
+      });
+
+      expect(update.performance.producerCount).toBe(1);
+      expect(update.orchestration.status).toBe("complete");
+      expect(update.artifactsProduced).toEqual([
+        "audit-review-pack.latest.md",
+        "audit-summary.latest.md",
+        "producer-performance.json",
+      ]);
+      expect(update.auditSummary).toEqual({
+        path: "C:/repo/.audit/audit-summary.latest.md",
+        format: "markdown",
+      });
+      expect(update.reviewPack.format).toBe("markdown");
     }));
 
   it("AMES1f. produced artifact registry uses typed rustAnalysis block instead of JS usability fallback", () =>

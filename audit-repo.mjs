@@ -75,9 +75,8 @@ import {
   executePostWriteLifecycle,
   applyLifecycleExitPolicy,
   evaluateLifecycleRequestGuard,
-  buildManifestFinalSummaryUpdate,
+  buildManifestCloseoutUpdate,
   buildManifestLifecycleUpdate,
-  buildManifestCompanionUpdate,
   buildManifestArtifactsProducedUpdate,
   buildManifestRoot,
   buildManifestEvidence,
@@ -912,11 +911,6 @@ if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
   });
   writeFileSync(reviewPackPath, reviewPackMarkdown);
 }
-Object.assign(manifest, buildManifestCompanionUpdate({
-  topologyMermaidPath,
-  auditSummaryPath,
-  reviewPackPath,
-}));
 const producerPerformance = buildProducerPerformanceArtifactForAuditRun({
   generated: manifest.meta.generated,
   root: ROOT,
@@ -940,10 +934,13 @@ atomicWrite(
   producerPerformancePath,
   JSON.stringify(producerPerformance, null, 2)
 );
-Object.assign(manifest, buildManifestFinalSummaryUpdate({
+Object.assign(manifest, buildManifestCloseoutUpdate({
   outDir: OUT,
   producerPerformancePath,
   rustAnalysis: manifest.rustAnalysis,
+  topologyMermaidPath,
+  auditSummaryPath,
+  reviewPackPath,
 }));
 
 const manifestPath = path.join(OUT, 'manifest.json');

@@ -11,6 +11,37 @@ import { fileURLToPath } from 'node:url';
 
 let auditCoreAutoBuildFailure = null;
 
+const AUDIT_CORE_CONTRACT_PROBES = [
+  [
+    'producer-performance-runtime-artifact',
+    'producer-performance-runtime-artifact: missing --input',
+  ],
+  [
+    'producer-performance-audit-run-artifact',
+    'producer-performance-audit-run-artifact: missing --input',
+  ],
+  [
+    'manifest-companion-update',
+    'manifest-companion-update: missing --input',
+  ],
+  [
+    'manifest-evidence-refresh-with-reads',
+    'manifest-evidence-refresh-with-reads: missing --root <repo>',
+  ],
+  [
+    'manifest-evidence-summary-with-reads',
+    'manifest-evidence-summary-with-reads: missing --root <repo>',
+  ],
+  [
+    'manifest-closeout-update',
+    'manifest-closeout-update: missing --input',
+  ],
+  [
+    'manifest-artifacts-produced-update',
+    'manifest-artifacts-produced-update: missing --output <dir>',
+  ],
+];
+
 function executableOnPath(exe) {
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     if (!dir) continue;
@@ -73,12 +104,15 @@ function auditCoreCandidateSupportsCurrentContract(command) {
 }
 
 function auditCoreBinarySupportsCurrentContract(command) {
-  const result = spawnSync(command, ['manifest-evidence-summary-with-reads'], {
-    encoding: 'utf8',
-  });
-  if (result.error) return false;
-  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-  return output.includes('manifest-evidence-summary-with-reads: missing --root <repo>');
+  for (const [subcommand, expected] of AUDIT_CORE_CONTRACT_PROBES) {
+    const result = spawnSync(command, [subcommand], {
+      encoding: 'utf8',
+    });
+    if (result.error) return false;
+    const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+    if (!output.includes(expected)) return false;
+  }
+  return true;
 }
 
 function ensureAuditCoreBuiltFromManifest(manifestPath, candidate) {
@@ -454,6 +488,31 @@ export function buildManifestFinalSummaryUpdate({
     options.input = JSON.stringify(rustAnalysis ?? null);
   }
   return runAuditCoreJson(args, 'buildManifestFinalSummaryUpdate', options);
+}
+
+export function buildManifestCloseoutUpdate({
+  outDir,
+  producerPerformancePath,
+  rustAnalysis,
+  topologyMermaidPath,
+  auditSummaryPath,
+  reviewPackPath,
+}) {
+  return runAuditCoreJson([
+    'manifest-closeout-update',
+    '--input', '-',
+  ], 'buildManifestCloseoutUpdate', {
+    input: JSON.stringify({
+      output: outDir,
+      producerPerformancePath,
+      rustAnalysis,
+      companion: {
+        topologyMermaidPath,
+        auditSummaryPath,
+        reviewPackPath,
+      },
+    }),
+  });
 }
 
 export function buildManifestLifecycleUpdate(blocks) {

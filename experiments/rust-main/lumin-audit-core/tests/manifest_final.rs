@@ -4,8 +4,9 @@ use std::fs;
 use std::process::Command;
 
 use lumin_audit_core::manifest_final::{
-    build_manifest_artifacts_produced_update, build_manifest_final_summary_update,
-    build_manifest_final_summary_update_for_rust_analysis,
+    build_manifest_artifacts_produced_update, build_manifest_closeout_update,
+    build_manifest_final_summary_update, build_manifest_final_summary_update_for_rust_analysis,
+    ManifestCloseoutCompanionInput,
 };
 
 #[test]
@@ -125,6 +126,65 @@ fn manifest_final_summary_update_projects_last_manifest_patch() -> Result<()> {
 }
 
 #[test]
+fn manifest_closeout_update_projects_final_and_companion_patch() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("producer-performance.json"), "{}")?;
+    fs::write(output_dir.join("audit-summary.latest.md"), "# Summary\n")?;
+    fs::write(output_dir.join("audit-review-pack.latest.md"), "# Review\n")?;
+    fs::write(output_dir.join("rust-analyzer-health.latest.json"), "{}")?;
+
+    let producer_performance = json!({
+        "schemaVersion": "producer-performance.v1",
+        "summary": {
+            "producerCount": 1,
+            "okCount": 1,
+            "failedCount": 0,
+            "skippedCount": 0,
+            "totalWallMs": 12
+        },
+        "producers": [
+            { "name": "triage-repo.mjs", "status": "ok" }
+        ],
+        "skipped": []
+    });
+
+    let update = serde_json::to_value(build_manifest_closeout_update(
+        &output_dir,
+        &producer_performance,
+        Some(&json!({ "status": "complete", "available": true })),
+        ManifestCloseoutCompanionInput {
+            topology_mermaid_path: None,
+            audit_summary_path: Some("C:/repo/.audit/audit-summary.latest.md".to_string()),
+            review_pack_path: Some("C:/repo/.audit/audit-review-pack.latest.md".to_string()),
+        },
+    )?)?;
+
+    assert_eq!(update["performance"]["producerCount"], 1);
+    assert_eq!(update["orchestration"]["status"], "complete");
+    assert_eq!(
+        update["artifactsProduced"],
+        json!([
+            "audit-review-pack.latest.md",
+            "audit-summary.latest.md",
+            "producer-performance.json",
+            "rust-analyzer-health.latest.json"
+        ])
+    );
+    assert_eq!(
+        update["auditSummary"],
+        json!({
+            "path": "C:/repo/.audit/audit-summary.latest.md",
+            "format": "markdown"
+        })
+    );
+    assert_eq!(update["reviewPack"]["format"], "markdown");
+    assert!(update.get("topologyMermaid").is_none());
+    Ok(())
+}
+
+#[test]
 fn manifest_final_summary_update_includes_current_rust_artifact_only_when_usable() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let output_dir = temp.path().join(".audit");
@@ -195,6 +255,60 @@ fn manifest_final_summary_update_uses_rust_analysis_block_for_current_artifact()
             "producer-performance.json".to_string(),
             "rust-analyzer-health.latest.json".to_string()
         ]
+    );
+    Ok(())
+}
+
+#[test]
+fn cli_manifest_closeout_update_reads_performance_and_projects_patch() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    let performance_path = output_dir.join("producer-performance.json");
+    fs::write(
+        &performance_path,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "producer-performance.v1",
+            "summary": { "producerCount": 1, "okCount": 1, "failedCount": 0, "skippedCount": 0 },
+            "producers": [{ "name": "triage-repo.mjs", "status": "ok" }],
+            "skipped": []
+        }))?,
+    )?;
+    fs::write(
+        output_dir.join("producer-performance.json"),
+        fs::read(&performance_path)?,
+    )?;
+    fs::write(output_dir.join("audit-summary.latest.md"), "# Summary\n")?;
+
+    let input = json!({
+        "output": output_dir,
+        "producerPerformancePath": performance_path,
+        "rustAnalysis": { "status": "unavailable", "available": false },
+        "companion": {
+            "auditSummaryPath": "C:/repo/.audit/audit-summary.latest.md"
+        }
+    });
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-closeout-update")
+        .arg("--input")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+    use std::io::Write;
+    let mut stdin = child.stdin.take().context("stdin is piped")?;
+    stdin.write_all(input.to_string().as_bytes())?;
+    drop(stdin);
+    let output = child.wait_with_output()?;
+
+    assert!(output.status.success());
+    let update = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(update["performance"]["producerCount"], 1);
+    assert_eq!(update["auditSummary"]["format"], "markdown");
+    assert_eq!(
+        update["artifactsProduced"],
+        json!(["audit-summary.latest.md", "producer-performance.json"])
     );
     Ok(())
 }

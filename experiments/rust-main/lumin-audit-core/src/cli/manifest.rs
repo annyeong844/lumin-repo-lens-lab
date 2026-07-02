@@ -21,8 +21,9 @@ use lumin_audit_core::manifest_evidence::{
     ManifestEvidenceSummary,
 };
 use lumin_audit_core::manifest_final::{
-    build_manifest_artifacts_produced_update, build_manifest_final_summary_update,
-    build_manifest_final_summary_update_for_rust_analysis,
+    build_manifest_artifacts_produced_update, build_manifest_closeout_update,
+    build_manifest_final_summary_update, build_manifest_final_summary_update_for_rust_analysis,
+    ManifestCloseoutCompanionInput,
 };
 use lumin_audit_core::manifest_meta::{build_manifest_meta, ManifestMetaInput};
 use lumin_audit_core::manifest_root::{
@@ -197,6 +198,44 @@ pub(super) fn run_manifest_final_summary_update(args: Vec<String>) -> Result<()>
         )?,
         None => build_manifest_final_summary_update(&output, &artifact, rust_analysis_ran)?,
     };
+    write_stdout_json(&update)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestCloseoutUpdateCliInput {
+    output: String,
+    producer_performance_path: String,
+    #[serde(default)]
+    rust_analysis: Option<serde_json::Value>,
+    #[serde(default)]
+    companion: ManifestCloseoutCompanionInput,
+}
+
+pub(super) fn run_manifest_closeout_update(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("manifest-closeout-update: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("manifest-closeout-update: missing --input <path|->")?;
+    let json = read_json_input(&input, "manifest-closeout-update")?;
+    let request = serde_json::from_value::<ManifestCloseoutUpdateCliInput>(json)
+        .context("manifest-closeout-update: invalid request shape")?;
+    let producer_performance = read_required_json(
+        std::path::Path::new(&request.producer_performance_path),
+        "manifest-closeout-update",
+    )?;
+    let update = build_manifest_closeout_update(
+        std::path::Path::new(&request.output),
+        &producer_performance,
+        request.rust_analysis.as_ref(),
+        request.companion,
+    )?;
     write_stdout_json(&update)
 }
 

@@ -253,6 +253,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-evidence-summary-with-reads: missing --root <repo>',
     ],
     [
+      'manifest-closeout-update',
+      'manifest-closeout-update: missing --input',
+    ],
+    [
       'manifest-artifacts-produced-update',
       'manifest-artifacts-produced-update: missing --output <dir>',
     ],
@@ -637,7 +641,7 @@ function buildSkillPackageJson(outDir, auditCoreBinaries = []) {
       distribution: 'skill',
       auditCore: {
         packagedPlatforms,
-        platformScope: 'multi-platform-source-fallback',
+        platformScope: 'current-platform-binary-with-source-fallback',
         binaryPlatformScope: singlePlatform
           ? auditCorePlatformKey(singlePlatform.platform, singlePlatform.arch)
           : 'multi-platform',
@@ -761,7 +765,7 @@ function writeAuditCorePlatformManifest(outDir, sources) {
   ensureDir(dest);
   writeFileSync(dest, `${JSON.stringify({
     schemaVersion: 'lumin-audit-core-packaged-platforms.v1',
-    packageScope: 'multi-platform-source-fallback',
+    packageScope: 'current-platform-binary-with-source-fallback',
     binaryPackageScope: sources.length === 1
       ? auditCorePlatformKey(sources[0].platform, sources[0].arch)
       : 'multi-platform',

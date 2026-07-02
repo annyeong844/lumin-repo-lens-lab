@@ -11,7 +11,7 @@
       "packagedPlatforms": [
         "win32-x64"
       ],
-      "platformScope": "multi-platform-source-fallback",
+      "platformScope": "current-platform-binary-with-source-fallback",
       "binaryPlatformScope": "win32-x64",
       "sourceFallback": true,
       "sourceFallbackManifest": "_engine/rust/Cargo.toml",

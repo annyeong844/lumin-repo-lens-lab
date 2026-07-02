@@ -488,7 +488,8 @@ try {
     "SP4a. generated skill records packaged audit-core source fallback",
     auditCorePlatformManifest.schemaVersion ===
       "lumin-audit-core-packaged-platforms.v1" &&
-      auditCorePlatformManifest.packageScope === "multi-platform-source-fallback" &&
+      auditCorePlatformManifest.packageScope ===
+        "current-platform-binary-with-source-fallback" &&
       auditCorePlatformManifest.binaryPackageScope === auditCorePlatformKey &&
       auditCorePlatformManifest.fallback?.kind === "packaged-source-build-env-or-path" &&
       auditCorePlatformManifest.fallback?.requiredWhenRuntimePlatformMissing ===
@@ -521,7 +522,7 @@ try {
         auditCorePlatformKey,
       ) &&
       packageJson.luminRepoLens?.auditCore?.platformScope ===
-        "multi-platform-source-fallback" &&
+        "current-platform-binary-with-source-fallback" &&
       packageJson.luminRepoLens?.auditCore?.binaryPlatformScope ===
         auditCorePlatformKey &&
       packageJson.luminRepoLens?.auditCore?.sourceFallback === true &&
