@@ -82,7 +82,6 @@ import {
   buildManifestArtifactsProducedUpdate,
   buildManifestRoot,
   buildManifestEvidence,
-  collectProducedArtifacts,
   refreshManifestEvidence,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';

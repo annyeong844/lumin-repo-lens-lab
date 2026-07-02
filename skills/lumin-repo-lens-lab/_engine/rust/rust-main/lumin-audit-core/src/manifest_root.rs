@@ -1,7 +1,9 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::Path;
 
+use crate::artifact_registry::collect_produced_artifacts_for_manifest;
 use crate::manifest_meta::{build_manifest_meta, ManifestMeta, ManifestMetaInput};
 use crate::orchestration_events::ProducerMemory;
 use crate::orchestration_plan::AuditProfile;
@@ -18,8 +20,6 @@ pub struct ManifestRootInput {
     #[serde(default)]
     pub skipped: Vec<ManifestSkippedStep>,
     pub evidence: ManifestEvidenceUpdateFields,
-    #[serde(default)]
-    pub artifacts_produced: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -96,6 +96,10 @@ pub fn build_manifest_root(input: ManifestRootInput) -> Result<ManifestRoot> {
     validate_runtime_observations(&input.commands_run, &input.skipped)?;
     let profile = AuditProfile::parse(&input.profile)
         .context("manifest-root: invalid --profile <quick|full|ci>")?;
+    let artifacts_produced = collect_produced_artifacts_for_manifest(
+        Path::new(&input.output),
+        Some(&input.evidence.rust_analysis),
+    )?;
     let meta = build_manifest_meta(ManifestMetaInput {
         generated: input.generated,
         profile: input.profile,
@@ -119,7 +123,7 @@ pub fn build_manifest_root(input: ManifestRootInput) -> Result<ManifestRoot> {
         block_clones: input.evidence.block_clones,
         sfc_evidence: input.evidence.sfc_evidence,
         living_audit: input.evidence.living_audit,
-        artifacts_produced: input.artifacts_produced,
+        artifacts_produced,
     })
 }
 
