@@ -72,15 +72,26 @@ export function buildManifestArtifactsProducedUpdate(outDir, options = {}) {
 }
 
 function buildArtifactReadMetricsSummary(input) {
-  return runAuditCoreJson([
+  return runJsonInputCommand(
     'artifact-read-metrics-summary',
-    '--input', '-',
-  ], 'buildArtifactReadMetricsSummary', {
+    'buildArtifactReadMetricsSummary',
+    input ?? {},
+  );
+}
+
+const ARTIFACT_READ_EVENTS_SCHEMA_VERSION = 'lumin-audit-artifact-read-events.v1';
+
+function runJsonInputCommand(command, label, input, { args = [] } = {}) {
+  return runAuditCoreJson([command, '--input', '-', ...args], label, {
     input: JSON.stringify(input ?? {}),
   });
 }
 
-const ARTIFACT_READ_EVENTS_SCHEMA_VERSION = 'lumin-audit-artifact-read-events.v1';
+function runJsonInputResultFileCommand(command, label, input) {
+  return runAuditCoreJsonResultFile([command, '--input', '-'], label, {
+    input: JSON.stringify(input ?? {}),
+  });
+}
 
 export function createArtifactReadMetrics({ rootDir, largestLimit = 10 } = {}) {
   const reads = [];
@@ -126,8 +137,6 @@ export function buildProducerPerformanceArtifactForAuditRun({
   skipped = [],
 }) {
   const args = [
-    'producer-performance-audit-run-artifact',
-    '--input', '-',
     '--generated', generated,
     '--root', root,
     '--output', outDir,
@@ -141,86 +150,61 @@ export function buildProducerPerformanceArtifactForAuditRun({
   ];
   for (const exclude of excludes) args.push('--exclude', exclude);
   for (const autoExclude of autoExcludes) args.push('--auto-exclude', autoExclude);
-  return runAuditCoreJson(args, 'buildProducerPerformanceArtifactForAuditRun', {
-    input: JSON.stringify({
+  return runJsonInputCommand(
+    'producer-performance-audit-run-artifact',
+    'buildProducerPerformanceArtifactForAuditRun',
+    {
       artifactReads,
       rustAnalysis,
       commandsRun,
       skipped,
-    }),
-  });
+    },
+    { args },
+  );
 }
 
 export function executeBaseRuntime(request) {
-  return runAuditCoreJson([
-    'execute-base-runtime',
-    '--input', '-',
-  ], 'executeBaseRuntime', {
-    input: JSON.stringify(request ?? {}),
-  });
+  return runJsonInputCommand('execute-base-runtime', 'executeBaseRuntime', request);
 }
 
 export function executeCanonDraftLifecycle(request) {
-  return runAuditCoreJson([
-    'execute-canon-draft',
-    '--input', '-',
-  ], 'executeCanonDraftLifecycle', {
-    input: JSON.stringify(request ?? {}),
-  });
+  return runJsonInputCommand('execute-canon-draft', 'executeCanonDraftLifecycle', request);
 }
 
 export function executeCheckCanonLifecycle(request) {
-  return runAuditCoreJson([
-    'execute-check-canon',
-    '--input', '-',
-  ], 'executeCheckCanonLifecycle', {
-    input: JSON.stringify(request ?? {}),
-  });
+  return runJsonInputCommand('execute-check-canon', 'executeCheckCanonLifecycle', request);
 }
 
 export function resolvePreWriteRoute(request) {
-  return runAuditCoreJson([
-    'pre-write-route',
-    '--input', '-',
-  ], 'resolvePreWriteRoute', {
-    input: JSON.stringify(request ?? {}),
-  });
+  return runJsonInputCommand('pre-write-route', 'resolvePreWriteRoute', request);
 }
 
 export function executeRustPreWriteLifecycle(request) {
-  return runAuditCoreJsonResultFile([
+  return runJsonInputResultFileCommand(
     'execute-rust-pre-write',
-    '--input', '-',
-  ], 'executeRustPreWriteLifecycle', {
-    input: JSON.stringify(request ?? {}),
-  });
+    'executeRustPreWriteLifecycle',
+    request,
+  );
 }
 
 export function executePostWriteLifecycle(request) {
-  return runAuditCoreJsonResultFile([
+  return runJsonInputResultFileCommand(
     'execute-post-write',
-    '--input', '-',
-  ], 'executePostWriteLifecycle', {
-    input: JSON.stringify(request ?? {}),
-  });
+    'executePostWriteLifecycle',
+    request,
+  );
 }
 
 export function applyLifecycleExitPolicy(request) {
-  return runAuditCoreJson([
-    'lifecycle-exit-policy',
-    '--input', '-',
-  ], 'applyLifecycleExitPolicy', {
-    input: JSON.stringify(request ?? {}),
-  });
+  return runJsonInputCommand('lifecycle-exit-policy', 'applyLifecycleExitPolicy', request);
 }
 
 export function evaluateLifecycleRequestGuard(request) {
-  return runAuditCoreJson([
+  return runJsonInputCommand(
     'lifecycle-request-guard',
-    '--input', '-',
-  ], 'evaluateLifecycleRequestGuard', {
-    input: JSON.stringify(request ?? {}),
-  });
+    'evaluateLifecycleRequestGuard',
+    request,
+  );
 }
 
 export function buildManifestCloseoutUpdate({
@@ -231,11 +215,10 @@ export function buildManifestCloseoutUpdate({
   auditSummaryPath,
   reviewPackPath,
 }) {
-  return runAuditCoreJson([
+  return runJsonInputCommand(
     'manifest-closeout-update',
-    '--input', '-',
-  ], 'buildManifestCloseoutUpdate', {
-    input: JSON.stringify({
+    'buildManifestCloseoutUpdate',
+    {
       output: outDir,
       producerPerformancePath,
       rustAnalysis,
@@ -244,26 +227,20 @@ export function buildManifestCloseoutUpdate({
         auditSummaryPath,
         reviewPackPath,
       },
-    }),
-  });
+    },
+  );
 }
 
 export function buildManifestLifecycleUpdate(blocks) {
-  return runAuditCoreJson([
+  return runJsonInputCommand(
     'manifest-lifecycle-update',
-    '--input', '-',
-  ], 'buildManifestLifecycleUpdate', {
-    input: JSON.stringify(blocks ?? {}),
-  });
+    'buildManifestLifecycleUpdate',
+    blocks,
+  );
 }
 
 export function buildManifestRoot(input) {
-  return runAuditCoreJson([
-    'manifest-root',
-    '--input', '-',
-  ], 'buildManifestRoot', {
-    input: JSON.stringify(input ?? {}),
-  });
+  return runJsonInputCommand('manifest-root', 'buildManifestRoot', input);
 }
 
 export function writeManifestFile(outDir, manifest) {
