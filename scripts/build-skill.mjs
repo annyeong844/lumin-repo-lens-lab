@@ -235,61 +235,93 @@ function cargoBuildAuditCore() {
 }
 
 function validateRunnableAuditCoreBinary(binaryPath) {
-  for (const [command, expected] of [
+  for (const [args, expected] of [
     [
-      'producer-performance-runtime-artifact',
+      ['producer-performance-runtime-artifact'],
       'producer-performance-runtime-artifact: missing --input',
     ],
     [
-      'producer-performance-audit-run-artifact',
+      ['producer-performance-audit-run-artifact'],
       'producer-performance-audit-run-artifact: missing --input',
     ],
     [
-      'manifest-companion-update',
+      ['manifest-companion-update'],
       'manifest-companion-update: missing --input',
     ],
     [
-      'manifest-root-with-evidence',
+      ['manifest-root-with-evidence'],
       'manifest-root-with-evidence: missing --input <path|->',
     ],
     [
-      'manifest-evidence-refresh',
+      [
+        'manifest-root-with-evidence',
+        '--result-output',
+        contractProbeResultPath('manifest-root-with-evidence'),
+      ],
+      'manifest-root-with-evidence: missing --input <path|->',
+    ],
+    [
+      ['manifest-evidence-refresh'],
       'manifest-evidence-refresh: missing --root <repo>',
     ],
     [
-      'manifest-evidence-refresh-with-reads',
+      ['manifest-evidence-refresh-with-reads'],
       'manifest-evidence-refresh-with-reads: missing --root <repo>',
     ],
     [
-      'manifest-lifecycle-evidence-refresh',
+      [
+        'manifest-evidence-refresh-with-reads',
+        '--result-output',
+        contractProbeResultPath('manifest-evidence-refresh-with-reads'),
+      ],
+      'manifest-evidence-refresh-with-reads: missing --root <repo>',
+    ],
+    [
+      ['manifest-lifecycle-evidence-refresh'],
       'manifest-lifecycle-evidence-refresh: missing --input <path|->',
     ],
     [
-      'manifest-evidence-summary-with-reads',
+      [
+        'manifest-lifecycle-evidence-refresh',
+        '--result-output',
+        contractProbeResultPath('manifest-lifecycle-evidence-refresh'),
+      ],
+      'manifest-lifecycle-evidence-refresh: missing --input <path|->',
+    ],
+    [
+      ['manifest-evidence-summary-with-reads'],
       'manifest-evidence-summary-with-reads: missing --root <repo>',
     ],
     [
-      'manifest-closeout-update',
+      [
+        'manifest-evidence-summary-with-reads',
+        '--result-output',
+        contractProbeResultPath('manifest-evidence-summary-with-reads'),
+      ],
+      'manifest-evidence-summary-with-reads: missing --root <repo>',
+    ],
+    [
+      ['manifest-closeout-update'],
       'manifest-closeout-update: missing --input',
     ],
     [
-      'manifest-artifacts-produced-update',
+      ['manifest-artifacts-produced-update'],
       'manifest-artifacts-produced-update: missing --output <dir>',
     ],
     [
-      'manifest-write',
+      ['manifest-write'],
       'manifest-write: missing --output <dir>',
     ],
     [
-      'manifest-closeout-write',
+      ['manifest-closeout-write'],
       'manifest-closeout-write: missing --input <path|->',
     ],
     [
-      'finalize-audit-run',
+      ['finalize-audit-run'],
       'finalize-audit-run: missing --input <path|->',
     ],
   ]) {
-    const result = spawnSync(binaryPath, [command], {
+    const result = spawnSync(binaryPath, args, {
       cwd: ROOT,
       encoding: 'utf8',
     });
@@ -299,10 +331,14 @@ function validateRunnableAuditCoreBinary(binaryPath) {
     }
     if (!output.includes(expected)) {
       throw new Error(
-        `built lumin-audit-core at ${binaryPath} does not expose the current CLI contract for ${command}`
+        `built lumin-audit-core at ${binaryPath} does not expose the current CLI contract for ${args[0]}`
       );
     }
   }
+}
+
+function contractProbeResultPath(subcommand) {
+  return path.join(tmpdir(), `lumin-audit-core-contract-${subcommand}-${process.pid}.json`);
 }
 
 function currentAuditCoreBinarySource() {
