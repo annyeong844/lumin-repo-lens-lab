@@ -72,6 +72,7 @@ pub(super) struct ManifestCoreSummaryArgs {
 pub(super) struct ManifestEvidenceSummaryArgs {
     pub(super) root: Option<String>,
     pub(super) output: Option<PathBuf>,
+    pub(super) result_output: Option<PathBuf>,
     pub(super) include_tests: bool,
     pub(super) production: bool,
     pub(super) excludes: Vec<String>,

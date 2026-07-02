@@ -506,6 +506,40 @@ fn cli_manifest_evidence_summary_with_reads_reports_artifact_read_events() -> Re
             && read["ok"] == false
             && read["bytes"].as_u64().unwrap_or(0) > 0
     }));
+
+    let result_path = output_dir.join("manifest-evidence-summary-with-reads-result.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-evidence-summary-with-reads")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "result-output mode should not echo evidence summaries to stdout"
+    );
+    let result_file = fs::read_to_string(&result_path)?;
+    let result_file = serde_json::from_str::<serde_json::Value>(&result_file)?;
+    assert_eq!(
+        result_file["evidence"]["frameworkResourceSurfaces"]["status"],
+        "unavailable"
+    );
+    assert!(result_file["artifactReads"]["reads"]
+        .as_array()
+        .is_some_and(
+            |result_reads| result_reads.iter().any(|read| read["filePath"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("triage.json")))
+        ));
     Ok(())
 }
 
@@ -570,6 +604,40 @@ fn cli_manifest_evidence_refresh_emits_manifest_patch_shape() -> Result<()> {
         stdout["frameworkResourceSurfaces"]["totalFilesWithSurfaces"],
         json!(null)
     );
+
+    let result_path = output_dir.join("manifest-evidence-refresh-with-reads-result.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-evidence-refresh-with-reads")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--no-include-tests")
+        .arg("--production")
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "result-output mode should not echo evidence refresh patches to stdout"
+    );
+    let result_file = fs::read_to_string(&result_path)?;
+    let result_file = serde_json::from_str::<serde_json::Value>(&result_file)?;
+    assert_eq!(result_file["evidence"]["scanRange"]["files"], 2);
+    assert_eq!(result_file["evidence"]["scanRange"]["production"], true);
+    assert!(result_file["artifactReads"]["reads"]
+        .as_array()
+        .is_some_and(
+            |result_reads| result_reads.iter().any(|read| read["filePath"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("triage.json")))
+        ));
     Ok(())
 }
 
@@ -653,5 +721,28 @@ fn cli_manifest_lifecycle_evidence_refresh_applies_updates_to_manifest() -> Resu
                     && read["ok"] == true
             })
         }));
+
+    let result_path = output_dir.join("manifest-lifecycle-evidence-refresh-result.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-lifecycle-evidence-refresh")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "result-output mode should not echo refreshed manifests to stdout"
+    );
+    let result_file = fs::read_to_string(&result_path)?;
+    let result_file = serde_json::from_str::<serde_json::Value>(&result_file)?;
+    assert_eq!(result_file["manifest"]["lifecycle"]["ranCount"], 1);
+    assert_eq!(result_file["manifest"]["scanRange"]["files"], 2);
     Ok(())
 }

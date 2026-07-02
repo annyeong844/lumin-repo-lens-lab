@@ -13,6 +13,7 @@ function runManifestEvidenceCommand(command, label, root, outDir, {
   generatedArtifactsMode = 'default',
   rustAnalysisRun = null,
   mergeRustAnalysisRun = false,
+  resultFile = false,
 } = {}) {
   const args = [
     command,
@@ -35,7 +36,8 @@ function runManifestEvidenceCommand(command, label, root, outDir, {
   for (const autoExclude of autoExcludes) {
     args.push('--auto-exclude', autoExclude);
   }
-  return runAuditCoreJson(args, label, runOptions);
+  const runner = resultFile ? runAuditCoreJsonResultFile : runAuditCoreJson;
+  return runner(args, label, runOptions);
 }
 
 function buildManifestEvidenceSummaryWithReadsFromFile(root, outDir, options = {}) {
@@ -44,7 +46,7 @@ function buildManifestEvidenceSummaryWithReadsFromFile(root, outDir, options = {
     'buildManifestEvidenceSummary',
     root,
     outDir,
-    options,
+    { ...options, resultFile: true },
   );
 }
 
@@ -54,7 +56,7 @@ function buildManifestEvidenceRefreshWithReadsFromFile(root, outDir, options = {
     'refreshManifestEvidence',
     root,
     outDir,
-    options,
+    { ...options, resultFile: true },
   );
 }
 
@@ -267,7 +269,7 @@ export function buildManifestRootWithEvidence({
   rustAnalysisRan = false,
   onArtifactRead,
 }) {
-  const result = runJsonInputCommand(
+  const result = runJsonInputResultFileCommand(
     'manifest-root-with-evidence',
     'buildManifestRootWithEvidence',
     {
@@ -314,7 +316,7 @@ export function applyLifecycleAndRefreshManifestEvidence({
   rustAnalysisRan = false,
   onArtifactRead,
 }) {
-  const result = runJsonInputCommand(
+  const result = runJsonInputResultFileCommand(
     'manifest-lifecycle-evidence-refresh',
     'applyLifecycleAndRefreshManifestEvidence',
     {

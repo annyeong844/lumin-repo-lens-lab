@@ -283,6 +283,35 @@ fn cli_manifest_root_with_evidence_builds_initial_manifest_and_records_reads() -
     assert!(reads.iter().any(|read| read["filePath"]
         .as_str()
         .is_some_and(|path| path.ends_with("symbols.json"))));
+
+    let result_path = output_dir.join("manifest-root-with-evidence-result.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-root-with-evidence")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "result-output mode should not echo the manifest to stdout"
+    );
+    let result_file = fs::read_to_string(&result_path)?;
+    let result_file = serde_json::from_str::<Value>(&result_file)?;
+    assert_eq!(result_file["manifest"]["scanRange"]["files"], 3);
+    assert!(result_file["artifactReads"]["reads"]
+        .as_array()
+        .is_some_and(
+            |result_reads| result_reads.iter().any(|read| read["filePath"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("triage.json")))
+        ));
     Ok(())
 }
 

@@ -6,8 +6,8 @@ use super::args::{ManifestCoreSummaryArgs, ManifestEvidenceSummaryArgs};
 use super::io_support::{
     read_json_input, read_optional_json, read_optional_json_input,
     read_optional_output_json_observed, read_optional_output_json_tolerant_observed,
-    read_required_json, take_path, take_string, write_pretty_json_file, write_stdout_json,
-    OptionalOutputJsonRead,
+    read_required_json, take_path, take_string, write_json_file, write_pretty_json_file,
+    write_stdout_json, OptionalOutputJsonRead,
 };
 use super::usage::USAGE;
 use lumin_audit_core::artifact_read_metrics::{
@@ -64,6 +64,7 @@ struct ManifestEvidenceArtifactReadEvents {
 struct ManifestEvidenceSummaryWithReads {
     summary: ManifestEvidenceSummary,
     artifact_reads: ManifestEvidenceArtifactReadEvents,
+    result_output: Option<PathBuf>,
 }
 
 struct ManifestEvidenceReadRequest {
@@ -355,10 +356,12 @@ pub(super) fn run_finalize_audit_run(args: Vec<String>) -> Result<()> {
 
 pub(super) fn run_manifest_lifecycle_evidence_refresh(args: Vec<String>) -> Result<()> {
     let mut input = None;
+    let mut result_output = None;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--input" => input = Some(take_string(&mut args, "--input")?),
+            "--result-output" => result_output = Some(take_path(&mut args, "--result-output")?),
             _ => bail!("manifest-lifecycle-evidence-refresh: unknown argument '{arg}'\n{USAGE}"),
         }
     }
@@ -390,18 +393,23 @@ pub(super) fn run_manifest_lifecycle_evidence_refresh(args: Vec<String>) -> Resu
     )
     .context("manifest-lifecycle-evidence-refresh: invalid evidence update shape")?;
     apply_manifest_evidence_update(&mut manifest, evidence)?;
-    write_stdout_json(&ManifestLifecycleEvidenceRefreshResult {
-        manifest,
-        artifact_reads: summary.artifact_reads,
-    })
+    write_json_result(
+        result_output,
+        &ManifestLifecycleEvidenceRefreshResult {
+            manifest,
+            artifact_reads: summary.artifact_reads,
+        },
+    )
 }
 
 pub(super) fn run_manifest_root_with_evidence(args: Vec<String>) -> Result<()> {
     let mut input = None;
+    let mut result_output = None;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--input" => input = Some(take_string(&mut args, "--input")?),
+            "--result-output" => result_output = Some(take_path(&mut args, "--result-output")?),
             _ => bail!("manifest-root-with-evidence: unknown argument '{arg}'\n{USAGE}"),
         }
     }
@@ -438,10 +446,13 @@ pub(super) fn run_manifest_root_with_evidence(args: Vec<String>) -> Result<()> {
         skipped: request.skipped,
         evidence,
     })?;
-    write_stdout_json(&ManifestRootWithEvidenceResult {
-        manifest,
-        artifact_reads: summary.artifact_reads,
-    })
+    write_json_result(
+        result_output,
+        &ManifestRootWithEvidenceResult {
+            manifest,
+            artifact_reads: summary.artifact_reads,
+        },
+    )
 }
 
 pub(super) fn run_manifest_evidence_update(args: Vec<String>) -> Result<()> {
@@ -635,11 +646,14 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
 pub(super) fn run_manifest_evidence_summary_with_reads(args: Vec<String>) -> Result<()> {
     let summary =
         read_manifest_evidence_summary_with_reads(args, "manifest-evidence-summary-with-reads")?;
-    write_stdout_json(&ManifestEvidenceWithArtifactReads {
-        schema_version: MANIFEST_EVIDENCE_WITH_READS_SCHEMA_VERSION,
-        evidence: summary.summary,
-        artifact_reads: summary.artifact_reads,
-    })
+    write_json_result(
+        summary.result_output,
+        &ManifestEvidenceWithArtifactReads {
+            schema_version: MANIFEST_EVIDENCE_WITH_READS_SCHEMA_VERSION,
+            evidence: summary.summary,
+            artifact_reads: summary.artifact_reads,
+        },
+    )
 }
 
 pub(super) fn run_manifest_evidence_refresh(args: Vec<String>) -> Result<()> {
@@ -662,18 +676,25 @@ pub(super) fn run_manifest_evidence_refresh_with_reads(args: Vec<String>) -> Res
     )
     .context("manifest-evidence-refresh-with-reads: invalid evidence update shape")?;
     let update = build_manifest_evidence_update(ManifestEvidenceUpdateInput { evidence });
-    write_stdout_json(&ManifestEvidenceWithArtifactReads {
-        schema_version: MANIFEST_EVIDENCE_WITH_READS_SCHEMA_VERSION,
-        evidence: update,
-        artifact_reads: summary.artifact_reads,
-    })
+    write_json_result(
+        summary.result_output,
+        &ManifestEvidenceWithArtifactReads {
+            schema_version: MANIFEST_EVIDENCE_WITH_READS_SCHEMA_VERSION,
+            evidence: update,
+            artifact_reads: summary.artifact_reads,
+        },
+    )
 }
 
 fn read_manifest_evidence_summary(
     args: Vec<String>,
     label: &str,
 ) -> Result<ManifestEvidenceSummary> {
-    Ok(read_manifest_evidence_summary_with_reads(args, label)?.summary)
+    let result = read_manifest_evidence_summary_with_reads(args, label)?;
+    if result.result_output.is_some() {
+        bail!("{label}: --result-output is only supported by with-reads commands");
+    }
+    Ok(result.summary)
 }
 
 fn read_manifest_evidence_summary_with_reads(
@@ -691,6 +712,9 @@ fn read_manifest_evidence_summary_with_reads(
         match arg.as_str() {
             "--root" => parsed.root = Some(take_string(&mut args, "--root")?),
             "--output" => parsed.output = Some(take_path(&mut args, "--output")?),
+            "--result-output" => {
+                parsed.result_output = Some(take_path(&mut args, "--result-output")?)
+            }
             "--generated-artifacts" => {
                 let mode = take_string(&mut args, "--generated-artifacts")?;
                 parsed.generated_artifacts_mode = GeneratedArtifactsMode::parse(&mode)?;
@@ -722,7 +746,7 @@ fn read_manifest_evidence_summary_with_reads(
         .map(serde_json::from_value::<RustAnalysisRunObservation>)
         .transpose()
         .with_context(|| format!("{label}: invalid --rust-analysis-run-block shape"))?;
-    build_manifest_evidence_summary_with_reads(ManifestEvidenceReadRequest {
+    let mut summary = build_manifest_evidence_summary_with_reads(ManifestEvidenceReadRequest {
         root,
         output,
         include_tests: parsed.include_tests,
@@ -733,7 +757,9 @@ fn read_manifest_evidence_summary_with_reads(
         rust_analysis_ran: parsed.rust_analysis_ran,
         rust_analysis_run,
         label: label.to_string(),
-    })
+    })?;
+    summary.result_output = parsed.result_output;
+    Ok(summary)
 }
 
 fn build_manifest_evidence_summary_with_reads(
@@ -824,7 +850,16 @@ fn build_manifest_evidence_summary_with_reads(
             root_dir: output.to_string_lossy().to_string(),
             reads: artifact_reads,
         },
+        result_output: None,
     })
+}
+
+fn write_json_result<T: Serialize>(result_output: Option<PathBuf>, value: &T) -> Result<()> {
+    if let Some(result_output) = result_output {
+        write_json_file(&result_output, value)
+    } else {
+        write_stdout_json(value)
+    }
 }
 
 fn artifact_value(
