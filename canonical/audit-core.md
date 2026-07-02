@@ -129,8 +129,14 @@ or orchestration ownership before migration.
   `pre_write_routing.rs` owns only typed pre-write engine selection from an
   already-read intent payload; Rust child execution must live in a named owner
   module with an artifact-visible owner boundary.
-- Audit-core may emit JSON to stdout for JS compatibility, but the library owns
-  typed Rust structs first.
+- Audit-core may emit bounded JSON patches to stdout for JS compatibility, but
+  repository-sized manifest projections must use the result-file bridge from
+  JS. `manifest-root-with-evidence`, `manifest-lifecycle-evidence-refresh`,
+  `manifest-evidence-summary-with-reads`, and
+  `manifest-evidence-refresh-with-reads` are result-file-only from `_lib` so a
+  large audit cannot fail on Node child-process stdout buffering after Rust has
+  already produced the result. Direct CLI stdout for these commands is only a
+  compatibility/debug surface, not the JS wrapper contract.
 - JS/TS producer lanes remain JS-owned until a lane-specific Rust parity proof
   exists.
 - Do not add elapsed-time caps, repository-size caps, or timeout logic.

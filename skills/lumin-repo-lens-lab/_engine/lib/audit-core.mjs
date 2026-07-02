@@ -62,6 +62,13 @@ const AUDIT_CORE_CONTRACT_PROBES = [
   ],
 ];
 
+const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
+  'manifest-root-with-evidence',
+  'manifest-lifecycle-evidence-refresh',
+  'manifest-evidence-summary-with-reads',
+  'manifest-evidence-refresh-with-reads',
+]);
+
 function executableOnPath(exe) {
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     if (!dir) continue;
@@ -220,6 +227,12 @@ function missingAuditCoreBinaryError(label, command) {
 }
 
 export function runAuditCoreJson(args, label, options = {}) {
+  const subcommand = args?.[0];
+  if (RESULT_FILE_REQUIRED_SUBCOMMANDS.has(subcommand)) {
+    throw new Error(
+      `${label}: ${subcommand} can emit repository-sized JSON and must use runAuditCoreJsonResultFile`
+    );
+  }
   const command = auditCoreBinary();
   if (!existsSync(command)) {
     throw missingAuditCoreBinaryError(label, command);
