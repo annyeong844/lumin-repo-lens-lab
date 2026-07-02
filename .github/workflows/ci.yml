@@ -93,3 +93,5 @@ jobs:
       - name: Test unified Rust analyzer
         working-directory: experiments
         run: cargo lumin-test
+      - name: Check packaged audit-core source fallback
+        run: cargo check --manifest-path skills/lumin-repo-lens-lab/_engine/rust/Cargo.toml --locked -p lumin-audit-core

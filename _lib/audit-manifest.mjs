@@ -253,6 +253,32 @@ export function writeManifestFile(outDir, manifest) {
   });
 }
 
+export function closeoutAndWriteManifest({
+  manifest,
+  outDir,
+  producerPerformancePath,
+  rustAnalysis,
+  topologyMermaidPath,
+  auditSummaryPath,
+  reviewPackPath,
+}) {
+  return runJsonInputCommand(
+    'manifest-closeout-write',
+    'closeoutAndWriteManifest',
+    {
+      manifest: manifest ?? null,
+      output: outDir,
+      producerPerformancePath,
+      rustAnalysis,
+      companion: {
+        topologyMermaidPath,
+        auditSummaryPath,
+        reviewPackPath,
+      },
+    },
+  );
+}
+
 function observeRustArtifactReads(artifactReads, onArtifactRead) {
   if (!onArtifactRead) return;
   for (const read of artifactReads?.reads ?? []) {

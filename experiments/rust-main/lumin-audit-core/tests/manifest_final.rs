@@ -314,6 +314,64 @@ fn cli_manifest_closeout_update_reads_performance_and_projects_patch() -> Result
 }
 
 #[test]
+fn cli_manifest_closeout_write_applies_patch_and_writes_manifest() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    let performance_path = output_dir.join("producer-performance.json");
+    fs::write(
+        &performance_path,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "producer-performance.v1",
+            "summary": { "producerCount": 1, "okCount": 1, "failedCount": 0, "skippedCount": 0 },
+            "producers": [{ "name": "triage-repo.mjs", "status": "ok" }],
+            "skipped": []
+        }))?,
+    )?;
+    fs::write(output_dir.join("audit-summary.latest.md"), "# Summary\n")?;
+
+    let input = json!({
+        "manifest": {
+            "meta": { "generated": "2026-07-02T00:00:00.000Z" },
+            "profile": "quick",
+            "artifactsProduced": []
+        },
+        "output": output_dir,
+        "producerPerformancePath": performance_path,
+        "rustAnalysis": { "status": "unavailable", "available": false },
+        "companion": {
+            "auditSummaryPath": "C:/repo/.audit/audit-summary.latest.md"
+        }
+    });
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-closeout-write")
+        .arg("--input")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+    use std::io::Write;
+    let mut stdin = child.stdin.take().context("stdin is piped")?;
+    stdin.write_all(input.to_string().as_bytes())?;
+    drop(stdin);
+    let output = child.wait_with_output()?;
+
+    assert!(output.status.success());
+    let result = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert!(result["manifestPath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("manifest.json")));
+    assert_eq!(result["manifest"]["performance"]["producerCount"], 1);
+    assert_eq!(result["manifest"]["orchestration"]["status"], "complete");
+    assert_eq!(result["manifest"]["auditSummary"]["format"], "markdown");
+    let written = fs::read_to_string(output_dir.join("manifest.json"))?;
+    let written = serde_json::from_str::<serde_json::Value>(&written)?;
+    assert_eq!(written, result["manifest"]);
+    Ok(())
+}
+
+#[test]
 fn cli_manifest_final_summary_update_hard_stops_on_malformed_performance_artifact() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let output_dir = temp.path().join(".audit");

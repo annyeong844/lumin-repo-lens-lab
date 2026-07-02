@@ -293,6 +293,33 @@ fn resolver_confidence_gap_uses_threshold_policy_and_grouped_reasons() -> Result
 }
 
 #[test]
+fn resolver_confidence_gap_ignores_malformed_diagnostics_summary_for_source_artifact() -> Result<()>
+{
+    let symbols = json!({
+        "uses": { "unresolvedInternalRatio": 0.06, "unresolvedInternal": 1300 },
+        "topUnresolvedSpecifiers": [{ "specifierPrefix": "@workspace/", "count": 800 }]
+    });
+    let resolver_diagnostics = json!({
+        "artifact": "resolver-diagnostics.json",
+        "status": "unavailable",
+        "reason": { "kind": "malformed-json" },
+        "summary": {
+            "status": "unavailable",
+            "unavailableReason": "malformed-json"
+        }
+    });
+    let zones = serialized_zones(BlindZoneInput {
+        symbols: Some(&symbols),
+        resolver_diagnostics: Some(&resolver_diagnostics),
+        ..empty_input()
+    })?;
+    let resolver = zone_by_area(&zones, "resolver")?;
+
+    assert_eq!(resolver["details"]["sourceArtifact"], "symbols.json");
+    Ok(())
+}
+
+#[test]
 fn precision_gap_branches_remain_structured() -> Result<()> {
     let symbols = json!({
         "meta": { "warnings": [{ "kind": "parse-errors", "count": 2, "message": "parse failed" }] },

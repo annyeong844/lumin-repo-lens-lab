@@ -5,6 +5,7 @@ use super::io_support::{
     read_json_input, read_required_json, take_path, take_string, write_stdout_json,
 };
 use super::usage::USAGE;
+use lumin_audit_core::generated_artifacts::GeneratedArtifactsMode;
 use lumin_audit_core::living_audit::summarize_living_audit;
 use lumin_audit_core::orchestration_events::{
     build_producer_performance_artifact,
@@ -80,14 +81,14 @@ pub(super) fn run_producer_performance_audit_run_artifact(args: Vec<String>) -> 
     let mut root = None;
     let mut output = None;
     let mut profile = None;
-    let mut include_tests = None;
-    let mut production = None;
+    let mut include_tests = true;
+    let mut production = false;
     let mut excludes = Vec::new();
     let mut auto_excludes = Vec::new();
     let mut no_incremental = false;
     let mut cache_root = None;
     let mut clear_incremental_cache = false;
-    let mut generated_artifacts_mode = None;
+    let mut generated_artifacts_mode = GeneratedArtifactsMode::Default;
 
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -97,17 +98,18 @@ pub(super) fn run_producer_performance_audit_run_artifact(args: Vec<String>) -> 
             "--root" => root = Some(take_string(&mut args, "--root")?),
             "--output" => output = Some(take_string(&mut args, "--output")?),
             "--profile" => profile = Some(take_string(&mut args, "--profile")?),
-            "--include-tests" => include_tests = Some(true),
-            "--no-include-tests" => include_tests = Some(false),
-            "--production" => production = Some(true),
-            "--no-production" => production = Some(false),
+            "--include-tests" => include_tests = true,
+            "--no-include-tests" => include_tests = false,
+            "--production" => production = true,
+            "--no-production" => production = false,
             "--exclude" => excludes.push(take_string(&mut args, "--exclude")?),
             "--auto-exclude" => auto_excludes.push(take_string(&mut args, "--auto-exclude")?),
             "--no-incremental" => no_incremental = true,
             "--cache-root" => cache_root = Some(take_string(&mut args, "--cache-root")?),
             "--clear-incremental-cache" => clear_incremental_cache = true,
             "--generated-artifacts" => {
-                generated_artifacts_mode = Some(take_string(&mut args, "--generated-artifacts")?)
+                let mode = take_string(&mut args, "--generated-artifacts")?;
+                generated_artifacts_mode = GeneratedArtifactsMode::parse(&mode)?;
             }
             _ => {
                 bail!("producer-performance-audit-run-artifact: unknown argument '{arg}'\n{USAGE}")
@@ -132,21 +134,15 @@ pub(super) fn run_producer_performance_audit_run_artifact(args: Vec<String>) -> 
         profile: profile.context(
             "producer-performance-audit-run-artifact: missing --profile <quick|full|ci>",
         )?,
-        include_tests: include_tests.context(
-            "producer-performance-audit-run-artifact: missing --include-tests|--no-include-tests",
-        )?,
-        production: production.context(
-            "producer-performance-audit-run-artifact: missing --production|--no-production",
-        )?,
+        include_tests,
+        production,
         excludes,
         auto_excludes,
         no_incremental,
         cache_root: cache_root
             .context("producer-performance-audit-run-artifact: missing --cache-root <dir>")?,
         clear_incremental_cache,
-        generated_artifacts_mode: generated_artifacts_mode.context(
-            "producer-performance-audit-run-artifact: missing --generated-artifacts <mode>",
-        )?,
+        generated_artifacts_mode: generated_artifacts_mode.as_str().to_string(),
     };
     let artifact =
         build_producer_performance_artifact_for_audit_run_from_output(context, observations)?;

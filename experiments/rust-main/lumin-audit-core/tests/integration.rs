@@ -134,6 +134,39 @@ fn non_object_rust_analysis_artifact_has_no_summary() -> Result<()> {
 }
 
 #[test]
+fn malformed_rust_analysis_artifact_preserves_unavailable_reason() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let artifact = json!({
+        "artifact": "rust-analyzer-health.latest.json",
+        "status": "unavailable",
+        "reason": {
+            "kind": "malformed-json",
+            "message": "expected value"
+        }
+    });
+
+    let summary = summarize_rust_analysis_artifact(root.path(), &artifact)
+        .ok_or_else(|| anyhow::anyhow!("synthetic unavailable artifact should yield summary"))?;
+
+    assert_eq!(summary.status, RustAnalysisStatus::Unavailable);
+    assert!(!summary.available);
+    assert_eq!(
+        serde_json::to_value(summary)?,
+        json!({
+            "artifact": "rust-analyzer-health.latest.json",
+            "status": "unavailable",
+            "available": false,
+            "root": null,
+            "reason": {
+                "kind": "malformed-json",
+                "message": "expected value"
+            }
+        })
+    );
+    Ok(())
+}
+
+#[test]
 fn rust_analysis_summary_reports_root_mismatch() -> Result<()> {
     let root = tempfile::tempdir()?;
     let other = tempfile::tempdir()?;

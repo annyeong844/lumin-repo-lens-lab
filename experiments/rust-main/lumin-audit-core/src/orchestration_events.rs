@@ -11,6 +11,7 @@ use crate::artifact_read_metrics::{
     record_artifact_read, ArtifactReadRecord, ArtifactReadSummary, DEFAULT_LARGEST_READ_LIMIT,
 };
 use crate::artifact_registry::collect_produced_artifacts_for_manifest;
+use crate::generated_artifacts::GeneratedArtifactsMode;
 use crate::orchestration_plan::AuditProfile;
 
 pub const ORCHESTRATION_LEDGER_SCHEMA_VERSION: &str = "lumin-audit-orchestration-ledger.v1";
@@ -77,7 +78,6 @@ pub struct ProducerPerformanceAuditRunContext {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProducerPerformanceRuntimeObservations {
-    #[serde(default = "ArtifactReadSummary::empty")]
     pub artifact_reads: ArtifactReadSummary,
     #[serde(default)]
     pub artifacts_produced: Vec<String>,
@@ -336,6 +336,7 @@ pub fn build_producer_performance_artifact_for_audit_run(
     validate_required("profile", &context.profile)?;
     validate_required("cacheRoot", &context.cache_root)?;
     validate_required("generatedArtifacts.mode", &context.generated_artifacts_mode)?;
+    GeneratedArtifactsMode::parse(&context.generated_artifacts_mode)?;
 
     let output = PathBuf::from(&context.output);
     let mut artifact_reads = observations.artifact_reads;

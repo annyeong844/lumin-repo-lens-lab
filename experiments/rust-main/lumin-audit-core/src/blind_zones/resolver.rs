@@ -127,9 +127,15 @@ pub(crate) fn detect_resolver_zone(
 fn resolver_diagnostics_summary(
     resolver_diagnostics: Option<&Value>,
 ) -> Option<&Map<String, Value>> {
-    resolver_diagnostics
-        .and_then(|artifact| artifact.get("summary"))
-        .and_then(Value::as_object)
+    let artifact = resolver_diagnostics?;
+    if artifact.get("status").and_then(Value::as_str) == Some("unavailable") {
+        return None;
+    }
+    let summary = artifact.get("summary").and_then(Value::as_object)?;
+    if summary.get("status").and_then(Value::as_str) == Some("unavailable") {
+        return None;
+    }
+    Some(summary)
 }
 
 fn top_unresolved_reasons_detail(

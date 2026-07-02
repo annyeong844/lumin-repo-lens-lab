@@ -83,22 +83,12 @@ pub fn summarize_resolver_diagnostics(
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or(&[]);
-    let status = resolver_diagnostics_object
-        .and_then(|artifact| artifact.get("status"))
-        .cloned()
-        .or_else(|| {
-            resolver_diagnostics_summary
-                .and_then(|summary| summary.get("status"))
-                .cloned()
-        });
-    let reason = resolver_diagnostics_object
-        .and_then(|artifact| artifact.get("reason"))
-        .cloned()
-        .or_else(|| {
-            resolver_diagnostics_summary
-                .and_then(|summary| summary.get("reason"))
-                .cloned()
-        });
+    let resolver_capabilities_summary =
+        resolver_capabilities_object.and_then(|artifact| object_field(artifact, "summary"));
+    let status = artifact_status(resolver_diagnostics_object, resolver_diagnostics_summary)
+        .or_else(|| artifact_status(resolver_capabilities_object, resolver_capabilities_summary));
+    let reason = artifact_reason(resolver_diagnostics_object, resolver_diagnostics_summary)
+        .or_else(|| artifact_reason(resolver_capabilities_object, resolver_capabilities_summary));
 
     ResolverDiagnosticsSummary {
         status,
@@ -447,6 +437,26 @@ fn nested_symbols_field(symbols: Option<&Value>, object_field: &str, value_field
 
 fn object_field<'a>(object: &'a Map<String, Value>, field: &str) -> Option<&'a Map<String, Value>> {
     object.get(field).and_then(Value::as_object)
+}
+
+fn artifact_status(
+    artifact: Option<&Map<String, Value>>,
+    summary: Option<&Map<String, Value>>,
+) -> Option<Value> {
+    artifact
+        .and_then(|artifact| artifact.get("status"))
+        .cloned()
+        .or_else(|| summary.and_then(|summary| summary.get("status")).cloned())
+}
+
+fn artifact_reason(
+    artifact: Option<&Map<String, Value>>,
+    summary: Option<&Map<String, Value>>,
+) -> Option<Value> {
+    artifact
+        .and_then(|artifact| artifact.get("reason"))
+        .cloned()
+        .or_else(|| summary.and_then(|summary| summary.get("reason")).cloned())
 }
 
 fn nested_field_or_null(object: Option<&Map<String, Value>>, field: &str) -> Value {

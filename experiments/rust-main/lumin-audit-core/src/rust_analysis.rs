@@ -12,6 +12,7 @@ pub struct RustAnalysisSummary {
     pub status: RustAnalysisStatus,
     pub available: bool,
     pub root: Option<String>,
+    pub reason: Option<Value>,
     pub schema_version: Option<String>,
     pub policy_version: Option<String>,
     pub producer: Option<String>,
@@ -33,6 +34,7 @@ pub struct RustAnalysisSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RustAnalysisStatus {
+    Unavailable,
     RootMismatch,
     InvalidShape,
     Complete,
@@ -106,12 +108,18 @@ impl Serialize for RustAnalysisSummary {
         S: Serializer,
     {
         match self.status {
-            RustAnalysisStatus::RootMismatch | RustAnalysisStatus::InvalidShape => {
-                let mut out = serializer.serialize_struct("RustAnalysisSummary", 4)?;
+            RustAnalysisStatus::Unavailable
+            | RustAnalysisStatus::RootMismatch
+            | RustAnalysisStatus::InvalidShape => {
+                let field_count = if self.reason.is_some() { 5 } else { 4 };
+                let mut out = serializer.serialize_struct("RustAnalysisSummary", field_count)?;
                 out.serialize_field("artifact", &self.artifact)?;
                 out.serialize_field("status", &self.status)?;
                 out.serialize_field("available", &self.available)?;
                 out.serialize_field("root", &self.root)?;
+                if let Some(reason) = &self.reason {
+                    out.serialize_field("reason", reason)?;
+                }
                 out.end()
             }
             RustAnalysisStatus::Complete => {
@@ -225,6 +233,14 @@ pub fn summarize_rust_analysis_artifact(
         return None;
     }
 
+    if artifact.get("status").and_then(Value::as_str) == Some("unavailable") {
+        return Some(unavailable_summary_with_reason(
+            RustAnalysisStatus::Unavailable,
+            None,
+            artifact.get("reason").cloned(),
+        ));
+    }
+
     let artifact_root = artifact.pointer("/meta/input/root").and_then(Value::as_str);
     if !same_resolved_path(artifact_root, root) {
         return Some(unavailable_summary(
@@ -263,6 +279,7 @@ pub fn summarize_rust_analysis_artifact(
         status: RustAnalysisStatus::Complete,
         available: true,
         root: None,
+        reason: None,
         schema_version: string_field(artifact, "/schemaVersion"),
         policy_version: string_field(artifact, "/policyVersion"),
         producer: string_field(artifact, "/meta/producer"),
@@ -323,11 +340,20 @@ fn string_field_from_value<'a>(value: Option<&'a Value>, field: &str) -> Option<
 }
 
 fn unavailable_summary(status: RustAnalysisStatus, root: Option<String>) -> RustAnalysisSummary {
+    unavailable_summary_with_reason(status, root, None)
+}
+
+fn unavailable_summary_with_reason(
+    status: RustAnalysisStatus,
+    root: Option<String>,
+    reason: Option<Value>,
+) -> RustAnalysisSummary {
     RustAnalysisSummary {
         artifact: ARTIFACT_NAME,
         status,
         available: false,
         root,
+        reason,
         schema_version: None,
         policy_version: None,
         producer: None,

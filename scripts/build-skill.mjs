@@ -272,6 +272,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-write',
       'manifest-write: missing --output <dir>',
     ],
+    [
+      'manifest-closeout-write',
+      'manifest-closeout-write: missing --input <path|->',
+    ],
   ]) {
     const result = spawnSync(binaryPath, [command], {
       cwd: ROOT,

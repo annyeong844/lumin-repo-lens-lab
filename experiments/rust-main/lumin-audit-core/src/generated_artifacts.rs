@@ -46,7 +46,7 @@ impl GeneratedArtifactsMode {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Default => "default",
             Self::Present => "present",

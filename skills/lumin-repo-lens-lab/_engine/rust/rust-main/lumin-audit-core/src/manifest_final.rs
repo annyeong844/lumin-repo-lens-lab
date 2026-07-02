@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
@@ -72,6 +72,24 @@ pub fn build_manifest_closeout_update(
             review_pack_path: companion.review_pack_path,
         })?,
     })
+}
+
+pub fn apply_manifest_closeout_update(
+    manifest: &mut Value,
+    update: ManifestCloseoutUpdate,
+) -> Result<()> {
+    let manifest = manifest
+        .as_object_mut()
+        .context("manifest-closeout-write: manifest must be a JSON object")?;
+    let update = serde_json::to_value(update)
+        .context("manifest-closeout-write: invalid closeout update shape")?;
+    let update = update
+        .as_object()
+        .context("manifest-closeout-write: closeout update must be a JSON object")?;
+    for (key, value) in update {
+        manifest.insert(key.clone(), value.clone());
+    }
+    Ok(())
 }
 
 pub fn build_manifest_final_summary_update(

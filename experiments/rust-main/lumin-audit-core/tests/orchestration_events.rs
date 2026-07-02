@@ -595,6 +595,143 @@ fn cli_producer_performance_audit_run_artifact_emits_json() -> Result<()> {
 }
 
 #[test]
+fn cli_producer_performance_audit_run_artifact_defaults_optional_scan_flags() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join("out");
+    fs::create_dir_all(&output_dir)?;
+    let input_path = temp.path().join("runtime-observations.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "artifactReads": {
+                "schemaVersion": "artifact-read-metrics.v1",
+                "measurement": "audit-repo-orchestrator-json-reads",
+                "totalReadCount": 0,
+                "totalReadBytes": 0,
+                "totalReadMs": 0,
+                "totalJsonParseMs": 0,
+                "parseFailureCount": 0,
+                "byName": {}
+            },
+            "commandsRun": [],
+            "skipped": []
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("producer-performance-audit-run-artifact")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--generated")
+        .arg("2026-07-01T00:00:00.000Z")
+        .arg("--root")
+        .arg(temp.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--profile")
+        .arg("quick")
+        .arg("--cache-root")
+        .arg(output_dir.join(".cache"))
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<Value>(&output.stdout)?;
+    assert_eq!(stdout["scanRange"]["includeTests"], true);
+    assert_eq!(stdout["scanRange"]["production"], false);
+    assert_eq!(stdout["generatedArtifacts"]["mode"], "default");
+    Ok(())
+}
+
+#[test]
+fn cli_producer_performance_audit_run_artifact_requires_artifact_reads() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join("out");
+    fs::create_dir_all(&output_dir)?;
+    let input_path = temp.path().join("runtime-observations.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "commandsRun": [],
+            "skipped": []
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("producer-performance-audit-run-artifact")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--generated")
+        .arg("2026-07-01T00:00:00.000Z")
+        .arg("--root")
+        .arg(temp.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--profile")
+        .arg("quick")
+        .arg("--cache-root")
+        .arg(output_dir.join(".cache"))
+        .output()?;
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid runtime observation shape"));
+    assert!(stderr.contains("artifactReads"));
+    Ok(())
+}
+
+#[test]
+fn cli_producer_performance_audit_run_artifact_rejects_unknown_generated_mode() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join("out");
+    fs::create_dir_all(&output_dir)?;
+    let input_path = temp.path().join("runtime-observations.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "artifactReads": {
+                "schemaVersion": "artifact-read-metrics.v1",
+                "measurement": "audit-repo-orchestrator-json-reads",
+                "totalReadCount": 0,
+                "totalReadBytes": 0,
+                "totalReadMs": 0,
+                "totalJsonParseMs": 0,
+                "parseFailureCount": 0,
+                "byName": {}
+            },
+            "commandsRun": [],
+            "skipped": []
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("producer-performance-audit-run-artifact")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--generated")
+        .arg("2026-07-01T00:00:00.000Z")
+        .arg("--root")
+        .arg(temp.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .arg("--profile")
+        .arg("quick")
+        .arg("--cache-root")
+        .arg(output_dir.join(".cache"))
+        .arg("--generated-artifacts")
+        .arg("typo")
+        .output()?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("unsupported --generated-artifacts mode: typo"));
+    Ok(())
+}
+
+#[test]
 fn cli_producer_performance_artifact_hard_stops_on_malformed_ledger() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let input_path = temp.path().join("ledger.json");

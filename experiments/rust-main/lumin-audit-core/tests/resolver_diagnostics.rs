@@ -262,6 +262,43 @@ fn resolver_diagnostics_summary_reports_empty_shape_without_inputs() -> Result<(
 }
 
 #[test]
+fn resolver_diagnostics_summary_preserves_malformed_capability_status() -> Result<()> {
+    let resolver_capabilities = json!({
+        "artifact": "resolver-capabilities.json",
+        "status": "unavailable",
+        "reason": {
+            "kind": "malformed-json",
+            "message": "expected value"
+        },
+        "summary": {
+            "status": "unavailable",
+            "unavailableReason": "malformed-json"
+        }
+    });
+    let resolver_diagnostics = json!({
+        "resolverVersion": "resolver-v1",
+        "summary": {
+            "blindZoneCount": 0,
+            "blockedCandidateHintCount": 0
+        }
+    });
+
+    let summary = serde_json::to_value(summarize_resolver_diagnostics(
+        None,
+        Some(&resolver_capabilities),
+        Some(&resolver_diagnostics),
+    ))?;
+
+    assert_eq!(summary["status"], "unavailable");
+    assert_eq!(summary["reason"]["kind"], "malformed-json");
+    assert_eq!(
+        summary["resolverCapabilityArtifact"],
+        "resolver-capabilities.json"
+    );
+    Ok(())
+}
+
+#[test]
 fn cli_resolver_diagnostics_summary_reads_optional_artifacts() -> Result<()> {
     let tempdir = tempfile::tempdir()?;
     let symbols_path = tempdir.path().join("symbols.json");

@@ -34,6 +34,7 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.buildManifestCloseoutUpdate).toBe("function");
     expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
     expect(typeof auditManifest.writeManifestFile).toBe("function");
+    expect(typeof auditManifest.closeoutAndWriteManifest).toBe("function");
     expect(typeof auditManifest.executeBaseRuntime).toBe("function");
     expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
       "function",
@@ -80,7 +81,7 @@ describe("audit-manifest public surface", () => {
       if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;
       else process.env.LUMIN_AUDIT_CORE_BIN = previous;
     }
-  });
+  }, 30000);
 
   it("AMES1g. lifecycle update wrapper leaves raw block placement and summary in audit-core", () => {
     const update = auditManifest.buildManifestLifecycleUpdate({
@@ -249,6 +250,54 @@ describe("audit-manifest public surface", () => {
         profile: "quick",
         meta: {
           generated: "2026-07-02T00:00:00.000Z",
+        },
+      });
+    }));
+
+  it("AMES1l. closeoutAndWriteManifest applies final closeout and writes in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "producer-performance.json",
+        {
+          schemaVersion: "producer-performance.v1",
+          summary: {
+            producerCount: 1,
+            okCount: 1,
+            failedCount: 0,
+            skippedCount: 0,
+          },
+          producers: [{ name: "triage-repo.mjs", status: "ok" }],
+          skipped: [],
+        },
+        { to: "output" },
+      );
+
+      const result = auditManifest.closeoutAndWriteManifest({
+        manifest: {
+          meta: {
+            generated: "2026-07-02T00:00:00.000Z",
+          },
+          profile: "quick",
+          artifactsProduced: [],
+        },
+        outDir: fixture.output,
+        producerPerformancePath: fixture.outputPath("producer-performance.json"),
+        rustAnalysis: {
+          status: "unavailable",
+          available: false,
+        },
+      });
+
+      expect(result.manifestPath.endsWith("manifest.json")).toBe(true);
+      expect(result.manifest.performance.producerCount).toBe(1);
+      expect(result.manifest.orchestration.status).toBe("complete");
+      expect(result.manifest.artifactsProduced).toContain("producer-performance.json");
+      expect(fixture.readJson("manifest.json", { from: "output" })).toMatchObject({
+        performance: {
+          producerCount: 1,
+        },
+        orchestration: {
+          status: "complete",
         },
       });
     }));

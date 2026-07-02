@@ -75,13 +75,12 @@ import {
   executePostWriteLifecycle,
   applyLifecycleExitPolicy,
   evaluateLifecycleRequestGuard,
-  buildManifestCloseoutUpdate,
   buildManifestLifecycleUpdate,
   buildManifestArtifactsProducedUpdate,
   buildManifestRoot,
   buildManifestEvidence,
   refreshManifestEvidence,
-  writeManifestFile,
+  closeoutAndWriteManifest,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
 import { repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
@@ -935,21 +934,20 @@ atomicWrite(
   producerPerformancePath,
   JSON.stringify(producerPerformance, null, 2)
 );
-Object.assign(manifest, buildManifestCloseoutUpdate({
+const manifestWrite = closeoutAndWriteManifest({
+  manifest,
   outDir: OUT,
   producerPerformancePath,
   rustAnalysis: manifest.rustAnalysis,
   topologyMermaidPath,
   auditSummaryPath,
   reviewPackPath,
-}));
-
-const manifestPath = path.join(OUT, 'manifest.json');
-const manifestWrite = writeManifestFile(OUT, manifest);
+});
+Object.assign(manifest, manifestWrite.manifest ?? {});
 
 // ─── Console report ───────────────────────────────────────
 console.log('');
-console.log(`[audit-repo] wrote ${manifestWrite.manifestPath ?? manifestPath}`);
+console.log(`[audit-repo] wrote ${manifestWrite.manifestPath ?? path.join(OUT, 'manifest.json')}`);
 console.log(`[audit-repo] artifacts: ${manifest.artifactsProduced.length} produced`);
 if (manifest.auditSummary?.path) {
   console.log(`[audit-repo] summary: ${manifest.auditSummary.path}`);

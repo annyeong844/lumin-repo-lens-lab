@@ -22,9 +22,9 @@ use lumin_audit_core::manifest_evidence::{
     ManifestEvidenceSummary,
 };
 use lumin_audit_core::manifest_final::{
-    build_manifest_artifacts_produced_update, build_manifest_closeout_update,
-    build_manifest_final_summary_update, build_manifest_final_summary_update_for_rust_analysis,
-    ManifestCloseoutCompanionInput,
+    apply_manifest_closeout_update, build_manifest_artifacts_produced_update,
+    build_manifest_closeout_update, build_manifest_final_summary_update,
+    build_manifest_final_summary_update_for_rust_analysis, ManifestCloseoutCompanionInput,
 };
 use lumin_audit_core::manifest_meta::{build_manifest_meta, ManifestMetaInput};
 use lumin_audit_core::manifest_root::{
@@ -112,6 +112,25 @@ struct ManifestWriteResult {
     manifest_path: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestCloseoutWriteCliInput {
+    manifest: serde_json::Value,
+    output: String,
+    producer_performance_path: String,
+    #[serde(default)]
+    rust_analysis: Option<serde_json::Value>,
+    #[serde(default)]
+    companion: ManifestCloseoutCompanionInput,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestCloseoutWriteResult {
+    manifest_path: String,
+    manifest: serde_json::Value,
+}
+
 pub(super) fn run_manifest_write(args: Vec<String>) -> Result<()> {
     let mut output = None;
     let mut input = None;
@@ -136,6 +155,40 @@ pub(super) fn run_manifest_write(args: Vec<String>) -> Result<()> {
     write_pretty_json_file(&manifest_path, &request.manifest)?;
     write_stdout_json(&ManifestWriteResult {
         manifest_path: manifest_path.to_string_lossy().to_string(),
+    })
+}
+
+pub(super) fn run_manifest_closeout_write(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("manifest-closeout-write: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("manifest-closeout-write: missing --input <path|->")?;
+    let json = read_json_input(&input, "manifest-closeout-write")?;
+    let request = serde_json::from_value::<ManifestCloseoutWriteCliInput>(json)
+        .context("manifest-closeout-write: invalid request shape")?;
+    let producer_performance = read_required_json(
+        std::path::Path::new(&request.producer_performance_path),
+        "manifest-closeout-write",
+    )?;
+    let update = build_manifest_closeout_update(
+        std::path::Path::new(&request.output),
+        &producer_performance,
+        request.rust_analysis.as_ref(),
+        request.companion,
+    )?;
+    let mut manifest = request.manifest;
+    apply_manifest_closeout_update(&mut manifest, update)?;
+    let manifest_path = std::path::Path::new(&request.output).join("manifest.json");
+    write_pretty_json_file(&manifest_path, &manifest)?;
+    write_stdout_json(&ManifestCloseoutWriteResult {
+        manifest_path: manifest_path.to_string_lossy().to_string(),
+        manifest,
     })
 }
 

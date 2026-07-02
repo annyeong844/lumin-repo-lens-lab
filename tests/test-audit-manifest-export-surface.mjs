@@ -26,6 +26,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.buildManifestCloseoutUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
   assert.equal(typeof auditManifest.writeManifestFile, 'function');
+  assert.equal(typeof auditManifest.closeoutAndWriteManifest, 'function');
   assert.equal(typeof auditManifest.executeBaseRuntime, 'function');
   assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
 
@@ -260,6 +261,55 @@ check('AMES1k. writeManifestFile leaves the final manifest write in audit-core',
     const manifest = JSON.parse(readFileSync(path.join(out, 'manifest.json'), 'utf8'));
     assert.equal(manifest.profile, 'quick');
     assert.equal(manifest.meta.generated, '2026-07-02T00:00:00.000Z');
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1l. closeoutAndWriteManifest applies final closeout and writes in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-closeout-write-'));
+  const out = path.join(fx, 'out');
+  mkdirSync(out, { recursive: true });
+  try {
+    const performancePath = path.join(out, 'producer-performance.json');
+    writeFileSync(
+      performancePath,
+      JSON.stringify({
+        schemaVersion: 'producer-performance.v1',
+        summary: {
+          producerCount: 1,
+          okCount: 1,
+          failedCount: 0,
+          skippedCount: 0,
+        },
+        producers: [{ name: 'triage-repo.mjs', status: 'ok' }],
+        skipped: [],
+      }),
+    );
+
+    const result = auditManifest.closeoutAndWriteManifest({
+      manifest: {
+        meta: {
+          generated: '2026-07-02T00:00:00.000Z',
+        },
+        profile: 'quick',
+        artifactsProduced: [],
+      },
+      outDir: out,
+      producerPerformancePath: performancePath,
+      rustAnalysis: {
+        status: 'unavailable',
+        available: false,
+      },
+    });
+
+    assert.match(result.manifestPath, /manifest\.json$/);
+    assert.equal(result.manifest.performance.producerCount, 1);
+    assert.equal(result.manifest.orchestration.status, 'complete');
+    assert.ok(result.manifest.artifactsProduced.includes('producer-performance.json'));
+    const manifest = JSON.parse(readFileSync(path.join(out, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.performance.producerCount, 1);
+    assert.equal(manifest.orchestration.status, 'complete');
   } finally {
     rmSync(fx, { recursive: true, force: true });
   }
