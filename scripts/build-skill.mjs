@@ -402,7 +402,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
       if ((result.stdout ?? '').trim().length > 0) return false;
       if (!existsSync(resultPath)) return false;
       const json = JSON.parse(readFileSync(resultPath, 'utf8'));
-      if (!isObject(json[probe.requiredField])) return false;
+      if (!resultPayloadMatchesProbe(json, probe)) return false;
       if (!Array.isArray(json.artifactReads?.reads)) return false;
     }
     return true;
@@ -415,6 +415,13 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function resultPayloadMatchesProbe(json, probe) {
+  const payload = json[probe.requiredField];
+  return isObject(payload) &&
+    isObject(payload.scanRange) &&
+    typeof payload.scanRange.files === 'number';
 }
 
 function currentAuditCoreBinarySource() {

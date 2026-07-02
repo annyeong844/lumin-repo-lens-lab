@@ -96,9 +96,17 @@ function auditCoreBinary() {
     cargoTargetDir: process.env.CARGO_TARGET_DIR ?? null,
     noAutoBuild: process.env.LUMIN_AUDIT_CORE_NO_AUTO_BUILD ?? null,
   });
+  const configuredOverrides = [process.env[platformEnv], process.env.LUMIN_AUDIT_CORE_BIN]
+    .map((configured) => configured ? path.resolve(configured) : null)
+    .filter(Boolean);
+  const overrideSignatureKey = candidateSignatureKey(configuredOverrides);
   if (auditCoreBinaryCache?.key === cacheKey) {
     const signature = fileSignature(auditCoreBinaryCache.command);
-    if (signature && signature === auditCoreBinaryCache.signature) {
+    if (
+      signature &&
+      signature === auditCoreBinaryCache.signature &&
+      overrideSignatureKey === auditCoreBinaryCache.overrideSignatureKey
+    ) {
       return auditCoreBinaryCache.command;
     }
   }
@@ -107,11 +115,11 @@ function auditCoreBinary() {
       key: cacheKey,
       command,
       signature: fileSignature(command),
+      overrideSignatureKey,
     };
     return command;
   };
-  for (const configured of [process.env[platformEnv], process.env.LUMIN_AUDIT_CORE_BIN]) {
-    const resolved = configured ? path.resolve(configured) : null;
+  for (const resolved of configuredOverrides) {
     if (resolved && auditCoreCandidateSupportsCurrentContract(resolved)) return remember(resolved);
   }
   const packagedPlatform = path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe);
@@ -169,10 +177,14 @@ function fileSignature(filePath) {
   try {
     const stat = statSync(filePath);
     if (!stat.isFile()) return null;
-    return `${stat.size}:${stat.mtimeMs}`;
+    return `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
   } catch {
     return null;
   }
+}
+
+function candidateSignatureKey(commands) {
+  return JSON.stringify(commands.map((command) => [command, fileSignature(command)]));
 }
 
 function auditCoreBinarySupportsCurrentContract(command) {
@@ -278,7 +290,7 @@ function auditCoreBinaryWritesResultFiles(command) {
       if ((result.stdout ?? '').trim().length > 0) return false;
       if (!existsSync(resultPath)) return false;
       const json = JSON.parse(readFileSync(resultPath, 'utf8'));
-      if (!isObject(json[probe.requiredField])) return false;
+      if (!resultPayloadMatchesProbe(json, probe)) return false;
       if (!Array.isArray(json.artifactReads?.reads)) return false;
     }
     return true;
@@ -291,6 +303,13 @@ function auditCoreBinaryWritesResultFiles(command) {
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function resultPayloadMatchesProbe(json, probe) {
+  const payload = json[probe.requiredField];
+  return isObject(payload) &&
+    isObject(payload.scanRange) &&
+    typeof payload.scanRange.files === 'number';
 }
 
 function ensureAuditCoreBuiltFromManifest(manifestPath, candidate) {

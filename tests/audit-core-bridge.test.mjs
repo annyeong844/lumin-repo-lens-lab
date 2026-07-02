@@ -25,7 +25,18 @@ function validResult(command) {
     artifactReads: { reads: [] }
   };
 }
+
+function emptyBodyResult(command) {
+  if (command === "manifest-root-with-evidence" || command === "manifest-lifecycle-evidence-refresh") {
+    return { manifest: {}, artifactReads: { reads: [] } };
+  }
+  return { evidence: {}, artifactReads: { reads: [] } };
+}
 `;
+  const resultExpression = {
+    valid: "validResult(command)",
+    emptyBody: "emptyBodyResult(command)",
+  }[resultMode] ?? "{}";
   writeFileSync(
     binaryPath,
     `#!/usr/bin/env node
@@ -34,7 +45,7 @@ const command = process.argv[2];
 const resultIndex = process.argv.indexOf("--result-output");
 if (resultIndex !== -1) {
   const resultPath = process.argv[resultIndex + 1];
-  const result = ${resultMode === "valid" ? "validResult(command)" : "{}"};
+  const result = ${resultExpression};
   writeFileSync(resultPath, JSON.stringify(result));
   process.exit(0);
 }
@@ -102,7 +113,7 @@ describe("audit-core JS bridge output policy", () => {
     }
   });
 
-  it("ACB2. rejects stale helpers that write placeholder result-output shapes", () => {
+  it("ACB2. rejects stale helpers that write empty result-output bodies", () => {
     if (process.platform === "win32") {
       expect(process.platform).toBe("win32");
       return;
@@ -115,7 +126,7 @@ describe("audit-core JS bridge output policy", () => {
     const previous = process.env.LUMIN_AUDIT_CORE_BIN;
     try {
       const fakeBinary = path.join(fixture.root, "stale-audit-core");
-      writeFakeAuditCore(fakeBinary, { resultMode: "placeholder" });
+      writeFakeAuditCore(fakeBinary, { resultMode: "emptyBody" });
       process.env.LUMIN_AUDIT_CORE_BIN = fakeBinary;
 
       const evidence = auditManifest.buildManifestEvidence({
@@ -137,7 +148,46 @@ describe("audit-core JS bridge output policy", () => {
     }
   }, 30000);
 
-  it("ACB3. revalidates a cached helper path after the binary is replaced", () => {
+  it("ACB3. rechecks a repaired override before returning a cached fallback", () => {
+    if (process.platform === "win32") {
+      expect(process.platform).toBe("win32");
+      return;
+    }
+
+    const fixture = createTempRepoFixture({
+      prefix: "audit-core-repaired-override-",
+    });
+    writeMinimalManifestArtifacts(fixture);
+    const previous = process.env.LUMIN_AUDIT_CORE_BIN;
+    try {
+      const fakeBinary = path.join(fixture.root, "repairable-audit-core");
+      writeFakeAuditCore(fakeBinary, { resultMode: "emptyBody" });
+      process.env.LUMIN_AUDIT_CORE_BIN = fakeBinary;
+
+      const fallbackEvidence = auditManifest.buildManifestEvidence({
+        root: fixture.root,
+        outDir: fixture.output,
+        includeTests: true,
+        production: false,
+      });
+      expect(fallbackEvidence.scanRange.files).toBe(2);
+
+      writeFakeAuditCore(fakeBinary, { resultMode: "valid" });
+      const overrideEvidence = auditManifest.buildManifestEvidence({
+        root: fixture.root,
+        outDir: fixture.output,
+        includeTests: true,
+        production: false,
+      });
+      expect(overrideEvidence.scanRange.files).toBe(999);
+    } finally {
+      fixture.cleanup();
+      if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;
+      else process.env.LUMIN_AUDIT_CORE_BIN = previous;
+    }
+  }, 30000);
+
+  it("ACB4. revalidates a cached helper path after the binary is replaced", () => {
     if (process.platform === "win32") {
       expect(process.platform).toBe("win32");
       return;
