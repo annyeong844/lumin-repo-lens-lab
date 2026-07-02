@@ -21,7 +21,7 @@ impl AuditProfile {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Quick => "quick",
             Self::Full => "full",
@@ -94,16 +94,21 @@ pub enum BasePipelineStatus {
     Skipped,
 }
 
+impl BasePipelineStatus {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Planned => "planned",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
 impl Serialize for BasePipelineStatus {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let value = match self {
-            Self::Planned => "planned",
-            Self::Skipped => "skipped",
-        };
-        serializer.serialize_str(value)
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -172,16 +177,21 @@ pub enum ProducerOwner {
     Rust,
 }
 
+impl ProducerOwner {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::JsMjs => "js-mjs",
+            Self::Rust => "rust",
+        }
+    }
+}
+
 impl Serialize for ProducerOwner {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let value = match self {
-            Self::JsMjs => "js-mjs",
-            Self::Rust => "rust",
-        };
-        serializer.serialize_str(value)
+        serializer.serialize_str(self.as_str())
     }
 }
 

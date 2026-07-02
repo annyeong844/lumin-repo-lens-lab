@@ -13,7 +13,9 @@ use lumin_audit_core::orchestration_events::{
     ProducerPerformanceAuditRunContext, ProducerPerformanceRuntimeInput,
     ProducerPerformanceRuntimeObservations,
 };
-use lumin_audit_core::orchestration_executor::{execute_base_plan, ExecutorRequest};
+use lumin_audit_core::orchestration_executor::{
+    execute_base_plan, execute_runtime_request, ExecutorRequest, RuntimeExecutorRequest,
+};
 use lumin_audit_core::orchestration_plan::{
     build_orchestration_plan, AuditProfile, OrchestrationPlanOptions,
 };
@@ -182,6 +184,24 @@ pub(super) fn run_execute_base_plan(args: Vec<String>) -> Result<()> {
     let request = serde_json::from_value::<ExecutorRequest>(json)
         .context("execute-base-plan: invalid request shape")?;
     let result = execute_base_plan(request)?;
+    write_stdout_json(&result)
+}
+
+pub(super) fn run_execute_base_runtime(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("execute-base-runtime: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("execute-base-runtime: missing --input <path|->")?;
+    let json = read_json_input(&input, "execute-base-runtime")?;
+    let request = serde_json::from_value::<RuntimeExecutorRequest>(json)
+        .context("execute-base-runtime: invalid request shape")?;
+    let result = execute_runtime_request(request)?;
     write_stdout_json(&result)
 }
 

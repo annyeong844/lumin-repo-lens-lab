@@ -325,6 +325,15 @@ export function executeBasePlan(request) {
   });
 }
 
+export function executeBaseRuntime(request) {
+  return runAuditCoreJson([
+    'execute-base-runtime',
+    '--input', '-',
+  ], 'executeBaseRuntime', {
+    input: JSON.stringify(request ?? {}),
+  });
+}
+
 export function executeCanonDraftLifecycle(request) {
   return runAuditCoreJson([
     'execute-canon-draft',

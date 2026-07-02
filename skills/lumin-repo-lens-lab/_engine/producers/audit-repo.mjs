@@ -67,8 +67,7 @@ import {
 import {
   createArtifactReadMetrics,
   buildProducerPerformanceArtifactForAuditRun,
-  buildOrchestrationPlan,
-  executeBasePlan,
+  executeBaseRuntime,
   executeCanonDraftLifecycle,
   executeCheckCanonLifecycle,
   resolvePreWriteRoute,
@@ -308,17 +307,6 @@ if (!['js', 'rust', 'auto'].includes(REQUESTED_PRE_WRITE_ENGINE)) {
   process.exit(2);
 }
 
-const ORCHESTRATION_PLAN = buildOrchestrationPlan({
-  profile: PROFILE,
-  sarif: values.sarif,
-  preWrite: values['pre-write'],
-  postWrite: values['post-write'],
-  canonDraft: values['canon-draft'],
-  checkCanon: values['check-canon'],
-  rustAnalyzer: values['rust-analyzer'],
-});
-const RUN_BASE_PIPELINE = ORCHESTRATION_PLAN.basePipeline?.status === 'planned';
-
 if (values['clear-incremental-cache'] === true) {
   const cacheStore = openIncrementalCacheStore({
     root: ROOT,
@@ -495,10 +483,15 @@ function rustAnalyzerInvocationOrNull() {
   }
 }
 
-function buildExecutorRequest() {
+function buildRuntimeExecutorRequest() {
   return {
-    schemaVersion: 'lumin-audit-executor-request.v1',
-    plan: ORCHESTRATION_PLAN,
+    schemaVersion: 'lumin-audit-runtime-executor-request.v1',
+    profile: PROFILE,
+    sarif: values.sarif === true,
+    preWrite: values['pre-write'] === true,
+    postWrite: values['post-write'] === true,
+    canonDraft: values['canon-draft'] === true,
+    checkCanon: values['check-canon'] === true,
     root: ROOT,
     output: OUT,
     scriptsDir: __dirname,
@@ -670,7 +663,9 @@ function renderSummaryConsolePreview(markdown) {
 
 console.log(`[audit-repo] profile=${PROFILE}  root=${ROOT}  output=${OUT}`);
 
-const baseExecution = executeBasePlan(buildExecutorRequest());
+const baseExecution = executeBaseRuntime(buildRuntimeExecutorRequest());
+const ORCHESTRATION_PLAN = baseExecution.plan;
+const RUN_BASE_PIPELINE = ORCHESTRATION_PLAN?.basePipeline?.status === 'planned';
 commandsRun.push(...(baseExecution.commandsRun ?? []));
 skipped.push(...(baseExecution.skipped ?? []));
 rustAnalysisRun = baseExecution.rustAnalysisRun ?? rustAnalysisRun;

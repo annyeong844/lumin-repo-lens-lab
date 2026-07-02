@@ -34,6 +34,7 @@ describe("audit-manifest public surface", () => {
       "function",
     );
     expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
+    expect(typeof auditManifest.executeBaseRuntime).toBe("function");
     expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
       "function",
     );

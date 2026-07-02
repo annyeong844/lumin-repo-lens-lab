@@ -43,6 +43,7 @@ pub fn run() -> Result<()> {
         Some("manifest-evidence-summary") => run_manifest_evidence_summary(args.collect()),
         Some("orchestration-plan") => run_orchestration_plan(args.collect()),
         Some("execute-base-plan") => run_execute_base_plan(args.collect()),
+        Some("execute-base-runtime") => run_execute_base_runtime(args.collect()),
         Some("execute-canon-draft") => run_execute_canon_draft(args.collect()),
         Some("execute-check-canon") => run_execute_check_canon(args.collect()),
         Some("pre-write-route") => run_pre_write_route(args.collect()),

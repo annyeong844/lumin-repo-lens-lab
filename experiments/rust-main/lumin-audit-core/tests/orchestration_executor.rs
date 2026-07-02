@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use lumin_audit_core::orchestration_executor::{
-    execute_base_plan, validate_executor_request, ExecutorRequest,
+    execute_base_plan, execute_runtime_request, validate_executor_request, ExecutorRequest,
+    RuntimeExecutorRequest,
 };
 use lumin_audit_core::orchestration_plan::{build_orchestration_plan, OrchestrationPlanOptions};
 
@@ -35,6 +36,10 @@ fn base_request() -> Value {
 }
 
 fn request(value: Value) -> Result<ExecutorRequest> {
+    Ok(serde_json::from_value(value)?)
+}
+
+fn runtime_request(value: Value) -> Result<RuntimeExecutorRequest> {
     Ok(serde_json::from_value(value)?)
 }
 
@@ -106,6 +111,56 @@ fn planned_sarif_skip_is_copied_from_plan() -> Result<()> {
     assert_eq!(result.skipped.len(), 1);
     assert_eq!(result.skipped[0].step, "emit-sarif.mjs");
     assert_eq!(result.skipped[0].reason, "not in --sarif mode");
+    Ok(())
+}
+
+#[test]
+fn runtime_executor_builds_plan_inside_rust_before_execution() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let value = runtime_request_json(temp.path());
+    let result = execute_runtime_request(runtime_request(value)?)?;
+
+    let serialized = serde_json::to_value(&result)?;
+    assert_eq!(
+        serialized["schemaVersion"],
+        "lumin-audit-runtime-executor-result.v1"
+    );
+    assert_eq!(serialized["plan"]["planOwner"], "lumin-audit-core");
+    assert_eq!(serialized["plan"]["profile"], "quick");
+    assert_eq!(serialized["plan"]["basePipeline"]["status"], "skipped");
+    assert!(result.commands_run.is_empty());
+    assert_eq!(result.skipped.len(), 1);
+    assert_eq!(result.skipped[0].step, "base-audit-profile");
+    Ok(())
+}
+
+#[test]
+fn runtime_executor_validation_uses_runtime_command_label() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let mut value = runtime_request_json(temp.path());
+    value["nodeExecutable"] = json!(" ");
+    let error = execute_runtime_request(runtime_request(value)?)
+        .err()
+        .ok_or_else(|| anyhow!("empty runtime node executable should fail"))?;
+
+    assert!(error.to_string().contains("execute-base-runtime"));
+    assert!(error.to_string().contains("nodeExecutable"));
+    Ok(())
+}
+
+#[test]
+fn cli_execute_base_runtime_hard_stops_on_malformed_request() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("request.json");
+    fs::write(&input_path, r#"{"schemaVersion":"wrong"}"#)?;
+    let output = Command::new(audit_core_bin())
+        .arg("execute-base-runtime")
+        .arg("--input")
+        .arg(&input_path)
+        .output()?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("execute-base-runtime"));
     Ok(())
 }
 
@@ -352,6 +407,33 @@ fn cli_execute_base_plan_hard_stops_on_malformed_request() -> Result<()> {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("execute-base-plan"));
     Ok(())
+}
+
+fn runtime_request_json(root: &Path) -> Value {
+    let output = root.join("out");
+    json!({
+        "schemaVersion": "lumin-audit-runtime-executor-request.v1",
+        "profile": "quick",
+        "preWrite": true,
+        "root": path_string(root),
+        "output": path_string(&output),
+        "scriptsDir": path_string(root),
+        "nodeExecutable": "node",
+        "verbose": false,
+        "scanRange": {
+            "includeTests": true,
+            "production": false,
+            "excludes": [],
+            "autoExcludes": []
+        },
+        "cache": {
+            "noIncremental": false,
+            "cacheRoot": path_string(&output.join(".cache")),
+            "clearIncrementalCache": false
+        },
+        "generatedArtifacts": { "mode": "default" },
+        "rustAnalyzer": { "requested": false, "rustFiles": 0 }
+    })
 }
 
 fn request_with_fake_node(root: &Path, fake_node: &Path) -> Value {

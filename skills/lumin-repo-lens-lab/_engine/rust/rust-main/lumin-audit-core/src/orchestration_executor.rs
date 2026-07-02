@@ -11,10 +11,15 @@ use crate::orchestration_events::{
     LedgerCache, LedgerEvent, LedgerGeneratedArtifacts, LedgerScanRange, MemorySnapshot,
     ProducerLedgerEvent, ProducerMemory, SkippedLedgerEvent,
 };
-use crate::orchestration_plan::{AuditProfile, ORCHESTRATION_PLAN_SCHEMA_VERSION};
+use crate::orchestration_plan::{
+    build_orchestration_plan, AuditProfile, OrchestrationPlan, OrchestrationPlanOptions,
+    ORCHESTRATION_PLAN_SCHEMA_VERSION,
+};
 
 pub const EXECUTOR_REQUEST_SCHEMA_VERSION: &str = "lumin-audit-executor-request.v1";
 pub const EXECUTOR_RESULT_SCHEMA_VERSION: &str = "lumin-audit-executor-result.v1";
+pub const RUNTIME_EXECUTOR_REQUEST_SCHEMA_VERSION: &str = "lumin-audit-runtime-executor-request.v1";
+pub const RUNTIME_EXECUTOR_RESULT_SCHEMA_VERSION: &str = "lumin-audit-runtime-executor-result.v1";
 
 const INCREMENTAL_PRODUCER_STEPS: &[&str] = &[
     "measure-topology.mjs",
@@ -33,6 +38,35 @@ const RUST_ANALYZER_ARTIFACT: &str = "rust-analyzer-health.latest.json";
 pub struct ExecutorRequest {
     pub schema_version: String,
     pub plan: ExecutorPlanInput,
+    pub root: PathBuf,
+    pub output: PathBuf,
+    pub scripts_dir: PathBuf,
+    pub node_executable: String,
+    #[serde(default)]
+    pub verbose: bool,
+    pub scan_range: LedgerScanRange,
+    pub cache: LedgerCache,
+    pub generated_artifacts: LedgerGeneratedArtifacts,
+    #[serde(default)]
+    pub rust_analyzer: RustAnalyzerExecutorRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeExecutorRequest {
+    pub schema_version: String,
+    #[serde(default = "default_profile")]
+    pub profile: String,
+    #[serde(default)]
+    pub sarif: bool,
+    #[serde(default)]
+    pub pre_write: bool,
+    #[serde(default)]
+    pub post_write: bool,
+    #[serde(default)]
+    pub canon_draft: bool,
+    #[serde(default)]
+    pub check_canon: bool,
     pub root: PathBuf,
     pub output: PathBuf,
     pub scripts_dir: PathBuf,
@@ -124,6 +158,18 @@ pub struct RustAnalyzerArtifactInvocation {
 #[serde(rename_all = "camelCase")]
 pub struct ExecutorResult {
     pub schema_version: &'static str,
+    pub events: Vec<LedgerEvent>,
+    pub commands_run: Vec<CommandRun>,
+    pub skipped: Vec<SkippedRun>,
+    pub rust_analysis_run: RustAnalysisRunResult,
+    pub exit_policy: ExecutorExitPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeExecutorResult {
+    pub schema_version: &'static str,
+    pub plan: OrchestrationPlan,
     pub events: Vec<LedgerEvent>,
     pub commands_run: Vec<CommandRun>,
     pub skipped: Vec<SkippedRun>,
@@ -240,6 +286,43 @@ pub fn validate_executor_request(request: &ExecutorRequest) -> Result<()> {
     Ok(())
 }
 
+pub fn execute_runtime_request(request: RuntimeExecutorRequest) -> Result<RuntimeExecutorResult> {
+    validate_runtime_executor_request(&request)?;
+    let profile = AuditProfile::parse(&request.profile)?;
+    let plan = build_orchestration_plan(OrchestrationPlanOptions {
+        profile,
+        sarif: request.sarif,
+        pre_write: request.pre_write,
+        post_write: request.post_write,
+        canon_draft: request.canon_draft,
+        check_canon: request.check_canon,
+        rust_analyzer: request.rust_analyzer.requested,
+    });
+    let executor_request = ExecutorRequest {
+        schema_version: EXECUTOR_REQUEST_SCHEMA_VERSION.to_string(),
+        plan: executor_plan_input_from_plan(&plan),
+        root: request.root,
+        output: request.output,
+        scripts_dir: request.scripts_dir,
+        node_executable: request.node_executable,
+        verbose: request.verbose,
+        scan_range: request.scan_range,
+        cache: request.cache,
+        generated_artifacts: request.generated_artifacts,
+        rust_analyzer: request.rust_analyzer,
+    };
+    let result = execute_base_plan(executor_request)?;
+    Ok(RuntimeExecutorResult {
+        schema_version: RUNTIME_EXECUTOR_RESULT_SCHEMA_VERSION,
+        plan,
+        events: result.events,
+        commands_run: result.commands_run,
+        skipped: result.skipped,
+        rust_analysis_run: result.rust_analysis_run,
+        exit_policy: result.exit_policy,
+    })
+}
+
 pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
     validate_executor_request(&request)?;
     let mut commands_run = Vec::new();
@@ -315,6 +398,60 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
     ))
 }
 
+fn validate_runtime_executor_request(request: &RuntimeExecutorRequest) -> Result<()> {
+    if request.schema_version != RUNTIME_EXECUTOR_REQUEST_SCHEMA_VERSION {
+        bail!(
+            "execute-base-runtime: unsupported schemaVersion '{}'",
+            request.schema_version
+        );
+    }
+    AuditProfile::parse(&request.profile)?;
+    validate_non_empty_for(
+        "execute-base-runtime",
+        "nodeExecutable",
+        &request.node_executable,
+    )?;
+    validate_path_for("execute-base-runtime", "root", &request.root)?;
+    validate_path_for("execute-base-runtime", "output", &request.output)?;
+    validate_path_for("execute-base-runtime", "scriptsDir", &request.scripts_dir)?;
+    Ok(())
+}
+
+fn executor_plan_input_from_plan(plan: &OrchestrationPlan) -> ExecutorPlanInput {
+    ExecutorPlanInput {
+        schema_version: plan.schema_version.to_string(),
+        profile: plan.profile.as_str().to_string(),
+        emit_sarif: plan.emit_sarif,
+        base_pipeline: ExecutorBasePipelineInput {
+            status: plan.base_pipeline.status.as_str().to_string(),
+        },
+        steps: plan
+            .steps
+            .iter()
+            .map(|step| ExecutorStepInput {
+                step: step.step.to_string(),
+                script: step.script.to_string(),
+                required: step.required,
+                producer_owner: step.producer_owner.as_str().to_string(),
+                execution_owner: step.execution_owner.to_string(),
+                skip_reason_when_unmet: step.skip_reason_when_unmet.map(str::to_string),
+            })
+            .collect(),
+        skipped: plan
+            .skipped
+            .iter()
+            .map(|skip| ExecutorPlannedSkipInput {
+                step: skip.step.to_string(),
+                reason: skip.reason.to_string(),
+            })
+            .collect(),
+    }
+}
+
+fn default_profile() -> String {
+    "quick".to_string()
+}
+
 fn argv_for_js_step(request: &ExecutorRequest, script: &str) -> Vec<String> {
     let mut argv = vec![
         request
@@ -352,15 +489,23 @@ fn argv_for_js_step(request: &ExecutorRequest, script: &str) -> Vec<String> {
 }
 
 fn validate_non_empty(field: &str, value: &str) -> Result<()> {
+    validate_non_empty_for("execute-base-plan", field, value)
+}
+
+fn validate_non_empty_for(label: &str, field: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
-        bail!("execute-base-plan: {field} must be a non-empty string");
+        bail!("{label}: {field} must be a non-empty string");
     }
     Ok(())
 }
 
 fn validate_path(field: &str, value: &Path) -> Result<()> {
+    validate_path_for("execute-base-plan", field, value)
+}
+
+fn validate_path_for(label: &str, field: &str, value: &Path) -> Result<()> {
     if value.as_os_str().is_empty() {
-        bail!("execute-base-plan: {field} must be provided");
+        bail!("{label}: {field} must be provided");
     }
     Ok(())
 }
