@@ -66,7 +66,6 @@ import {
 } from '../lib/incremental-cache-store.mjs';
 import {
   createArtifactReadMetrics,
-  buildProducerPerformanceArtifactForAuditRun,
   executeBaseRuntime,
   executeCanonDraftLifecycle,
   executeCheckCanonLifecycle,
@@ -76,9 +75,8 @@ import {
   applyLifecycleExitPolicy,
   evaluateLifecycleRequestGuard,
   buildManifestArtifactsProducedUpdate,
-  buildManifestRoot,
-  buildManifestEvidence,
-  closeoutAndWriteManifest,
+  buildManifestRootWithEvidence,
+  finalizeAuditRun,
   applyLifecycleAndRefreshManifestEvidence,
 } from '../lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from '../lib/generated-artifact-mode.mjs';
@@ -670,16 +668,13 @@ rustAnalysisRun = baseExecution.rustAnalysisRun ?? rustAnalysisRun;
 const basePipelineExitCode = Number(baseExecution.exitPolicy?.recommendedExitCode ?? 0);
 
 // ─── Build manifest ───────────────────────────────────────
-const initialEvidence = buildManifestEvidence(manifestEvidenceOptions());
 const manifestGenerated = new Date().toISOString();
-const manifest = buildManifestRoot({
+const manifest = buildManifestRootWithEvidence({
   generated: manifestGenerated,
   profile: PROFILE,
-  root: ROOT,
-  output: OUT,
   commandsRun,
   skipped,
-  evidence: initialEvidence,
+  ...manifestEvidenceOptions(),
 });
 
 // ─── P1-3: pre-write opt-in step ──────────────────────────
@@ -912,7 +907,8 @@ if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
   });
   writeFileSync(reviewPackPath, reviewPackMarkdown);
 }
-const producerPerformance = buildProducerPerformanceArtifactForAuditRun({
+const manifestWrite = finalizeAuditRun({
+  manifest,
   generated: manifest.meta.generated,
   root: ROOT,
   outDir: OUT,
@@ -929,22 +925,11 @@ const producerPerformance = buildProducerPerformanceArtifactForAuditRun({
   rustAnalysis: manifest.rustAnalysis,
   commandsRun,
   skipped,
-});
-const producerPerformancePath = path.join(OUT, 'producer-performance.json');
-atomicWrite(
-  producerPerformancePath,
-  JSON.stringify(producerPerformance, null, 2)
-);
-const manifestWrite = closeoutAndWriteManifest({
-  manifest,
-  outDir: OUT,
-  producerPerformancePath,
-  rustAnalysis: manifest.rustAnalysis,
   topologyMermaidPath,
   auditSummaryPath,
   reviewPackPath,
 });
-Object.assign(manifest, manifestWrite.manifest ?? {});
+Object.assign(manifest, manifestWrite.closeoutUpdate ?? {});
 
 // ─── Console report ───────────────────────────────────────
 console.log('');

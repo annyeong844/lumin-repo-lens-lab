@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::fs;
 use std::process::Command;
 
@@ -362,12 +362,142 @@ fn cli_manifest_closeout_write_applies_patch_and_writes_manifest() -> Result<()>
     assert!(result["manifestPath"]
         .as_str()
         .is_some_and(|path| path.ends_with("manifest.json")));
-    assert_eq!(result["manifest"]["performance"]["producerCount"], 1);
-    assert_eq!(result["manifest"]["orchestration"]["status"], "complete");
-    assert_eq!(result["manifest"]["auditSummary"]["format"], "markdown");
+    assert!(result.get("manifest").is_none());
+    assert_eq!(result["closeoutUpdate"]["performance"]["producerCount"], 1);
+    assert_eq!(
+        result["closeoutUpdate"]["orchestration"]["status"],
+        "complete"
+    );
+    assert_eq!(
+        result["closeoutUpdate"]["auditSummary"]["format"],
+        "markdown"
+    );
     let written = fs::read_to_string(output_dir.join("manifest.json"))?;
     let written = serde_json::from_str::<serde_json::Value>(&written)?;
-    assert_eq!(written, result["manifest"]);
+    assert_eq!(written["performance"]["producerCount"], 1);
+    assert_eq!(written["orchestration"]["status"], "complete");
+    assert_eq!(written["auditSummary"]["format"], "markdown");
+    Ok(())
+}
+
+#[test]
+fn cli_finalize_audit_run_writes_performance_and_manifest() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("triage.json"), "{}")?;
+    fs::write(output_dir.join("audit-summary.latest.md"), "# Summary\n")?;
+
+    let input = json!({
+        "manifest": {
+            "meta": { "generated": "2026-07-02T00:00:00.000Z" },
+            "profile": "quick",
+            "artifactsProduced": []
+        },
+        "context": {
+            "generated": "2026-07-02T00:00:00.000Z",
+            "root": temp.path(),
+            "output": output_dir,
+            "profile": "quick",
+            "includeTests": true,
+            "production": false,
+            "excludes": ["dist"],
+            "autoExcludes": [".audit"],
+            "noIncremental": true,
+            "cacheRoot": output_dir.join(".cache"),
+            "clearIncrementalCache": false,
+            "generatedArtifactsMode": "default"
+        },
+        "observations": {
+            "artifactReads": {
+                "schemaVersion": "artifact-read-metrics.v1",
+                "measurement": "audit-repo-orchestrator-json-reads",
+                "totalReadCount": 0,
+                "totalReadBytes": 0,
+                "totalReadMs": 0,
+                "totalJsonParseMs": 0,
+                "parseFailureCount": 0,
+                "byName": {}
+            },
+            "rustAnalysis": {
+                "status": "unavailable",
+                "available": false
+            },
+            "commandsRun": [
+                { "step": "triage-repo.mjs", "status": "ok", "ms": 3 }
+            ],
+            "skipped": [
+                { "step": "emit-sarif.mjs", "reason": "not in --sarif mode" }
+            ]
+        },
+        "rustAnalysis": {
+            "status": "unavailable",
+            "available": false
+        },
+        "companion": {
+            "auditSummaryPath": "C:/repo/.audit/audit-summary.latest.md"
+        }
+    });
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("finalize-audit-run")
+        .arg("--input")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+    use std::io::Write;
+    let mut stdin = child.stdin.take().context("stdin is piped")?;
+    stdin.write_all(input.to_string().as_bytes())?;
+    drop(stdin);
+    let output = child.wait_with_output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result = serde_json::from_slice::<Value>(&output.stdout)?;
+    assert!(result["producerPerformancePath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("producer-performance.json")));
+    assert!(result["manifestPath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("manifest.json")));
+    assert!(result.get("manifest").is_none());
+    assert_eq!(result["closeoutUpdate"]["performance"]["producerCount"], 1);
+    assert_eq!(
+        result["closeoutUpdate"]["orchestration"]["status"],
+        "complete"
+    );
+    assert_eq!(
+        result["closeoutUpdate"]["auditSummary"]["format"],
+        "markdown"
+    );
+    let produced = result["closeoutUpdate"]["artifactsProduced"]
+        .as_array()
+        .context("manifest artifactsProduced should be an array")?;
+    assert!(produced
+        .iter()
+        .any(|artifact| artifact.as_str() == Some("producer-performance.json")));
+    assert!(produced
+        .iter()
+        .any(|artifact| artifact.as_str() == Some("audit-summary.latest.md")));
+
+    let performance = fs::read_to_string(output_dir.join("producer-performance.json"))?;
+    let performance = serde_json::from_str::<Value>(&performance)?;
+    assert_eq!(performance["schemaVersion"], "producer-performance.v1");
+    assert_eq!(performance["scanRange"]["excludes"], json!(["dist"]));
+    let written = fs::read_to_string(output_dir.join("manifest.json"))?;
+    let written = serde_json::from_str::<Value>(&written)?;
+    assert_eq!(written["performance"]["producerCount"], 1);
+    assert_eq!(written["orchestration"]["status"], "complete");
+    assert_eq!(written["auditSummary"]["format"], "markdown");
+    assert!(written["artifactsProduced"]
+        .as_array()
+        .context("written artifactsProduced should be an array")?
+        .iter()
+        .any(|artifact| artifact.as_str() == Some("producer-performance.json")));
     Ok(())
 }
 

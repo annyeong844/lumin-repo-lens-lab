@@ -32,8 +32,10 @@ pub fn run() -> Result<()> {
         Some("lifecycle-request-guard") => run_lifecycle_request_guard(args.collect()),
         Some("manifest-meta") => run_manifest_meta(args.collect()),
         Some("manifest-root") => run_manifest_root(args.collect()),
+        Some("manifest-root-with-evidence") => run_manifest_root_with_evidence(args.collect()),
         Some("manifest-write") => run_manifest_write(args.collect()),
         Some("manifest-closeout-write") => run_manifest_closeout_write(args.collect()),
+        Some("finalize-audit-run") => run_finalize_audit_run(args.collect()),
         Some("manifest-lifecycle-evidence-refresh") => {
             run_manifest_lifecycle_evidence_refresh(args.collect())
         }

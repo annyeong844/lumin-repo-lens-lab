@@ -13,6 +13,7 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core lifecycle-request-guard --input <path|->
        lumin-audit-core manifest-meta --generated <iso> --profile <quick|full|ci> --root <repo> --output <dir>
        lumin-audit-core manifest-root --input <path|->
+       lumin-audit-core manifest-root-with-evidence --input <path|->
        lumin-audit-core manifest-write --output <dir> --input <path|->
        lumin-audit-core manifest-lifecycle-evidence-refresh --input <path|->
        lumin-audit-core manifest-evidence-update --input <path|->
@@ -23,6 +24,7 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core manifest-final-summary-update --output <dir> --producer-performance <path> [--rust-analysis-ran|--rust-analysis-block <path|->]
        lumin-audit-core manifest-closeout-update --input <path|->
        lumin-audit-core manifest-closeout-write --input <path|->
+       lumin-audit-core finalize-audit-run --input <path|->
        lumin-audit-core manifest-core-summary --root <repo> [--triage <path>] [--symbols <path>] [--include-tests|--no-include-tests] [--production|--no-production] [--exclude <path> ...] [--auto-exclude <path> ...]
        lumin-audit-core manifest-evidence-summary --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--rust-analysis-ran|--rust-analysis-run-block <path|->] [--exclude <path> ...] [--auto-exclude <path> ...]
        lumin-audit-core manifest-evidence-summary-with-reads --root <repo> --output <dir> [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--production|--no-production] [--rust-analysis-ran|--rust-analysis-run-block <path|->] [--exclude <path> ...] [--auto-exclude <path> ...]

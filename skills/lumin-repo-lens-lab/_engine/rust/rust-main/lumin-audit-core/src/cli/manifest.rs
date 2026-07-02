@@ -29,11 +29,16 @@ use lumin_audit_core::manifest_final::{
     apply_manifest_closeout_update, build_manifest_artifacts_produced_update,
     build_manifest_closeout_update, build_manifest_final_summary_update,
     build_manifest_final_summary_update_for_rust_analysis, ManifestCloseoutCompanionInput,
+    ManifestCloseoutUpdate,
 };
 use lumin_audit_core::manifest_meta::{build_manifest_meta, ManifestMetaInput};
 use lumin_audit_core::manifest_root::{
     apply_manifest_evidence_update, build_manifest_evidence_update, build_manifest_root,
     ManifestEvidenceUpdateFields, ManifestEvidenceUpdateInput, ManifestRootInput,
+};
+use lumin_audit_core::orchestration_events::{
+    build_producer_performance_artifact_for_audit_run_from_output,
+    ProducerPerformanceAuditRunContext, ProducerPerformanceRuntimeObservations,
 };
 use lumin_audit_core::rust_analysis::RustAnalysisRunObservation;
 
@@ -145,7 +150,27 @@ struct ManifestCloseoutWriteCliInput {
 #[serde(rename_all = "camelCase")]
 struct ManifestCloseoutWriteResult {
     manifest_path: String,
+    closeout_update: ManifestCloseoutUpdate,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalizeAuditRunCliInput {
     manifest: serde_json::Value,
+    context: ProducerPerformanceAuditRunContext,
+    observations: ProducerPerformanceRuntimeObservations,
+    #[serde(default)]
+    rust_analysis: Option<serde_json::Value>,
+    #[serde(default)]
+    companion: ManifestCloseoutCompanionInput,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalizeAuditRunResult {
+    producer_performance_path: String,
+    manifest_path: String,
+    closeout_update: ManifestCloseoutUpdate,
 }
 
 #[derive(Deserialize)]
@@ -181,6 +206,40 @@ struct ManifestLifecycleEvidenceRefreshInput {
 #[serde(rename_all = "camelCase")]
 struct ManifestLifecycleEvidenceRefreshResult {
     manifest: serde_json::Value,
+    artifact_reads: ManifestEvidenceArtifactReadEvents,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestRootWithEvidenceCliInput {
+    generated: String,
+    profile: String,
+    root: String,
+    output: String,
+    #[serde(default)]
+    commands_run: Vec<lumin_audit_core::manifest_root::ManifestCommandRun>,
+    #[serde(default)]
+    skipped: Vec<lumin_audit_core::manifest_root::ManifestSkippedStep>,
+    #[serde(default = "default_true")]
+    include_tests: bool,
+    #[serde(default)]
+    production: bool,
+    #[serde(default = "default_generated_artifacts_mode")]
+    generated_artifacts_mode: String,
+    #[serde(default)]
+    excludes: Vec<String>,
+    #[serde(default)]
+    auto_excludes: Vec<String>,
+    #[serde(default)]
+    rust_analysis_ran: bool,
+    #[serde(default)]
+    rust_analysis_run: Option<RustAnalysisRunObservation>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestRootWithEvidenceResult {
+    manifest: lumin_audit_core::manifest_root::ManifestRoot,
     artifact_reads: ManifestEvidenceArtifactReadEvents,
 }
 
@@ -244,12 +303,53 @@ pub(super) fn run_manifest_closeout_write(args: Vec<String>) -> Result<()> {
         request.companion,
     )?;
     let mut manifest = request.manifest;
-    apply_manifest_closeout_update(&mut manifest, update)?;
+    apply_manifest_closeout_update(&mut manifest, update.clone())?;
     let manifest_path = Path::new(&request.output).join("manifest.json");
     write_pretty_json_file(&manifest_path, &manifest)?;
     write_stdout_json(&ManifestCloseoutWriteResult {
         manifest_path: manifest_path.to_string_lossy().to_string(),
-        manifest,
+        closeout_update: update,
+    })
+}
+
+pub(super) fn run_finalize_audit_run(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("finalize-audit-run: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("finalize-audit-run: missing --input <path|->")?;
+    let json = read_json_input(&input, "finalize-audit-run")?;
+    let request = serde_json::from_value::<FinalizeAuditRunCliInput>(json)
+        .context("finalize-audit-run: invalid request shape")?;
+    let output = Path::new(&request.context.output).to_path_buf();
+    let producer_performance = build_producer_performance_artifact_for_audit_run_from_output(
+        request.context,
+        request.observations,
+    )?;
+    let producer_performance_path = output.join("producer-performance.json");
+    write_pretty_json_file(&producer_performance_path, &producer_performance)?;
+
+    let producer_performance_json = serde_json::to_value(&producer_performance)
+        .context("finalize-audit-run: invalid producer-performance shape")?;
+    let update = build_manifest_closeout_update(
+        &output,
+        &producer_performance_json,
+        request.rust_analysis.as_ref(),
+        request.companion,
+    )?;
+    let mut manifest = request.manifest;
+    apply_manifest_closeout_update(&mut manifest, update.clone())?;
+    let manifest_path = output.join("manifest.json");
+    write_pretty_json_file(&manifest_path, &manifest)?;
+    write_stdout_json(&FinalizeAuditRunResult {
+        producer_performance_path: producer_performance_path.to_string_lossy().to_string(),
+        manifest_path: manifest_path.to_string_lossy().to_string(),
+        closeout_update: update,
     })
 }
 
@@ -291,6 +391,54 @@ pub(super) fn run_manifest_lifecycle_evidence_refresh(args: Vec<String>) -> Resu
     .context("manifest-lifecycle-evidence-refresh: invalid evidence update shape")?;
     apply_manifest_evidence_update(&mut manifest, evidence)?;
     write_stdout_json(&ManifestLifecycleEvidenceRefreshResult {
+        manifest,
+        artifact_reads: summary.artifact_reads,
+    })
+}
+
+pub(super) fn run_manifest_root_with_evidence(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("manifest-root-with-evidence: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("manifest-root-with-evidence: missing --input <path|->")?;
+    let json = read_json_input(&input, "manifest-root-with-evidence")?;
+    let request = serde_json::from_value::<ManifestRootWithEvidenceCliInput>(json)
+        .context("manifest-root-with-evidence: invalid request shape")?;
+    let generated_artifacts_mode =
+        GeneratedArtifactsMode::parse(&request.generated_artifacts_mode)?;
+    let summary = build_manifest_evidence_summary_with_reads(ManifestEvidenceReadRequest {
+        root: request.root.clone(),
+        output: PathBuf::from(&request.output),
+        include_tests: request.include_tests,
+        production: request.production,
+        excludes: request.excludes,
+        auto_excludes: request.auto_excludes,
+        generated_artifacts_mode,
+        rust_analysis_ran: request.rust_analysis_ran,
+        rust_analysis_run: request.rust_analysis_run,
+        label: "manifest-root-with-evidence".to_string(),
+    })?;
+    let evidence = serde_json::from_value::<ManifestEvidenceUpdateFields>(
+        serde_json::to_value(summary.summary)
+            .context("manifest-root-with-evidence: invalid summary shape")?,
+    )
+    .context("manifest-root-with-evidence: invalid evidence shape")?;
+    let manifest = build_manifest_root(ManifestRootInput {
+        generated: request.generated,
+        profile: request.profile,
+        root: request.root,
+        output: request.output,
+        commands_run: request.commands_run,
+        skipped: request.skipped,
+        evidence,
+    })?;
+    write_stdout_json(&ManifestRootWithEvidenceResult {
         manifest,
         artifact_reads: summary.artifact_reads,
     })

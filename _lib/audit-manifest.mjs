@@ -118,7 +118,8 @@ export function createArtifactReadMetrics({ rootDir, largestLimit = 10 } = {}) {
   return { observeRead, summary };
 }
 
-export function buildProducerPerformanceArtifactForAuditRun({
+export function finalizeAuditRun({
+  manifest,
   generated,
   root,
   outDir,
@@ -135,31 +136,42 @@ export function buildProducerPerformanceArtifactForAuditRun({
   rustAnalysis = null,
   commandsRun = [],
   skipped = [],
+  topologyMermaidPath = null,
+  auditSummaryPath = null,
+  reviewPackPath = null,
 }) {
-  const args = [
-    '--generated', generated,
-    '--root', root,
-    '--output', outDir,
-    '--profile', profile,
-    includeTests ? '--include-tests' : '--no-include-tests',
-    production ? '--production' : '--no-production',
-    '--cache-root', cacheRoot,
-    ...(noIncremental ? ['--no-incremental'] : []),
-    ...(clearIncrementalCache ? ['--clear-incremental-cache'] : []),
-    '--generated-artifacts', generatedArtifactsMode,
-  ];
-  for (const exclude of excludes) args.push('--exclude', exclude);
-  for (const autoExclude of autoExcludes) args.push('--auto-exclude', autoExclude);
   return runJsonInputCommand(
-    'producer-performance-audit-run-artifact',
-    'buildProducerPerformanceArtifactForAuditRun',
+    'finalize-audit-run',
+    'finalizeAuditRun',
     {
-      artifactReads,
+      manifest: manifest ?? null,
+      context: {
+        generated,
+        root,
+        output: outDir,
+        profile,
+        includeTests,
+        production,
+        excludes,
+        autoExcludes,
+        noIncremental,
+        cacheRoot,
+        clearIncrementalCache,
+        generatedArtifactsMode,
+      },
+      observations: {
+        artifactReads,
+        rustAnalysis,
+        commandsRun,
+        skipped,
+      },
       rustAnalysis,
-      commandsRun,
-      skipped,
+      companion: {
+        topologyMermaidPath,
+        auditSummaryPath,
+        reviewPackPath,
+      },
     },
-    { args },
   );
 }
 
@@ -239,8 +251,43 @@ export function buildManifestLifecycleUpdate(blocks) {
   );
 }
 
-export function buildManifestRoot(input) {
-  return runJsonInputCommand('manifest-root', 'buildManifestRoot', input);
+export function buildManifestRootWithEvidence({
+  generated,
+  profile,
+  root,
+  outDir,
+  commandsRun = [],
+  skipped = [],
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  generatedArtifactsMode = 'default',
+  rustAnalysisRun = null,
+  rustAnalysisRan = false,
+  onArtifactRead,
+}) {
+  const result = runJsonInputCommand(
+    'manifest-root-with-evidence',
+    'buildManifestRootWithEvidence',
+    {
+      generated,
+      profile,
+      root,
+      output: outDir,
+      commandsRun,
+      skipped,
+      includeTests,
+      production,
+      excludes,
+      autoExcludes,
+      generatedArtifactsMode,
+      rustAnalysisRun,
+      rustAnalysisRan: rustAnalysisRun ? false : rustAnalysisRan,
+    },
+  );
+  observeRustArtifactReads(result.artifactReads, onArtifactRead);
+  return result.manifest ?? {};
 }
 
 export function writeManifestFile(outDir, manifest) {
@@ -251,32 +298,6 @@ export function writeManifestFile(outDir, manifest) {
   ], 'writeManifestFile', {
     input: JSON.stringify({ manifest: manifest ?? null }),
   });
-}
-
-export function closeoutAndWriteManifest({
-  manifest,
-  outDir,
-  producerPerformancePath,
-  rustAnalysis,
-  topologyMermaidPath,
-  auditSummaryPath,
-  reviewPackPath,
-}) {
-  return runJsonInputCommand(
-    'manifest-closeout-write',
-    'closeoutAndWriteManifest',
-    {
-      manifest: manifest ?? null,
-      output: outDir,
-      producerPerformancePath,
-      rustAnalysis,
-      companion: {
-        topologyMermaidPath,
-        auditSummaryPath,
-        reviewPackPath,
-      },
-    },
-  );
 }
 
 export function applyLifecycleAndRefreshManifestEvidence({

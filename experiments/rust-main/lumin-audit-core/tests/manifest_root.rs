@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::fs;
 use std::process::Command;
@@ -201,6 +201,88 @@ fn manifest_root_uses_rust_analysis_block_for_current_rust_artifact() -> Result<
         available["artifactsProduced"],
         json!(["rust-analyzer-health.latest.json", "triage.json"])
     );
+    Ok(())
+}
+
+#[test]
+fn cli_manifest_root_with_evidence_builds_initial_manifest_and_records_reads() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        output_dir.join("triage.json"),
+        serde_json::to_vec(&json!({
+            "shape": {
+                "totalFiles": 3,
+                "tsFiles": 2,
+                "rsFiles": 1
+            },
+            "byLanguage": {
+                "ts": 2,
+                "rs": 1
+            }
+        }))?,
+    )?;
+    fs::write(
+        output_dir.join("symbols.json"),
+        serde_json::to_vec(&json!({
+            "uses": {
+                "external": 1,
+                "resolvedInternal": 2,
+                "unresolvedInternal": 0,
+                "unresolvedInternalRatio": 0
+            }
+        }))?,
+    )?;
+
+    let input_path = temp.path().join("manifest-root-with-evidence.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "generated": "2026-07-02T00:00:00.000Z",
+            "profile": "quick",
+            "root": temp.path(),
+            "output": output_dir,
+            "commandsRun": [
+                { "step": "triage", "status": "ok", "ms": 12 }
+            ],
+            "skipped": [
+                { "step": "shape", "reason": "quick-profile" }
+            ],
+            "includeTests": false,
+            "production": true
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-root-with-evidence")
+        .arg("--input")
+        .arg(&input_path)
+        .output()?;
+
+    assert!(output.status.success());
+    let stdout = serde_json::from_slice::<Value>(&output.stdout)?;
+    let manifest = &stdout["manifest"];
+    assert_eq!(manifest["meta"]["generated"], "2026-07-02T00:00:00.000Z");
+    assert_eq!(manifest["profile"], "quick");
+    assert_eq!(manifest["commandsRun"][0]["step"], "triage");
+    assert_eq!(manifest["skipped"][0]["reason"], "quick-profile");
+    assert_eq!(manifest["scanRange"]["files"], 3);
+    assert_eq!(manifest["scanRange"]["includeTests"], false);
+    assert_eq!(manifest["scanRange"]["production"], true);
+    assert_eq!(manifest["confidence"]["externalImports"], 1);
+    assert!(manifest["blindZones"]
+        .as_array()
+        .is_some_and(|zones| zones.iter().any(|zone| zone["area"] == "rs")));
+    let reads = stdout["artifactReads"]["reads"]
+        .as_array()
+        .context("artifactReads.reads should be an array")?;
+    assert!(reads.iter().any(|read| read["filePath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("triage.json"))));
+    assert!(reads.iter().any(|read| read["filePath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("symbols.json"))));
     Ok(())
 }
 

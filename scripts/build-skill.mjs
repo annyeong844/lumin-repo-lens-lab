@@ -249,6 +249,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-companion-update: missing --input',
     ],
     [
+      'manifest-root-with-evidence',
+      'manifest-root-with-evidence: missing --input <path|->',
+    ],
+    [
       'manifest-evidence-refresh',
       'manifest-evidence-refresh: missing --root <repo>',
     ],
@@ -279,6 +283,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
     [
       'manifest-closeout-write',
       'manifest-closeout-write: missing --input <path|->',
+    ],
+    [
+      'finalize-audit-run',
+      'finalize-audit-run: missing --input <path|->',
     ],
   ]) {
     const result = spawnSync(binaryPath, [command], {
@@ -762,11 +770,14 @@ function writeOpenAiYaml(outDir, metadata) {
 
 function copyAuditCoreBinaries(outDir) {
   const sources = configuredAuditCoreBinarySources();
+  const currentKey = auditCorePlatformKey();
   for (const source of sources) {
     if (!existsSync(source.path)) {
       throw new Error(`configured lumin-audit-core binary does not exist: ${source.path}`);
     }
-    validateRunnableAuditCoreBinary(source.path);
+    if (auditCorePlatformKey(source.platform, source.arch) === currentKey) {
+      validateRunnableAuditCoreBinary(source.path);
+    }
     const dest = path.join(
       outDir,
       '_engine',

@@ -25,6 +25,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'manifest-companion-update: missing --input',
   ],
   [
+    'manifest-root-with-evidence',
+    'manifest-root-with-evidence: missing --input <path|->',
+  ],
+  [
     'manifest-evidence-refresh-with-reads',
     'manifest-evidence-refresh-with-reads: missing --root <repo>',
   ],
@@ -51,6 +55,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
   [
     'manifest-closeout-write',
     'manifest-closeout-write: missing --input <path|->',
+  ],
+  [
+    'finalize-audit-run',
+    'finalize-audit-run: missing --input <path|->',
   ],
 ];
 

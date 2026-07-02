@@ -23,13 +23,13 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.buildManifestEvidence, 'function');
   assert.equal(typeof auditManifest.refreshManifestEvidence, 'function');
   assert.equal(typeof auditManifest.buildManifestArtifactsProducedUpdate, 'function');
+  assert.equal(typeof auditManifest.buildManifestRootWithEvidence, 'function');
   assert.equal(typeof auditManifest.buildManifestCloseoutUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
   assert.equal(typeof auditManifest.writeManifestFile, 'function');
-  assert.equal(typeof auditManifest.closeoutAndWriteManifest, 'function');
+  assert.equal(typeof auditManifest.finalizeAuditRun, 'function');
   assert.equal(typeof auditManifest.applyLifecycleAndRefreshManifestEvidence, 'function');
   assert.equal(typeof auditManifest.executeBaseRuntime, 'function');
-  assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
 
   for (const symbol of [
     'LIVING_AUDIT_DOC_CANDIDATES',
@@ -38,10 +38,13 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
     'buildArtifactSizeSummary',
     'buildArtifactReadMetricsSummary',
     'buildProducerPerformanceArtifactFromRuntime',
+    'buildProducerPerformanceArtifactForAuditRun',
     'buildManifestMeta',
     'buildManifestEvidenceUpdate',
+    'buildManifestRoot',
     'buildManifestFinalSummaryUpdate',
     'buildManifestCompanionUpdate',
+    'closeoutAndWriteManifest',
     'collectProducedArtifacts',
     'executeBasePlan',
     'buildOrchestrationPlan',
@@ -267,28 +270,15 @@ check('AMES1k. writeManifestFile leaves the final manifest write in audit-core',
   }
 });
 
-check('AMES1l. closeoutAndWriteManifest applies final closeout and writes in audit-core', () => {
-  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-closeout-write-'));
+check('AMES1l. finalizeAuditRun writes producer performance and final manifest in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-finalize-'));
   const out = path.join(fx, 'out');
   mkdirSync(out, { recursive: true });
   try {
-    const performancePath = path.join(out, 'producer-performance.json');
-    writeFileSync(
-      performancePath,
-      JSON.stringify({
-        schemaVersion: 'producer-performance.v1',
-        summary: {
-          producerCount: 1,
-          okCount: 1,
-          failedCount: 0,
-          skippedCount: 0,
-        },
-        producers: [{ name: 'triage-repo.mjs', status: 'ok' }],
-        skipped: [],
-      }),
-    );
+    writeFileSync(path.join(out, 'triage.json'), '{}');
+    writeFileSync(path.join(out, 'audit-summary.latest.md'), '# Summary\n');
 
-    const result = auditManifest.closeoutAndWriteManifest({
+    const result = auditManifest.finalizeAuditRun({
       manifest: {
         meta: {
           generated: '2026-07-02T00:00:00.000Z',
@@ -296,21 +286,51 @@ check('AMES1l. closeoutAndWriteManifest applies final closeout and writes in aud
         profile: 'quick',
         artifactsProduced: [],
       },
+      generated: '2026-07-02T00:00:00.000Z',
+      root: fx,
       outDir: out,
-      producerPerformancePath: performancePath,
+      profile: 'quick',
+      includeTests: true,
+      production: false,
+      excludes: ['dist'],
+      autoExcludes: ['.audit'],
+      noIncremental: true,
+      cacheRoot: path.join(out, '.cache'),
+      clearIncrementalCache: false,
+      generatedArtifactsMode: 'default',
+      artifactReads: {
+        schemaVersion: 'artifact-read-metrics.v1',
+        measurement: 'audit-repo-orchestrator-json-reads',
+        totalReadCount: 0,
+        totalReadBytes: 0,
+        totalReadMs: 0,
+        totalJsonParseMs: 0,
+        parseFailureCount: 0,
+        byName: {},
+      },
       rustAnalysis: {
         status: 'unavailable',
         available: false,
       },
+      commandsRun: [{ step: 'triage-repo.mjs', status: 'ok', ms: 3 }],
+      skipped: [{ step: 'emit-sarif.mjs', reason: 'not in --sarif mode' }],
+      auditSummaryPath: 'C:/repo/.audit/audit-summary.latest.md',
     });
 
+    assert.match(result.producerPerformancePath, /producer-performance\.json$/);
     assert.match(result.manifestPath, /manifest\.json$/);
-    assert.equal(result.manifest.performance.producerCount, 1);
-    assert.equal(result.manifest.orchestration.status, 'complete');
-    assert.ok(result.manifest.artifactsProduced.includes('producer-performance.json'));
+    assert.equal(result.manifest, undefined);
+    assert.equal(result.closeoutUpdate.performance.producerCount, 1);
+    assert.equal(result.closeoutUpdate.orchestration.status, 'complete');
+    assert.equal(result.closeoutUpdate.auditSummary.format, 'markdown');
+    assert.ok(result.closeoutUpdate.artifactsProduced.includes('producer-performance.json'));
+    const producerPerformance = JSON.parse(readFileSync(path.join(out, 'producer-performance.json'), 'utf8'));
+    assert.equal(producerPerformance.schemaVersion, 'producer-performance.v1');
+    assert.deepEqual(producerPerformance.scanRange.excludes, ['dist']);
     const manifest = JSON.parse(readFileSync(path.join(out, 'manifest.json'), 'utf8'));
     assert.equal(manifest.performance.producerCount, 1);
     assert.equal(manifest.orchestration.status, 'complete');
+    assert.equal(manifest.auditSummary.format, 'markdown');
   } finally {
     rmSync(fx, { recursive: true, force: true });
   }
@@ -376,61 +396,6 @@ check('AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch', (
       read.ok === false &&
       read.bytes > 0
     ));
-  } finally {
-    rmSync(fx, { recursive: true, force: true });
-  }
-});
-
-check('AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core', () => {
-  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-producer-performance-'));
-  const out = path.join(fx, 'out');
-  mkdirSync(out, { recursive: true });
-  try {
-    writeFileSync(path.join(out, 'triage.json'), '{}');
-    writeFileSync(path.join(out, 'rust-analyzer-health.latest.json'), '{}');
-    const artifact = auditManifest.buildProducerPerformanceArtifactForAuditRun({
-      generated: '2026-07-01T00:00:00.000Z',
-      root: fx,
-      outDir: out,
-      profile: 'quick',
-      includeTests: true,
-      production: false,
-      excludes: ['dist'],
-      autoExcludes: ['.audit'],
-      noIncremental: true,
-      cacheRoot: path.join(out, '.cache'),
-      clearIncrementalCache: true,
-      generatedArtifactsMode: 'prepared',
-      artifactReads: {
-        schemaVersion: 'artifact-read-metrics.v1',
-        measurement: 'audit-repo-orchestrator-json-reads',
-        totalReadCount: 0,
-        totalReadBytes: 0,
-        totalReadMs: 0,
-        totalJsonParseMs: 0,
-        parseFailureCount: 0,
-        byName: {},
-      },
-      rustAnalysis: {
-        status: 'complete',
-        available: true,
-      },
-      commandsRun: [{ step: 'triage-repo.mjs', status: 'ok', ms: 3 }],
-      skipped: [{ step: 'emit-sarif.mjs', reason: 'not in --sarif mode' }],
-    });
-
-    assert.equal(artifact.schemaVersion, 'producer-performance.v1');
-    assert.equal(artifact.profile, 'quick');
-    assert.deepEqual(artifact.scanRange.excludes, ['dist']);
-    assert.deepEqual(artifact.scanRange.autoExcludes, ['.audit']);
-    assert.equal(artifact.cache.noIncremental, true);
-    assert.equal(artifact.cache.clearIncrementalCache, true);
-    assert.equal(artifact.generatedArtifacts.mode, 'prepared');
-    assert.equal(artifact.summary.producerCount, 1);
-    assert.equal(artifact.summary.okCount, 1);
-    assert.equal(artifact.summary.skippedCount, 1);
-    assert.equal(artifact.summary.artifactCount, 2);
-    assert.ok(Object.hasOwn(artifact.artifacts.byName, 'rust-analyzer-health.latest.json'));
   } finally {
     rmSync(fx, { recursive: true, force: true });
   }

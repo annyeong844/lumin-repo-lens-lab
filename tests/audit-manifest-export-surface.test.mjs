@@ -31,17 +31,15 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.buildManifestArtifactsProducedUpdate).toBe(
       "function",
     );
+    expect(typeof auditManifest.buildManifestRootWithEvidence).toBe("function");
     expect(typeof auditManifest.buildManifestCloseoutUpdate).toBe("function");
     expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
     expect(typeof auditManifest.writeManifestFile).toBe("function");
-    expect(typeof auditManifest.closeoutAndWriteManifest).toBe("function");
+    expect(typeof auditManifest.finalizeAuditRun).toBe("function");
     expect(typeof auditManifest.applyLifecycleAndRefreshManifestEvidence).toBe(
       "function",
     );
     expect(typeof auditManifest.executeBaseRuntime).toBe("function");
-    expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
-      "function",
-    );
 
     for (const symbol of [
       "LIVING_AUDIT_DOC_CANDIDATES",
@@ -50,10 +48,13 @@ describe("audit-manifest public surface", () => {
       "buildArtifactSizeSummary",
       "buildArtifactReadMetricsSummary",
       "buildProducerPerformanceArtifactFromRuntime",
+      "buildProducerPerformanceArtifactForAuditRun",
       "buildManifestMeta",
       "buildManifestEvidenceUpdate",
+      "buildManifestRoot",
       "buildManifestFinalSummaryUpdate",
       "buildManifestCompanionUpdate",
+      "closeoutAndWriteManifest",
       "collectProducedArtifacts",
       "executeBasePlan",
       "buildOrchestrationPlan",
@@ -176,6 +177,70 @@ describe("audit-manifest public surface", () => {
       expect(manifest.scanRange.includeTests).toBe(false);
       expect(manifest.scanRange.production).toBe(true);
       expect(reads.some((read) => read.filePath.endsWith("triage.json"))).toBe(
+        true,
+      );
+    }));
+
+  it("AMES1n. root-with-evidence wrapper leaves initial manifest assembly in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "triage.json",
+        {
+          shape: {
+            totalFiles: 3,
+            tsFiles: 2,
+            rsFiles: 1,
+          },
+          byLanguage: {
+            ts: 2,
+            rs: 1,
+          },
+        },
+        { to: "output" },
+      );
+      fixture.writeJson(
+        "symbols.json",
+        {
+          uses: {
+            external: 1,
+            resolvedInternal: 2,
+            unresolvedInternal: 0,
+            unresolvedInternalRatio: 0,
+          },
+        },
+        { to: "output" },
+      );
+
+      const reads = [];
+      const manifest = auditManifest.buildManifestRootWithEvidence({
+        generated: "2026-07-02T00:00:00.000Z",
+        profile: "quick",
+        root: fixture.root,
+        outDir: fixture.output,
+        commandsRun: [{ step: "triage", status: "ok", ms: 12 }],
+        skipped: [{ step: "shape", reason: "quick-profile" }],
+        includeTests: false,
+        production: true,
+        onArtifactRead: (read) => reads.push(read),
+      });
+
+      expect(manifest.meta.generated).toBe("2026-07-02T00:00:00.000Z");
+      expect(manifest.profile).toBe("quick");
+      expect(manifest.commandsRun).toEqual([
+        { step: "triage", status: "ok", ms: 12 },
+      ]);
+      expect(manifest.skipped).toEqual([
+        { step: "shape", reason: "quick-profile" },
+      ]);
+      expect(manifest.scanRange.files).toBe(3);
+      expect(manifest.scanRange.includeTests).toBe(false);
+      expect(manifest.scanRange.production).toBe(true);
+      expect(manifest.confidence.externalImports).toBe(1);
+      expect(manifest.blindZones.some((zone) => zone.area === "rs")).toBe(true);
+      expect(reads.some((read) => read.filePath.endsWith("triage.json"))).toBe(
+        true,
+      );
+      expect(reads.some((read) => read.filePath.endsWith("symbols.json"))).toBe(
         true,
       );
     }));
@@ -310,25 +375,12 @@ describe("audit-manifest public surface", () => {
       });
     }));
 
-  it("AMES1l. closeoutAndWriteManifest applies final closeout and writes in audit-core", () =>
+  it("AMES1l. finalizeAuditRun writes producer performance and final manifest in audit-core", () =>
     withManifestFixture((fixture) => {
-      fixture.writeJson(
-        "producer-performance.json",
-        {
-          schemaVersion: "producer-performance.v1",
-          summary: {
-            producerCount: 1,
-            okCount: 1,
-            failedCount: 0,
-            skippedCount: 0,
-          },
-          producers: [{ name: "triage-repo.mjs", status: "ok" }],
-          skipped: [],
-        },
-        { to: "output" },
-      );
+      fixture.write("triage.json", "{}", { to: "output" });
+      fixture.write("audit-summary.latest.md", "# Summary\n", { to: "output" });
 
-      const result = auditManifest.closeoutAndWriteManifest({
+      const result = auditManifest.finalizeAuditRun({
         manifest: {
           meta: {
             generated: "2026-07-02T00:00:00.000Z",
@@ -336,24 +388,61 @@ describe("audit-manifest public surface", () => {
           profile: "quick",
           artifactsProduced: [],
         },
+        generated: "2026-07-02T00:00:00.000Z",
+        root: fixture.root,
         outDir: fixture.output,
-        producerPerformancePath: fixture.outputPath("producer-performance.json"),
+        profile: "quick",
+        includeTests: true,
+        production: false,
+        excludes: ["dist"],
+        autoExcludes: [".audit"],
+        noIncremental: true,
+        cacheRoot: fixture.path(".audit/.cache"),
+        clearIncrementalCache: false,
+        generatedArtifactsMode: "default",
+        artifactReads: {
+          schemaVersion: "artifact-read-metrics.v1",
+          measurement: "audit-repo-orchestrator-json-reads",
+          totalReadCount: 0,
+          totalReadBytes: 0,
+          totalReadMs: 0,
+          totalJsonParseMs: 0,
+          parseFailureCount: 0,
+          byName: {},
+        },
         rustAnalysis: {
           status: "unavailable",
           available: false,
         },
+        commandsRun: [{ step: "triage-repo.mjs", status: "ok", ms: 3 }],
+        skipped: [{ step: "emit-sarif.mjs", reason: "not in --sarif mode" }],
+        auditSummaryPath: "C:/repo/.audit/audit-summary.latest.md",
       });
 
+      expect(result.producerPerformancePath.endsWith("producer-performance.json")).toBe(
+        true,
+      );
       expect(result.manifestPath.endsWith("manifest.json")).toBe(true);
-      expect(result.manifest.performance.producerCount).toBe(1);
-      expect(result.manifest.orchestration.status).toBe("complete");
-      expect(result.manifest.artifactsProduced).toContain("producer-performance.json");
+      expect(result.manifest).toBeUndefined();
+      expect(result.closeoutUpdate.performance.producerCount).toBe(1);
+      expect(result.closeoutUpdate.orchestration.status).toBe("complete");
+      expect(result.closeoutUpdate.artifactsProduced).toContain("producer-performance.json");
+      expect(result.closeoutUpdate.auditSummary.format).toBe("markdown");
+      expect(fixture.readJson("producer-performance.json", { from: "output" })).toMatchObject({
+        schemaVersion: "producer-performance.v1",
+        scanRange: {
+          excludes: ["dist"],
+        },
+      });
       expect(fixture.readJson("manifest.json", { from: "output" })).toMatchObject({
         performance: {
           producerCount: 1,
         },
         orchestration: {
           status: "complete",
+        },
+        auditSummary: {
+          format: "markdown",
         },
       });
     }));
@@ -435,66 +524,6 @@ describe("audit-manifest public surface", () => {
       ).toBe(true);
     }));
 
-  it("AMES1c. producer performance audit-run wrapper leaves audit context projection in audit-core", () =>
-    withManifestFixture((fixture) => {
-      fixture.write("triage.json", "{}", { to: "output" });
-      fixture.write("rust-analyzer-health.latest.json", "{}", { to: "output" });
-      const artifact = auditManifest.buildProducerPerformanceArtifactForAuditRun({
-        generated: "2026-07-01T00:00:00.000Z",
-        root: fixture.root,
-        outDir: fixture.output,
-        profile: "quick",
-        includeTests: true,
-        production: false,
-        excludes: ["dist"],
-        autoExcludes: [".audit"],
-        noIncremental: true,
-        cacheRoot: fixture.path(".audit/.cache"),
-        clearIncrementalCache: true,
-        generatedArtifactsMode: "prepared",
-        artifactReads: {
-          schemaVersion: "artifact-read-metrics.v1",
-          measurement: "audit-repo-orchestrator-json-reads",
-          totalReadCount: 0,
-          totalReadBytes: 0,
-          totalReadMs: 0,
-          totalJsonParseMs: 0,
-          parseFailureCount: 0,
-          byName: {},
-        },
-        rustAnalysis: {
-          status: "complete",
-          available: true,
-        },
-        commandsRun: [{ step: "triage-repo.mjs", status: "ok", ms: 3 }],
-        skipped: [{ step: "emit-sarif.mjs", reason: "not in --sarif mode" }],
-      });
-
-      expect(artifact).toMatchObject({
-        schemaVersion: "producer-performance.v1",
-        profile: "quick",
-        scanRange: {
-          includeTests: true,
-          production: false,
-          excludes: ["dist"],
-          autoExcludes: [".audit"],
-        },
-        cache: {
-          noIncremental: true,
-          clearIncrementalCache: true,
-        },
-        generatedArtifacts: { mode: "prepared" },
-        summary: {
-          producerCount: 1,
-          okCount: 1,
-          skippedCount: 1,
-          artifactCount: 2,
-        },
-      });
-      expect(artifact.artifacts.byName).toHaveProperty(
-        "rust-analyzer-health.latest.json",
-      );
-    }));
 });
 
 describe("audit-manifest evidence summaries", () => {
