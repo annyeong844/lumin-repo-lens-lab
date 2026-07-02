@@ -431,10 +431,10 @@ try {
         "LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1",
       ) &&
       readFileSync(path.join(OUT, "README.md"), "utf8").includes(
-        "Packages that include the Rust `lumin-audit-core` helper are",
+        "minimal packaged Cargo source fallback",
       ) &&
       readFileSync(path.join(OUT, "README.md"), "utf8").includes(
-        "experiments/Cargo.toml",
+        "_engine/rust/Cargo.toml",
       ) &&
       existsSync(path.join(OUT, "_engine/lib/cli.mjs")) &&
       existsSync(path.join(OUT, "_engine/lib/dependency-guard.mjs")) &&
@@ -458,6 +458,12 @@ try {
           process.platform === "win32" ? "lumin-audit-core.exe" : "lumin-audit-core",
         ),
       ) &&
+      existsSync(path.join(OUT, "_engine/rust/Cargo.toml")) &&
+      existsSync(path.join(OUT, "_engine/rust/Cargo.lock")) &&
+      existsSync(path.join(OUT, "_engine/rust/rust-common/Cargo.toml")) &&
+      existsSync(
+        path.join(OUT, "_engine/rust/rust-main/lumin-audit-core/Cargo.toml"),
+      ) &&
       existsSync(path.join(OUT, "_engine/producers/audit-repo.mjs")) &&
       existsSync(
         path.join(
@@ -479,13 +485,18 @@ try {
   );
   const packageJson = JSON.parse(readFileSync(path.join(OUT, "package.json"), "utf8"));
   assert(
-    "SP4a. generated skill records packaged audit-core platform scope",
+    "SP4a. generated skill records packaged audit-core source fallback",
     auditCorePlatformManifest.schemaVersion ===
       "lumin-audit-core-packaged-platforms.v1" &&
-      auditCorePlatformManifest.packageScope === auditCorePlatformKey &&
-      auditCorePlatformManifest.fallback?.kind === "external-binary-env-or-path" &&
+      auditCorePlatformManifest.packageScope === "multi-platform-source-fallback" &&
+      auditCorePlatformManifest.binaryPackageScope === auditCorePlatformKey &&
+      auditCorePlatformManifest.fallback?.kind === "packaged-source-build-env-or-path" &&
       auditCorePlatformManifest.fallback?.requiredWhenRuntimePlatformMissing ===
         true &&
+      auditCorePlatformManifest.sourceFallback?.kind ===
+        "packaged-cargo-workspace" &&
+      auditCorePlatformManifest.sourceFallback?.manifest ===
+        "_engine/rust/Cargo.toml" &&
       auditCorePlatformManifest.platforms.some(
         (platform) =>
           platform.key === auditCorePlatformKey &&
@@ -494,12 +505,18 @@ try {
               ? "lumin-audit-core.exe"
               : "lumin-audit-core"),
       ) &&
-      packageJson.os?.includes(process.platform) &&
-      packageJson.cpu?.includes(process.arch) &&
+      packageJson.os === undefined &&
+      packageJson.cpu === undefined &&
       packageJson.luminRepoLens?.auditCore?.packagedPlatforms?.includes(
         auditCorePlatformKey,
       ) &&
-      packageJson.luminRepoLens?.auditCore?.platformScope === auditCorePlatformKey &&
+      packageJson.luminRepoLens?.auditCore?.platformScope ===
+        "multi-platform-source-fallback" &&
+      packageJson.luminRepoLens?.auditCore?.binaryPlatformScope ===
+        auditCorePlatformKey &&
+      packageJson.luminRepoLens?.auditCore?.sourceFallback === true &&
+      packageJson.luminRepoLens?.auditCore?.sourceFallbackManifest ===
+        "_engine/rust/Cargo.toml" &&
       packageJson.luminRepoLens?.auditCore?.platformOverrideEnv ===
         "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>" &&
       packageJson.luminRepoLens?.auditCore?.genericOverrideEnv ===

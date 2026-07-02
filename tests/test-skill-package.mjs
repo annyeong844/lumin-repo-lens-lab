@@ -285,8 +285,8 @@ try {
     readFileSync(path.join(OUT, '_engine/_README.md'), 'utf8').includes('LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>') &&
     readFileSync(path.join(OUT, '_engine/_README.md'), 'utf8').includes('`lumin-audit-core` / `lumin-audit-core.exe` on `PATH`') &&
     readFileSync(path.join(OUT, '_engine/_README.md'), 'utf8').includes('LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1') &&
-    readFileSync(path.join(OUT, 'README.md'), 'utf8').includes('Packages that include the Rust `lumin-audit-core` helper are') &&
-    readFileSync(path.join(OUT, 'README.md'), 'utf8').includes('experiments/Cargo.toml') &&
+    readFileSync(path.join(OUT, 'README.md'), 'utf8').includes('minimal packaged Cargo source fallback') &&
+    readFileSync(path.join(OUT, 'README.md'), 'utf8').includes('_engine/rust/Cargo.toml') &&
     existsSync(path.join(OUT, '_engine/lib/cli.mjs')) &&
     existsSync(path.join(OUT, '_engine/lib/dependency-guard.mjs')) &&
     readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('process.env.LUMIN_AUDIT_CORE_BIN') &&
@@ -300,6 +300,10 @@ try {
       `${process.platform}-${process.arch}`,
       process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core',
     )) &&
+    existsSync(path.join(OUT, '_engine/rust/Cargo.toml')) &&
+    existsSync(path.join(OUT, '_engine/rust/Cargo.lock')) &&
+    existsSync(path.join(OUT, '_engine/rust/rust-common/Cargo.toml')) &&
+    existsSync(path.join(OUT, '_engine/rust/rust-main/lumin-audit-core/Cargo.toml')) &&
     existsSync(path.join(OUT, '_engine/producers/audit-repo.mjs')) &&
     existsSync(path.join(OUT, '_engine/producers/build-framework-resource-surfaces.mjs')) &&
     existsSync(path.join(OUT, '_engine/producers/build-symbol-graph.mjs')) &&
@@ -310,18 +314,24 @@ try {
   const auditCorePlatformManifest = JSON.parse(
     readFileSync(path.join(OUT, '_engine/bin/audit-core-platforms.json'), 'utf8'));
   const packageJson = JSON.parse(readFileSync(path.join(OUT, 'package.json'), 'utf8'));
-  assert('SP4a. generated skill records packaged audit-core platform scope',
+  assert('SP4a. generated skill records packaged audit-core source fallback',
     auditCorePlatformManifest.schemaVersion === 'lumin-audit-core-packaged-platforms.v1' &&
-    auditCorePlatformManifest.packageScope === auditCorePlatformKey &&
-    auditCorePlatformManifest.fallback?.kind === 'external-binary-env-or-path' &&
+    auditCorePlatformManifest.packageScope === 'multi-platform-source-fallback' &&
+    auditCorePlatformManifest.binaryPackageScope === auditCorePlatformKey &&
+    auditCorePlatformManifest.fallback?.kind === 'packaged-source-build-env-or-path' &&
     auditCorePlatformManifest.fallback?.requiredWhenRuntimePlatformMissing === true &&
+    auditCorePlatformManifest.sourceFallback?.kind === 'packaged-cargo-workspace' &&
+    auditCorePlatformManifest.sourceFallback?.manifest === '_engine/rust/Cargo.toml' &&
     auditCorePlatformManifest.platforms.some((platform) =>
       platform.key === auditCorePlatformKey &&
       platform.executable === (process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core')) &&
-    packageJson.os?.includes(process.platform) &&
-    packageJson.cpu?.includes(process.arch) &&
+    packageJson.os === undefined &&
+    packageJson.cpu === undefined &&
     packageJson.luminRepoLens?.auditCore?.packagedPlatforms?.includes(auditCorePlatformKey) &&
-    packageJson.luminRepoLens?.auditCore?.platformScope === auditCorePlatformKey &&
+    packageJson.luminRepoLens?.auditCore?.platformScope === 'multi-platform-source-fallback' &&
+    packageJson.luminRepoLens?.auditCore?.binaryPlatformScope === auditCorePlatformKey &&
+    packageJson.luminRepoLens?.auditCore?.sourceFallback === true &&
+    packageJson.luminRepoLens?.auditCore?.sourceFallbackManifest === '_engine/rust/Cargo.toml' &&
     packageJson.luminRepoLens?.auditCore?.platformOverrideEnv === 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>' &&
     packageJson.luminRepoLens?.auditCore?.genericOverrideEnv === 'LUMIN_AUDIT_CORE_BIN' &&
     packageJson.luminRepoLens?.auditCore?.pathFallback === true,

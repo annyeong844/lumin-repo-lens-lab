@@ -11,7 +11,10 @@
       "packagedPlatforms": [
         "win32-x64"
       ],
-      "platformScope": "win32-x64",
+      "platformScope": "multi-platform-source-fallback",
+      "binaryPlatformScope": "win32-x64",
+      "sourceFallback": true,
+      "sourceFallbackManifest": "_engine/rust/Cargo.toml",
       "platformOverrideEnv": "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
       "genericOverrideEnv": "LUMIN_AUDIT_CORE_BIN",
       "pathFallback": true
@@ -36,11 +39,5 @@
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
-  },
-  "os": [
-    "win32"
-  ],
-  "cpu": [
-    "x64"
-  ]
+  }
 }

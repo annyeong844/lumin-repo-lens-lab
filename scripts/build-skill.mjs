@@ -120,6 +120,78 @@ const RUNTIME_CANON_FILES = [
   'oracle-registry.json',
   'pre-write-gate.md',
 ];
+const AUDIT_CORE_SOURCE_WORKSPACE = String.raw`[workspace]
+resolver = "2"
+members = [
+    "rust-common",
+    "rust-main/lumin-audit-core",
+]
+
+[workspace.package]
+version = "0.0.0-lab.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1"
+lumin-rust-common = { path = "rust-common", default-features = false }
+serde = "1"
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+
+[workspace.lints]
+rust = {}
+
+[workspace.lints.clippy]
+await_holding_invalid_type = "deny"
+await_holding_lock = "deny"
+identity_op = "deny"
+manual_clamp = "deny"
+manual_filter = "deny"
+manual_find = "deny"
+manual_flatten = "deny"
+manual_map = "deny"
+manual_memcpy = "deny"
+manual_non_exhaustive = "deny"
+manual_ok_or = "deny"
+manual_range_contains = "deny"
+manual_retain = "deny"
+manual_strip = "deny"
+manual_try_fold = "deny"
+manual_unwrap_or = "deny"
+needless_borrow = "deny"
+needless_borrowed_reference = "deny"
+needless_collect = "deny"
+needless_late_init = "deny"
+needless_option_as_deref = "deny"
+needless_question_mark = "deny"
+needless_update = "deny"
+redundant_clone = "deny"
+redundant_closure = "deny"
+redundant_closure_for_method_calls = "deny"
+redundant_static_lifetimes = "deny"
+expect_used = "deny"
+trivially_copy_pass_by_ref = "deny"
+uninlined_format_args = "deny"
+unnecessary_filter_map = "deny"
+unnecessary_lazy_evaluations = "deny"
+unnecessary_sort_by = "deny"
+unnecessary_to_owned = "deny"
+unwrap_used = "deny"
+
+[profile.dev]
+debug = "none"
+incremental = false
+strip = "symbols"
+
+[profile.release]
+lto = "thin"
+debug = "none"
+split-debuginfo = "off"
+strip = "symbols"
+codegen-units = 4
+`;
 
 function auditCoreExecutableNameFor(platform) {
   return platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
@@ -288,6 +360,29 @@ function copyDirRel(srcRel, destRel, outDir) {
   cpSync(src, dest, { recursive: true });
 }
 
+function copyAuditCoreSourceFallback(outDir) {
+  const rustRoot = path.join(outDir, '_engine', 'rust');
+  mkdirSync(rustRoot, { recursive: true });
+  writeFileSync(path.join(rustRoot, 'Cargo.toml'), `${AUDIT_CORE_SOURCE_WORKSPACE}\n`);
+  copyFileRel('experiments/Cargo.lock', '_engine/rust/Cargo.lock', outDir);
+  copyFileRel('experiments/rust-common/Cargo.toml', '_engine/rust/rust-common/Cargo.toml', outDir);
+  copyDirRel('experiments/rust-common/src', '_engine/rust/rust-common/src', outDir);
+  rmSync(path.join(outDir, '_engine', 'rust', 'rust-common', 'src', 'tests'), {
+    recursive: true,
+    force: true,
+  });
+  copyFileRel(
+    'experiments/rust-main/lumin-audit-core/Cargo.toml',
+    '_engine/rust/rust-main/lumin-audit-core/Cargo.toml',
+    outDir
+  );
+  copyDirRel(
+    'experiments/rust-main/lumin-audit-core/src',
+    '_engine/rust/rust-main/lumin-audit-core/src',
+    outDir
+  );
+}
+
 function rewriteProducerSource(text) {
   return rewritePackagedSource(text).replaceAll('./_lib/', '../lib/');
 }
@@ -361,21 +456,25 @@ function writeEngineReadme(outDir) {
     'not copied. Additional platform binaries can be supplied with',
     '`LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>`.',
     '',
-    'A package built with only one platform binary is platform-scoped, not',
-    'a cross-platform binary bundle. Install or build a package for the',
-    'runtime platform, or set a runtime override variable:',
+    'The package also carries a minimal `_engine/rust` Cargo workspace for',
+    '`lumin-audit-core`. If no matching packaged/env/PATH binary exists and',
+    'Cargo is available, the runtime wrapper builds that helper for the',
+    'current platform before invoking it.',
+    '',
+    'If Cargo is not available, set a runtime override variable:',
     '',
     '- `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` for one platform',
     '- `LUMIN_AUDIT_CORE_BIN` as a generic external binary override',
     '- `lumin-audit-core` / `lumin-audit-core.exe` on `PATH`',
     '',
-    'Those fallback binaries must match the current runtime platform. They',
+    'Override binaries must match the current runtime platform. They',
     'are supported when this package does not include',
     '`_engine/bin/<platform>-<arch>/` for the current platform.',
     '',
     'When the wrapper is running from a source checkout that still has',
-    '`experiments/Cargo.toml`, it can build the current-platform helper with',
-    'Cargo if no matching packaged/env/PATH binary exists. Set',
+    '`experiments/Cargo.toml`, it can also build the current-platform helper',
+    'from that checkout if no matching packaged/env/PATH/package-source',
+    'binary exists. Set',
     '`LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` to disable that source-checkout',
     'fallback and fail fast instead.',
     '',
@@ -452,9 +551,12 @@ function buildSkillPackageJson(outDir, auditCoreBinaries = []) {
       distribution: 'skill',
       auditCore: {
         packagedPlatforms,
-        platformScope: singlePlatform
+        platformScope: 'multi-platform-source-fallback',
+        binaryPlatformScope: singlePlatform
           ? auditCorePlatformKey(singlePlatform.platform, singlePlatform.arch)
           : 'multi-platform',
+        sourceFallback: true,
+        sourceFallbackManifest: '_engine/rust/Cargo.toml',
         platformOverrideEnv: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',
         genericOverrideEnv: 'LUMIN_AUDIT_CORE_BIN',
         pathFallback: true,
@@ -474,10 +576,6 @@ function buildSkillPackageJson(outDir, auditCoreBinaries = []) {
     dependencies: source.dependencies ?? {},
     engines: source.engines ?? {},
   };
-  if (singlePlatform) {
-    pkg.os = [singlePlatform.platform];
-    pkg.cpu = [singlePlatform.arch];
-  }
   writeFileSync(path.join(outDir, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`);
 }
 
@@ -577,7 +675,8 @@ function writeAuditCorePlatformManifest(outDir, sources) {
   ensureDir(dest);
   writeFileSync(dest, `${JSON.stringify({
     schemaVersion: 'lumin-audit-core-packaged-platforms.v1',
-    packageScope: sources.length === 1
+    packageScope: 'multi-platform-source-fallback',
+    binaryPackageScope: sources.length === 1
       ? auditCorePlatformKey(sources[0].platform, sources[0].arch)
       : 'multi-platform',
     platforms: sources.map((source) => ({
@@ -587,9 +686,14 @@ function writeAuditCorePlatformManifest(outDir, sources) {
       executable: auditCoreExecutableNameFor(source.platform),
     })),
     fallback: {
-      kind: 'external-binary-env-or-path',
+      kind: 'packaged-source-build-env-or-path',
       requiredWhenRuntimePlatformMissing: true,
-      message: 'Use a package built for the runtime platform, set LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH> / LUMIN_AUDIT_CORE_BIN to a matching external binary, or put lumin-audit-core on PATH.',
+      message: 'Use the packaged Cargo source fallback, set LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH> / LUMIN_AUDIT_CORE_BIN to a matching external binary, or put lumin-audit-core on PATH.',
+    },
+    sourceFallback: {
+      kind: 'packaged-cargo-workspace',
+      manifest: '_engine/rust/Cargo.toml',
+      package: 'lumin-audit-core',
     },
     overrideEnv: {
       platformSpecific: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',
@@ -608,6 +712,7 @@ function build(outDir) {
   copyDirRel('references', 'references', outDir);
   copyDirRel('_lib', '_engine/lib', outDir);
   const auditCoreBinaries = copyAuditCoreBinaries(outDir);
+  copyAuditCoreSourceFallback(outDir);
 
   for (const script of PRODUCER_SCRIPTS) writeProducerScript(script, outDir);
   for (const command of PUBLIC_COMMANDS) writePublicWrapper(command, outDir);

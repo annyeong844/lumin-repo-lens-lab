@@ -62,13 +62,15 @@ the intent JSON by hand.
 > 💡 First run installs parser dependencies once (~30 seconds). After that, fast.
 > For tiny follow-up checks after a fresh baseline, `/lumin-repo-lens-lab` uses the quick path.
 
-> ⚙️ Packages that include the Rust `lumin-audit-core` helper are
-> platform-scoped. Use a package built for your runtime platform, or point
-> `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` / `LUMIN_AUDIT_CORE_BIN` at a
-> matching external binary, or put `lumin-audit-core` on `PATH`, before running
-> the skill. In a source checkout, the wrapper can build the current-platform
-> helper from `experiments/Cargo.toml`; set `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1`
-> if you want missing helper binaries to fail instead of invoking Cargo.
+> ⚙️ Packages include the Rust `lumin-audit-core` helper for the build
+> platform plus a minimal packaged Cargo source fallback. If the runtime
+> platform binary is not packaged, the wrapper can build the current-platform
+> helper from `_engine/rust/Cargo.toml` when Cargo is available. You can also
+> point `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` / `LUMIN_AUDIT_CORE_BIN` at a
+> matching external binary, or put `lumin-audit-core` on `PATH`. In a source
+> checkout, the wrapper can build from `experiments/Cargo.toml`; set
+> `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` if you want missing helper binaries to
+> fail instead of invoking Cargo.
 
 For very large repos, do not auto-trigger full profile on every edit. Run
 `:full` once per branch, first checkup, or major refactor review, then use

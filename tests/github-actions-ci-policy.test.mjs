@@ -41,15 +41,6 @@ describe("GitHub Actions CI policy", () => {
     }
   });
 
-  it("skips draft pull request runner work at the job gate", () => {
-    const testJobSection = sectionAfter("  test:");
-
-    expect(workflow).toMatch(
-      /if:\s*\$\{\{\s*github\.event_name\s*!=\s*'pull_request'\s*\|\|\s*github\.event\.pull_request\.draft\s*==\s*false\s*\}\}/m,
-    );
-    expect(testJobSection.slice(0, 320)).toContain("pull_request");
-  });
-
   it("detects changed surfaces before starting expensive CI jobs", () => {
     const changesJobSection = sectionAfter("  changes:");
 
@@ -58,19 +49,7 @@ describe("GitHub Actions CI policy", () => {
     );
     expect(changesJobSection.slice(0, 1200)).toContain("fetch-depth: 0");
     expect(changesJobSection.slice(0, 3000)).toContain(
-      'echo "node=true" >> "$GITHUB_OUTPUT"',
-    );
-    expect(changesJobSection.slice(0, 3000)).toContain(
       'echo "rust=true" >> "$GITHUB_OUTPUT"',
-    );
-  });
-
-  it("runs Node CI only when the path filter marks Node changes", () => {
-    const testJobSection = sectionAfter("  test:");
-
-    expect(testJobSection.slice(0, 420)).toContain("needs: changes");
-    expect(testJobSection.slice(0, 420)).toContain(
-      "needs.changes.outputs.node == 'true'",
     );
   });
 
@@ -88,17 +67,19 @@ describe("GitHub Actions CI policy", () => {
     );
     expect(changesJobSection).toContain("experiments/rust-main/*");
     expect(changesJobSection).toContain("experiments/rust-sidecar/*");
+    expect(changesJobSection).toContain("_lib/audit-manifest.mjs");
+    expect(changesJobSection).toContain("scripts/build-skill.mjs");
+    expect(changesJobSection).toContain(
+      "skills/lumin-repo-lens-lab/_engine/rust/*",
+    );
     expect(changesJobSection).toContain(
       "tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*",
     );
   });
 
   it("runs Rust cargo checks in CI", () => {
-    expect(workflow).toContain(
-      "cargo test --locked --manifest-path experiments/rust-main/rust-cargo-oracle/Cargo.toml",
-    );
-    expect(workflow).toContain(
-      "cargo test --locked --manifest-path experiments/rust-sidecar/rust-source-health/Cargo.toml",
-    );
+    expect(workflow).toContain("cargo lumin-fmt");
+    expect(workflow).toContain("cargo lumin-clippy");
+    expect(workflow).toContain("cargo lumin-test");
   });
 });

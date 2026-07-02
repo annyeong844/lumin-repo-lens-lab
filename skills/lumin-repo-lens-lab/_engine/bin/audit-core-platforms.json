@@ -1,6 +1,7 @@
 {
   "schemaVersion": "lumin-audit-core-packaged-platforms.v1",
-  "packageScope": "win32-x64",
+  "packageScope": "multi-platform-source-fallback",
+  "binaryPackageScope": "win32-x64",
   "platforms": [
     {
       "key": "win32-x64",
@@ -10,9 +11,14 @@
     }
   ],
   "fallback": {
-    "kind": "external-binary-env-or-path",
+    "kind": "packaged-source-build-env-or-path",
     "requiredWhenRuntimePlatformMissing": true,
-    "message": "Use a package built for the runtime platform, set LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH> / LUMIN_AUDIT_CORE_BIN to a matching external binary, or put lumin-audit-core on PATH."
+    "message": "Use the packaged Cargo source fallback, set LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH> / LUMIN_AUDIT_CORE_BIN to a matching external binary, or put lumin-audit-core on PATH."
+  },
+  "sourceFallback": {
+    "kind": "packaged-cargo-workspace",
+    "manifest": "_engine/rust/Cargo.toml",
+    "package": "lumin-audit-core"
   },
   "overrideEnv": {
     "platformSpecific": "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
