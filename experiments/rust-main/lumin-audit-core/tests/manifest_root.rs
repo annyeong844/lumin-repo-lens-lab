@@ -10,11 +10,18 @@ use lumin_audit_core::manifest_root::{
 
 #[test]
 fn manifest_root_projects_typed_runtime_log_and_places_rust_owned_fields() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("triage.json"), "{}")?;
+    fs::write(output_dir.join("symbols.json"), "{}")?;
+    fs::write(output_dir.join("rust-analyzer-health.latest.json"), "{}")?;
+
     let root = serde_json::from_value::<ManifestRootInput>(json!({
         "generated": "2026-07-01T00:00:00.000Z",
         "profile": "full",
         "root": "C:/repo",
-        "output": "C:/repo/.audit",
+        "output": output_dir,
         "commandsRun": [
             {
                 "step": "measure-topology.mjs",
@@ -68,8 +75,7 @@ fn manifest_root_projects_typed_runtime_log_and_places_rust_owned_fields() -> Re
             "blockClones": { "artifact": "block-clones.json" },
             "sfcEvidence": { "status": "complete" },
             "livingAudit": { "action": "read-existing" }
-        },
-        "artifactsProduced": ["triage.json", "symbols.json"]
+        }
     }))?;
     let manifest = serde_json::to_value(build_manifest_root(root)?)?;
 
@@ -115,7 +121,85 @@ fn manifest_root_projects_typed_runtime_log_and_places_rust_owned_fields() -> Re
     assert_eq!(manifest["sfcEvidence"]["status"], "complete");
     assert_eq!(
         manifest["artifactsProduced"],
-        json!(["triage.json", "symbols.json"])
+        json!([
+            "rust-analyzer-health.latest.json",
+            "symbols.json",
+            "triage.json"
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+fn manifest_root_uses_rust_analysis_block_for_current_rust_artifact() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let output_dir = temp.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("triage.json"), "{}")?;
+    fs::write(output_dir.join("rust-analyzer-health.latest.json"), "{}")?;
+
+    let base = json!({
+        "generated": "2026-07-01T00:00:00.000Z",
+        "profile": "quick",
+        "root": "C:/repo",
+        "output": output_dir,
+        "commandsRun": [],
+        "skipped": [],
+        "evidence": {
+            "scanRange": {},
+            "confidence": {},
+            "resolverDiagnostics": {},
+            "blindZones": [],
+            "rustAnalysis": {
+                "requested": true,
+                "ran": true,
+                "status": "skipped",
+                "available": false
+            },
+            "generatedArtifacts": {},
+            "frameworkResourceSurfaces": null,
+            "unusedDependencies": null,
+            "blockClones": null,
+            "sfcEvidence": {},
+            "livingAudit": {}
+        },
+        "artifactsProduced": [
+            "rust-analyzer-health.latest.json",
+            "legacy-js-supplied-value.json"
+        ]
+    });
+    let unavailable = serde_json::to_value(build_manifest_root(serde_json::from_value(base)?)?)?;
+    assert_eq!(unavailable["artifactsProduced"], json!(["triage.json"]));
+
+    let available = serde_json::to_value(build_manifest_root(serde_json::from_value(json!({
+        "generated": "2026-07-01T00:00:00.000Z",
+        "profile": "quick",
+        "root": "C:/repo",
+        "output": output_dir,
+        "commandsRun": [],
+        "skipped": [],
+        "evidence": {
+            "scanRange": {},
+            "confidence": {},
+            "resolverDiagnostics": {},
+            "blindZones": [],
+            "rustAnalysis": {
+                "requested": true,
+                "ran": true,
+                "status": "complete",
+                "available": true
+            },
+            "generatedArtifacts": {},
+            "frameworkResourceSurfaces": null,
+            "unusedDependencies": null,
+            "blockClones": null,
+            "sfcEvidence": {},
+            "livingAudit": {}
+        }
+    }))?)?)?;
+    assert_eq!(
+        available["artifactsProduced"],
+        json!(["rust-analyzer-health.latest.json", "triage.json"])
     );
     Ok(())
 }

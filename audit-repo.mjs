@@ -688,9 +688,6 @@ const manifest = buildManifestRoot({
   commandsRun,
   skipped,
   evidence: initialEvidence,
-  artifactsProduced: collectProducedArtifacts(OUT, {
-    rustAnalysis: initialEvidence.rustAnalysis,
-  }),
 });
 
 // ─── P1-3: pre-write opt-in step ──────────────────────────
