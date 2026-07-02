@@ -253,14 +253,6 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-root-with-evidence: missing --input <path|->',
     ],
     [
-      [
-        'manifest-root-with-evidence',
-        '--result-output',
-        contractProbeResultPath('manifest-root-with-evidence'),
-      ],
-      'manifest-root-with-evidence: missing --input <path|->',
-    ],
-    [
       ['manifest-evidence-refresh'],
       'manifest-evidence-refresh: missing --root <repo>',
     ],
@@ -269,35 +261,11 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-evidence-refresh-with-reads: missing --root <repo>',
     ],
     [
-      [
-        'manifest-evidence-refresh-with-reads',
-        '--result-output',
-        contractProbeResultPath('manifest-evidence-refresh-with-reads'),
-      ],
-      'manifest-evidence-refresh-with-reads: missing --root <repo>',
-    ],
-    [
       ['manifest-lifecycle-evidence-refresh'],
       'manifest-lifecycle-evidence-refresh: missing --input <path|->',
     ],
     [
-      [
-        'manifest-lifecycle-evidence-refresh',
-        '--result-output',
-        contractProbeResultPath('manifest-lifecycle-evidence-refresh'),
-      ],
-      'manifest-lifecycle-evidence-refresh: missing --input <path|->',
-    ],
-    [
       ['manifest-evidence-summary-with-reads'],
-      'manifest-evidence-summary-with-reads: missing --root <repo>',
-    ],
-    [
-      [
-        'manifest-evidence-summary-with-reads',
-        '--result-output',
-        contractProbeResultPath('manifest-evidence-summary-with-reads'),
-      ],
       'manifest-evidence-summary-with-reads: missing --root <repo>',
     ],
     [
@@ -335,10 +303,118 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       );
     }
   }
+  if (!auditCoreBinaryWritesResultFiles(binaryPath)) {
+    throw new Error(
+      `built lumin-audit-core at ${binaryPath} does not write valid result-output files for migrated manifest commands`
+    );
+  }
 }
 
-function contractProbeResultPath(subcommand) {
-  return path.join(tmpdir(), `lumin-audit-core-contract-${subcommand}-${process.pid}.json`);
+function auditCoreBinaryWritesResultFiles(binaryPath) {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-contract-'));
+  const rootDir = path.join(tempDir, 'root');
+  const outputDir = path.join(tempDir, 'out');
+  const rootInputPath = path.join(tempDir, 'manifest-root-with-evidence.json');
+  const lifecycleInputPath = path.join(tempDir, 'manifest-lifecycle-evidence-refresh.json');
+  try {
+    mkdirSync(rootDir, { recursive: true });
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(path.join(outputDir, 'triage.json'), JSON.stringify({
+      shape: { totalFiles: 1, tsFiles: 0, rsFiles: 1 },
+      byLanguage: { rs: 1 },
+    }));
+    writeFileSync(path.join(outputDir, 'symbols.json'), JSON.stringify({
+      uses: {
+        external: 0,
+        resolvedInternal: 0,
+        unresolvedInternal: 0,
+        unresolvedInternalRatio: 0,
+      },
+    }));
+    writeFileSync(rootInputPath, JSON.stringify({
+      generated: '2026-07-02T00:00:00.000Z',
+      profile: 'quick',
+      root: rootDir,
+      output: outputDir,
+      commandsRun: [],
+      skipped: [],
+      includeTests: true,
+      production: false,
+      generatedArtifactsMode: 'default',
+    }));
+    writeFileSync(lifecycleInputPath, JSON.stringify({
+      manifest: {
+        meta: { generated: '2026-07-02T00:00:00.000Z' },
+        artifactsProduced: [],
+      },
+      lifecycle: {},
+      evidence: {
+        root: rootDir,
+        output: outputDir,
+        includeTests: true,
+        production: false,
+        generatedArtifactsMode: 'default',
+      },
+    }));
+
+    const probes = [
+      {
+        subcommand: 'manifest-root-with-evidence',
+        args: ['manifest-root-with-evidence', '--input', rootInputPath],
+        requiredField: 'manifest',
+      },
+      {
+        subcommand: 'manifest-lifecycle-evidence-refresh',
+        args: ['manifest-lifecycle-evidence-refresh', '--input', lifecycleInputPath],
+        requiredField: 'manifest',
+      },
+      {
+        subcommand: 'manifest-evidence-summary-with-reads',
+        args: [
+          'manifest-evidence-summary-with-reads',
+          '--root', rootDir,
+          '--output', outputDir,
+          '--include-tests',
+          '--no-production',
+        ],
+        requiredField: 'evidence',
+      },
+      {
+        subcommand: 'manifest-evidence-refresh-with-reads',
+        args: [
+          'manifest-evidence-refresh-with-reads',
+          '--root', rootDir,
+          '--output', outputDir,
+          '--include-tests',
+          '--no-production',
+        ],
+        requiredField: 'evidence',
+      },
+    ];
+
+    for (const probe of probes) {
+      const resultPath = path.join(tempDir, `${probe.subcommand}.json`);
+      const result = spawnSync(binaryPath, [...probe.args, '--result-output', resultPath], {
+        cwd: ROOT,
+        encoding: 'utf8',
+      });
+      if (result.error || result.status !== 0) return false;
+      if ((result.stdout ?? '').trim().length > 0) return false;
+      if (!existsSync(resultPath)) return false;
+      const json = JSON.parse(readFileSync(resultPath, 'utf8'));
+      if (!isObject(json[probe.requiredField])) return false;
+      if (!Array.isArray(json.artifactReads?.reads)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function currentAuditCoreBinarySource() {

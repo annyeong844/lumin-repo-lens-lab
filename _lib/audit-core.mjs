@@ -4,12 +4,14 @@
 // Owns locating, validating, building, and invoking the lumin-audit-core helper.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 let auditCoreAutoBuildFailure = null;
+let auditCoreBinaryCache = null;
+const auditCoreContractCache = new Map();
 
 const AUDIT_CORE_CONTRACT_PROBES = [
   [
@@ -29,23 +31,7 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'manifest-root-with-evidence: missing --input <path|->',
   ],
   [
-    [
-      'manifest-root-with-evidence',
-      '--result-output',
-      contractProbeResultPath('manifest-root-with-evidence'),
-    ],
-    'manifest-root-with-evidence: missing --input <path|->',
-  ],
-  [
     ['manifest-evidence-refresh-with-reads'],
-    'manifest-evidence-refresh-with-reads: missing --root <repo>',
-  ],
-  [
-    [
-      'manifest-evidence-refresh-with-reads',
-      '--result-output',
-      contractProbeResultPath('manifest-evidence-refresh-with-reads'),
-    ],
     'manifest-evidence-refresh-with-reads: missing --root <repo>',
   ],
   [
@@ -53,23 +39,7 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'manifest-lifecycle-evidence-refresh: missing --input <path|->',
   ],
   [
-    [
-      'manifest-lifecycle-evidence-refresh',
-      '--result-output',
-      contractProbeResultPath('manifest-lifecycle-evidence-refresh'),
-    ],
-    'manifest-lifecycle-evidence-refresh: missing --input <path|->',
-  ],
-  [
     ['manifest-evidence-summary-with-reads'],
-    'manifest-evidence-summary-with-reads: missing --root <repo>',
-  ],
-  [
-    [
-      'manifest-evidence-summary-with-reads',
-      '--result-output',
-      contractProbeResultPath('manifest-evidence-summary-with-reads'),
-    ],
     'manifest-evidence-summary-with-reads: missing --root <repo>',
   ],
   [
@@ -101,10 +71,6 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'manifest-evidence-refresh-with-reads',
 ]);
 
-function contractProbeResultPath(subcommand) {
-  return path.join(tmpdir(), `lumin-audit-core-contract-${subcommand}-${process.pid}.json`);
-}
-
 function executableOnPath(exe) {
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     if (!dir) continue;
@@ -120,16 +86,40 @@ function auditCoreBinary() {
   const platformEnv = `LUMIN_AUDIT_CORE_BIN_${process.platform}_${process.arch}`
     .replace(/[^A-Z0-9_]/gi, '_')
     .toUpperCase();
+  const cacheKey = JSON.stringify({
+    here,
+    platform: process.platform,
+    arch: process.arch,
+    platformOverride: process.env[platformEnv] ?? null,
+    genericOverride: process.env.LUMIN_AUDIT_CORE_BIN ?? null,
+    path: process.env.PATH ?? '',
+    cargoTargetDir: process.env.CARGO_TARGET_DIR ?? null,
+    noAutoBuild: process.env.LUMIN_AUDIT_CORE_NO_AUTO_BUILD ?? null,
+  });
+  if (auditCoreBinaryCache?.key === cacheKey) {
+    const signature = fileSignature(auditCoreBinaryCache.command);
+    if (signature && signature === auditCoreBinaryCache.signature) {
+      return auditCoreBinaryCache.command;
+    }
+  }
+  const remember = (command) => {
+    auditCoreBinaryCache = {
+      key: cacheKey,
+      command,
+      signature: fileSignature(command),
+    };
+    return command;
+  };
   for (const configured of [process.env[platformEnv], process.env.LUMIN_AUDIT_CORE_BIN]) {
     const resolved = configured ? path.resolve(configured) : null;
-    if (resolved && auditCoreCandidateSupportsCurrentContract(resolved)) return resolved;
+    if (resolved && auditCoreCandidateSupportsCurrentContract(resolved)) return remember(resolved);
   }
   const packagedPlatform = path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe);
-  if (auditCoreCandidateSupportsCurrentContract(packagedPlatform)) return packagedPlatform;
+  if (auditCoreCandidateSupportsCurrentContract(packagedPlatform)) return remember(packagedPlatform);
   const packagedSourceManifest = path.resolve(here, '../rust', 'Cargo.toml');
   if (isLuminAuditCoreWorkspace(path.dirname(packagedSourceManifest))) {
     const built = auditCoreBinaryFromManifest(packagedSourceManifest, autoBuildCandidatePath(packagedSourceManifest, exe));
-    if (built) return built;
+    if (built) return remember(built);
   }
   let cursor = here;
   for (;;) {
@@ -137,17 +127,17 @@ function auditCoreBinary() {
     const manifest = path.join(workspaceRoot, 'Cargo.toml');
     if (isLuminAuditCoreWorkspace(workspaceRoot)) {
       const localCandidate = path.join(workspaceRoot, 'target', 'debug', exe);
-      if (auditCoreCandidateSupportsCurrentContract(localCandidate)) return localCandidate;
+      if (auditCoreCandidateSupportsCurrentContract(localCandidate)) return remember(localCandidate);
       const built = auditCoreBinaryFromManifest(manifest, autoBuildCandidatePath(manifest, exe));
-      if (built) return built;
+      if (built) return remember(built);
     }
     const parent = path.dirname(cursor);
     if (parent === cursor) break;
     cursor = parent;
   }
   const pathBinary = executableOnPath(exe);
-  if (pathBinary && auditCoreCandidateSupportsCurrentContract(pathBinary)) return pathBinary;
-  return packagedPlatform;
+  if (pathBinary && auditCoreCandidateSupportsCurrentContract(pathBinary)) return remember(pathBinary);
+  return remember(packagedPlatform);
 }
 
 function isLuminAuditCoreWorkspace(workspaceRoot) {
@@ -166,7 +156,23 @@ function auditCoreBinaryFromManifest(manifestPath, candidate) {
 }
 
 function auditCoreCandidateSupportsCurrentContract(command) {
-  return existsSync(command) && auditCoreBinarySupportsCurrentContract(command);
+  const signature = fileSignature(command);
+  if (!signature) return false;
+  const cached = auditCoreContractCache.get(command);
+  if (cached?.signature === signature) return cached.supports;
+  const supports = auditCoreBinarySupportsCurrentContract(command);
+  auditCoreContractCache.set(command, { signature, supports });
+  return supports;
+}
+
+function fileSignature(filePath) {
+  try {
+    const stat = statSync(filePath);
+    if (!stat.isFile()) return null;
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return null;
+  }
 }
 
 function auditCoreBinarySupportsCurrentContract(command) {
@@ -178,7 +184,113 @@ function auditCoreBinarySupportsCurrentContract(command) {
     const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
     if (!output.includes(expected)) return false;
   }
-  return true;
+  return auditCoreBinaryWritesResultFiles(command);
+}
+
+function auditCoreBinaryWritesResultFiles(command) {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-contract-'));
+  const rootDir = path.join(tempDir, 'root');
+  const outputDir = path.join(tempDir, 'out');
+  const rootInputPath = path.join(tempDir, 'manifest-root-with-evidence.json');
+  const lifecycleInputPath = path.join(tempDir, 'manifest-lifecycle-evidence-refresh.json');
+  try {
+    mkdirSync(rootDir, { recursive: true });
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(path.join(outputDir, 'triage.json'), JSON.stringify({
+      shape: { totalFiles: 1, tsFiles: 0, rsFiles: 1 },
+      byLanguage: { rs: 1 },
+    }));
+    writeFileSync(path.join(outputDir, 'symbols.json'), JSON.stringify({
+      uses: {
+        external: 0,
+        resolvedInternal: 0,
+        unresolvedInternal: 0,
+        unresolvedInternalRatio: 0,
+      },
+    }));
+    writeFileSync(rootInputPath, JSON.stringify({
+      generated: '2026-07-02T00:00:00.000Z',
+      profile: 'quick',
+      root: rootDir,
+      output: outputDir,
+      commandsRun: [],
+      skipped: [],
+      includeTests: true,
+      production: false,
+      generatedArtifactsMode: 'default',
+    }));
+    writeFileSync(lifecycleInputPath, JSON.stringify({
+      manifest: {
+        meta: { generated: '2026-07-02T00:00:00.000Z' },
+        artifactsProduced: [],
+      },
+      lifecycle: {},
+      evidence: {
+        root: rootDir,
+        output: outputDir,
+        includeTests: true,
+        production: false,
+        generatedArtifactsMode: 'default',
+      },
+    }));
+
+    const probes = [
+      {
+        subcommand: 'manifest-root-with-evidence',
+        args: ['manifest-root-with-evidence', '--input', rootInputPath],
+        requiredField: 'manifest',
+      },
+      {
+        subcommand: 'manifest-lifecycle-evidence-refresh',
+        args: ['manifest-lifecycle-evidence-refresh', '--input', lifecycleInputPath],
+        requiredField: 'manifest',
+      },
+      {
+        subcommand: 'manifest-evidence-summary-with-reads',
+        args: [
+          'manifest-evidence-summary-with-reads',
+          '--root', rootDir,
+          '--output', outputDir,
+          '--include-tests',
+          '--no-production',
+        ],
+        requiredField: 'evidence',
+      },
+      {
+        subcommand: 'manifest-evidence-refresh-with-reads',
+        args: [
+          'manifest-evidence-refresh-with-reads',
+          '--root', rootDir,
+          '--output', outputDir,
+          '--include-tests',
+          '--no-production',
+        ],
+        requiredField: 'evidence',
+      },
+    ];
+
+    for (const probe of probes) {
+      const resultPath = path.join(tempDir, `${probe.subcommand}.json`);
+      const result = spawnSync(command, [...probe.args, '--result-output', resultPath], {
+        encoding: 'utf8',
+      });
+      if (result.error || result.status !== 0) return false;
+      if ((result.stdout ?? '').trim().length > 0) return false;
+      if (!existsSync(resultPath)) return false;
+      const json = JSON.parse(readFileSync(resultPath, 'utf8'));
+      if (!isObject(json[probe.requiredField])) return false;
+      if (!Array.isArray(json.artifactReads?.reads)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function ensureAuditCoreBuiltFromManifest(manifestPath, candidate) {
