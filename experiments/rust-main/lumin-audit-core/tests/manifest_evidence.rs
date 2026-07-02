@@ -572,3 +572,86 @@ fn cli_manifest_evidence_refresh_emits_manifest_patch_shape() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn cli_manifest_lifecycle_evidence_refresh_applies_updates_to_manifest() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let output_dir = root.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        output_dir.join("triage.json"),
+        serde_json::to_vec(&json!({
+            "shape": {
+                "totalFiles": 2,
+                "tsFiles": 1,
+                "rsFiles": 1
+            },
+            "byLanguage": { "rs": 1 }
+        }))?,
+    )?;
+    fs::write(
+        output_dir.join("symbols.json"),
+        serde_json::to_vec(&json!({
+            "uses": {
+                "external": 0,
+                "resolvedInternal": 0,
+                "unresolvedInternal": 0,
+                "unresolvedInternalRatio": 0
+            }
+        }))?,
+    )?;
+    let input_path = output_dir.join("request.json");
+    fs::write(
+        &input_path,
+        serde_json::to_vec(&json!({
+            "manifest": {
+                "meta": { "generated": "2026-07-02T00:00:00.000Z" },
+                "artifactsProduced": []
+            },
+            "lifecycle": {
+                "preWrite": {
+                    "requested": true,
+                    "ran": true,
+                    "engine": "rust",
+                    "language": "rust"
+                }
+            },
+            "evidence": {
+                "root": root.path().display().to_string(),
+                "output": output_dir,
+                "includeTests": false,
+                "production": true,
+                "generatedArtifactsMode": "default"
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-lifecycle-evidence-refresh")
+        .arg("--input")
+        .arg(&input_path)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(stdout["manifest"]["preWrite"]["engine"], "rust");
+    assert_eq!(stdout["manifest"]["lifecycle"]["ranCount"], 1);
+    assert_eq!(stdout["manifest"]["scanRange"]["files"], 2);
+    assert_eq!(stdout["manifest"]["scanRange"]["includeTests"], false);
+    assert_eq!(stdout["manifest"]["scanRange"]["production"], true);
+    assert!(stdout["artifactReads"]["reads"]
+        .as_array()
+        .is_some_and(|reads| {
+            reads.iter().any(|read| {
+                read["filePath"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("triage.json"))
+                    && read["ok"] == true
+            })
+        }));
+    Ok(())
+}

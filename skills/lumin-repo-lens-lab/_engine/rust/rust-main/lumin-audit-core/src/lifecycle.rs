@@ -1,3 +1,4 @@
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -175,6 +176,24 @@ pub fn build_manifest_lifecycle_update(
         check_canon,
         lifecycle: summarize_lifecycle(&summary_input),
     }
+}
+
+pub fn apply_manifest_lifecycle_update(
+    manifest: &mut Value,
+    update: ManifestLifecycleUpdate,
+) -> Result<()> {
+    let manifest_object = manifest
+        .as_object_mut()
+        .context("manifest-lifecycle-evidence-refresh: manifest must be a JSON object")?;
+    let update_value = serde_json::to_value(update)
+        .context("manifest-lifecycle-evidence-refresh: failed to serialize lifecycle update")?;
+    let Some(update_object) = update_value.as_object() else {
+        bail!("manifest-lifecycle-evidence-refresh: lifecycle update must be a JSON object");
+    };
+    for (key, value) in update_object {
+        manifest_object.insert(key.clone(), value.clone());
+    }
+    Ok(())
 }
 
 fn non_null_block(value: Option<Value>) -> Option<Value> {

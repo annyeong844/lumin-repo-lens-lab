@@ -510,11 +510,11 @@ fn strict_exit_code(strict: bool, checked_count: usize, drift_count: u64) -> i32
     if !strict {
         return 0;
     }
-    if checked_count == 0 {
-        return 2;
-    }
     if drift_count > 0 {
         return 1;
+    }
+    if checked_count == 0 {
+        return 2;
     }
     0
 }

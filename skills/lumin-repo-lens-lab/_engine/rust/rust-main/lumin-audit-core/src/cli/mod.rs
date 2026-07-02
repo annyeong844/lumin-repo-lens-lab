@@ -34,6 +34,9 @@ pub fn run() -> Result<()> {
         Some("manifest-root") => run_manifest_root(args.collect()),
         Some("manifest-write") => run_manifest_write(args.collect()),
         Some("manifest-closeout-write") => run_manifest_closeout_write(args.collect()),
+        Some("manifest-lifecycle-evidence-refresh") => {
+            run_manifest_lifecycle_evidence_refresh(args.collect())
+        }
         Some("manifest-evidence-update") => run_manifest_evidence_update(args.collect()),
         Some("manifest-evidence-refresh") => run_manifest_evidence_refresh(args.collect()),
         Some("manifest-evidence-refresh-with-reads") => {

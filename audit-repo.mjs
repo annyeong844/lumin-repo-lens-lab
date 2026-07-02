@@ -75,12 +75,11 @@ import {
   executePostWriteLifecycle,
   applyLifecycleExitPolicy,
   evaluateLifecycleRequestGuard,
-  buildManifestLifecycleUpdate,
   buildManifestArtifactsProducedUpdate,
   buildManifestRoot,
   buildManifestEvidence,
-  refreshManifestEvidence,
   closeoutAndWriteManifest,
+  applyLifecycleAndRefreshManifestEvidence,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
 import { repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
@@ -838,13 +837,6 @@ if (values['check-canon']) {
   if (finalExitCode === 0) finalExitCode = result.exitCode;
 }
 
-Object.assign(manifest, buildManifestLifecycleUpdate({
-  preWrite: preWriteBlock ?? null,
-  postWrite: postWriteBlock ?? null,
-  canonDraft: canonDraftBlock ?? null,
-  checkCanon: checkCanonBlock ?? null,
-}));
-
 const lifecycleExitPolicy = applyLifecycleExitPolicy({
   schemaVersion: 'lumin-lifecycle-exit-policy-request.v1',
   currentExitCode: finalExitCode,
@@ -857,7 +849,16 @@ if (typeof lifecycleExitPolicy.stderr === 'string' && lifecycleExitPolicy.stderr
 }
 finalExitCode = lifecycleExitPolicy.exitCode;
 
-refreshManifestEvidence(manifest, manifestEvidenceOptions());
+Object.assign(manifest, applyLifecycleAndRefreshManifestEvidence({
+  manifest,
+  lifecycle: {
+    preWrite: preWriteBlock ?? null,
+    postWrite: postWriteBlock ?? null,
+    canonDraft: canonDraftBlock ?? null,
+    checkCanon: checkCanonBlock ?? null,
+  },
+  ...manifestEvidenceOptions(),
+}));
 const topologyArtifact = loadIfExists('topology.json');
 const moduleReachabilityArtifact = loadIfExists('module-reachability.json');
 let topologyMermaidPath = null;

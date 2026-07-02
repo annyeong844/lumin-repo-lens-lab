@@ -35,6 +35,9 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
     expect(typeof auditManifest.writeManifestFile).toBe("function");
     expect(typeof auditManifest.closeoutAndWriteManifest).toBe("function");
+    expect(typeof auditManifest.applyLifecycleAndRefreshManifestEvidence).toBe(
+      "function",
+    );
     expect(typeof auditManifest.executeBaseRuntime).toBe("function");
     expect(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun).toBe(
       "function",
@@ -123,6 +126,59 @@ describe("audit-manifest public surface", () => {
     expect(update.lifecycle.preWrite.status).toBe("complete");
     expect(update.lifecycle.canonDraft.status).toBe("not-run");
   });
+
+  it("AMES1m. lifecycle evidence refresh wrapper applies Rust-owned patches together", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "triage.json",
+        {
+          shape: { totalFiles: 2, tsFiles: 1, rsFiles: 1 },
+          byLanguage: { rs: 1 },
+        },
+        { to: "output" },
+      );
+      fixture.writeJson(
+        "symbols.json",
+        {
+          uses: {
+            external: 0,
+            resolvedInternal: 0,
+            unresolvedInternal: 0,
+            unresolvedInternalRatio: 0,
+          },
+        },
+        { to: "output" },
+      );
+      const reads = [];
+      const manifest = auditManifest.applyLifecycleAndRefreshManifestEvidence({
+        manifest: {
+          meta: { generated: "2026-07-02T00:00:00.000Z" },
+          artifactsProduced: [],
+        },
+        lifecycle: {
+          preWrite: {
+            requested: true,
+            ran: true,
+            engine: "rust",
+            language: "rust",
+          },
+        },
+        root: fixture.root,
+        outDir: fixture.output,
+        includeTests: false,
+        production: true,
+        onArtifactRead: (read) => reads.push(read),
+      });
+
+      expect(manifest.preWrite.engine).toBe("rust");
+      expect(manifest.lifecycle.ranCount).toBe(1);
+      expect(manifest.scanRange.files).toBe(2);
+      expect(manifest.scanRange.includeTests).toBe(false);
+      expect(manifest.scanRange.production).toBe(true);
+      expect(reads.some((read) => read.filePath.endsWith("triage.json"))).toBe(
+        true,
+      );
+    }));
 
   it("AMES1h. artifacts-produced wrapper leaves manifest patch shape in audit-core", () =>
     withManifestFixture((fixture) => {

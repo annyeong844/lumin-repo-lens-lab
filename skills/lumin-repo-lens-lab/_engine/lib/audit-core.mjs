@@ -29,6 +29,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'manifest-evidence-refresh-with-reads: missing --root <repo>',
   ],
   [
+    'manifest-lifecycle-evidence-refresh',
+    'manifest-lifecycle-evidence-refresh: missing --input <path|->',
+  ],
+  [
     'manifest-evidence-summary-with-reads',
     'manifest-evidence-summary-with-reads: missing --root <repo>',
   ],

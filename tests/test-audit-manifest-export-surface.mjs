@@ -27,6 +27,7 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
   assert.equal(typeof auditManifest.writeManifestFile, 'function');
   assert.equal(typeof auditManifest.closeoutAndWriteManifest, 'function');
+  assert.equal(typeof auditManifest.applyLifecycleAndRefreshManifestEvidence, 'function');
   assert.equal(typeof auditManifest.executeBaseRuntime, 'function');
   assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
 

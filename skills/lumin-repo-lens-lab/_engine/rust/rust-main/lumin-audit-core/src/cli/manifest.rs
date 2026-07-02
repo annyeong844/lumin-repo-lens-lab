@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 use super::args::{ManifestCoreSummaryArgs, ManifestEvidenceSummaryArgs};
 use super::io_support::{
@@ -13,6 +14,9 @@ use lumin_audit_core::artifact_read_metrics::{
     ArtifactReadObservation, ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
 };
 use lumin_audit_core::generated_artifacts::GeneratedArtifactsMode;
+use lumin_audit_core::lifecycle::{
+    apply_manifest_lifecycle_update, build_manifest_lifecycle_update, ManifestLifecycleUpdateInput,
+};
 use lumin_audit_core::manifest_companion::{
     build_manifest_companion_update, ManifestCompanionUpdateInput,
 };
@@ -28,8 +32,8 @@ use lumin_audit_core::manifest_final::{
 };
 use lumin_audit_core::manifest_meta::{build_manifest_meta, ManifestMetaInput};
 use lumin_audit_core::manifest_root::{
-    build_manifest_evidence_update, build_manifest_root, ManifestEvidenceUpdateFields,
-    ManifestEvidenceUpdateInput, ManifestRootInput,
+    apply_manifest_evidence_update, build_manifest_evidence_update, build_manifest_root,
+    ManifestEvidenceUpdateFields, ManifestEvidenceUpdateInput, ManifestRootInput,
 };
 use lumin_audit_core::rust_analysis::RustAnalysisRunObservation;
 
@@ -55,6 +59,19 @@ struct ManifestEvidenceArtifactReadEvents {
 struct ManifestEvidenceSummaryWithReads {
     summary: ManifestEvidenceSummary,
     artifact_reads: ManifestEvidenceArtifactReadEvents,
+}
+
+struct ManifestEvidenceReadRequest {
+    root: String,
+    output: PathBuf,
+    include_tests: bool,
+    production: bool,
+    excludes: Vec<String>,
+    auto_excludes: Vec<String>,
+    generated_artifacts_mode: GeneratedArtifactsMode,
+    rust_analysis_ran: bool,
+    rust_analysis_run: Option<RustAnalysisRunObservation>,
+    label: String,
 }
 
 pub(super) fn run_manifest_meta(args: Vec<String>) -> Result<()> {
@@ -131,6 +148,50 @@ struct ManifestCloseoutWriteResult {
     manifest: serde_json::Value,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestLifecycleEvidenceRefreshCliInput {
+    manifest: serde_json::Value,
+    lifecycle: ManifestLifecycleUpdateInput,
+    evidence: ManifestLifecycleEvidenceRefreshInput,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestLifecycleEvidenceRefreshInput {
+    root: String,
+    output: PathBuf,
+    #[serde(default = "default_true")]
+    include_tests: bool,
+    #[serde(default)]
+    production: bool,
+    #[serde(default = "default_generated_artifacts_mode")]
+    generated_artifacts_mode: String,
+    #[serde(default)]
+    excludes: Vec<String>,
+    #[serde(default)]
+    auto_excludes: Vec<String>,
+    #[serde(default)]
+    rust_analysis_ran: bool,
+    #[serde(default)]
+    rust_analysis_run: Option<RustAnalysisRunObservation>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestLifecycleEvidenceRefreshResult {
+    manifest: serde_json::Value,
+    artifact_reads: ManifestEvidenceArtifactReadEvents,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_generated_artifacts_mode() -> String {
+    "default".to_string()
+}
+
 pub(super) fn run_manifest_write(args: Vec<String>) -> Result<()> {
     let mut output = None;
     let mut input = None;
@@ -173,22 +234,65 @@ pub(super) fn run_manifest_closeout_write(args: Vec<String>) -> Result<()> {
     let request = serde_json::from_value::<ManifestCloseoutWriteCliInput>(json)
         .context("manifest-closeout-write: invalid request shape")?;
     let producer_performance = read_required_json(
-        std::path::Path::new(&request.producer_performance_path),
+        Path::new(&request.producer_performance_path),
         "manifest-closeout-write",
     )?;
     let update = build_manifest_closeout_update(
-        std::path::Path::new(&request.output),
+        Path::new(&request.output),
         &producer_performance,
         request.rust_analysis.as_ref(),
         request.companion,
     )?;
     let mut manifest = request.manifest;
     apply_manifest_closeout_update(&mut manifest, update)?;
-    let manifest_path = std::path::Path::new(&request.output).join("manifest.json");
+    let manifest_path = Path::new(&request.output).join("manifest.json");
     write_pretty_json_file(&manifest_path, &manifest)?;
     write_stdout_json(&ManifestCloseoutWriteResult {
         manifest_path: manifest_path.to_string_lossy().to_string(),
         manifest,
+    })
+}
+
+pub(super) fn run_manifest_lifecycle_evidence_refresh(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            _ => bail!("manifest-lifecycle-evidence-refresh: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("manifest-lifecycle-evidence-refresh: missing --input <path|->")?;
+    let json = read_json_input(&input, "manifest-lifecycle-evidence-refresh")?;
+    let request = serde_json::from_value::<ManifestLifecycleEvidenceRefreshCliInput>(json)
+        .context("manifest-lifecycle-evidence-refresh: invalid request shape")?;
+    let mut manifest = request.manifest;
+    let lifecycle_update = build_manifest_lifecycle_update(request.lifecycle);
+    apply_manifest_lifecycle_update(&mut manifest, lifecycle_update)?;
+    let generated_artifacts_mode =
+        GeneratedArtifactsMode::parse(&request.evidence.generated_artifacts_mode)?;
+    let summary = build_manifest_evidence_summary_with_reads(ManifestEvidenceReadRequest {
+        root: request.evidence.root,
+        output: request.evidence.output,
+        include_tests: request.evidence.include_tests,
+        production: request.evidence.production,
+        excludes: request.evidence.excludes,
+        auto_excludes: request.evidence.auto_excludes,
+        generated_artifacts_mode,
+        rust_analysis_ran: request.evidence.rust_analysis_ran,
+        rust_analysis_run: request.evidence.rust_analysis_run,
+        label: "manifest-lifecycle-evidence-refresh".to_string(),
+    })?;
+    let evidence = serde_json::from_value::<ManifestEvidenceUpdateFields>(
+        serde_json::to_value(summary.summary)
+            .context("manifest-lifecycle-evidence-refresh: invalid summary shape")?,
+    )
+    .context("manifest-lifecycle-evidence-refresh: invalid evidence update shape")?;
+    apply_manifest_evidence_update(&mut manifest, evidence)?;
+    write_stdout_json(&ManifestLifecycleEvidenceRefreshResult {
+        manifest,
+        artifact_reads: summary.artifact_reads,
     })
 }
 
@@ -320,11 +424,11 @@ pub(super) fn run_manifest_closeout_update(args: Vec<String>) -> Result<()> {
     let request = serde_json::from_value::<ManifestCloseoutUpdateCliInput>(json)
         .context("manifest-closeout-update: invalid request shape")?;
     let producer_performance = read_required_json(
-        std::path::Path::new(&request.producer_performance_path),
+        Path::new(&request.producer_performance_path),
         "manifest-closeout-update",
     )?;
     let update = build_manifest_closeout_update(
-        std::path::Path::new(&request.output),
+        Path::new(&request.output),
         &producer_performance,
         request.rust_analysis.as_ref(),
         request.companion,
@@ -466,6 +570,40 @@ fn read_manifest_evidence_summary_with_reads(
     let output = parsed
         .output
         .with_context(|| format!("{label}: missing --output <dir>"))?;
+    let rust_analysis_run = read_optional_json_input(parsed.rust_analysis_run_block, label)?
+        .map(serde_json::from_value::<RustAnalysisRunObservation>)
+        .transpose()
+        .with_context(|| format!("{label}: invalid --rust-analysis-run-block shape"))?;
+    build_manifest_evidence_summary_with_reads(ManifestEvidenceReadRequest {
+        root,
+        output,
+        include_tests: parsed.include_tests,
+        production: parsed.production,
+        excludes: parsed.excludes,
+        auto_excludes: parsed.auto_excludes,
+        generated_artifacts_mode: parsed.generated_artifacts_mode,
+        rust_analysis_ran: parsed.rust_analysis_ran,
+        rust_analysis_run,
+        label: label.to_string(),
+    })
+}
+
+fn build_manifest_evidence_summary_with_reads(
+    request: ManifestEvidenceReadRequest,
+) -> Result<ManifestEvidenceSummaryWithReads> {
+    let ManifestEvidenceReadRequest {
+        root,
+        output,
+        include_tests,
+        production,
+        excludes,
+        auto_excludes,
+        generated_artifacts_mode,
+        rust_analysis_ran,
+        rust_analysis_run,
+        label,
+    } = request;
+    let label = label.as_str();
     let mut artifact_reads = Vec::new();
     let triage = artifact_value(
         read_optional_output_json_observed(&output, "triage.json", label)?,
@@ -507,20 +645,15 @@ fn read_manifest_evidence_summary_with_reads(
         read_optional_output_json_tolerant_observed(&output, "rust-analyzer-health.latest.json"),
         &mut artifact_reads,
     );
-    let rust_analysis_run = read_optional_json_input(parsed.rust_analysis_run_block, label)?
-        .map(serde_json::from_value::<RustAnalysisRunObservation>)
-        .transpose()
-        .with_context(|| format!("{label}: invalid --rust-analysis-run-block shape"))?;
-
     let summary = summarize_manifest_evidence(
         ManifestEvidenceOptions {
             root,
-            include_tests: parsed.include_tests,
-            production: parsed.production,
-            excludes: parsed.excludes,
-            auto_excludes: parsed.auto_excludes,
-            generated_artifacts_mode: parsed.generated_artifacts_mode,
-            rust_analysis_ran: parsed.rust_analysis_ran,
+            include_tests,
+            production,
+            excludes,
+            auto_excludes,
+            generated_artifacts_mode,
+            rust_analysis_ran,
             rust_analysis_run,
         },
         ManifestEvidenceArtifacts {

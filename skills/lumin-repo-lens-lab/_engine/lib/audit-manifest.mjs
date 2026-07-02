@@ -279,6 +279,43 @@ export function closeoutAndWriteManifest({
   );
 }
 
+export function applyLifecycleAndRefreshManifestEvidence({
+  manifest,
+  lifecycle,
+  root,
+  outDir,
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  generatedArtifactsMode = 'default',
+  rustAnalysisRun = null,
+  rustAnalysisRan = false,
+  onArtifactRead,
+}) {
+  const result = runJsonInputCommand(
+    'manifest-lifecycle-evidence-refresh',
+    'applyLifecycleAndRefreshManifestEvidence',
+    {
+      manifest: manifest ?? null,
+      lifecycle: lifecycle ?? {},
+      evidence: {
+        root,
+        output: outDir,
+        includeTests,
+        production,
+        excludes,
+        autoExcludes,
+        generatedArtifactsMode,
+        rustAnalysisRun,
+        rustAnalysisRan: rustAnalysisRun ? false : rustAnalysisRan,
+      },
+    },
+  );
+  observeRustArtifactReads(result.artifactReads, onArtifactRead);
+  return result.manifest ?? manifest;
+}
+
 function observeRustArtifactReads(artifactReads, onArtifactRead) {
   if (!onArtifactRead) return;
   for (const read of artifactReads?.reads ?? []) {

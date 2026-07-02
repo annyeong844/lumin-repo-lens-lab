@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::path::Path;
 
 use crate::artifact_registry::collect_produced_artifacts_for_manifest;
@@ -131,6 +131,28 @@ pub fn build_manifest_evidence_update(
     input: ManifestEvidenceUpdateInput,
 ) -> ManifestEvidenceUpdateFields {
     input.evidence
+}
+
+pub fn apply_manifest_evidence_update(
+    manifest: &mut Value,
+    evidence: ManifestEvidenceUpdateFields,
+) -> Result<()> {
+    let manifest_object = manifest
+        .as_object_mut()
+        .context("manifest-lifecycle-evidence-refresh: manifest must be a JSON object")?;
+    let update = serde_json::to_value(evidence)
+        .context("manifest-lifecycle-evidence-refresh: failed to serialize evidence update")?;
+    let Some(update_object) = update.as_object() else {
+        bail!("manifest-lifecycle-evidence-refresh: evidence update must be a JSON object");
+    };
+    insert_update_fields(manifest_object, update_object);
+    Ok(())
+}
+
+fn insert_update_fields(manifest: &mut Map<String, Value>, update: &Map<String, Value>) {
+    for (key, value) in update {
+        manifest.insert(key.clone(), value.clone());
+    }
 }
 
 fn validate_runtime_observations(
