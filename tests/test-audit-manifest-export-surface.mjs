@@ -40,6 +40,8 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
     'buildManifestFinalSummaryUpdate',
     'buildManifestCompanionUpdate',
     'collectProducedArtifacts',
+    'executeBasePlan',
+    'buildOrchestrationPlan',
     'ARTIFACT_READ_EVENTS_SCHEMA_VERSION',
     'buildLifecycleSummary',
   ]) {

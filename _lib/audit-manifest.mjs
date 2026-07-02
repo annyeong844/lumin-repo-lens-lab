@@ -357,15 +357,6 @@ export function buildProducerPerformanceArtifactForAuditRun({
   });
 }
 
-export function executeBasePlan(request) {
-  return runAuditCoreJson([
-    'execute-base-plan',
-    '--input', '-',
-  ], 'executeBasePlan', {
-    input: JSON.stringify(request ?? {}),
-  });
-}
-
 export function executeBaseRuntime(request) {
   return runAuditCoreJson([
     'execute-base-runtime',
@@ -436,27 +427,6 @@ export function evaluateLifecycleRequestGuard(request) {
   ], 'evaluateLifecycleRequestGuard', {
     input: JSON.stringify(request ?? {}),
   });
-}
-
-export function buildOrchestrationPlan({
-  profile = 'quick',
-  sarif = false,
-  preWrite = false,
-  postWrite = false,
-  canonDraft = false,
-  checkCanon = false,
-  rustAnalyzer = false,
-} = {}) {
-  return runAuditCoreJson([
-    'orchestration-plan',
-    '--profile', profile,
-    ...(sarif ? ['--sarif'] : []),
-    ...(preWrite ? ['--pre-write'] : []),
-    ...(postWrite ? ['--post-write'] : []),
-    ...(canonDraft ? ['--canon-draft'] : []),
-    ...(checkCanon ? ['--check-canon'] : []),
-    ...(rustAnalyzer ? ['--rust-analyzer'] : []),
-  ], 'buildOrchestrationPlan');
 }
 
 export function buildManifestCloseoutUpdate({

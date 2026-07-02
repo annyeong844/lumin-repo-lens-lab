@@ -50,6 +50,8 @@ describe("audit-manifest public surface", () => {
       "buildManifestFinalSummaryUpdate",
       "buildManifestCompanionUpdate",
       "collectProducedArtifacts",
+      "executeBasePlan",
+      "buildOrchestrationPlan",
       "ARTIFACT_READ_EVENTS_SCHEMA_VERSION",
       "buildLifecycleSummary",
     ]) {
