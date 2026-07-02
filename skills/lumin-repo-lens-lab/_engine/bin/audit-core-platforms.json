@@ -21,8 +21,9 @@
       "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
       "LUMIN_AUDIT_CORE_BIN",
       "_engine/bin/<platform>-<arch>/<executable>",
-      "PATH",
-      "_engine/rust/Cargo.toml cargo build"
+      "_engine/rust/Cargo.toml cargo build",
+      "source-checkout experiments/Cargo.toml cargo build",
+      "PATH"
     ],
     "missingPlatformBinaryBehavior": "build-packaged-source-with-cargo-or-use-env-or-path-override",
     "requiresCargoWhenPackagedBinaryIsMissing": true

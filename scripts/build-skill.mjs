@@ -9,6 +9,7 @@
 import {
   cpSync,
   existsSync,
+  mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -16,6 +17,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -207,12 +209,18 @@ function auditCoreBinaryEnvName(platform = process.platform, arch = process.arch
 
 function cargoBuildAuditCore() {
   const exe = auditCoreExecutableNameFor(process.platform);
+  const targetDir = process.env.CARGO_TARGET_DIR
+    ? path.resolve(process.env.CARGO_TARGET_DIR)
+    : mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-build-skill-'));
   const result = spawnSync('cargo', [
     'build',
     '--manifest-path',
     path.join(ROOT, 'experiments', 'Cargo.toml'),
     '-p',
     'lumin-audit-core',
+    '--locked',
+    '--target-dir',
+    targetDir,
   ], {
     cwd: ROOT,
     stdio: 'inherit',
@@ -223,7 +231,7 @@ function cargoBuildAuditCore() {
   if (result.status !== 0) {
     throw new Error(`cargo build failed while building lumin-audit-core (exit ${result.status ?? 'unknown'})`);
   }
-  return path.join(ROOT, 'experiments', 'target', 'debug', exe);
+  return path.join(targetDir, 'debug', exe);
 }
 
 function validateRunnableAuditCoreBinary(binaryPath) {
@@ -551,7 +559,7 @@ function writeEngineReadme(outDir) {
     '`LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>`.',
     '',
     'The package also carries a minimal `_engine/rust` Cargo workspace for',
-    '`lumin-audit-core`. If no matching packaged/env/PATH binary exists and',
+    '`lumin-audit-core`. If no matching packaged/env binary exists and',
     'Cargo is available, the runtime wrapper builds that helper for the',
     'current platform before invoking it.',
     '',
@@ -567,7 +575,7 @@ function writeEngineReadme(outDir) {
     '',
     'When the wrapper is running from a source checkout that still has',
     '`experiments/Cargo.toml`, it can also build the current-platform helper',
-    'from that checkout if no matching packaged/env/PATH/package-source',
+    'from that checkout if no matching packaged/env/package-source',
     'binary exists. Set',
     '`LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` to disable that source-checkout',
     'fallback and fail fast instead.',
@@ -750,6 +758,7 @@ function copyAuditCoreBinaries(outDir) {
     if (!existsSync(source.path)) {
       throw new Error(`configured lumin-audit-core binary does not exist: ${source.path}`);
     }
+    validateRunnableAuditCoreBinary(source.path);
     const dest = path.join(
       outDir,
       '_engine',
@@ -790,8 +799,9 @@ function writeAuditCorePlatformManifest(outDir, sources) {
         'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',
         'LUMIN_AUDIT_CORE_BIN',
         '_engine/bin/<platform>-<arch>/<executable>',
-        'PATH',
         '_engine/rust/Cargo.toml cargo build',
+        'source-checkout experiments/Cargo.toml cargo build',
+        'PATH',
       ],
       missingPlatformBinaryBehavior: 'build-packaged-source-with-cargo-or-use-env-or-path-override',
       requiresCargoWhenPackagedBinaryIsMissing: true,

@@ -288,12 +288,14 @@ try {
     readFileSync(path.join(OUT, 'README.md'), 'utf8').includes('minimal packaged Cargo source fallback') &&
     readFileSync(path.join(OUT, 'README.md'), 'utf8').includes('_engine/rust/Cargo.toml') &&
     existsSync(path.join(OUT, '_engine/lib/cli.mjs')) &&
+    existsSync(path.join(OUT, '_engine/lib/audit-core.mjs')) &&
     existsSync(path.join(OUT, '_engine/lib/dependency-guard.mjs')) &&
-    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('process.env.LUMIN_AUDIT_CORE_BIN') &&
-    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('LUMIN_AUDIT_CORE_BIN_') &&
-    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('LUMIN_AUDIT_CORE_NO_AUTO_BUILD') &&
-    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('audit-core-platforms.json') &&
-    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes('executableOnPath') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-core.mjs'), 'utf8').includes('process.env.LUMIN_AUDIT_CORE_BIN') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-core.mjs'), 'utf8').includes('LUMIN_AUDIT_CORE_BIN_') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-core.mjs'), 'utf8').includes('LUMIN_AUDIT_CORE_NO_AUTO_BUILD') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-core.mjs'), 'utf8').includes('audit-core-platforms.json') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-core.mjs'), 'utf8').includes('executableOnPath') &&
+    readFileSync(path.join(OUT, '_engine/lib/audit-manifest.mjs'), 'utf8').includes("from './audit-core.mjs'") &&
     existsSync(path.join(
       OUT,
       '_engine/bin',

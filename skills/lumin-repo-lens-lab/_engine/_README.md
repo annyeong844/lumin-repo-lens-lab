@@ -14,7 +14,7 @@ not copied. Additional platform binaries can be supplied with
 `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>`.
 
 The package also carries a minimal `_engine/rust` Cargo workspace for
-`lumin-audit-core`. If no matching packaged/env/PATH binary exists and
+`lumin-audit-core`. If no matching packaged/env binary exists and
 Cargo is available, the runtime wrapper builds that helper for the
 current platform before invoking it.
 
@@ -30,7 +30,7 @@ are supported when this package does not include
 
 When the wrapper is running from a source checkout that still has
 `experiments/Cargo.toml`, it can also build the current-platform helper
-from that checkout if no matching packaged/env/PATH/package-source
+from that checkout if no matching packaged/env/package-source
 binary exists. Set
 `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` to disable that source-checkout
 fallback and fail fast instead.

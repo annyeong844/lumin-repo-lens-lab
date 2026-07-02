@@ -63,7 +63,7 @@ jobs:
               .github/workflows/ci.yml)
                 rust=true
                 ;;
-              experiments/Cargo.toml|experiments/Cargo.lock|experiments/.cargo/*|experiments/rust-common/*|experiments/rust-main/*|experiments/rust-sidecar/*|_lib/audit-manifest.mjs|scripts/build-skill.mjs|skills/lumin-repo-lens-lab/_engine/rust/*|tests/fixtures/audit-core-blind-zones/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
+              experiments/Cargo.toml|experiments/Cargo.lock|experiments/.cargo/*|experiments/rust-common/*|experiments/rust-main/*|experiments/rust-sidecar/*|_lib/audit-core.mjs|_lib/audit-manifest.mjs|scripts/build-skill.mjs|skills/lumin-repo-lens-lab/_engine/rust/*|tests/fixtures/audit-core-blind-zones/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
                 rust=true
                 ;;
             esac
