@@ -29,7 +29,6 @@ describe("audit-manifest public surface", () => {
     expect(typeof auditManifest.buildManifestEvidence).toBe("function");
     expect(typeof auditManifest.refreshManifestEvidence).toBe("function");
     expect(typeof auditManifest.collectProducedArtifacts).toBe("function");
-    expect(typeof auditManifest.buildManifestCompanionUpdate).toBe("function");
     expect(typeof auditManifest.buildManifestArtifactsProducedUpdate).toBe(
       "function",
     );
@@ -49,6 +48,8 @@ describe("audit-manifest public surface", () => {
       "buildProducerPerformanceArtifactFromRuntime",
       "buildManifestMeta",
       "buildManifestEvidenceUpdate",
+      "buildManifestFinalSummaryUpdate",
+      "buildManifestCompanionUpdate",
       "ARTIFACT_READ_EVENTS_SCHEMA_VERSION",
       "buildLifecycleSummary",
     ]) {
@@ -56,42 +57,21 @@ describe("audit-manifest public surface", () => {
     }
   });
 
-  it("AMES1d. companion manifest wrapper leaves companion block shapes in audit-core", () => {
-    const update = auditManifest.buildManifestCompanionUpdate({
-      topologyMermaidPath: "C:/repo/.audit/topology.mermaid.md",
-      auditSummaryPath: "C:/repo/.audit/audit-summary.latest.md",
-      reviewPackPath: "C:/repo/.audit/audit-review-pack.latest.md",
-    });
-
-    expect(update).toMatchObject({
-      topologyMermaid: {
-        path: "C:/repo/.audit/topology.mermaid.md",
-        format: "markdown",
-        source: "topology.json",
-        use: "human visual companion; topology.json remains authoritative for exact citations",
-      },
-      auditSummary: {
-        path: "C:/repo/.audit/audit-summary.latest.md",
-        format: "markdown",
-      },
-      reviewPack: {
-        path: "C:/repo/.audit/audit-review-pack.latest.md",
-        format: "markdown",
-      },
-    });
-    expect(update.reviewPack.use).toContain("the engine never calls external APIs");
-  });
-
   it("AMES1i. ignores stale external audit-core binaries and falls back to current contract", () => {
     const previous = process.env.LUMIN_AUDIT_CORE_BIN;
     process.env.LUMIN_AUDIT_CORE_BIN = process.execPath;
     try {
-      const update = auditManifest.buildManifestCompanionUpdate({
-        topologyMermaidPath: "C:/repo/.audit/topology.mermaid.md",
+      const update = auditManifest.buildManifestLifecycleUpdate({
+        preWrite: {
+          requested: true,
+          ran: false,
+          reason: "stale-env-fallback-smoke",
+        },
       });
-      expect(update.topologyMermaid).toMatchObject({
-        path: "C:/repo/.audit/topology.mermaid.md",
-        source: "topology.json",
+      expect(update.lifecycle).toMatchObject({
+        summaryOwner: "lumin-audit-core",
+        requestedCount: 1,
+        notRunCount: 1,
       });
     } finally {
       if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;

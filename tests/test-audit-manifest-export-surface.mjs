@@ -23,8 +23,8 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   assert.equal(typeof auditManifest.buildManifestEvidence, 'function');
   assert.equal(typeof auditManifest.refreshManifestEvidence, 'function');
   assert.equal(typeof auditManifest.collectProducedArtifacts, 'function');
-  assert.equal(typeof auditManifest.buildManifestCompanionUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestArtifactsProducedUpdate, 'function');
+  assert.equal(typeof auditManifest.buildManifestCloseoutUpdate, 'function');
   assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
   assert.equal(typeof auditManifest.executeBaseRuntime, 'function');
   assert.equal(typeof auditManifest.buildProducerPerformanceArtifactForAuditRun, 'function');
@@ -38,6 +38,8 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
     'buildProducerPerformanceArtifactFromRuntime',
     'buildManifestMeta',
     'buildManifestEvidenceUpdate',
+    'buildManifestFinalSummaryUpdate',
+    'buildManifestCompanionUpdate',
     'ARTIFACT_READ_EVENTS_SCHEMA_VERSION',
     'buildLifecycleSummary',
   ]) {
@@ -45,38 +47,20 @@ check('AMES1. audit-manifest exposes manifest builders, not living-audit interna
   }
 });
 
-check('AMES1d. companion manifest wrapper leaves companion block shapes in audit-core', () => {
-  const update = auditManifest.buildManifestCompanionUpdate({
-    topologyMermaidPath: 'C:/repo/.audit/topology.mermaid.md',
-    auditSummaryPath: 'C:/repo/.audit/audit-summary.latest.md',
-    reviewPackPath: 'C:/repo/.audit/audit-review-pack.latest.md',
-  });
-
-  assert.equal(update.topologyMermaid.path, 'C:/repo/.audit/topology.mermaid.md');
-  assert.equal(update.topologyMermaid.format, 'markdown');
-  assert.equal(update.topologyMermaid.source, 'topology.json');
-  assert.equal(
-    update.topologyMermaid.use,
-    'human visual companion; topology.json remains authoritative for exact citations',
-  );
-  assert.deepEqual(update.auditSummary, {
-    path: 'C:/repo/.audit/audit-summary.latest.md',
-    format: 'markdown',
-  });
-  assert.equal(update.reviewPack.path, 'C:/repo/.audit/audit-review-pack.latest.md');
-  assert.equal(update.reviewPack.format, 'markdown');
-  assert.match(update.reviewPack.use, /the engine never calls external APIs/);
-});
-
 check('AMES1i. audit-core wrapper ignores stale external binaries and falls back to current contract', () => {
   const previous = process.env.LUMIN_AUDIT_CORE_BIN;
   process.env.LUMIN_AUDIT_CORE_BIN = process.execPath;
   try {
-    const update = auditManifest.buildManifestCompanionUpdate({
-      topologyMermaidPath: 'C:/repo/.audit/topology.mermaid.md',
+    const update = auditManifest.buildManifestLifecycleUpdate({
+      preWrite: {
+        requested: true,
+        ran: false,
+        reason: 'stale-env-fallback-smoke',
+      },
     });
-    assert.equal(update.topologyMermaid.path, 'C:/repo/.audit/topology.mermaid.md');
-    assert.equal(update.topologyMermaid.source, 'topology.json');
+    assert.equal(update.lifecycle.summaryOwner, 'lumin-audit-core');
+    assert.equal(update.lifecycle.requestedCount, 1);
+    assert.equal(update.lifecycle.notRunCount, 1);
   } finally {
     if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;
     else process.env.LUMIN_AUDIT_CORE_BIN = previous;
@@ -151,6 +135,57 @@ check('AMES1h. artifacts-produced wrapper leaves manifest patch shape in audit-c
       }).artifactsProduced,
       ['rust-analyzer-health.latest.json', 'triage.json'],
     );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1j. closeout wrapper leaves final summary and companion patch in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-closeout-'));
+  const out = path.join(fx, 'out');
+  try {
+    mkdirSync(out, { recursive: true });
+    const performancePath = path.join(out, 'producer-performance.json');
+    writeFileSync(
+      performancePath,
+      JSON.stringify({
+        schemaVersion: 'producer-performance.v1',
+        summary: {
+          producerCount: 1,
+          okCount: 1,
+          failedCount: 0,
+          skippedCount: 0,
+        },
+        producers: [{ name: 'triage-repo.mjs', status: 'ok' }],
+        skipped: [],
+      }),
+    );
+    writeFileSync(path.join(out, 'audit-summary.latest.md'), '# Summary\n');
+    writeFileSync(path.join(out, 'audit-review-pack.latest.md'), '# Review\n');
+
+    const update = auditManifest.buildManifestCloseoutUpdate({
+      outDir: out,
+      producerPerformancePath: performancePath,
+      rustAnalysis: {
+        status: 'unavailable',
+        available: false,
+      },
+      auditSummaryPath: 'C:/repo/.audit/audit-summary.latest.md',
+      reviewPackPath: 'C:/repo/.audit/audit-review-pack.latest.md',
+    });
+
+    assert.equal(update.performance.producerCount, 1);
+    assert.equal(update.orchestration.status, 'complete');
+    assert.deepEqual(update.artifactsProduced, [
+      'audit-review-pack.latest.md',
+      'audit-summary.latest.md',
+      'producer-performance.json',
+    ]);
+    assert.deepEqual(update.auditSummary, {
+      path: 'C:/repo/.audit/audit-summary.latest.md',
+      format: 'markdown',
+    });
+    assert.equal(update.reviewPack.format, 'markdown');
   } finally {
     rmSync(fx, { recursive: true, force: true });
   }

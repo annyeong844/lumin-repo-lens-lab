@@ -472,24 +472,6 @@ export function buildOrchestrationPlan({
   ], 'buildOrchestrationPlan');
 }
 
-export function buildManifestFinalSummaryUpdate({
-  outDir,
-  producerPerformancePath,
-  rustAnalysis,
-}) {
-  const args = [
-    'manifest-final-summary-update',
-    '--output', outDir,
-    '--producer-performance', producerPerformancePath,
-  ];
-  const options = {};
-  if (rustAnalysis !== undefined) {
-    args.push('--rust-analysis-block', '-');
-    options.input = JSON.stringify(rustAnalysis ?? null);
-  }
-  return runAuditCoreJson(args, 'buildManifestFinalSummaryUpdate', options);
-}
-
 export function buildManifestCloseoutUpdate({
   outDir,
   producerPerformancePath,
@@ -529,15 +511,6 @@ export function buildManifestRoot(input) {
     'manifest-root',
     '--input', '-',
   ], 'buildManifestRoot', {
-    input: JSON.stringify(input ?? {}),
-  });
-}
-
-export function buildManifestCompanionUpdate(input) {
-  return runAuditCoreJson([
-    'manifest-companion-update',
-    '--input', '-',
-  ], 'buildManifestCompanionUpdate', {
     input: JSON.stringify(input ?? {}),
   });
 }
