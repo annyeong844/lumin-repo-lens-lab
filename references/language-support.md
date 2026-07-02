@@ -77,7 +77,7 @@ Supported in the generic audit route:
 - `.rs` file counting in `triage.json.shape.rustFiles`
 - `byLanguage.rs` and manifest language preservation
 - Cargo root detection through `triage.json.buildSystem.rust`
-- `manifest.json.blindZones[]` entry with `area: "rust"` when the Rust
+- `manifest.json.blindZones[]` entry with `area: "rs"` when the Rust
   analyzer artifact is not registered for that audit run
 - opt-in `audit-repo.mjs --rust-analyzer`, which writes
   `rust-analyzer-health.latest.json` and records `manifest.rustAnalysis`,

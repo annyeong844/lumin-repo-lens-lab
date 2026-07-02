@@ -1,12 +1,16 @@
 use anyhow::{bail, Context, Result};
+use serde::Serialize;
 
 use super::args::{ManifestCoreSummaryArgs, ManifestEvidenceSummaryArgs};
 use super::io_support::{
-    read_json_input, read_optional_json, read_optional_json_input, read_optional_output_json,
-    read_optional_output_json_tolerant, read_required_json, take_path, take_string,
-    write_stdout_json,
+    read_json_input, read_optional_json, read_optional_json_input,
+    read_optional_output_json_observed, read_optional_output_json_tolerant_observed,
+    read_required_json, take_path, take_string, write_stdout_json, OptionalOutputJsonRead,
 };
 use super::usage::USAGE;
+use lumin_audit_core::artifact_read_metrics::{
+    ArtifactReadObservation, ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
+};
 use lumin_audit_core::generated_artifacts::GeneratedArtifactsMode;
 use lumin_audit_core::manifest_companion::{
     build_manifest_companion_update, ManifestCompanionUpdateInput,
@@ -26,6 +30,30 @@ use lumin_audit_core::manifest_root::{
     ManifestEvidenceUpdateInput, ManifestRootInput,
 };
 use lumin_audit_core::rust_analysis::RustAnalysisRunObservation;
+
+const MANIFEST_EVIDENCE_WITH_READS_SCHEMA_VERSION: &str =
+    "lumin-manifest-evidence-with-artifact-reads.v1";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestEvidenceWithArtifactReads<T: Serialize> {
+    schema_version: &'static str,
+    evidence: T,
+    artifact_reads: ManifestEvidenceArtifactReadEvents,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestEvidenceArtifactReadEvents {
+    schema_version: &'static str,
+    root_dir: String,
+    reads: Vec<ArtifactReadObservation>,
+}
+
+struct ManifestEvidenceSummaryWithReads {
+    summary: ManifestEvidenceSummary,
+    artifact_reads: ManifestEvidenceArtifactReadEvents,
+}
 
 pub(super) fn run_manifest_meta(args: Vec<String>) -> Result<()> {
     let mut generated = None;
@@ -220,6 +248,16 @@ pub(super) fn run_manifest_evidence_summary(args: Vec<String>) -> Result<()> {
     write_stdout_json(&summary)
 }
 
+pub(super) fn run_manifest_evidence_summary_with_reads(args: Vec<String>) -> Result<()> {
+    let summary =
+        read_manifest_evidence_summary_with_reads(args, "manifest-evidence-summary-with-reads")?;
+    write_stdout_json(&ManifestEvidenceWithArtifactReads {
+        schema_version: MANIFEST_EVIDENCE_WITH_READS_SCHEMA_VERSION,
+        evidence: summary.summary,
+        artifact_reads: summary.artifact_reads,
+    })
+}
+
 pub(super) fn run_manifest_evidence_refresh(args: Vec<String>) -> Result<()> {
     let summary = read_manifest_evidence_summary(args, "manifest-evidence-refresh")?;
     let evidence = serde_json::from_value::<ManifestEvidenceUpdateFields>(
@@ -231,10 +269,33 @@ pub(super) fn run_manifest_evidence_refresh(args: Vec<String>) -> Result<()> {
     write_stdout_json(&update)
 }
 
+pub(super) fn run_manifest_evidence_refresh_with_reads(args: Vec<String>) -> Result<()> {
+    let summary =
+        read_manifest_evidence_summary_with_reads(args, "manifest-evidence-refresh-with-reads")?;
+    let evidence = serde_json::from_value::<ManifestEvidenceUpdateFields>(
+        serde_json::to_value(summary.summary)
+            .context("manifest-evidence-refresh-with-reads: invalid summary shape")?,
+    )
+    .context("manifest-evidence-refresh-with-reads: invalid evidence update shape")?;
+    let update = build_manifest_evidence_update(ManifestEvidenceUpdateInput { evidence });
+    write_stdout_json(&ManifestEvidenceWithArtifactReads {
+        schema_version: MANIFEST_EVIDENCE_WITH_READS_SCHEMA_VERSION,
+        evidence: update,
+        artifact_reads: summary.artifact_reads,
+    })
+}
+
 fn read_manifest_evidence_summary(
     args: Vec<String>,
     label: &str,
 ) -> Result<ManifestEvidenceSummary> {
+    Ok(read_manifest_evidence_summary_with_reads(args, label)?.summary)
+}
+
+fn read_manifest_evidence_summary_with_reads(
+    args: Vec<String>,
+    label: &str,
+) -> Result<ManifestEvidenceSummaryWithReads> {
     let mut parsed = ManifestEvidenceSummaryArgs {
         include_tests: true,
         production: false,
@@ -273,26 +334,53 @@ fn read_manifest_evidence_summary(
     let output = parsed
         .output
         .with_context(|| format!("{label}: missing --output <dir>"))?;
-    let triage = read_optional_output_json(&output, "triage.json", label)?;
-    let symbols = read_optional_output_json(&output, "symbols.json", label)?;
-    let resolver_capabilities =
-        read_optional_output_json_tolerant(&output, "resolver-capabilities.json");
-    let resolver_diagnostics =
-        read_optional_output_json_tolerant(&output, "resolver-diagnostics.json");
-    let framework_resource_surfaces =
-        read_optional_output_json_tolerant(&output, "framework-resource-surfaces.json");
-    let unused_deps = read_optional_output_json_tolerant(&output, "unused-deps.json");
-    let block_clones = read_optional_output_json_tolerant(&output, "block-clones.json");
-    let dead_classify = read_optional_output_json_tolerant(&output, "dead-classify.json");
-    let entry_surface = read_optional_output_json_tolerant(&output, "entry-surface.json");
-    let rust_analysis =
-        read_optional_output_json_tolerant(&output, "rust-analyzer-health.latest.json");
+    let mut artifact_reads = Vec::new();
+    let triage = artifact_value(
+        read_optional_output_json_observed(&output, "triage.json", label)?,
+        &mut artifact_reads,
+    );
+    let symbols = artifact_value(
+        read_optional_output_json_observed(&output, "symbols.json", label)?,
+        &mut artifact_reads,
+    );
+    let resolver_capabilities = artifact_value(
+        read_optional_output_json_tolerant_observed(&output, "resolver-capabilities.json"),
+        &mut artifact_reads,
+    );
+    let resolver_diagnostics = artifact_value(
+        read_optional_output_json_tolerant_observed(&output, "resolver-diagnostics.json"),
+        &mut artifact_reads,
+    );
+    let framework_resource_surfaces = artifact_value(
+        read_optional_output_json_tolerant_observed(&output, "framework-resource-surfaces.json"),
+        &mut artifact_reads,
+    );
+    let unused_deps = artifact_value(
+        read_optional_output_json_tolerant_observed(&output, "unused-deps.json"),
+        &mut artifact_reads,
+    );
+    let block_clones = artifact_value(
+        read_optional_output_json_tolerant_observed(&output, "block-clones.json"),
+        &mut artifact_reads,
+    );
+    let dead_classify = artifact_value(
+        read_optional_output_json_tolerant_observed(&output, "dead-classify.json"),
+        &mut artifact_reads,
+    );
+    let entry_surface = artifact_value(
+        read_optional_output_json_tolerant_observed(&output, "entry-surface.json"),
+        &mut artifact_reads,
+    );
+    let rust_analysis = artifact_value(
+        read_optional_output_json_tolerant_observed(&output, "rust-analyzer-health.latest.json"),
+        &mut artifact_reads,
+    );
     let rust_analysis_run = read_optional_json_input(parsed.rust_analysis_run_block, label)?
         .map(serde_json::from_value::<RustAnalysisRunObservation>)
         .transpose()
         .with_context(|| format!("{label}: invalid --rust-analysis-run-block shape"))?;
 
-    summarize_manifest_evidence(
+    let summary = summarize_manifest_evidence(
         ManifestEvidenceOptions {
             root,
             include_tests: parsed.include_tests,
@@ -315,5 +403,23 @@ fn read_manifest_evidence_summary(
             entry_surface: entry_surface.as_ref(),
             rust_analysis: rust_analysis.as_ref(),
         },
-    )
+    )?;
+    Ok(ManifestEvidenceSummaryWithReads {
+        summary,
+        artifact_reads: ManifestEvidenceArtifactReadEvents {
+            schema_version: ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
+            root_dir: output.to_string_lossy().to_string(),
+            reads: artifact_reads,
+        },
+    })
+}
+
+fn artifact_value(
+    observed: OptionalOutputJsonRead,
+    artifact_reads: &mut Vec<ArtifactReadObservation>,
+) -> Option<serde_json::Value> {
+    if let Some(observation) = observed.observation {
+        artifact_reads.push(observation);
+    }
+    observed.value
 }

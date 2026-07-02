@@ -447,6 +447,69 @@ fn cli_manifest_evidence_summary_degrades_malformed_optional_artifacts() -> Resu
 }
 
 #[test]
+fn cli_manifest_evidence_summary_with_reads_reports_artifact_read_events() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let output_dir = root.path().join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        output_dir.join("triage.json"),
+        serde_json::to_vec(&json!({ "summary": { "files": 1 } }))?,
+    )?;
+    fs::write(
+        output_dir.join("symbols.json"),
+        serde_json::to_vec(&json!({ "uses": { "external": 0 } }))?,
+    )?;
+    fs::write(
+        output_dir.join("framework-resource-surfaces.json"),
+        "{not-json",
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("manifest-evidence-summary-with-reads")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--output")
+        .arg(&output_dir)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(
+        stdout["schemaVersion"],
+        "lumin-manifest-evidence-with-artifact-reads.v1"
+    );
+    assert_eq!(
+        stdout["evidence"]["frameworkResourceSurfaces"]["status"],
+        "unavailable"
+    );
+    assert_eq!(
+        stdout["artifactReads"]["schemaVersion"],
+        "lumin-audit-artifact-read-events.v1"
+    );
+    let reads = stdout["artifactReads"]["reads"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("artifact reads are serialized as an array"))?;
+    assert!(reads.iter().any(|read| {
+        read["filePath"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("triage.json"))
+            && read["ok"] == true
+    }));
+    assert!(reads.iter().any(|read| {
+        read["filePath"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("framework-resource-surfaces.json"))
+            && read["ok"] == false
+            && read["bytes"].as_u64().unwrap_or(0) > 0
+    }));
+    Ok(())
+}
+
+#[test]
 fn cli_manifest_evidence_refresh_emits_manifest_patch_shape() -> Result<()> {
     let root = tempfile::tempdir()?;
     let output_dir = root.path().join(".audit");

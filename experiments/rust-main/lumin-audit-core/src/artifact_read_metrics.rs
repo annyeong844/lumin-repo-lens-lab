@@ -21,7 +21,7 @@ pub struct ArtifactReadMetricsRequest {
     pub reads: Vec<ArtifactReadObservation>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactReadObservation {
     #[serde(default)]

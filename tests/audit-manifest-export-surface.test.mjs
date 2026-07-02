@@ -81,6 +81,23 @@ describe("audit-manifest public surface", () => {
     expect(update.reviewPack.use).toContain("the engine never calls external APIs");
   });
 
+  it("AMES1i. ignores stale external audit-core binaries and falls back to current contract", () => {
+    const previous = process.env.LUMIN_AUDIT_CORE_BIN;
+    process.env.LUMIN_AUDIT_CORE_BIN = process.execPath;
+    try {
+      const update = auditManifest.buildManifestCompanionUpdate({
+        topologyMermaidPath: "C:/repo/.audit/topology.mermaid.md",
+      });
+      expect(update.topologyMermaid).toMatchObject({
+        path: "C:/repo/.audit/topology.mermaid.md",
+        source: "topology.json",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;
+      else process.env.LUMIN_AUDIT_CORE_BIN = previous;
+    }
+  });
+
   it("AMES1g. lifecycle update wrapper leaves raw block placement and summary in audit-core", () => {
     const update = auditManifest.buildManifestLifecycleUpdate({
       preWrite: {
@@ -241,6 +258,8 @@ describe("audit-manifest public surface", () => {
       expect(manifest.frameworkResourceSurfaces?.reason?.kind).toBe(
         "malformed-json",
       );
+      expect(manifest.frameworkResourceSurfaces?.totalFilesWithSurfaces).toBeNull();
+      expect(manifest.frameworkResourceSurfaces?.totalSurfaceLanes).toBeNull();
       expect(reads.some((read) => read.filePath.endsWith("triage.json"))).toBe(
         true,
       );
@@ -250,6 +269,14 @@ describe("audit-manifest public surface", () => {
       expect(
         reads.some((read) =>
           read.filePath.endsWith("rust-analyzer-health.latest.json"),
+        ),
+      ).toBe(true);
+      expect(
+        reads.some(
+          (read) =>
+            read.filePath.endsWith("framework-resource-surfaces.json") &&
+            read.ok === false &&
+            read.bytes > 0,
         ),
       ).toBe(true);
     }));

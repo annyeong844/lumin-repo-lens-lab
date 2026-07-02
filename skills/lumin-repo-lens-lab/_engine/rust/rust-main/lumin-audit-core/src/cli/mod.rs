@@ -34,6 +34,9 @@ pub fn run() -> Result<()> {
         Some("manifest-root") => run_manifest_root(args.collect()),
         Some("manifest-evidence-update") => run_manifest_evidence_update(args.collect()),
         Some("manifest-evidence-refresh") => run_manifest_evidence_refresh(args.collect()),
+        Some("manifest-evidence-refresh-with-reads") => {
+            run_manifest_evidence_refresh_with_reads(args.collect())
+        }
         Some("manifest-companion-update") => run_manifest_companion_update(args.collect()),
         Some("manifest-artifacts-produced-update") => {
             run_manifest_artifacts_produced_update(args.collect())
@@ -41,6 +44,9 @@ pub fn run() -> Result<()> {
         Some("manifest-final-summary-update") => run_manifest_final_summary_update(args.collect()),
         Some("manifest-core-summary") => run_manifest_core_summary(args.collect()),
         Some("manifest-evidence-summary") => run_manifest_evidence_summary(args.collect()),
+        Some("manifest-evidence-summary-with-reads") => {
+            run_manifest_evidence_summary_with_reads(args.collect())
+        }
         Some("orchestration-plan") => run_orchestration_plan(args.collect()),
         Some("execute-base-plan") => run_execute_base_plan(args.collect()),
         Some("execute-base-runtime") => run_execute_base_runtime(args.collect()),

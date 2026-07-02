@@ -320,8 +320,13 @@ try {
     auditCorePlatformManifest.binaryPackageScope === auditCorePlatformKey &&
     auditCorePlatformManifest.fallback?.kind === 'packaged-source-build-env-or-path' &&
     auditCorePlatformManifest.fallback?.requiredWhenRuntimePlatformMissing === true &&
+    auditCorePlatformManifest.runtimeResolution?.packageBinaryLayout === '_engine/bin/<platform>-<arch>/<executable>' &&
+    auditCorePlatformManifest.runtimeResolution?.missingPlatformBinaryBehavior === 'build-packaged-source-with-cargo-or-use-env-or-path-override' &&
+    auditCorePlatformManifest.runtimeResolution?.requiresCargoWhenPackagedBinaryIsMissing === true &&
     auditCorePlatformManifest.sourceFallback?.kind === 'packaged-cargo-workspace' &&
     auditCorePlatformManifest.sourceFallback?.manifest === '_engine/rust/Cargo.toml' &&
+    auditCorePlatformManifest.buildPolicy?.currentPlatformBinary === 'rebuilt-before-copy' &&
+    auditCorePlatformManifest.buildPolicy?.contractValidation === 'required-cli-commands-before-copy' &&
     auditCorePlatformManifest.platforms.some((platform) =>
       platform.key === auditCorePlatformKey &&
       platform.executable === (process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core')) &&
@@ -350,6 +355,15 @@ try {
     staleLibRefs.length === 0 &&
     readFileSync(path.join(OUT, 'canonical/any-contamination.md'), 'utf8').includes('_engine/lib/extract-ts.mjs'),
     JSON.stringify(staleLibRefs.slice(0, 20)));
+
+  const generatedLanguageSupport = readFileSync(
+    path.join(OUT, 'references/language-support.md'),
+    'utf8',
+  );
+  assert('SP4c. generated language support documents Rust blind-zone area as rs',
+    generatedLanguageSupport.includes('area: "rs"') &&
+    !generatedLanguageSupport.includes('area: "rust"'),
+    generatedLanguageSupport);
 
   assert('SP5. generated skill excludes maintainer/lab surfaces',
     !existsSync(path.join(OUT, 'tests')) &&

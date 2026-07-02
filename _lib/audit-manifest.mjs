@@ -3,12 +3,11 @@
 // Helpers for audit-repo.mjs manifest evidence and artifact enumeration.
 // NO producer orchestration. Migrated manifest contracts call lumin-audit-core.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadIfExists as loadArtifact } from './artifacts.mjs';
 
 let auditCoreAutoBuildFailure = null;
 
@@ -28,17 +27,17 @@ function auditCoreBinary() {
     .replace(/[^A-Z0-9_]/gi, '_')
     .toUpperCase();
   for (const configured of [process.env[platformEnv], process.env.LUMIN_AUDIT_CORE_BIN]) {
-    if (configured && existsSync(configured)) return path.resolve(configured);
+    const resolved = configured ? path.resolve(configured) : null;
+    if (resolved && auditCoreCandidateSupportsCurrentContract(resolved)) return resolved;
   }
   const packagedPlatform = path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe);
-  if (existsSync(packagedPlatform)) return packagedPlatform;
+  if (auditCoreCandidateSupportsCurrentContract(packagedPlatform)) return packagedPlatform;
   const pathBinary = executableOnPath(exe);
-  if (pathBinary) return pathBinary;
+  if (pathBinary && auditCoreCandidateSupportsCurrentContract(pathBinary)) return pathBinary;
   const packagedSourceManifest = path.resolve(here, '../rust', 'Cargo.toml');
   if (existsSync(packagedSourceManifest)) {
     const candidate = path.resolve(here, '../rust', 'target', 'debug', exe);
-    if (existsSync(candidate)) return candidate;
-    return ensureAuditCoreBuiltFromManifest(packagedSourceManifest, candidate);
+    return auditCoreBinaryFromManifest(packagedSourceManifest, candidate);
   }
   const packagedManifest = path.resolve(here, '../bin/audit-core-platforms.json');
   const hasPackagedManifest = existsSync(packagedManifest);
@@ -47,7 +46,8 @@ function auditCoreBinary() {
   for (;;) {
     const candidate = path.join(cursor, 'experiments', 'target', 'debug', exe);
     if (existsSync(candidate)) {
-      return candidate;
+      const manifest = path.join(cursor, 'experiments', 'Cargo.toml');
+      return existsSync(manifest) ? auditCoreBinaryFromManifest(manifest, candidate) : candidate;
     }
     if (existsSync(path.join(cursor, 'experiments', 'Cargo.toml'))) {
       return ensureAuditCoreBuiltFromManifest(
@@ -59,6 +59,26 @@ function auditCoreBinary() {
     if (parent === cursor) return hasPackagedManifest ? packagedPlatform : fallback;
     cursor = parent;
   }
+}
+
+function auditCoreBinaryFromManifest(manifestPath, candidate) {
+  if (auditCoreCandidateSupportsCurrentContract(candidate)) {
+    return candidate;
+  }
+  return ensureAuditCoreBuiltFromManifest(manifestPath, candidate);
+}
+
+function auditCoreCandidateSupportsCurrentContract(command) {
+  return existsSync(command) && auditCoreBinarySupportsCurrentContract(command);
+}
+
+function auditCoreBinarySupportsCurrentContract(command) {
+  const result = spawnSync(command, ['manifest-evidence-summary-with-reads'], {
+    encoding: 'utf8',
+  });
+  if (result.error) return false;
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  return output.includes('manifest-evidence-summary-with-reads: missing --root <repo>');
 }
 
 function ensureAuditCoreBuiltFromManifest(manifestPath, candidate) {
@@ -190,9 +210,9 @@ function runManifestEvidenceCommand(command, label, root, outDir, {
   return runAuditCoreJson(args, label, runOptions);
 }
 
-function buildManifestEvidenceSummaryFromFile(root, outDir, options = {}) {
+function buildManifestEvidenceSummaryWithReadsFromFile(root, outDir, options = {}) {
   return runManifestEvidenceCommand(
-    'manifest-evidence-summary',
+    'manifest-evidence-summary-with-reads',
     'buildManifestEvidenceSummary',
     root,
     outDir,
@@ -200,9 +220,9 @@ function buildManifestEvidenceSummaryFromFile(root, outDir, options = {}) {
   );
 }
 
-function buildManifestEvidenceRefreshFromFile(root, outDir, options = {}) {
+function buildManifestEvidenceRefreshWithReadsFromFile(root, outDir, options = {}) {
   return runManifestEvidenceCommand(
-    'manifest-evidence-refresh',
+    'manifest-evidence-refresh-with-reads',
     'refreshManifestEvidence',
     root,
     outDir,
@@ -463,17 +483,11 @@ export function buildManifestCompanionUpdate(input) {
   });
 }
 
-function observeManifestEvidenceArtifacts(outDir, onArtifactRead) {
-  loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'symbols.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'resolver-diagnostics.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'resolver-capabilities.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'framework-resource-surfaces.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'unused-deps.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
-  loadArtifact(outDir, 'rust-analyzer-health.latest.json', { onRead: onArtifactRead });
+function observeRustArtifactReads(artifactReads, onArtifactRead) {
+  if (!onArtifactRead) return;
+  for (const read of artifactReads?.reads ?? []) {
+    onArtifactRead(read);
+  }
 }
 
 export function buildManifestEvidence({
@@ -488,8 +502,7 @@ export function buildManifestEvidence({
   mergeRustAnalysisRun = false,
   onArtifactRead,
 }) {
-  observeManifestEvidenceArtifacts(outDir, onArtifactRead);
-  const manifestEvidence = buildManifestEvidenceSummaryFromFile(root, outDir, {
+  const manifestEvidence = buildManifestEvidenceSummaryWithReadsFromFile(root, outDir, {
     includeTests,
     production,
     excludes,
@@ -498,13 +511,15 @@ export function buildManifestEvidence({
     rustAnalysisRun,
     mergeRustAnalysisRun,
   });
-  return manifestEvidence;
+  observeRustArtifactReads(manifestEvidence.artifactReads, onArtifactRead);
+  return manifestEvidence.evidence ?? {};
 }
 
 export function refreshManifestEvidence(manifest, options) {
-  observeManifestEvidenceArtifacts(options.outDir, options.onArtifactRead);
+  const result = buildManifestEvidenceRefreshWithReadsFromFile(options.root, options.outDir, options);
+  observeRustArtifactReads(result.artifactReads, options.onArtifactRead);
   Object.assign(
     manifest,
-    buildManifestEvidenceRefreshFromFile(options.root, options.outDir, options),
+    result.evidence ?? {},
   );
 }

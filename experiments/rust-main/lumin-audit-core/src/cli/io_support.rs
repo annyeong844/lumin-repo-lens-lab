@@ -1,9 +1,16 @@
 use anyhow::{bail, Context, Result};
+use lumin_audit_core::artifact_read_metrics::ArtifactReadObservation;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+pub(super) struct OptionalOutputJsonRead {
+    pub value: Option<Value>,
+    pub observation: Option<ArtifactReadObservation>,
+}
 
 pub(super) fn read_optional_json(path: Option<PathBuf>, label: &str) -> Result<Option<Value>> {
     let Some(path) = path else {
@@ -45,43 +52,99 @@ pub(super) fn read_optional_json_input(
         .transpose()
 }
 
-pub(super) fn read_optional_output_json(
+pub(super) fn read_optional_output_json_observed(
     output: &Path,
     artifact_name: &str,
     label: &str,
-) -> Result<Option<Value>> {
+) -> Result<OptionalOutputJsonRead> {
     let path = output.join(artifact_name);
     if !path.exists() {
-        return Ok(None);
+        return Ok(OptionalOutputJsonRead {
+            value: None,
+            observation: None,
+        });
     }
-    read_optional_json(Some(path), label)
+    let read_started = Instant::now();
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("{label}: failed to read {}", path.display()))?;
+    let read_ms = elapsed_ms(read_started);
+    let bytes = text.len() as u64;
+    let parse_started = Instant::now();
+    let json = serde_json::from_str::<Value>(&text)
+        .with_context(|| format!("{label}: invalid JSON in {}", path.display()))?;
+    let json_parse_ms = elapsed_ms(parse_started);
+    Ok(OptionalOutputJsonRead {
+        value: Some(json),
+        observation: Some(artifact_read_observation(
+            &path,
+            bytes,
+            read_ms,
+            json_parse_ms,
+            true,
+        )),
+    })
 }
 
 pub(super) fn read_optional_output_json_tolerant(
     output: &Path,
     artifact_name: &str,
 ) -> Option<Value> {
+    read_optional_output_json_tolerant_observed(output, artifact_name).value
+}
+
+pub(super) fn read_optional_output_json_tolerant_observed(
+    output: &Path,
+    artifact_name: &str,
+) -> OptionalOutputJsonRead {
     let path = output.join(artifact_name);
     if !path.exists() {
-        return None;
+        return OptionalOutputJsonRead {
+            value: None,
+            observation: None,
+        };
     }
+    let read_started = Instant::now();
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(error) => {
-            return Some(malformed_optional_artifact(
-                artifact_name,
-                "read-error",
-                error.to_string(),
-            ));
+            return OptionalOutputJsonRead {
+                value: Some(malformed_optional_artifact(
+                    artifact_name,
+                    "read-error",
+                    error.to_string(),
+                )),
+                observation: Some(artifact_read_observation(&path, 0, 0, 0, false)),
+            };
         }
     };
+    let read_ms = elapsed_ms(read_started);
+    let bytes = text.len() as u64;
+    let parse_started = Instant::now();
     match serde_json::from_str::<Value>(&text) {
-        Ok(json) => Some(json),
-        Err(error) => Some(malformed_optional_artifact(
-            artifact_name,
-            "malformed-json",
-            error.to_string(),
-        )),
+        Ok(json) => OptionalOutputJsonRead {
+            value: Some(json),
+            observation: Some(artifact_read_observation(
+                &path,
+                bytes,
+                read_ms,
+                elapsed_ms(parse_started),
+                true,
+            )),
+        },
+        Err(error) => OptionalOutputJsonRead {
+            value: Some(malformed_optional_artifact(
+                artifact_name,
+                "malformed-json",
+                error.to_string(),
+            )),
+            observation: Some(artifact_read_observation(
+                &path,
+                bytes,
+                read_ms,
+                elapsed_ms(parse_started),
+                false,
+            )),
+        },
     }
 }
 
@@ -100,6 +163,26 @@ fn malformed_optional_artifact(artifact_name: &str, kind: &str, message: String)
             "unavailableReason": kind,
         }
     })
+}
+
+fn artifact_read_observation(
+    path: &Path,
+    bytes: u64,
+    read_ms: u64,
+    json_parse_ms: u64,
+    ok: bool,
+) -> ArtifactReadObservation {
+    ArtifactReadObservation {
+        file_path: Some(path.to_string_lossy().to_string()),
+        bytes: Value::from(bytes),
+        read_ms: Value::from(read_ms),
+        json_parse_ms: Value::from(json_parse_ms),
+        ok: Some(ok),
+    }
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    started.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
 }
 
 pub(super) fn take_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf> {

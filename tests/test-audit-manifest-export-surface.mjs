@@ -68,6 +68,21 @@ check('AMES1d. companion manifest wrapper leaves companion block shapes in audit
   assert.match(update.reviewPack.use, /the engine never calls external APIs/);
 });
 
+check('AMES1i. audit-core wrapper ignores stale external binaries and falls back to current contract', () => {
+  const previous = process.env.LUMIN_AUDIT_CORE_BIN;
+  process.env.LUMIN_AUDIT_CORE_BIN = process.execPath;
+  try {
+    const update = auditManifest.buildManifestCompanionUpdate({
+      topologyMermaidPath: 'C:/repo/.audit/topology.mermaid.md',
+    });
+    assert.equal(update.topologyMermaid.path, 'C:/repo/.audit/topology.mermaid.md');
+    assert.equal(update.topologyMermaid.source, 'topology.json');
+  } finally {
+    if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;
+    else process.env.LUMIN_AUDIT_CORE_BIN = previous;
+  }
+});
+
 check('AMES1g. lifecycle update wrapper leaves raw block placement and summary in audit-core', () => {
   const update = auditManifest.buildManifestLifecycleUpdate({
     preWrite: {
@@ -236,9 +251,16 @@ check('AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch', (
     assert.ok(Array.isArray(manifest.blindZones));
     assert.equal(manifest.frameworkResourceSurfaces?.status, 'unavailable');
     assert.equal(manifest.frameworkResourceSurfaces?.reason?.kind, 'malformed-json');
+    assert.equal(manifest.frameworkResourceSurfaces?.totalFilesWithSurfaces, null);
+    assert.equal(manifest.frameworkResourceSurfaces?.totalSurfaceLanes, null);
     assert.ok(reads.some((read) => read.filePath.endsWith('triage.json')));
     assert.ok(reads.some((read) => read.filePath.endsWith('symbols.json')));
     assert.ok(reads.some((read) => read.filePath.endsWith('rust-analyzer-health.latest.json')));
+    assert.ok(reads.some((read) =>
+      read.filePath.endsWith('framework-resource-surfaces.json') &&
+      read.ok === false &&
+      read.bytes > 0
+    ));
   } finally {
     rmSync(fx, { recursive: true, force: true });
   }

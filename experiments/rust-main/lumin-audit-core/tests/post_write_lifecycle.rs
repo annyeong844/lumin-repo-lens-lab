@@ -138,6 +138,10 @@ fn post_write_delta_out_relocates_delta_path_and_allows_null_after_complete() ->
 
     let result = execute_post_write_lifecycle(parse_request(value)?)?;
 
+    assert!(
+        result.block.ran,
+        "post-write child should run successfully: {result:?}"
+    );
     assert_eq!(
         result.block.delta_path.as_deref(),
         Some(path_string(&delta_path).as_str())
@@ -283,20 +287,15 @@ fn write_fake_child(dir: &Path, exit_code: i32, log: &Path) -> Result<PathBuf> {
 
 #[cfg(not(windows))]
 fn write_fake_child(dir: &Path, exit_code: i32, log: &Path) -> Result<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let path = dir.join(format!("fake-post-write-{exit_code}"));
+    let path = dir.join("post-write.mjs");
     fs::write(
         &path,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nprintf '%s\\n' '## post-write delta'\nprintf '%s\\n' '[post-write] diagnostic' >&2\nexit {exit_code}\n",
+            "#!/bin/sh\nprintf '%s %s\\n' \"$0\" \"$*\" >> '{}'\nprintf '%s\\n' '## post-write delta'\nprintf '%s\\n' '[post-write] diagnostic' >&2\nexit {exit_code}\n",
             path_string(log)
         ),
     )?;
-    let mut permissions = fs::metadata(&path)?.permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions)?;
-    Ok(path)
+    Ok(PathBuf::from("/bin/sh"))
 }
 
 fn path_string(path: &Path) -> String {

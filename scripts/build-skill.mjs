@@ -245,6 +245,14 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'manifest-evidence-refresh: missing --root <repo>',
     ],
     [
+      'manifest-evidence-refresh-with-reads',
+      'manifest-evidence-refresh-with-reads: missing --root <repo>',
+    ],
+    [
+      'manifest-evidence-summary-with-reads',
+      'manifest-evidence-summary-with-reads: missing --root <repo>',
+    ],
+    [
       'manifest-artifacts-produced-update',
       'manifest-artifacts-produced-update: missing --output <dir>',
     ],
@@ -690,10 +698,26 @@ function writeAuditCorePlatformManifest(outDir, sources) {
       requiredWhenRuntimePlatformMissing: true,
       message: 'Use the packaged Cargo source fallback, set LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH> / LUMIN_AUDIT_CORE_BIN to a matching external binary, or put lumin-audit-core on PATH.',
     },
+    runtimeResolution: {
+      packageBinaryLayout: '_engine/bin/<platform>-<arch>/<executable>',
+      currentPlatformOrder: [
+        'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',
+        'LUMIN_AUDIT_CORE_BIN',
+        '_engine/bin/<platform>-<arch>/<executable>',
+        'PATH',
+        '_engine/rust/Cargo.toml cargo build',
+      ],
+      missingPlatformBinaryBehavior: 'build-packaged-source-with-cargo-or-use-env-or-path-override',
+      requiresCargoWhenPackagedBinaryIsMissing: true,
+    },
     sourceFallback: {
       kind: 'packaged-cargo-workspace',
       manifest: '_engine/rust/Cargo.toml',
       package: 'lumin-audit-core',
+    },
+    buildPolicy: {
+      currentPlatformBinary: 'rebuilt-before-copy',
+      contractValidation: 'required-cli-commands-before-copy',
     },
     overrideEnv: {
       platformSpecific: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',
