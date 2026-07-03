@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Opt-in grouped Node test runner.
 //
-// `npm test` remains the authoritative serial lane. This runner is a
-// maintainer shortcut: groups run in bounded parallel, while suites inside each
-// group still run serially in fresh Node subprocesses.
+// `npm test` remains the authoritative serial lane for default Node suites.
+// This runner is a maintainer shortcut over that same default set: groups run
+// in bounded parallel, while suites inside each group still run serially in
+// fresh Node subprocesses.
 
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -15,6 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..");
 const TESTS_DIR = path.join(REPO, "tests");
 const GROUP_RUNNER_LABEL = "[run-tests:groups]";
+const LEGACY_NODE_SUITES = new Set(["test-audit-repo.mjs"]);
 
 export const GROUP_RULES = [
   {
@@ -102,7 +104,12 @@ export const GROUP_NAMES = [...GROUP_RULES.map((rule) => rule.name), "misc"];
 
 export function listSuites(testsDir = TESTS_DIR) {
   return readdirSync(testsDir)
-    .filter((file) => file.startsWith("test-") && file.endsWith(".mjs"))
+    .filter(
+      (file) =>
+        file.startsWith("test-") &&
+        file.endsWith(".mjs") &&
+        !LEGACY_NODE_SUITES.has(file)
+    )
     .sort();
 }
 

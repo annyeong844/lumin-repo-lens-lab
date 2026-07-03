@@ -107,6 +107,19 @@ describe('generated tests README', () => {
     });
   });
 
+  it('documents legacy umbrella suites outside the default npm test gate', () => {
+    withReadmeFixture((fixture) => {
+      const regenerate = runGenerator(fixture);
+      const content = readFileSync(fixture.readme, 'utf8');
+
+      expect(regenerate.ok).toBe(true);
+      expect(content).toContain('## Legacy Umbrella Suites');
+      expect(content).toContain('npm run test:node:legacy-audit-repo');
+      expect(content).toContain('excluded\nfrom `npm test`');
+      expect(content).not.toContain('node tests/test-audit-repo.mjs');
+    });
+  });
+
   it('surfaces a maintainer note for a suite without a description', () => {
     withReadmeFixture((fixture) => {
       fixture.fx.write('tests/test-z-zz-temp.mjs', 'console.log("fixture-only test doc probe");\n');

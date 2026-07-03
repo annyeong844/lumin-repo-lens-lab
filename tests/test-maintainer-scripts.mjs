@@ -32,7 +32,19 @@ function assert(label, ok, detail = '') {
   assert('MS2. run-tests reports child process spawn errors explicitly',
     source.includes('if (result.error)') &&
       source.includes('failed to start test suite') &&
-      source.includes('result.error.message'),
+      source.includes('result.error.message') &&
+      source.includes('LEGACY_NODE_SUITES') &&
+      source.includes('test-audit-repo.mjs') &&
+      source.includes('skipping legacy umbrella suite'),
+    source);
+}
+
+{
+  const source = readFileSync(path.join(ROOT, 'scripts/run-tests-grouped.mjs'), 'utf8');
+  assert('MS2b. grouped Node runner shares the legacy umbrella exclusion',
+    source.includes('LEGACY_NODE_SUITES') &&
+      source.includes('test-audit-repo.mjs') &&
+      source.includes('!LEGACY_NODE_SUITES.has(file)'),
     source);
 }
 

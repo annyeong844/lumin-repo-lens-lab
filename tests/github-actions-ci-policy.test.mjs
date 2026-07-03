@@ -69,10 +69,17 @@ describe("GitHub Actions CI policy", () => {
     expect(changesJobSection).toContain("experiments/rust-sidecar/*");
     expect(changesJobSection).toContain("_lib/audit-core.mjs");
     expect(changesJobSection).toContain("_lib/audit-manifest.mjs");
+    expect(changesJobSection).toContain("package.json");
     expect(changesJobSection).toContain("scripts/build-skill.mjs");
+    expect(changesJobSection).toContain("scripts/run-tests.mjs");
+    expect(changesJobSection).toContain("scripts/run-tests-grouped.mjs");
+    expect(changesJobSection).toContain("scripts/update-test-doc.mjs");
     expect(changesJobSection).toContain(
       "skills/lumin-repo-lens-lab/_engine/rust/*",
     );
+    expect(changesJobSection).toContain("tests/test-maintainer-scripts.mjs");
+    expect(changesJobSection).toContain("tests/test-run-tests-grouped.mjs");
+    expect(changesJobSection).toContain("tests/test-update-test-doc.mjs");
     expect(changesJobSection).toContain(
       "tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*",
     );

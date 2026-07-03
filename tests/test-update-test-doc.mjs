@@ -23,9 +23,10 @@
 //       guards against drift-prone INJECTED forms only (historical
 //       prose from CHANGELOG subjects is intentionally untouched;
 //       see CHANGELOG v1.9.2 for the claim-scoping rationale)
-//   T8  adding a suite without a description surfaces a Maintainer note
-//   T9  pre-write suites have generated README descriptions
-//   T10 current suite inventory has generated README descriptions
+//   T8  generated README documents legacy umbrella suites outside npm test
+//   T9  adding a suite without a description surfaces a Maintainer note
+//   T10 pre-write suites have generated README descriptions
+//   T11 current suite inventory has generated README descriptions
 
 import { execSync } from 'node:child_process';
 import { readFileSync, cpSync } from 'node:fs';
@@ -123,18 +124,25 @@ try {
     `pattern ${leakingPattern} matched. Snippet: ` +
     (leakingPattern ? JSON.stringify(genContent.match(leakingPattern)?.[0]) : ''));
 
-  // T8. maintainer-note surfacing. Adding a suite without registering
+  assert('T8. generated README documents legacy umbrella suites outside npm test',
+    genContent.includes('## Legacy Umbrella Suites') &&
+      genContent.includes('npm run test:node:legacy-audit-repo') &&
+      genContent.includes('excluded\nfrom `npm test`') &&
+      !genContent.includes('node tests/test-audit-repo.mjs'),
+    genContent);
+
+  // T9. maintainer-note surfacing. Adding a suite without registering
   // its description should show up as a "Maintainer note" section in
   // the generated README. Create the new suite IN THE FIXTURE, not the
   // real repo.
   FX.write('tests/test-z-zz-temp.mjs', 'console.log("dummy — for test-update-test-doc only");\n');
   run(`node ${FIXTURE_GEN}`);
   const afterAdd = readFileSync(FIXTURE_README, 'utf8');
-  assert('T8. adding a suite without a description surfaces a Maintainer note',
+  assert('T9. adding a suite without a description surfaces a Maintainer note',
     afterAdd.includes('## Maintainer note') && afterAdd.includes('test-z-zz-temp.mjs'),
     `README tail after adding suite: ${afterAdd.slice(-500)}`);
 
-  // T9. pre-write suites are the current test-reform focus. They should not
+  // T10. pre-write suites are the current test-reform focus. They should not
   // remain in the generated README as anonymous entries after the wiki
   // inventory has named their protected invariants.
   const preWriteLines = genContent
@@ -142,17 +150,17 @@ try {
     .filter((line) => line.includes('tests/test-pre-write-'));
   const missingPreWriteDescriptions = preWriteLines.filter((line) =>
     line.includes('(no description'));
-  assert('T9. generated README gives pre-write suites explicit descriptions',
+  assert('T10. generated README gives pre-write suites explicit descriptions',
     missingPreWriteDescriptions.length === 0,
     `missing descriptions:\n${missingPreWriteDescriptions.join('\n')}`);
 
-  // T10. The current suite inventory should not have anonymous README rows.
-  // T8 still proves the generator surfaces new omissions; this guard keeps the
+  // T11. The current suite inventory should not have anonymous README rows.
+  // T9 still proves the generator surfaces new omissions; this guard keeps the
   // checked-in suite set from accepting leftover maintainer-note entries.
   const missingDescriptionLines = genContent
     .split('\n')
     .filter((line) => line.includes('(no description'));
-  assert('T10. generated README gives every current suite an explicit description',
+  assert('T11. generated README gives every current suite an explicit description',
     missingDescriptionLines.length === 0,
     `missing descriptions:\n${missingDescriptionLines.join('\n')}`);
 } finally {
