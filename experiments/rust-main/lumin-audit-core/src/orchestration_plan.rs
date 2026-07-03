@@ -428,7 +428,7 @@ fn push_base_pipeline_steps(
         "build-unused-deps.mjs",
         "dependency-hygiene",
         false,
-        ProducerOwner::JsMjs,
+        ProducerOwner::Rust,
         StepMode::Always,
     );
     push_precondition_step(

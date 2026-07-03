@@ -5,11 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  buildUnusedDepsArtifact,
-  collectPackageScriptToolEvidence,
-  packageNameFromSpecifier,
-} from '../_lib/unused-deps-artifact.mjs';
+import { buildUnusedDepsArtifact } from '../_lib/unused-deps-artifact.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -92,58 +88,7 @@ function depByName(pkg, name) {
   return pkg.dependencies.find((entry) => entry.name === name);
 }
 
-check('UD1. normalizes external package specifiers and rejects non-packages', () => {
-  assert.equal(packageNameFromSpecifier('react'), 'react');
-  assert.equal(packageNameFromSpecifier('react/jsx-runtime'), 'react');
-  assert.equal(packageNameFromSpecifier('@scope/pkg/sub/path'), '@scope/pkg');
-  assert.equal(packageNameFromSpecifier('node:fs'), null);
-  assert.equal(packageNameFromSpecifier('./local'), null);
-  assert.equal(packageNameFromSpecifier('../local'), null);
-  assert.equal(packageNameFromSpecifier('/abs/local'), null);
-  assert.equal(packageNameFromSpecifier('C:/abs/local'), null);
-  assert.equal(packageNameFromSpecifier('https://cdn.example/pkg.js'), null);
-  assert.equal(packageNameFromSpecifier('data:text/javascript,export{}'), null);
-  assert.equal(packageNameFromSpecifier('#internal'), null);
-  assert.equal(packageNameFromSpecifier('virtual:foo'), null);
-  assert.equal(packageNameFromSpecifier('@broken'), null);
-  assert.equal(packageNameFromSpecifier(''), null);
-  assert.equal(packageNameFromSpecifier(null), null);
-});
-
-check('UD2. extracts direct package script tool evidence without following wrappers', () => {
-  const packageRecord = {
-    root: 'C:/repo',
-    relRoot: '.',
-    packageJson: {
-      scripts: {
-        start: 'tsx src/server.ts',
-        dev: 'vite --host 0.0.0.0',
-        lint: 'pnpm eslint .',
-        bunvite: 'bunx vite build',
-        npxlint: 'npx eslint .',
-        npmexec: 'npm exec eslint .',
-        npmstart: 'npm start',
-        npmtest: 'npm test',
-        wrapped: 'npm run start',
-      },
-    },
-  };
-  const evidence = collectPackageScriptToolEvidence(packageRecord);
-  const keys = evidence.map((entry) => `${entry.tool}:${entry.scriptName}`).sort();
-  assert.deepEqual(keys, [
-    'eslint:lint',
-    'eslint:npmexec',
-    'eslint:npxlint',
-    'tsx:start',
-    'vite:bunvite',
-    'vite:dev',
-  ]);
-  assert.equal(evidence.some((entry) => entry.scriptName === 'wrapped'), false);
-  assert.equal(evidence.some((entry) => entry.scriptName === 'npmstart'), false);
-  assert.equal(evidence.some((entry) => entry.scriptName === 'npmtest'), false);
-});
-
-check('UD3. classifies used, muted, and review-unused dependencies deterministically', () => {
+check('UD1. classifies used, muted, and review-unused dependencies deterministically', () => {
   const artifact = buildUnusedDepsArtifact({
     root: 'C:/repo',
     includeTests: true,
@@ -198,7 +143,7 @@ check('UD3. classifies used, muted, and review-unused dependencies deterministic
   assert.equal(depByName(pkg, 'fsevents').reason, 'optional-runtime');
 });
 
-check('UD4. attributes consumers to the nearest workspace package and mutes workspace internals', () => {
+check('UD2. attributes consumers to the nearest workspace package and mutes workspace internals', () => {
   const artifact = buildUnusedDepsArtifact({
     root: 'C:/repo',
     includeTests: true,
@@ -251,7 +196,7 @@ check('UD4. attributes consumers to the nearest workspace package and mutes work
   assert.equal(depByName(appPkg, '@repo/shared').reason, 'workspace-internal');
 });
 
-check('UD5. unsupported dependency import consumer lane writes unavailable artifact', () => {
+check('UD3. unsupported dependency import consumer lane writes unavailable artifact', () => {
   const artifact = buildUnusedDepsArtifact({
     root: 'C:/repo',
     includeTests: true,
@@ -274,7 +219,7 @@ check('UD5. unsupported dependency import consumer lane writes unavailable artif
   assert.deepEqual(artifact.packages, []);
 });
 
-check('UD6. audit-repo emits unused-deps.json and records it as produced', () => {
+check('UD4. audit-repo emits unused-deps.json and records it as produced', () => {
   const { artifact, manifest } = runAudit();
   assert.equal(artifact.schemaVersion, 'unused-deps.v1');
   assert.equal(artifact.status, 'complete');

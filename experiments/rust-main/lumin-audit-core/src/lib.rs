@@ -27,3 +27,4 @@ pub mod producer_performance;
 pub mod resolver_diagnostics;
 pub mod rust_analysis;
 pub mod scan_scope;
+pub mod unused_deps;

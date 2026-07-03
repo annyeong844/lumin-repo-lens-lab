@@ -5,10 +5,10 @@ import path from 'node:path';
 
 import { atomicWrite } from './_lib/atomic-write.mjs';
 import { readJsonFile } from './_lib/artifacts.mjs';
+import { runAuditCoreJsonResultFile } from './_lib/audit-core.mjs';
 import { parseCliArgs } from './_lib/cli.mjs';
 import { relPath } from './_lib/paths.mjs';
 import { detectRepoMode } from './_lib/repo-mode.mjs';
-import { buildUnusedDepsArtifact } from './_lib/unused-deps-artifact.mjs';
 
 const cli = parseCliArgs({});
 const ROOT = cli.root;
@@ -35,13 +35,20 @@ const symbols = readJsonFile(path.join(OUTPUT, 'symbols.json'), {
   tag: 'build-unused-deps',
 });
 
-const artifact = buildUnusedDepsArtifact({
+const request = {
+  schemaVersion: 'lumin-unused-deps-producer-request.v1',
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
   packageRecords: packageRecordsFromRepoMode(ROOT, repoMode),
   symbols,
-});
+};
+
+const artifact = runAuditCoreJsonResultFile(
+  ['unused-deps-artifact', '--input', '-'],
+  'build-unused-deps',
+  { input: JSON.stringify(request) },
+);
 
 const outPath = path.join(OUTPUT, 'unused-deps.json');
 atomicWrite(outPath, JSON.stringify(artifact, null, 2));

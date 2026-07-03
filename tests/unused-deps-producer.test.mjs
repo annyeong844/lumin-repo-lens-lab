@@ -3,11 +3,7 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 import { createTempRepoFixture } from "./_helpers/temp-repo-fixture.mjs";
-import {
-  buildUnusedDepsArtifact,
-  collectPackageScriptToolEvidence,
-  packageNameFromSpecifier,
-} from "../_lib/unused-deps-artifact.mjs";
+import { buildUnusedDepsArtifact } from "../_lib/unused-deps-artifact.mjs";
 
 function makeFixture() {
   const fixture = createTempRepoFixture({
@@ -81,61 +77,6 @@ function runAudit() {
 function depByName(pkg, name) {
   return pkg.dependencies.find((entry) => entry.name === name);
 }
-
-describe("unused deps package identity", () => {
-  it("normalizes external package specifiers and rejects non-packages", () => {
-    expect(packageNameFromSpecifier("react")).toBe("react");
-    expect(packageNameFromSpecifier("react/jsx-runtime")).toBe("react");
-    expect(packageNameFromSpecifier("@scope/pkg/sub/path")).toBe("@scope/pkg");
-    expect(packageNameFromSpecifier("node:fs")).toBeNull();
-    expect(packageNameFromSpecifier("./local")).toBeNull();
-    expect(packageNameFromSpecifier("../local")).toBeNull();
-    expect(packageNameFromSpecifier("/abs/local")).toBeNull();
-    expect(packageNameFromSpecifier("C:/abs/local")).toBeNull();
-    expect(packageNameFromSpecifier("https://cdn.example/pkg.js")).toBeNull();
-    expect(packageNameFromSpecifier("data:text/javascript,export{}")).toBeNull();
-    expect(packageNameFromSpecifier("#internal")).toBeNull();
-    expect(packageNameFromSpecifier("virtual:foo")).toBeNull();
-    expect(packageNameFromSpecifier("@broken")).toBeNull();
-    expect(packageNameFromSpecifier("")).toBeNull();
-    expect(packageNameFromSpecifier(null)).toBeNull();
-  });
-});
-
-describe("unused deps package script tool evidence", () => {
-  it("extracts direct package script tools without following wrappers", () => {
-    const packageRecord = {
-      root: "C:/repo",
-      relRoot: ".",
-      packageJson: {
-        scripts: {
-          start: "tsx src/server.ts",
-          dev: "vite --host 0.0.0.0",
-          lint: "pnpm eslint .",
-          bunvite: "bunx vite build",
-          npxlint: "npx eslint .",
-          npmexec: "npm exec eslint .",
-          npmstart: "npm start",
-          npmtest: "npm test",
-          wrapped: "npm run start",
-        },
-      },
-    };
-    const evidence = collectPackageScriptToolEvidence(packageRecord);
-    const keys = evidence.map((entry) => `${entry.tool}:${entry.scriptName}`).sort();
-    expect(keys).toEqual([
-      "eslint:lint",
-      "eslint:npmexec",
-      "eslint:npxlint",
-      "tsx:start",
-      "vite:bunvite",
-      "vite:dev",
-    ]);
-    expect(evidence.some((entry) => entry.scriptName === "wrapped")).toBe(false);
-    expect(evidence.some((entry) => entry.scriptName === "npmstart")).toBe(false);
-    expect(evidence.some((entry) => entry.scriptName === "npmtest")).toBe(false);
-  });
-});
 
 describe("unused deps artifact policy", () => {
   it("classifies used, muted, and review-unused dependencies deterministically", () => {

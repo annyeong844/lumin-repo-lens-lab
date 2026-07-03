@@ -6,12 +6,14 @@ mod io_support;
 mod lifecycle;
 mod manifest;
 mod orchestration;
+mod unused_deps;
 mod usage;
 
 use artifact::*;
 use lifecycle::*;
 use manifest::*;
 use orchestration::*;
+use unused_deps::*;
 use usage::USAGE;
 
 pub fn run() -> Result<()> {
@@ -24,6 +26,7 @@ pub fn run() -> Result<()> {
         Some("rust-analysis-run-merge") => run_rust_analysis_run_merge(args.collect()),
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
         Some("artifact-summary") => run_artifact_summary(args.collect()),
+        Some("unused-deps-artifact") => run_unused_deps_artifact(args.collect()),
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         Some("blind-zones-summary") => run_blind_zones_summary(args.collect()),
         Some("lifecycle-summary") => run_lifecycle_summary(args.collect()),

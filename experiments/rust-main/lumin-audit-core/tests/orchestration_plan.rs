@@ -60,7 +60,7 @@ fn full_plan_adds_structural_runtime_and_staleness_steps() {
     assert!(steps.contains(&"merge-runtime-evidence.mjs"));
     assert!(steps.contains(&"measure-staleness.mjs"));
     assert!(!steps.contains(&"emit-sarif.mjs"));
-    assert_eq!(plan.summary.rust_owned_step_count, 1);
+    assert_eq!(plan.summary.rust_owned_step_count, 2);
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn cli_orchestration_plan_emits_typed_json() -> Result<()> {
     );
     assert_eq!(plan["profile"], "ci");
     assert_eq!(plan["emitSarif"], true);
-    assert_eq!(plan["summary"]["rustOwnedStepCount"], 1);
+    assert_eq!(plan["summary"]["rustOwnedStepCount"], 2);
     assert!(plan["steps"]
         .as_array()
         .is_some_and(|steps| steps.iter().any(|step| step["step"] == "emit-sarif.mjs")));
@@ -183,6 +183,13 @@ fn serialized_step_preconditions_keep_js_producer_with_rust_executor_contract() 
     let steps = value["steps"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("steps must serialize as an array"))?;
+    let unused_deps = steps
+        .iter()
+        .find(|step| step["step"] == "build-unused-deps.mjs")
+        .ok_or_else(|| anyhow::anyhow!("unused-deps step should be planned"))?;
+    assert_eq!(unused_deps["producerOwner"], "rust");
+    assert_eq!(unused_deps["executionOwner"], "lumin-audit-core");
+
     let resolver = steps
         .iter()
         .find(|step| step["step"] == "build-resolver-diagnostics.mjs")

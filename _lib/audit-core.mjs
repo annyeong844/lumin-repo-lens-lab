@@ -62,6 +62,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     ['finalize-audit-run'],
     'finalize-audit-run: missing --input <path|->',
   ],
+  [
+    ['unused-deps-artifact'],
+    'unused-deps-artifact: missing --input <path|->',
+  ],
 ];
 
 const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
