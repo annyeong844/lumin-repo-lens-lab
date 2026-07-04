@@ -26,6 +26,8 @@ import {
 } from './classify-policies.mjs';
 import { JS_FAMILY_LANGS } from './lang.mjs';
 
+export const ENTRY_SURFACE_REQUEST_SCHEMA_VERSION = 'lumin-entry-surface-producer-request.v1';
+
 function normalizeRel(relPath) {
   return String(relPath ?? '').replace(/\\/g, '/');
 }
@@ -252,10 +254,14 @@ function mergeEvidenceMaps(...maps) {
   return merged;
 }
 
-function completenessLabels({ entryFiles, knownFiles, symbolsData, submoduleOf, limitations = [] }) {
-  const parseErrors = (symbolsData?.meta?.warnings ?? [])
+function parseErrorCount(symbolsData) {
+  return (symbolsData?.meta?.warnings ?? [])
     .filter((w) => w?.code === 'parse-errors' || w?.kind === 'parse-errors' || w?.type === 'parse-errors')
     .reduce((sum, w) => sum + (Number(w?.count) || 0), 0);
+}
+
+function completenessLabels({ entryFiles, knownFiles, symbolsData, submoduleOf, limitations = [] }) {
+  const parseErrors = parseErrorCount(symbolsData);
   const globalCompleteness = parseErrors > 0 || limitations.length > 0 ? 'medium' : 'high';
   const submodules = new Set([
     ...knownFiles.map(submoduleOf),
@@ -268,7 +274,7 @@ function completenessLabels({ entryFiles, knownFiles, symbolsData, submoduleOf, 
   return { globalCompleteness, completenessBySubmodule };
 }
 
-export function buildEntrySurfaceArtifact({
+function collectEntrySurfaceParts({
   root,
   repoMode,
   symbolsData,
@@ -302,13 +308,90 @@ export function buildEntrySurfaceArtifact({
   );
   const unresolvedHtmlEntrypoints = sortedRecords(html.unresolved);
   const unsupportedScriptEntrypoints = sortedRecords(script.unsupported);
+
+  return {
+    knownFiles,
+    publicApi,
+    script,
+    html,
+    framework,
+    config,
+    entryFiles,
+    evidenceByFile,
+    unresolvedHtmlEntrypoints,
+    unsupportedScriptEntrypoints,
+    submoduleOf,
+  };
+}
+
+function laneFacts(lane) {
+  return {
+    files: sortedSet(lane.files),
+    evidenceByFile: sortedEvidenceObject(lane.evidenceByFile),
+  };
+}
+
+function submoduleFacts(files, submoduleOf) {
+  const out = {};
+  for (const file of sortedSet(new Set(files))) {
+    out[file] = submoduleOf(file);
+  }
+  return out;
+}
+
+export function collectEntrySurfaceFacts({
+  root,
+  repoMode,
+  symbolsData,
+  includeTests = true,
+  exclude = [],
+}) {
+  const parts = collectEntrySurfaceParts({ root, repoMode, symbolsData, includeTests, exclude });
+  return {
+    schemaVersion: ENTRY_SURFACE_REQUEST_SCHEMA_VERSION,
+    root,
+    generated: new Date().toISOString(),
+    includeTests,
+    knownFiles: parts.knownFiles,
+    parseErrorCount: parseErrorCount(symbolsData),
+    submoduleByFile: submoduleFacts(
+      [...parts.knownFiles, ...parts.entryFiles],
+      parts.submoduleOf,
+    ),
+    publicApi: {
+      ...laneFacts(parts.publicApi),
+      transitiveAdded: parts.publicApi.transitiveAdded,
+    },
+    script: {
+      ...laneFacts(parts.script),
+      unsupportedRawCount: parts.script.unsupportedRawCount,
+      unsupportedSampleLimit: parts.script.unsupportedSampleLimit,
+      unsupported: parts.unsupportedScriptEntrypoints,
+    },
+    html: {
+      ...laneFacts(parts.html),
+      unresolved: parts.unresolvedHtmlEntrypoints,
+    },
+    framework: laneFacts(parts.framework),
+    config: laneFacts(parts.config),
+  };
+}
+
+export function buildEntrySurfaceArtifact({
+  root,
+  repoMode,
+  symbolsData,
+  includeTests = true,
+  exclude = [],
+}) {
+  const parts = collectEntrySurfaceParts({ root, repoMode, symbolsData, includeTests, exclude });
   const { globalCompleteness, completenessBySubmodule } =
     completenessLabels({
-      entryFiles,
-      knownFiles,
+      entryFiles: parts.entryFiles,
+      knownFiles: parts.knownFiles,
       symbolsData,
-      submoduleOf,
-      limitations: unresolvedHtmlEntrypoints,
+      submoduleOf: parts.submoduleOf,
+      limitations: parts.unresolvedHtmlEntrypoints,
     });
 
   return {
@@ -326,20 +409,20 @@ export function buildEntrySurfaceArtifact({
         submoduleCompleteness: true,
       },
       includeTests,
-      transitivePublicReexports: publicApi.transitiveAdded,
-      knownFileCount: knownFiles.length,
+      transitivePublicReexports: parts.publicApi.transitiveAdded,
+      knownFileCount: parts.knownFiles.length,
     },
-    publicApiFiles: sortedSet(publicApi.files),
-    scriptEntrypointFiles: sortedSet(script.files),
-    unsupportedScriptEntrypointCount: script.unsupportedRawCount,
-    unsupportedScriptEntrypointSampleLimit: script.unsupportedSampleLimit,
-    unsupportedScriptEntrypoints,
-    htmlEntrypointFiles: sortedSet(html.files),
-    unresolvedHtmlEntrypoints,
-    frameworkEntrypointFiles: sortedSet(framework.files),
-    configEntrypointFiles: sortedSet(config.files),
-    entryFiles,
-    evidenceByFile: sortedEvidenceObject(evidenceByFile),
+    publicApiFiles: sortedSet(parts.publicApi.files),
+    scriptEntrypointFiles: sortedSet(parts.script.files),
+    unsupportedScriptEntrypointCount: parts.script.unsupportedRawCount,
+    unsupportedScriptEntrypointSampleLimit: parts.script.unsupportedSampleLimit,
+    unsupportedScriptEntrypoints: parts.unsupportedScriptEntrypoints,
+    htmlEntrypointFiles: sortedSet(parts.html.files),
+    unresolvedHtmlEntrypoints: parts.unresolvedHtmlEntrypoints,
+    frameworkEntrypointFiles: sortedSet(parts.framework.files),
+    configEntrypointFiles: sortedSet(parts.config.files),
+    entryFiles: parts.entryFiles,
+    evidenceByFile: sortedEvidenceObject(parts.evidenceByFile),
     globalCompleteness,
     completenessBySubmodule,
   };

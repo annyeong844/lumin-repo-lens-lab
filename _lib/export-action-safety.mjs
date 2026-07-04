@@ -8,7 +8,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { producerMetaBase } from './artifacts.mjs';
 import { countFileReferencesAst } from './classify-facts.mjs';
 import { definitionIdFromOxcNode } from './definition-id.mjs';
 import { parseOxcOrThrow } from './parse-oxc.mjs';
@@ -568,7 +567,7 @@ function deadSymbolsByFile(proposals) {
   return out;
 }
 
-export function buildExportActionSafetyArtifact({ root, deadClassify }) {
+export function collectExportActionSafetyFacts({ root, deadClassify }) {
   const proposals = proposalBuckets(deadClassify);
   const byFileSymbols = deadSymbolsByFile(proposals);
   const fileCache = new Map();
@@ -594,15 +593,27 @@ export function buildExportActionSafetyArtifact({ root, deadClassify }) {
     }
   }
 
-  const byId = Object.fromEntries(findings.map((f) => [f.id, f]));
+  return {
+    root: root ?? null,
+    generated: new Date().toISOString(),
+    findings,
+    warnings,
+  };
+}
+
+export function buildExportActionSafetyArtifact({ root, deadClassify }) {
+  const facts = collectExportActionSafetyFacts({ root, deadClassify });
+  const byId = Object.fromEntries(facts.findings.map((f) => [f.id, f]));
   return {
     meta: {
-      ...producerMetaBase({ tool: 'export-action-safety.mjs', root }),
+      tool: 'export-action-safety.mjs',
+      generated: facts.generated,
+      root: facts.root,
       schemaVersion: 1,
-      total: findings.length,
-      warnings,
+      total: facts.findings.length,
+      warnings: facts.warnings,
     },
-    findings,
+    findings: facts.findings,
     byId,
   };
 }

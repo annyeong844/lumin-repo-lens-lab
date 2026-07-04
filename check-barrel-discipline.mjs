@@ -18,6 +18,7 @@ import { detectRepoMode } from './_lib/repo-mode.mjs';
 import { buildAliasMap } from './_lib/alias-map.mjs';
 import { collectFiles } from './_lib/collect-files.mjs';
 import { relPath } from './_lib/paths.mjs';
+import { projectBarrelDisciplineArtifact } from './_lib/barrel-discipline-artifact.mjs';
 
 const cli = parseCliArgs();
 const { root: ROOT, output, verbose } = cli;
@@ -26,16 +27,13 @@ const repoMode = detectRepoMode(ROOT);
 
 // Early exit for single-package repos
 if (repoMode.mode === 'single-package') {
-  const artifact = {
-    meta: {
-      generated: new Date().toISOString(),
-      root: ROOT,
-      tool: 'check-barrel-discipline.mjs',
-    },
+  const artifact = projectBarrelDisciplineArtifact({
+    root: ROOT,
+    generated: new Date().toISOString(),
     mode: 'single-package',
     skipped: true,
     reason: 'Single-package repo has no workspace barrels to discipline. This check is monorepo-only.',
-  };
+  });
   const outPath = path.join(output, 'barrels.json');
   writeFileSync(outPath, JSON.stringify(artifact, null, 2));
   console.log(`[barrels] single-package mode — analysis skipped`);
@@ -151,13 +149,10 @@ for (const pkg of rootBarrelSpecs) {
   };
 }
 
-const artifact = {
-  meta: {
-    generated: new Date().toISOString(),
-    root: ROOT,
-    mode: repoMode.mode,
-    tool: 'check-barrel-discipline.mjs',
-  },
+const artifact = projectBarrelDisciplineArtifact({
+  root: ROOT,
+  generated: new Date().toISOString(),
+  mode: repoMode.mode,
   summary: {
     workspacePackages: [...rootBarrelSpecs],
     filesScanned: files.length,
@@ -166,7 +161,7 @@ const artifact = {
     unreadableFiles: unreadableCount,
   },
   byPackage,
-};
+});
 
 const outPath = path.join(output, 'barrels.json');
 writeFileSync(outPath, JSON.stringify(artifact, null, 2));

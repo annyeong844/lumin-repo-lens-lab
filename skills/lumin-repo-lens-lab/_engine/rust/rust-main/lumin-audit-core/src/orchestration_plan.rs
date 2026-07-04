@@ -371,7 +371,7 @@ fn push_base_pipeline_steps(
         "build-framework-resource-surfaces.mjs",
         "framework-resource-surfaces",
         false,
-        ProducerOwner::JsMjs,
+        ProducerOwner::Rust,
         StepMode::Always,
     );
     push_step(
@@ -380,7 +380,7 @@ fn push_base_pipeline_steps(
         "measure-topology.mjs",
         "topology",
         false,
-        ProducerOwner::JsMjs,
+        ProducerOwner::Rust,
         StepMode::Always,
     );
     push_step(
@@ -389,17 +389,29 @@ fn push_base_pipeline_steps(
         "measure-discipline.mjs",
         "discipline",
         false,
-        ProducerOwner::JsMjs,
+        ProducerOwner::Rust,
         StepMode::Always,
     );
 
     if options.profile.includes_full_steps() {
-        for (script, phase) in [
-            ("build-call-graph.mjs", "call-graph"),
-            ("check-barrel-discipline.mjs", "barrel-discipline"),
-            ("build-shape-index.mjs", "shape-index"),
-            ("build-function-clone-index.mjs", "function-clones"),
-            ("build-block-clone-index.mjs", "block-clones"),
+        for (script, phase, owner) in [
+            ("build-call-graph.mjs", "call-graph", ProducerOwner::Rust),
+            (
+                "check-barrel-discipline.mjs",
+                "barrel-discipline",
+                ProducerOwner::Rust,
+            ),
+            ("build-shape-index.mjs", "shape-index", ProducerOwner::Rust),
+            (
+                "build-function-clone-index.mjs",
+                "function-clones",
+                ProducerOwner::Rust,
+            ),
+            (
+                "build-block-clone-index.mjs",
+                "block-clones",
+                ProducerOwner::Rust,
+            ),
         ] {
             push_step(
                 steps,
@@ -407,7 +419,7 @@ fn push_base_pipeline_steps(
                 script,
                 phase,
                 false,
-                ProducerOwner::JsMjs,
+                owner,
                 StepMode::FullOrCi,
             );
         }
@@ -419,7 +431,7 @@ fn push_base_pipeline_steps(
         "build-symbol-graph.mjs",
         "symbol-graph",
         true,
-        ProducerOwner::JsMjs,
+        ProducerOwner::Rust,
         StepMode::Always,
     );
     push_step(
@@ -428,10 +440,10 @@ fn push_base_pipeline_steps(
         "build-unused-deps.mjs",
         "dependency-hygiene",
         false,
-        ProducerOwner::JsMjs,
+        ProducerOwner::Rust,
         StepMode::Always,
     );
-    push_precondition_step(
+    push_rust_precondition_step(
         steps,
         StepSpec {
             script: "build-resolver-diagnostics.mjs",
@@ -443,7 +455,7 @@ fn push_base_pipeline_steps(
             mode: StepMode::Precondition,
         },
     );
-    push_precondition_step(
+    push_rust_precondition_step(
         steps,
         StepSpec {
             script: "build-entry-surface.mjs",
@@ -455,7 +467,7 @@ fn push_base_pipeline_steps(
             mode: StepMode::Precondition,
         },
     );
-    push_precondition_step(
+    push_rust_precondition_step(
         steps,
         StepSpec {
             script: "build-module-reachability.mjs",
@@ -472,10 +484,10 @@ fn push_base_pipeline_steps(
         "classify-dead-exports.mjs",
         "dead-exports",
         false,
-        ProducerOwner::JsMjs,
+        ProducerOwner::Rust,
         StepMode::Always,
     );
-    push_precondition_step(
+    push_rust_precondition_step(
         steps,
         StepSpec {
             script: "export-action-safety.mjs",
@@ -489,7 +501,7 @@ fn push_base_pipeline_steps(
     );
 
     if options.profile.includes_full_steps() {
-        push_precondition_step(
+        push_rust_precondition_step(
             steps,
             StepSpec {
                 script: "merge-runtime-evidence.mjs",
@@ -503,7 +515,7 @@ fn push_base_pipeline_steps(
                 mode: StepMode::FullOrCiPrecondition,
             },
         );
-        push_precondition_step(
+        push_rust_precondition_step(
             steps,
             StepSpec {
                 script: "measure-staleness.mjs",
@@ -516,7 +528,7 @@ fn push_base_pipeline_steps(
         );
     }
 
-    push_precondition_step(
+    push_rust_precondition_step(
         steps,
         StepSpec {
             script: "rank-fixes.mjs",
@@ -534,7 +546,7 @@ fn push_base_pipeline_steps(
         "checklist-facts.mjs",
         "checklist-facts",
         false,
-        ProducerOwner::JsMjs,
+        ProducerOwner::Rust,
         StepMode::Always,
     );
 
@@ -545,7 +557,7 @@ fn push_base_pipeline_steps(
             "emit-sarif.mjs",
             "sarif",
             false,
-            ProducerOwner::JsMjs,
+            ProducerOwner::Rust,
             StepMode::CiOrSarif,
         );
     } else {
@@ -589,14 +601,22 @@ fn push_step(
     });
 }
 
-fn push_precondition_step(steps: &mut Vec<OrchestrationStep>, spec: StepSpec) {
+fn push_rust_precondition_step(steps: &mut Vec<OrchestrationStep>, spec: StepSpec) {
+    push_precondition_step_with_owner(steps, spec, ProducerOwner::Rust);
+}
+
+fn push_precondition_step_with_owner(
+    steps: &mut Vec<OrchestrationStep>,
+    spec: StepSpec,
+    producer_owner: ProducerOwner,
+) {
     steps.push(OrchestrationStep {
         order: steps.len() + 1,
         step: spec.script,
         script: spec.script,
         phase: spec.phase,
         required: false,
-        producer_owner: ProducerOwner::JsMjs,
+        producer_owner,
         execution_owner: "lumin-audit-core",
         mode: spec.mode,
         requires_artifacts: spec.required_artifacts,

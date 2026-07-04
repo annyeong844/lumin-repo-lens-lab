@@ -9,7 +9,8 @@ import path from 'node:path';
 import { loadIfExists } from './_lib/artifacts.mjs';
 import { parseCliArgs } from './_lib/cli.mjs';
 import { atomicWrite } from './_lib/atomic-write.mjs';
-import { buildExportActionSafetyArtifact } from './_lib/export-action-safety.mjs';
+import { projectExportActionSafetyArtifact } from './_lib/export-action-safety-artifact.mjs';
+import { collectExportActionSafetyFacts } from './_lib/export-action-safety.mjs';
 
 const { root, output } = parseCliArgs();
 const ROOT = path.resolve(root);
@@ -21,7 +22,8 @@ if (!deadClassify) {
   process.exit(1);
 }
 
-const artifact = buildExportActionSafetyArtifact({ root: ROOT, deadClassify });
+const facts = collectExportActionSafetyFacts({ root: ROOT, deadClassify });
+const artifact = projectExportActionSafetyArtifact(facts);
 const outPath = path.join(OUT, 'export-action-safety.json');
 atomicWrite(outPath, JSON.stringify(artifact, null, 2));
 

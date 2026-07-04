@@ -250,6 +250,7 @@ dependencies = [
  "lumin-rust-common",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 

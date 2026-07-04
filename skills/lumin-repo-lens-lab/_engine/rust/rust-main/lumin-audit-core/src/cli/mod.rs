@@ -2,16 +2,56 @@ use anyhow::{bail, Result};
 
 mod args;
 mod artifact;
+mod barrel_discipline;
+mod block_clones;
+mod call_graph;
+mod checklist_facts;
+mod dead_classify;
+mod discipline;
+mod entry_surface;
+mod export_action_safety;
+mod framework_resource_surfaces;
+mod function_clones;
 mod io_support;
 mod lifecycle;
 mod manifest;
+mod module_reachability;
 mod orchestration;
+mod rank_fixes;
+mod resolver_diagnostics_artifacts;
+mod runtime_evidence;
+mod sarif;
+mod shape_index;
+mod staleness;
+mod symbol_graph;
+mod topology;
+mod unused_deps;
 mod usage;
 
 use artifact::*;
+use barrel_discipline::*;
+use block_clones::*;
+use call_graph::*;
+use checklist_facts::*;
+use dead_classify::*;
+use discipline::*;
+use entry_surface::*;
+use export_action_safety::*;
+use framework_resource_surfaces::*;
+use function_clones::*;
 use lifecycle::*;
 use manifest::*;
+use module_reachability::*;
 use orchestration::*;
+use rank_fixes::*;
+use resolver_diagnostics_artifacts::*;
+use runtime_evidence::*;
+use sarif::*;
+use shape_index::*;
+use staleness::*;
+use symbol_graph::*;
+use topology::*;
+use unused_deps::*;
 use usage::USAGE;
 
 pub fn run() -> Result<()> {
@@ -24,6 +64,30 @@ pub fn run() -> Result<()> {
         Some("rust-analysis-run-merge") => run_rust_analysis_run_merge(args.collect()),
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
         Some("artifact-summary") => run_artifact_summary(args.collect()),
+        Some("barrel-discipline-artifact") => run_barrel_discipline_artifact(args.collect()),
+        Some("block-clones-artifact") => run_block_clones_artifact(args.collect()),
+        Some("call-graph-artifact") => run_call_graph_artifact(args.collect()),
+        Some("checklist-facts-artifact") => run_checklist_facts_artifact(args.collect()),
+        Some("dead-classify-artifact") => run_dead_classify_artifact(args.collect()),
+        Some("discipline-artifact") => run_discipline_artifact(args.collect()),
+        Some("entry-surface-artifact") => run_entry_surface_artifact(args.collect()),
+        Some("export-action-safety-artifact") => run_export_action_safety_artifact(args.collect()),
+        Some("framework-resource-surfaces-artifact") => {
+            run_framework_resource_surfaces_artifact(args.collect())
+        }
+        Some("function-clones-artifact") => run_function_clones_artifact(args.collect()),
+        Some("module-reachability-artifact") => run_module_reachability_artifact(args.collect()),
+        Some("rank-fixes-artifact") => run_rank_fixes_artifact(args.collect()),
+        Some("resolver-diagnostics-artifacts") => {
+            run_resolver_diagnostics_artifacts(args.collect())
+        }
+        Some("runtime-evidence-artifact") => run_runtime_evidence_artifact(args.collect()),
+        Some("sarif-artifact") => run_sarif_artifact(args.collect()),
+        Some("shape-index-artifact") => run_shape_index_artifact(args.collect()),
+        Some("staleness-artifact") => run_staleness_artifact(args.collect()),
+        Some("symbol-graph-artifact") => run_symbol_graph_artifact(args.collect()),
+        Some("topology-artifact") => run_topology_artifact(args.collect()),
+        Some("unused-deps-artifact") => run_unused_deps_artifact(args.collect()),
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         Some("blind-zones-summary") => run_blind_zones_summary(args.collect()),
         Some("lifecycle-summary") => run_lifecycle_summary(args.collect()),

@@ -4,6 +4,7 @@ use std::process::Command;
 
 use lumin_audit_core::orchestration_plan::{
     build_orchestration_plan, AuditProfile, BasePipelineStatus, OrchestrationPlanOptions,
+    ProducerOwner,
 };
 
 #[test]
@@ -32,6 +33,7 @@ fn quick_plan_matches_default_audit_profile_without_full_or_sarif_steps() {
         ]
     );
     assert_eq!(plan.summary.required_step_count, 2);
+    assert_eq!(plan.summary.rust_owned_step_count, 12);
     assert!(plan
         .skipped
         .iter()
@@ -60,7 +62,10 @@ fn full_plan_adds_structural_runtime_and_staleness_steps() {
     assert!(steps.contains(&"merge-runtime-evidence.mjs"));
     assert!(steps.contains(&"measure-staleness.mjs"));
     assert!(!steps.contains(&"emit-sarif.mjs"));
-    assert_eq!(plan.summary.rust_owned_step_count, 2);
+    assert_eq!(plan.summary.rust_owned_step_count, 20);
+    assert!(plan.steps.iter().any(|step| {
+        step.step == "merge-runtime-evidence.mjs" && step.producer_owner == ProducerOwner::Rust
+    }));
 }
 
 #[test]
@@ -80,6 +85,9 @@ fn ci_or_explicit_sarif_plans_emit_sarif_without_forcing_ci_profile() {
     assert!(forced_plan.emit_sarif);
     assert!(step_names(&forced_plan).contains(&"emit-sarif.mjs"));
     assert!(!step_names(&forced_plan).contains(&"build-call-graph.mjs"));
+    assert!(ci_plan.steps.iter().any(|step| {
+        step.step == "emit-sarif.mjs" && step.producer_owner == ProducerOwner::Rust
+    }));
 }
 
 #[test]
@@ -156,7 +164,7 @@ fn cli_orchestration_plan_emits_typed_json() -> Result<()> {
     );
     assert_eq!(plan["profile"], "ci");
     assert_eq!(plan["emitSarif"], true);
-    assert_eq!(plan["summary"]["rustOwnedStepCount"], 2);
+    assert_eq!(plan["summary"]["rustOwnedStepCount"], 21);
     assert!(plan["steps"]
         .as_array()
         .is_some_and(|steps| steps.iter().any(|step| step["step"] == "emit-sarif.mjs")));
@@ -183,12 +191,99 @@ fn serialized_step_preconditions_keep_js_producer_with_rust_executor_contract() 
     let steps = value["steps"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("steps must serialize as an array"))?;
+    let framework_surfaces = steps
+        .iter()
+        .find(|step| step["step"] == "build-framework-resource-surfaces.mjs")
+        .ok_or_else(|| anyhow::anyhow!("framework-resource-surfaces step should be planned"))?;
+    assert_eq!(framework_surfaces["producerOwner"], "rust");
+    assert_eq!(framework_surfaces["executionOwner"], "lumin-audit-core");
+
     let unused_deps = steps
         .iter()
         .find(|step| step["step"] == "build-unused-deps.mjs")
         .ok_or_else(|| anyhow::anyhow!("unused-deps step should be planned"))?;
     assert_eq!(unused_deps["producerOwner"], "rust");
     assert_eq!(unused_deps["executionOwner"], "lumin-audit-core");
+
+    let discipline = steps
+        .iter()
+        .find(|step| step["step"] == "measure-discipline.mjs")
+        .ok_or_else(|| anyhow::anyhow!("discipline step should be planned"))?;
+    assert_eq!(discipline["producerOwner"], "rust");
+    assert_eq!(discipline["executionOwner"], "lumin-audit-core");
+
+    let topology = steps
+        .iter()
+        .find(|step| step["step"] == "measure-topology.mjs")
+        .ok_or_else(|| anyhow::anyhow!("topology step should be planned"))?;
+    assert_eq!(topology["producerOwner"], "rust");
+    assert_eq!(topology["executionOwner"], "lumin-audit-core");
+
+    let entry_surface = steps
+        .iter()
+        .find(|step| step["step"] == "build-entry-surface.mjs")
+        .ok_or_else(|| anyhow::anyhow!("entry-surface step should be planned"))?;
+    assert_eq!(entry_surface["producerOwner"], "rust");
+    assert_eq!(entry_surface["executionOwner"], "lumin-audit-core");
+
+    let full_plan = build_orchestration_plan(OrchestrationPlanOptions {
+        profile: AuditProfile::Full,
+        ..OrchestrationPlanOptions::default()
+    });
+    let full_value = serde_json::to_value(full_plan)?;
+    let barrel = full_value
+        .get("steps")
+        .and_then(|steps| steps.as_array())
+        .and_then(|steps| {
+            steps
+                .iter()
+                .find(|step| step["step"] == "check-barrel-discipline.mjs")
+        })
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("barrel-discipline step should be planned"))?;
+    assert_eq!(barrel["producerOwner"], "rust");
+    assert_eq!(barrel["executionOwner"], "lumin-audit-core");
+
+    let module_reachability = steps
+        .iter()
+        .find(|step| step["step"] == "build-module-reachability.mjs")
+        .ok_or_else(|| anyhow::anyhow!("module-reachability step should be planned"))?;
+    assert_eq!(module_reachability["producerOwner"], "rust");
+    assert_eq!(module_reachability["executionOwner"], "lumin-audit-core");
+
+    let export_action_safety = steps
+        .iter()
+        .find(|step| step["step"] == "export-action-safety.mjs")
+        .ok_or_else(|| anyhow::anyhow!("export-action-safety step should be planned"))?;
+    assert_eq!(export_action_safety["producerOwner"], "rust");
+    assert_eq!(export_action_safety["executionOwner"], "lumin-audit-core");
+
+    let rank_fixes = steps
+        .iter()
+        .find(|step| step["step"] == "rank-fixes.mjs")
+        .ok_or_else(|| anyhow::anyhow!("rank-fixes step should be planned"))?;
+    assert_eq!(rank_fixes["producerOwner"], "rust");
+    assert_eq!(rank_fixes["executionOwner"], "lumin-audit-core");
+
+    let checklist_facts = steps
+        .iter()
+        .find(|step| step["step"] == "checklist-facts.mjs")
+        .ok_or_else(|| anyhow::anyhow!("checklist-facts step should be planned"))?;
+    assert_eq!(checklist_facts["producerOwner"], "rust");
+    assert_eq!(checklist_facts["executionOwner"], "lumin-audit-core");
+
+    let sarif_plan = build_orchestration_plan(OrchestrationPlanOptions {
+        sarif: true,
+        ..OrchestrationPlanOptions::default()
+    });
+    let sarif = serde_json::to_value(sarif_plan)?
+        .get("steps")
+        .and_then(|steps| steps.as_array())
+        .and_then(|steps| steps.iter().find(|step| step["step"] == "emit-sarif.mjs"))
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("sarif step should be planned"))?;
+    assert_eq!(sarif["producerOwner"], "rust");
+    assert_eq!(sarif["executionOwner"], "lumin-audit-core");
 
     let resolver = steps
         .iter()
@@ -203,7 +298,7 @@ fn serialized_step_preconditions_keep_js_producer_with_rust_executor_contract() 
             "script": "build-resolver-diagnostics.mjs",
             "phase": "resolver-diagnostics",
             "required": false,
-            "producerOwner": "js-mjs",
+            "producerOwner": "rust",
             "executionOwner": "lumin-audit-core",
             "mode": "precondition",
             "requiresArtifacts": ["symbols.json"],

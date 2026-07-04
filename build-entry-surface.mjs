@@ -7,7 +7,8 @@ import { atomicWrite } from './_lib/atomic-write.mjs';
 import { loadIfExists } from './_lib/artifacts.mjs';
 import { parseCliArgs } from './_lib/cli.mjs';
 import { detectRepoMode } from './_lib/repo-mode.mjs';
-import { buildEntrySurfaceArtifact } from './_lib/entry-surface.mjs';
+import { collectEntrySurfaceFacts } from './_lib/entry-surface.mjs';
+import { projectEntrySurfaceArtifact } from './_lib/entry-surface-artifact.mjs';
 
 const cli = parseCliArgs({});
 const ROOT = cli.root;
@@ -19,13 +20,14 @@ if (!symbolsData) {
   process.exit(1);
 }
 
-const artifact = buildEntrySurfaceArtifact({
+const facts = collectEntrySurfaceFacts({
   root: ROOT,
   repoMode: detectRepoMode(ROOT),
   symbolsData,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
 });
+const artifact = projectEntrySurfaceArtifact(facts);
 
 const outPath = path.join(OUTPUT, 'entry-surface.json');
 atomicWrite(outPath, JSON.stringify(artifact, null, 2));

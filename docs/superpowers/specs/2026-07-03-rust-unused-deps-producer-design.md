@@ -112,6 +112,51 @@ The initial JS wrapper may still write `unused-deps.json` after receiving the
 Rust result. A later slice can let audit-core write the artifact directly if
 the broader orchestrator owns that write path.
 
+## Shared Rust Producer CLI Contract
+
+Producer commands must accept `--input <path|->` and may write either to stdout
+or to `--result-output <path>`. JS wrappers must use `--result-output` for
+normal repository runs.
+
+Rust must write artifact JSON only to the selected result channel. Diagnostics
+must go to stderr. Invalid JSON, schema mismatch, invalid normalized paths, and
+failed result-file writes must exit non-zero and must not produce a partial
+success artifact.
+
+Wrappers must treat a non-zero exit, missing result file, or malformed result
+JSON as producer failure rather than falling back to JS classification.
+
+## Request Schema Details
+
+`symbols.dependencyImportConsumers` entries are the only import-consumer input
+for this producer. Each consumer is interpreted as:
+
+```json
+{
+  "file": "src/app.ts",
+  "fromSpec": "@scope/pkg/subpath",
+  "depRoot": "@scope/pkg",
+  "kind": "import",
+  "source": "symbols.json.dependencyImportConsumers",
+  "typeOnly": false
+}
+```
+
+- `file` is required. It may be repo-relative, `./`-prefixed, or absolute under
+  the normalized request `root`; absolute paths under `root` are converted to
+  repo-relative paths before package-scope matching.
+- backslashes normalize to `/`.
+- `depRoot` wins when present; otherwise Rust derives the dependency root from
+  `fromSpec`.
+- `fromSpec`, `kind`, `source`, and `typeOnly` are evidence fields. Missing
+  `kind` defaults to `import`; missing `source` defaults to
+  `symbols.json.dependencyImportConsumers`.
+- consumers outside the owning package scope do not satisfy that package's
+  dependency declarations.
+
+The package declarations come only from JS-supplied `packageRecords[].packageJson`
+fields. Rust does not read package files directly in this slice.
+
 ## Product Semantics To Preserve
 
 ### Package Identity
@@ -144,10 +189,28 @@ Classification order must match the JS producer:
    `workspace-internal`
 7. otherwise -> `review-unused` / `no-observed-consumer`
 
+Each declaration is classified independently. If the same package appears in
+multiple dependency fields, observed import evidence makes each declaration
+`used`; otherwise the field-specific mute rules still apply per declaration.
+
+`confidence-limited` is part of the artifact vocabulary but is not newly emitted
+by this slice unless already emitted by the checked JS producer. Any emission
+condition must be covered by a Rust test before implementation.
+
 If `symbols.meta.supports.dependencyImportConsumers` is not true or
 `symbols.dependencyImportConsumers` is absent, the artifact must be
 `status: "unavailable"` with `reason: "input-artifact-missing"`, not a
 zero-unused claim.
+
+### Package Script Tool Evidence
+
+Script command tokenization preserves checked JS behavior; it is not a
+shell-perfect parser. Unsupported shell constructs must preserve current JS
+behavior rather than becoming a new Rust-only interpretation in this slice.
+
+The test matrix should cover direct tools, `cross-env vite`, `FOO=bar vite`,
+quoted commands, `node ./node_modules/.bin/vite`, `npx`, `bunx`, `npm exec`,
+`pnpm exec`, `pnpm dlx`, and `npm run` wrapper non-evidence.
 
 ## Wrapper Strategy
 
@@ -163,7 +226,9 @@ zero-unused claim.
 7. keep the current console summary wording.
 
 This keeps package/workspace discovery unchanged while moving the actual
-dependency hygiene classification into Rust.
+dependency hygiene classification into Rust. The wrapper must not keep semantic
+reason strings, classification order, or package-script classifier tables after
+this slice.
 
 `orchestration_plan.rs` should then mark the step as `ProducerOwner::Rust`.
 The step name may remain `build-unused-deps.mjs` while the public wrapper
@@ -176,10 +241,12 @@ Cargo tests are authoritative for the migrated producer.
 
 Required Rust tests:
 
+- golden fixture parity with canonical JSON equivalence, including ordering;
 - static import consumer classifies as `used`;
 - package script tool classifies as `muted`;
 - peer, optional, ambient type, and workspace-internal declarations stay muted;
 - declaration with no consumer or explanation becomes `review-unused`;
+- duplicate declarations across dependency fields classify independently;
 - missing dependency-import-consumer support emits `unavailable`;
 - root package consumers do not leak into child package declarations;
 - child package consumers do not satisfy sibling package declarations;
@@ -211,9 +278,12 @@ This slice is complete when:
 - `unused_deps.rs` owns artifact construction;
 - `canonical/audit-core.md` records that owner boundary;
 - `build-unused-deps.mjs` is a thin Rust wrapper, not a second classifier;
+- semantic reason strings and classification order exist only in Rust;
 - `orchestration_plan.rs` reports the step as Rust-owned;
 - the artifact shape remains `unused-deps.v1` /
   `unused-deps-review-policy-v1`;
+- golden fixture parity proves deterministic ordering and existing artifact
+  shape;
 - existing review-only safety invariants still hold;
 - Cargo tests cover the migrated producer behavior;
 - the checked Node wrapper test passes without restoring the 16-minute legacy

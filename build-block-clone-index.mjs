@@ -6,8 +6,8 @@ import path from "node:path";
 
 import { atomicWrite } from "./_lib/atomic-write.mjs";
 import { producerMetaBase } from "./_lib/artifacts.mjs";
+import { runAuditCoreJsonResultFile } from "./_lib/audit-core.mjs";
 import {
-  assembleBlockCloneArtifact,
   BLOCK_CLONE_NOISE_POLICY_ID,
   BLOCK_CLONE_NORMALIZATION_POLICY_ID,
   BLOCK_CLONE_POLICY_VERSION,
@@ -271,23 +271,31 @@ phaseTimer.setCounter(
   tokenized.reduce((sum, file) => sum + (file.tokens?.length ?? 0), 0),
 );
 
-const artifact = restampArtifact(
-  phaseTimer.runPhase("assemble-artifact", () =>
-    assembleBlockCloneArtifact({
+const generated = producerMetaBase({
+  tool: "build-block-clone-index.mjs",
+  root: ROOT,
+}).generated;
+const incremental = incrementalMeta({
+  reusedResult: false,
+  reason: incrementalEnabled ? "cache-miss" : "disabled-by-flag",
+  cacheKey,
+});
+const artifact = phaseTimer.runPhase("assemble-artifact", () =>
+  runAuditCoreJsonResultFile([
+    "block-clones-artifact",
+    "--input",
+    "-",
+  ], "block-clones-artifact", {
+    input: JSON.stringify({
+      schemaVersion: "lumin-block-clones-producer-request.v1",
+      generated,
       root: ROOT,
-      files: tokenized,
       includeTests: cli.includeTests,
       exclude: cli.exclude ?? [],
-      generated: producerMetaBase({
-        tool: "build-block-clone-index.mjs",
-        root: ROOT,
-      }).generated,
+      files: tokenized,
+      thresholds: DEFAULT_BLOCK_CLONE_THRESHOLDS,
+      incremental,
     }),
-  ),
-  incrementalMeta({
-    reusedResult: false,
-    reason: incrementalEnabled ? "cache-miss" : "disabled-by-flag",
-    cacheKey,
   }),
 );
 

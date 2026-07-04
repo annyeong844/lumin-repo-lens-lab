@@ -1,10 +1,9 @@
-// classify-dead-exports.mjs — Orchestrator.
+// classify-dead-exports.mjs — fact-collection wrapper.
 //
 // Reads `symbols.json` (from build-symbol-graph), applies framework
 // exclusion policies, extracts per-symbol facts (occurrence count,
-// predicate partner, aliasing), assigns each to a category based on the
-// occurrence count, and emits a structured `dead-classify.json` proposal
-// list.
+// predicate partner, aliasing), and delegates C/A/B category assignment plus
+// structured `dead-classify.json` proposal construction to lumin-audit-core.
 //
 // Category rules:
 //   C (0 uses)    → definition can be fully removed
@@ -18,8 +17,11 @@
 // Policy / fact extraction split in v1.7.0:
 //   _lib/classify-policies.mjs → config / sentinel / Nuxt detection
 //   _lib/classify-facts.mjs    → occurrence counting, predicate, aliasing
+// Rust migration split in v1.11.x:
+//   classify-dead-exports.mjs  → JS parser/repo/policy fact collection
+//   lumin-audit-core           → C/A/B/specifier proposal classification
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseCliArgs } from '../lib/cli.mjs';
 import { detectRepoMode } from '../lib/repo-mode.mjs';
@@ -53,7 +55,8 @@ import {
 } from '../lib/classify-facts.mjs';
 import { computeFindingProvenance } from '../lib/finding-provenance.mjs';
 import { buildGeneratedConsumerBlindZones } from '../lib/generated-blind-zone-relevance.mjs';
-import { EVIDENCE, provenanceFields } from '../lib/vocab.mjs';
+import { runAuditCoreJsonToResultFile } from '../lib/audit-core.mjs';
+import { EVIDENCE } from '../lib/vocab.mjs';
 
 const cli = parseCliArgs({
   'classify-candidate-limit': { type: 'string' },
@@ -702,18 +705,6 @@ for (const d of deadList) {
   }
   const predicate = hasPredicatePartner(text, d.symbol);
 
-  // Categorize on occurrence count. Counter completeness matters —
-  // `occ === 0` means "zero Identifier + JSXIdentifier + JSXMember-top
-  // references", not "zero occurrences via any mechanism". Adding a new
-  // reference surface to the AST walker (future TS proposals, etc.)
-  // must be paired with re-evaluation of these boundaries. FP-41 was
-  // precisely this shape: the walker missed JSXIdentifier, so compound-
-  // component symbols hit occ === 0 and escalated to Tier C.
-  let category;
-  if (occ === 0)      category = 'C-completely-dead';
-  else if (occ <= 2)  category = 'A-remove-export';
-  else                category = 'B-file-internal-hub';
-
   // v1.10.0 P1: per-finding provenance. Replaces the repo-global
   // unresolvedInternalRatio gate with local taint evidence so findings
   // in unaffected parts of the repo keep their normal tier.
@@ -738,7 +729,6 @@ for (const d of deadList) {
     ...(parseError ? { parseError } : {}),
     ...(aliased ? { localInternalUses: occ } : {}),
     predicatePartner: predicate,
-    category,
     supportedBy: provenance.supportedBy,
     taintedBy: provenance.taintedBy,
     resolverConfidence: provenance.resolverConfidence,
@@ -748,83 +738,6 @@ for (const d of deadList) {
 
 const classifyLoopMs = Date.now() - classifyLoopStartedAt;
 
-// ─── Reporting ───────────────────────────────────────────────
-const byCategory = {
-  'C-completely-dead': [],
-  'A-remove-export': [],
-  'B-file-internal-hub': [],
-};
-for (const c of classified) byCategory[c.category].push(c);
-
-const excludedAny = excludedConfig || excludedPublicApi || excludedScriptEntrypoint ||
-  excludedHtmlEntrypoint || transitiveAdded || excludedFramework || excludedNuxtNitro ||
-  excludedVitePress || excludedDeclarationSidecar || excludedDynamicImportOpacity ||
-  excludedTestConsumer;
-if (excludedAny) {
-  console.log(`\n  [FP-22 excluded] config files: ${excludedConfig}`);
-  console.log(`  [FP-23 excluded] public API (pkg.exports target): ${excludedPublicApi}`);
-  console.log(`  [FP-45 excluded] script-driven build entrypoints: ${excludedScriptEntrypoint}`);
-  console.log(`  [FP-47 excluded] HTML module entrypoints: ${excludedHtmlEntrypoint}`);
-  if (transitiveAdded > 0) {
-    console.log(`  [FP-25 expanded] transitive barrel re-exports: +${transitiveAdded} files reachable via public entries`);
-  }
-  console.log(`  [FP-27 excluded] framework sentinel files (Next.js / SvelteKit routing): ${excludedFramework}`);
-  if (isNuxtNitro) {
-    console.log(`  [FP-30 excluded] Nuxt/Nitro filesystem-routed files: ${excludedNuxtNitro}`);
-  }
-  if (isVitePress) {
-    console.log(`  [FP-46 excluded] VitePress convention files: ${excludedVitePress}`);
-  }
-  console.log(`  [FP-48 excluded] JS declaration sidecars: ${excludedDeclarationSidecar}`);
-  console.log(`  [FP-18 excluded] dynamic import opacity target dirs: ${excludedDynamicImportOpacity}`);
-  if (includeTests === false) {
-    console.log(`  [FP-44 excluded] test-pinned contract exports: ${excludedTestConsumer}`);
-  }
-}
-
-console.log(`\n══════ 분류 결과 ══════`);
-console.log(`  C (완전 dead, 내부 사용 0회)    : ${byCategory['C-completely-dead'].length}건`);
-console.log(`  A (export 제거 가능, 1~2회)     : ${byCategory['A-remove-export'].length}건`);
-console.log(`  B (파일 내부 중심, 3회+)        : ${byCategory['B-file-internal-hub'].length}건`);
-if (unprocessedCandidates.length > 0) {
-  console.log(`  DEGRADED (classify 미완료)       : ${unprocessedCandidates.length}건`);
-}
-console.log(`  합계                            : ${classified.length}건`);
-
-const withPredicate = classified.filter((c) => c.predicatePartner);
-console.log(`\n  predicate 동반 (isX/assertX 등): ${withPredicate.length}건`);
-console.log(`    → 이 중 A 카테고리: ${withPredicate.filter((c) => c.category === 'A-remove-export').length}`);
-console.log(`    → 이 중 B 카테고리: ${withPredicate.filter((c) => c.category === 'B-file-internal-hub').length}`);
-console.log(`    → 이 중 C 카테고리: ${withPredicate.filter((c) => c.category === 'C-completely-dead').length}`);
-
-console.log(`\n  kind 분포:`);
-const byKind = new Map();
-for (const c of classified) byKind.set(c.kind, (byKind.get(c.kind) || 0) + 1);
-for (const [k, v] of [...byKind.entries()].sort((a, b) => b[1] - a[1])) {
-  console.log(`    ${k.padEnd(25)}  ${v}건`);
-}
-
-// Package breakdown — shared workspace-aware classifier (see _lib/paths.mjs).
-const pkgOf = submoduleOf;
-
-const pkgCat = {};
-for (const c of classified) {
-  const p = pkgOf(c.file);
-  if (!pkgCat[p]) pkgCat[p] = { C: 0, A: 0, B: 0, total: 0 };
-  if (c.category === 'C-completely-dead') pkgCat[p].C++;
-  else if (c.category === 'A-remove-export') pkgCat[p].A++;
-  else pkgCat[p].B++;
-  pkgCat[p].total++;
-}
-console.log(`\n  package별 × category:`);
-const labelWidth = Math.max(14, ...Object.keys(pkgCat).map((k) => k.length));
-console.log(`    ${'package'.padEnd(labelWidth)}    C(완전dead)  A(export제거)  B(내부hub)  합`);
-for (const [p, s] of Object.entries(pkgCat)) {
-  console.log(
-    `    ${p.padEnd(labelWidth)}    ${s.C.toString().padStart(4)}         ${s.A.toString().padStart(4)}          ${s.B.toString().padStart(4)}      ${s.total}`,
-  );
-}
-
 function printSamples(label, list, n) {
   console.log(`\n── ${label} 샘플 (${list.length}건 중 최대 ${n}) ──`);
   for (const c of list.slice(0, n)) {
@@ -833,136 +746,108 @@ function printSamples(label, list, n) {
   }
 }
 
-printSamples('C (완전 dead)', byCategory['C-completely-dead'], 20);
-printSamples('A (export 제거 가능)', byCategory['A-remove-export'], 20);
-printSamples('B (파일 내부 hub)', byCategory['B-file-internal-hub'], 20);
-
-// ─── Proposal artifact ───────────────────────────────────────
-const aliasedDead = classified.filter(isAliasedSpec);
-const nonAliasedC = byCategory['C-completely-dead'].filter((c) => !isAliasedSpec(c));
-const nonAliasedA = byCategory['A-remove-export'].filter((c) => !isAliasedSpec(c));
-const nonAliasedB = byCategory['B-file-internal-hub'].filter((c) => !isAliasedSpec(c));
 const classifyIncomplete = candidateLimitApplied ||
   astBatchStats.timeBudgetExceeded ||
   unprocessedCandidates.length > 0;
 
-// Provenance forwarder moved to `_lib/vocab.mjs` in v1.10.1 — one
-// definition, every bucket mapper uses it via `...provenanceFields(c)`.
-// Adding a new provenance field is a single-point change in vocab.mjs.
-
-const removalProposal = {
-  summary: {
-    total: classified.length,
-    category_C: byCategory['C-completely-dead'].length,
-    category_A: byCategory['A-remove-export'].length,
-    category_B: byCategory['B-file-internal-hub'].length,
-    aliased_export_specifier: aliasedDead.length,
-    with_predicate: withPredicate.length,
-    excluded: {
-      config_FP22: excludedConfig,
-      publicApi_FP23: excludedPublicApi,
-      scriptEntrypoint_FP45: excludedScriptEntrypoint,
-      htmlEntrypoint_FP47: excludedHtmlEntrypoint,
-      frameworkSentinel_FP27: excludedFramework,
-      nuxtNitro_FP30: excludedNuxtNitro,
-      vitePress_FP46: excludedVitePress,
-      declarationSidecar_FP48: excludedDeclarationSidecar,
-      dynamicImportOpacity_FP18: excludedDynamicImportOpacity,
-      testConsumer_FP44: excludedTestConsumer,
-      transitiveBarrelAdded_FP25: transitiveAdded,
-      isNuxtNitroDetected: isNuxtNitro,
-      testConsumerDiagnostics_FP44: testPins.diagnostics.length,
-    },
-    frameworkPolicy: frameworkPolicyCounters,
-    incomplete: classifyIncomplete,
-    performance: {
-      deadCandidatesTotal: allDeadCandidates.length,
-      deadCandidatesProcessed: deadList.length,
-      candidateLimit: configuredCandidateLimit,
-      candidateLimitApplied,
-      timeBudgetMs,
-      timeBudgetExceeded: astBatchStats.timeBudgetExceeded,
-      maxFileBytes: maxClassifyFileBytes,
-      unprocessedCandidates: unprocessedCandidates.length,
-      fileCacheEntries: fileCache.size,
-      astFilesAttempted: astBatchStats.filesAttempted,
-      astFilesRead: astBatchStats.filesRead,
-      astFilesParsed: astBatchStats.filesParsed,
-      astParseErrorFiles: astBatchStats.filesWithParseErrors,
-      astReadErrorFiles: astBatchStats.filesWithReadErrors,
-      astFilesSkippedBySize: astBatchStats.filesSkippedBySize,
-      astCandidatesCounted: astBatchStats.candidatesCounted,
-      textZeroCandidates: astBatchStats.textZeroCandidates,
-      textZeroFiles: astBatchStats.textZeroFiles,
-      provenanceCacheEntries: provenanceBaseByFile.size,
-      astBatchMs,
-      classifyLoopMs,
-      totalMs: Date.now() - classifyStartedAt,
-    },
-  },
-  proposal_remove_export_specifier: aliasedDead.map((c) => {
-    const localAlsoDead = (c.localInternalUses ?? 0) === 0;
-    return {
-      file: c.file,
-      line: c.line,
-      symbol: c.symbol,
-      localName: c.localName,
-      kind: c.kind,
-      localInternalUses: c.localInternalUses ?? 0,
-      localAlsoDead,
-      action: localAlsoDead
-        ? `\`export { ${c.localName} as ${c.symbol} }\` 제거. 참고: \`${c.localName}\` 도 파일 내 다른 곳에서 쓰이지 않음 — 정의도 함께 제거 후보.`
-        : `\`export { ${c.localName} as ${c.symbol} }\` 제거만. \`${c.localName}\` 은 파일 내부에서 사용 중이므로 정의는 유지.`,
-      ...provenanceFields(c),
-    };
-  }),
-  proposal_C_remove_symbol: nonAliasedC.map((c) => ({
-    file: c.file,
-    line: c.line,
-    symbol: c.symbol,
-    kind: c.kind,
-    fileInternalUses: c.fileInternalUses,
-    action: '정의 자체 제거 가능. 어디서도 쓰이지 않음.',
-    ...provenanceFields(c),
-  })),
-  proposal_A_demote_to_internal: nonAliasedA.map((c) => ({
-    file: c.file,
-    line: c.line,
-    symbol: c.symbol,
-    kind: c.kind,
-    fileInternalUses: c.fileInternalUses,
-    action: 'export 제거. 파일 내부 타입/함수로 강등.',
-    ...provenanceFields(c),
-  })),
-  proposal_B_review: nonAliasedB.map((c) => ({
-    file: c.file,
-    line: c.line,
-    symbol: c.symbol,
-    kind: c.kind,
-    fileInternalUses: c.fileInternalUses,
-    predicatePartner: c.predicatePartner,
-    action:
-      c.predicatePartner
-        ? `predicate(${c.predicatePartner}) 존재. type + predicate 패턴일 가능성. 유지 권장.`
-        : '파일 내 중심 타입. 설계상 public API 의도인지 확인 후 결정.',
-    ...provenanceFields(c),
-  })),
-  proposal_DEGRADED_unprocessed: unprocessedCandidates.map((c) => ({
-    file: c.file,
-    line: c.line,
-    symbol: c.symbol,
-    kind: c.kind,
-    reason: c.reason,
-    action: 'classification incomplete; rerun with a larger classify time budget before making removal claims.',
-  })),
-  // v1.9.6: exposed for rank-fixes → fix-plan.MUTED tier materialization.
-  // Each entry has {file, line, symbol, kind, reason}. reason is one of:
-  //   config_FP22 / publicApi_FP23 / frameworkSentinel_FP27 / nuxtNitro_FP30
-  //   / testConsumer_FP44 / scriptEntrypoint_FP45 / vitePress_FP46 / htmlEntrypoint_FP47
-  //   / dynamicImportOpacity_FP18
+const artifactRequest = {
+  schemaVersion: 'lumin-dead-classify-producer-request.v1',
+  classifiedCandidates: classified,
   excludedCandidates,
+  unprocessedCandidates,
+  excludedSummary: {
+    config_FP22: excludedConfig,
+    publicApi_FP23: excludedPublicApi,
+    scriptEntrypoint_FP45: excludedScriptEntrypoint,
+    htmlEntrypoint_FP47: excludedHtmlEntrypoint,
+    frameworkSentinel_FP27: excludedFramework,
+    nuxtNitro_FP30: excludedNuxtNitro,
+    vitePress_FP46: excludedVitePress,
+    declarationSidecar_FP48: excludedDeclarationSidecar,
+    dynamicImportOpacity_FP18: excludedDynamicImportOpacity,
+    testConsumer_FP44: excludedTestConsumer,
+    transitiveBarrelAdded_FP25: transitiveAdded,
+    isNuxtNitroDetected: isNuxtNitro,
+    testConsumerDiagnostics_FP44: testPins.diagnostics.length,
+  },
+  frameworkPolicy: frameworkPolicyCounters,
+  incomplete: classifyIncomplete,
+  performance: {
+    deadCandidatesTotal: allDeadCandidates.length,
+    deadCandidatesProcessed: deadList.length,
+    candidateLimit: configuredCandidateLimit,
+    candidateLimitApplied,
+    timeBudgetMs,
+    timeBudgetExceeded: astBatchStats.timeBudgetExceeded,
+    maxFileBytes: maxClassifyFileBytes,
+    unprocessedCandidates: unprocessedCandidates.length,
+    fileCacheEntries: fileCache.size,
+    astFilesAttempted: astBatchStats.filesAttempted,
+    astFilesRead: astBatchStats.filesRead,
+    astFilesParsed: astBatchStats.filesParsed,
+    astParseErrorFiles: astBatchStats.filesWithParseErrors,
+    astReadErrorFiles: astBatchStats.filesWithReadErrors,
+    astFilesSkippedBySize: astBatchStats.filesSkippedBySize,
+    astCandidatesCounted: astBatchStats.candidatesCounted,
+    textZeroCandidates: astBatchStats.textZeroCandidates,
+    textZeroFiles: astBatchStats.textZeroFiles,
+    provenanceCacheEntries: provenanceBaseByFile.size,
+    astBatchMs,
+    classifyLoopMs,
+    totalMs: Date.now() - classifyStartedAt,
+  },
 };
 
 const outPath = path.join(output, 'dead-classify.json');
-writeFileSync(outPath, JSON.stringify(removalProposal, null, 2));
+const requestPath = path.join(output, '.dead-classify-artifact-request.tmp.json');
+try {
+  writeFileSync(requestPath, JSON.stringify(artifactRequest));
+  runAuditCoreJsonToResultFile(
+    ['dead-classify-artifact', '--input', requestPath],
+    'dead-classify-artifact',
+    outPath,
+  );
+} finally {
+  rmSync(requestPath, { force: true });
+}
+
+const removalProposal = JSON.parse(readFileSync(outPath, 'utf8'));
+const summary = removalProposal.summary ?? {};
+const excludedAny = Object.entries(summary.excluded ?? {})
+  .some(([key, value]) => key !== 'isNuxtNitroDetected' && Number(value) > 0);
+if (excludedAny) {
+  console.log(`\n  [FP-22 excluded] config files: ${summary.excluded?.config_FP22 ?? 0}`);
+  console.log(`  [FP-23 excluded] public API (pkg.exports target): ${summary.excluded?.publicApi_FP23 ?? 0}`);
+  console.log(`  [FP-45 excluded] script-driven build entrypoints: ${summary.excluded?.scriptEntrypoint_FP45 ?? 0}`);
+  console.log(`  [FP-47 excluded] HTML module entrypoints: ${summary.excluded?.htmlEntrypoint_FP47 ?? 0}`);
+  if ((summary.excluded?.transitiveBarrelAdded_FP25 ?? 0) > 0) {
+    console.log(`  [FP-25 expanded] transitive barrel re-exports: +${summary.excluded.transitiveBarrelAdded_FP25} files reachable via public entries`);
+  }
+  console.log(`  [FP-27 excluded] framework sentinel files (Next.js / SvelteKit routing): ${summary.excluded?.frameworkSentinel_FP27 ?? 0}`);
+  if (summary.excluded?.isNuxtNitroDetected) {
+    console.log(`  [FP-30 excluded] Nuxt/Nitro filesystem-routed files: ${summary.excluded?.nuxtNitro_FP30 ?? 0}`);
+  }
+  if ((summary.excluded?.vitePress_FP46 ?? 0) > 0) {
+    console.log(`  [FP-46 excluded] VitePress convention files: ${summary.excluded.vitePress_FP46}`);
+  }
+  console.log(`  [FP-48 excluded] JS declaration sidecars: ${summary.excluded?.declarationSidecar_FP48 ?? 0}`);
+  console.log(`  [FP-18 excluded] dynamic import opacity target dirs: ${summary.excluded?.dynamicImportOpacity_FP18 ?? 0}`);
+  if (includeTests === false) {
+    console.log(`  [FP-44 excluded] test-pinned contract exports: ${summary.excluded?.testConsumer_FP44 ?? 0}`);
+  }
+}
+
+console.log(`\n══════ 분류 결과 ══════`);
+console.log(`  C (완전 dead, 내부 사용 0회)    : ${summary.category_C ?? 0}건`);
+console.log(`  A (export 제거 가능, 1~2회)     : ${summary.category_A ?? 0}건`);
+console.log(`  B (파일 내부 중심, 3회+)        : ${summary.category_B ?? 0}건`);
+if ((removalProposal.proposal_DEGRADED_unprocessed ?? []).length > 0) {
+  console.log(`  DEGRADED (classify 미완료)       : ${removalProposal.proposal_DEGRADED_unprocessed.length}건`);
+}
+console.log(`  합계                            : ${summary.total ?? 0}건`);
+console.log(`\n  predicate 동반 (isX/assertX 등): ${summary.with_predicate ?? 0}건`);
+
+printSamples('C (완전 dead)', removalProposal.proposal_C_remove_symbol ?? [], 20);
+printSamples('A (export 제거 가능)', removalProposal.proposal_A_demote_to_internal ?? [], 20);
+printSamples('B (파일 내부 hub)', removalProposal.proposal_B_review ?? [], 20);
 console.log(`[classify] saved → ${outPath}`);

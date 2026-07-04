@@ -8,7 +8,7 @@
 //
 // Usage: node build-symbol-graph.mjs --root <repo> [--output <dir>]
 
-import { writeFileSync } from "node:fs";
+import { rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 
@@ -44,7 +44,7 @@ import {
 import { JS_FAMILY_LANGS, SFC_FAMILY_LANGS } from "../lib/lang.mjs";
 import { isTestLikePath } from "../lib/test-paths.mjs";
 import { fileExists, relPath, buildSubmoduleResolver } from "../lib/paths.mjs";
-import { buildSymbolsArtifact } from "../lib/symbol-graph-artifact.mjs";
+import { runAuditCoreJsonToResultFile } from "../lib/audit-core.mjs";
 import { buildAnyContaminationFacts } from "../lib/any-contamination.mjs";
 import {
   buildContextFingerprint,
@@ -2298,17 +2298,29 @@ phaseTimer.recordPhase(
 
 // ─── 저장 ─────────────────────────────────────────────────
 const outPath = path.join(output, "symbols.json");
-const artifact = buildSymbolsArtifact({
+const requestPath = path.join(output, ".symbols-artifact-request.tmp.json");
+const generated = new Date().toISOString();
+const artifactRequest = {
+  schemaVersion: "lumin-symbol-graph-producer-request.v1",
+  generated,
   root: ROOT,
   files,
-  defIndex,
-  fileData,
+  defIndex: [...defIndex.entries()].map(([filePath, definitions]) => ({
+    filePath,
+    definitions: Object.fromEntries(definitions),
+  })),
+  fileData: [...fileData.entries()].map(([filePath, info]) => ({
+    filePath,
+    ...info,
+  })),
   parseErrors,
   warnings,
-  nextCache,
-  unresolvedInternalByPrefix,
-  prefixExamples,
-  unresolvedInternalSpecifiers,
+  nextCacheEntries: nextCache.entries,
+  unresolvedInternalByPrefix: [...unresolvedInternalByPrefix.entries()].map(
+    ([key, count]) => ({ key, count }),
+  ),
+  prefixExamples: Object.fromEntries(prefixExamples),
+  unresolvedInternalSpecifiers: [...unresolvedInternalSpecifiers],
   unresolvedInternalSpecifierRecords,
   languageSupport,
   totalUses,
@@ -2356,14 +2368,19 @@ const artifact = buildSymbolsArtifact({
     invalidatedFiles,
     reason: incrementalEnabled ? null : "disabled-by-flag",
   },
-});
+};
 const writeArtifactStarted = Date.now();
-const artifactJson = JSON.stringify(artifact, null, 2);
-phaseTimer.setCounter(
-  "symbolsJsonBytes",
-  Buffer.byteLength(artifactJson, "utf8"),
-);
-writeFileSync(outPath, artifactJson);
+try {
+  writeFileSync(requestPath, JSON.stringify(artifactRequest));
+  runAuditCoreJsonToResultFile(
+    ["symbol-graph-artifact", "--input", requestPath],
+    "symbol-graph-artifact",
+    outPath,
+  );
+} finally {
+  rmSync(requestPath, { force: true });
+}
+phaseTimer.setCounter("symbolsJsonBytes", statSync(outPath).size);
 phaseTimer.recordPhase("write-artifact", Date.now() - writeArtifactStarted);
 phaseTimer.write();
 console.log(
