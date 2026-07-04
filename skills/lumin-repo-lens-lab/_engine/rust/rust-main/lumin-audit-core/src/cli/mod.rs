@@ -125,6 +125,7 @@ pub fn run() -> Result<()> {
         Some("execute-canon-draft") => run_execute_canon_draft(args.collect()),
         Some("execute-check-canon") => run_execute_check_canon(args.collect()),
         Some("pre-write-route") => run_pre_write_route(args.collect()),
+        Some("execute-js-pre-write") => run_execute_js_pre_write(args.collect()),
         Some("execute-rust-pre-write") => run_execute_rust_pre_write(args.collect()),
         Some("execute-post-write") => run_execute_post_write(args.collect()),
         Some("orchestration-result-summary") => run_orchestration_result_summary(args.collect()),

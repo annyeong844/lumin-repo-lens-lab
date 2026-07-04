@@ -63,6 +63,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'finalize-audit-run: missing --input <path|->',
   ],
   [
+    ['execute-js-pre-write'],
+    'execute-js-pre-write: missing --input <path|->',
+  ],
+  [
     ['barrel-discipline-artifact'],
     'barrel-discipline-artifact: missing --input <path|->',
   ],
@@ -147,6 +151,7 @@ const AUDIT_CORE_CONTRACT_PROBES = [
 const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'manifest-root-with-evidence',
   'manifest-lifecycle-evidence-refresh',
+  'execute-js-pre-write',
   'manifest-evidence-summary-with-reads',
   'manifest-evidence-refresh-with-reads',
   'barrel-discipline-artifact',
@@ -303,6 +308,8 @@ function auditCoreBinaryWritesResultFiles(command) {
   const outputDir = path.join(tempDir, 'out');
   const rootInputPath = path.join(tempDir, 'manifest-root-with-evidence.json');
   const lifecycleInputPath = path.join(tempDir, 'manifest-lifecycle-evidence-refresh.json');
+  const jsPreWriteInputPath = path.join(tempDir, 'execute-js-pre-write.json');
+  const jsPreWriteScriptsDir = path.join(tempDir, 'js-pre-write-scripts');
   const barrelDisciplineInputPath = path.join(tempDir, 'barrel-discipline-artifact.json');
   const blockClonesInputPath = path.join(tempDir, 'block-clones-artifact.json');
   const callGraphInputPath = path.join(tempDir, 'call-graph-artifact.json');
@@ -324,6 +331,7 @@ function auditCoreBinaryWritesResultFiles(command) {
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(outputDir, { recursive: true });
+    mkdirSync(jsPreWriteScriptsDir, { recursive: true });
     spawnSync('git', ['init'], { cwd: rootDir, encoding: 'utf8' });
     writeFileSync(path.join(outputDir, 'triage.json'), JSON.stringify({
       shape: { totalFiles: 1, tsFiles: 0, rsFiles: 1 },
@@ -361,6 +369,41 @@ function auditCoreBinaryWritesResultFiles(command) {
         production: false,
         generatedArtifactsMode: 'default',
       },
+    }));
+    writeFileSync(path.join(jsPreWriteScriptsDir, 'pre-write.mjs'), `
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+let output = null;
+for (let i = 0; i < process.argv.length; i += 1) {
+  if (process.argv[i] === '--output') output = process.argv[i + 1];
+}
+if (!output) process.exit(2);
+mkdirSync(output, { recursive: true });
+const specific = path.join(output, 'pre-write-advisory.PROBE.json');
+const latest = path.join(output, 'pre-write-advisory.latest.json');
+const advisory = {
+  invocationId: 'PROBE',
+  artifactPaths: { invocationSpecific: specific, latest },
+  evidenceAvailability: { status: 'available', producer: 'pre-write.mjs' },
+};
+writeFileSync(specific, JSON.stringify(advisory));
+writeFileSync(latest, JSON.stringify(advisory));
+`);
+    writeFileSync(jsPreWriteInputPath, JSON.stringify({
+      schemaVersion: 'lumin-js-pre-write-lifecycle-request.v1',
+      root: rootDir,
+      output: outputDir,
+      scriptsDir: jsPreWriteScriptsDir,
+      nodeExecutable: process.execPath,
+      childIntentFlag: '-',
+      childIntentInput: '{}\n',
+      engineSelection: {
+        requested: 'auto',
+        selected: 'js',
+        reason: 'contract-probe',
+      },
+      noFreshAudit: false,
+      scanArgs: [],
     }));
     writeFileSync(path.join(rootDir, 'probe.ts'), 'const value: any = input as any; // TODO\n');
     writeFileSync(barrelDisciplineInputPath, JSON.stringify({
@@ -856,6 +899,11 @@ function auditCoreBinaryWritesResultFiles(command) {
         requiredField: 'manifest',
       },
       {
+        subcommand: 'execute-js-pre-write',
+        args: ['execute-js-pre-write', '--input', jsPreWriteInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'manifest-evidence-summary-with-reads',
         args: [
           'manifest-evidence-summary-with-reads',
@@ -1175,6 +1223,19 @@ function resultPayloadMatchesProbe(json, probe) {
       isObject(json.nodes) &&
       Array.isArray(json.edges) &&
       json.edges.length === 1;
+  }
+  if (probe.subcommand === 'execute-js-pre-write') {
+    return json.schemaVersion === 'lumin-pre-write-lifecycle-result.v1' &&
+      isObject(json.block) &&
+      json.block.executionOwner === 'lumin-audit-core' &&
+      json.block.engine === 'js' &&
+      json.block.language === 'js-ts' &&
+      json.block.producer === 'pre-write.mjs' &&
+      json.block.ran === true &&
+      json.block.advisoryInvocationId === 'PROBE' &&
+      json.exitCode === 0 &&
+      json.stdout === undefined &&
+      json.stderr === undefined;
   }
   const payload = json[probe.requiredField];
   return isObject(payload) &&

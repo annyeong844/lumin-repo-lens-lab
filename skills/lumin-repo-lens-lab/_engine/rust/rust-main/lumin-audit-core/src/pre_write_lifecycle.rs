@@ -9,6 +9,8 @@ use std::process::{Command, Stdio};
 
 pub const PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
     "lumin-rust-pre-write-lifecycle-request.v1";
+pub const JS_PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
+    "lumin-js-pre-write-lifecycle-request.v1";
 pub const PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION: &str = "lumin-pre-write-lifecycle-result.v1";
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -37,6 +39,24 @@ pub struct PreWriteLifecycleRequest {
 }
 
 pub type RustPreWriteLifecycleRequest = PreWriteLifecycleRequest;
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsPreWriteLifecycleRequest {
+    pub schema_version: String,
+    pub root: PathBuf,
+    pub output: PathBuf,
+    pub scripts_dir: PathBuf,
+    pub node_executable: String,
+    pub child_intent_flag: String,
+    #[serde(default)]
+    pub child_intent_input: Option<String>,
+    pub engine_selection: Value,
+    #[serde(default)]
+    pub no_fresh_audit: bool,
+    #[serde(default)]
+    pub scan_args: Vec<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +97,8 @@ pub struct PreWriteBlock {
     pub latest_advisory_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub advisory_invocation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_availability: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rust_native_artifact_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -160,6 +182,75 @@ pub fn execute_rust_pre_write_lifecycle_streaming(
     execute_pre_write_lifecycle_streaming(request)
 }
 
+pub fn execute_js_pre_write_lifecycle(
+    request: JsPreWriteLifecycleRequest,
+) -> Result<PreWriteLifecycleResult> {
+    execute_js_pre_write_lifecycle_with_stdio(request, ChildStdio::Capture)
+}
+
+pub fn execute_js_pre_write_lifecycle_streaming(
+    request: JsPreWriteLifecycleRequest,
+) -> Result<PreWriteLifecycleResult> {
+    execute_js_pre_write_lifecycle_with_stdio(request, ChildStdio::Inherit)
+}
+
+fn execute_js_pre_write_lifecycle_with_stdio(
+    request: JsPreWriteLifecycleRequest,
+    child_stdio: ChildStdio,
+) -> Result<PreWriteLifecycleResult> {
+    validate_js_request(&request)?;
+    let child = run_js_pre_write_child(&request, child_stdio);
+    if !child.status_success {
+        return Ok(PreWriteLifecycleResult {
+            schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
+            block: js_failure_block(
+                &request,
+                format!("pre-write.mjs exited non-zero: {}", child.reason),
+            ),
+            exit_code: child.exit_code.unwrap_or(1),
+            stdout: nonempty(child.stdout),
+            stderr: nonempty(child.stderr),
+        });
+    }
+
+    let latest_advisory_path = advisory_latest_path(&request.output);
+    let advisory = read_js_pre_write_advisory(&latest_advisory_path)?;
+    let advisory_invocation_id = advisory
+        .get("invocationId")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let advisory_path = js_advisory_path(&request.output, &advisory);
+    let evidence_availability = advisory
+        .get("evidenceAvailability")
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    Ok(PreWriteLifecycleResult {
+        schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
+        block: PreWriteBlock {
+            requested: true,
+            ran: true,
+            execution_owner: "lumin-audit-core",
+            engine: "js",
+            language: "js-ts",
+            producer: "pre-write.mjs",
+            engine_selection: request.engine_selection,
+            advisory_path: Some(path_string(&advisory_path)),
+            latest_advisory_path: Some(path_string(&latest_advisory_path)),
+            advisory_invocation_id,
+            evidence_availability: Some(evidence_availability),
+            rust_native_artifact_path: None,
+            rust_native_latest_path: None,
+            source_commit: None,
+            analyzer_invocation: None,
+            reason: None,
+        },
+        exit_code: 0,
+        stdout: nonempty(child.stdout),
+        stderr: nonempty(child.stderr),
+    })
+}
+
 fn execute_pre_write_lifecycle_with_stdio(
     request: PreWriteLifecycleRequest,
     child_stdio: ChildStdio,
@@ -212,6 +303,7 @@ fn execute_pre_write_lifecycle_with_stdio(
             advisory_path: Some(path_string(&written.specific_path)),
             latest_advisory_path: Some(path_string(&written.latest_path)),
             advisory_invocation_id: Some(request.advisory_invocation_id.clone()),
+            evidence_availability: None,
             rust_native_artifact_path: Some(path_string(&request.rust_native_artifact_path)),
             rust_native_latest_path: Some(path_string(&request.rust_native_latest_path)),
             source_commit: Some(request.source_commit.clone()),
@@ -222,6 +314,25 @@ fn execute_pre_write_lifecycle_with_stdio(
         stdout: nonempty(child.stdout),
         stderr: nonempty(child.stderr),
     })
+}
+
+fn validate_js_request(request: &JsPreWriteLifecycleRequest) -> Result<()> {
+    if request.schema_version != JS_PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION {
+        bail!(
+            "execute-js-pre-write: unsupported schemaVersion '{}'",
+            request.schema_version
+        );
+    }
+    validate_nonempty_path_for("execute-js-pre-write", "root", &request.root)?;
+    validate_nonempty_path_for("execute-js-pre-write", "output", &request.output)?;
+    validate_nonempty_path_for("execute-js-pre-write", "scriptsDir", &request.scripts_dir)?;
+    if request.node_executable.trim().is_empty() {
+        bail!("execute-js-pre-write: nodeExecutable must be a non-empty string");
+    }
+    if request.child_intent_flag.trim().is_empty() {
+        bail!("execute-js-pre-write: childIntentFlag must be a non-empty string");
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,8 +365,12 @@ fn validate_request(request: &PreWriteLifecycleRequest) -> Result<()> {
 }
 
 fn validate_nonempty_path(field: &str, path: &Path) -> Result<()> {
+    validate_nonempty_path_for("execute-pre-write", field, path)
+}
+
+fn validate_nonempty_path_for(label: &str, field: &str, path: &Path) -> Result<()> {
     if path.as_os_str().is_empty() {
-        bail!("execute-pre-write: {field} must be provided");
+        bail!("{label}: {field} must be provided");
     }
     Ok(())
 }
@@ -294,11 +409,13 @@ fn run_rust_pre_write_child(
 
     match child_stdio {
         ChildStdio::Capture => run_child_capture(
+            "lumin-rust-analyzer pre-write",
             &request.analyzer_invocation.command,
             &args,
             &request.intent_input,
         ),
         ChildStdio::Inherit => run_child_inherit(
+            "lumin-rust-analyzer pre-write",
             &request.analyzer_invocation.command,
             &args,
             &request.intent_input,
@@ -306,7 +423,35 @@ fn run_rust_pre_write_child(
     }
 }
 
-fn run_child_capture(command: &str, args: &[String], input: &str) -> ChildOutput {
+fn run_js_pre_write_child(
+    request: &JsPreWriteLifecycleRequest,
+    child_stdio: ChildStdio,
+) -> ChildOutput {
+    let mut args = vec![
+        path_string(&request.scripts_dir.join("pre-write.mjs")),
+        "--root".to_string(),
+        path_string(&request.root),
+        "--output".to_string(),
+        path_string(&request.output),
+        "--intent".to_string(),
+        request.child_intent_flag.clone(),
+    ];
+    args.extend(request.scan_args.clone());
+    if request.no_fresh_audit {
+        args.push("--no-fresh-audit".to_string());
+    }
+    let input = request.child_intent_input.as_deref().unwrap_or("");
+    match child_stdio {
+        ChildStdio::Capture => {
+            run_child_capture("pre-write.mjs", &request.node_executable, &args, input)
+        }
+        ChildStdio::Inherit => {
+            run_child_inherit("pre-write.mjs", &request.node_executable, &args, input)
+        }
+    }
+}
+
+fn run_child_capture(label: &str, command: &str, args: &[String], input: &str) -> ChildOutput {
     let mut child = match Command::new(command)
         .args(args)
         .stdin(Stdio::piped())
@@ -330,6 +475,7 @@ fn run_child_capture(command: &str, args: &[String], input: &str) -> ChildOutput
     }
     match child.wait_with_output() {
         Ok(output) => child_output(
+            label,
             output.status.success(),
             output.status.code(),
             String::from_utf8_lossy(&output.stdout).to_string(),
@@ -339,7 +485,7 @@ fn run_child_capture(command: &str, args: &[String], input: &str) -> ChildOutput
     }
 }
 
-fn run_child_inherit(command: &str, args: &[String], input: &str) -> ChildOutput {
+fn run_child_inherit(label: &str, command: &str, args: &[String], input: &str) -> ChildOutput {
     let mut child = match Command::new(command)
         .args(args)
         .stdin(Stdio::piped())
@@ -363,6 +509,7 @@ fn run_child_inherit(command: &str, args: &[String], input: &str) -> ChildOutput
     }
     match child.wait() {
         Ok(status) => child_output(
+            label,
             status.success(),
             status.code(),
             String::new(),
@@ -383,20 +530,66 @@ fn child_start_error(error: std::io::Error) -> ChildOutput {
 }
 
 fn child_output(
+    label: &str,
     status_success: bool,
     exit_code: Option<i32>,
     stdout: String,
     stderr: String,
 ) -> ChildOutput {
     let reason = exit_code
-        .map(|code| format!("lumin-rust-analyzer pre-write exited {code}"))
-        .unwrap_or_else(|| "lumin-rust-analyzer pre-write terminated by signal".to_string());
+        .map(|code| format!("{label} exited {code}"))
+        .unwrap_or_else(|| format!("{label} terminated by signal"));
     ChildOutput {
         status_success,
         exit_code,
         reason,
         stdout,
         stderr,
+    }
+}
+
+fn read_js_pre_write_advisory(path: &Path) -> Result<Value> {
+    let text = fs::read_to_string(path).with_context(|| {
+        format!(
+            "js pre-write advisory parse failed: failed to read {}",
+            path.display()
+        )
+    })?;
+    serde_json::from_str::<Value>(&text).with_context(|| {
+        format!(
+            "js pre-write advisory parse failed: invalid JSON in {}",
+            path.display()
+        )
+    })
+}
+
+fn js_advisory_path(output: &Path, advisory: &Value) -> PathBuf {
+    if let Some(path) = advisory
+        .get("artifactPaths")
+        .and_then(|paths| paths.get("invocationSpecific"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        return resolve_process_relative_path(path);
+    }
+    if let Some(invocation_id) = advisory
+        .get("invocationId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        return advisory_specific_path(output, invocation_id);
+    }
+    advisory_latest_path(output)
+}
+
+fn resolve_process_relative_path(path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
     }
 }
 
@@ -571,6 +764,28 @@ fn failure_block(request: &PreWriteLifecycleRequest, reason: String) -> PreWrite
         advisory_path: None,
         latest_advisory_path: None,
         advisory_invocation_id: None,
+        evidence_availability: None,
+        rust_native_artifact_path: None,
+        rust_native_latest_path: None,
+        source_commit: None,
+        analyzer_invocation: None,
+        reason: Some(reason),
+    }
+}
+
+fn js_failure_block(request: &JsPreWriteLifecycleRequest, reason: String) -> PreWriteBlock {
+    PreWriteBlock {
+        requested: true,
+        ran: false,
+        execution_owner: "lumin-audit-core",
+        engine: "js",
+        language: "js-ts",
+        producer: "pre-write.mjs",
+        engine_selection: request.engine_selection.clone(),
+        advisory_path: None,
+        latest_advisory_path: None,
+        advisory_invocation_id: None,
+        evidence_availability: None,
         rust_native_artifact_path: None,
         rust_native_latest_path: None,
         source_commit: None,

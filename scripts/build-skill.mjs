@@ -289,6 +289,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'finalize-audit-run: missing --input <path|->',
     ],
     [
+      ['execute-js-pre-write'],
+      'execute-js-pre-write: missing --input <path|->',
+    ],
+    [
       ['barrel-discipline-artifact'],
       'barrel-discipline-artifact: missing --input <path|->',
     ],
@@ -396,6 +400,8 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const outputDir = path.join(tempDir, 'out');
   const rootInputPath = path.join(tempDir, 'manifest-root-with-evidence.json');
   const lifecycleInputPath = path.join(tempDir, 'manifest-lifecycle-evidence-refresh.json');
+  const jsPreWriteInputPath = path.join(tempDir, 'execute-js-pre-write.json');
+  const jsPreWriteScriptsDir = path.join(tempDir, 'js-pre-write-scripts');
   const barrelDisciplineInputPath = path.join(tempDir, 'barrel-discipline-artifact.json');
   const blockClonesInputPath = path.join(tempDir, 'block-clones-artifact.json');
   const callGraphInputPath = path.join(tempDir, 'call-graph-artifact.json');
@@ -417,6 +423,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(outputDir, { recursive: true });
+    mkdirSync(jsPreWriteScriptsDir, { recursive: true });
     spawnSync('git', ['init'], { cwd: rootDir, encoding: 'utf8' });
     writeFileSync(path.join(outputDir, 'triage.json'), JSON.stringify({
       shape: { totalFiles: 1, tsFiles: 0, rsFiles: 1 },
@@ -454,6 +461,41 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
         production: false,
         generatedArtifactsMode: 'default',
       },
+    }));
+    writeFileSync(path.join(jsPreWriteScriptsDir, 'pre-write.mjs'), `
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+let output = null;
+for (let i = 0; i < process.argv.length; i += 1) {
+  if (process.argv[i] === '--output') output = process.argv[i + 1];
+}
+if (!output) process.exit(2);
+mkdirSync(output, { recursive: true });
+const specific = path.join(output, 'pre-write-advisory.PROBE.json');
+const latest = path.join(output, 'pre-write-advisory.latest.json');
+const advisory = {
+  invocationId: 'PROBE',
+  artifactPaths: { invocationSpecific: specific, latest },
+  evidenceAvailability: { status: 'available', producer: 'pre-write.mjs' },
+};
+writeFileSync(specific, JSON.stringify(advisory));
+writeFileSync(latest, JSON.stringify(advisory));
+`);
+    writeFileSync(jsPreWriteInputPath, JSON.stringify({
+      schemaVersion: 'lumin-js-pre-write-lifecycle-request.v1',
+      root: rootDir,
+      output: outputDir,
+      scriptsDir: jsPreWriteScriptsDir,
+      nodeExecutable: process.execPath,
+      childIntentFlag: '-',
+      childIntentInput: '{}\n',
+      engineSelection: {
+        requested: 'auto',
+        selected: 'js',
+        reason: 'contract-probe',
+      },
+      noFreshAudit: false,
+      scanArgs: [],
     }));
     writeFileSync(path.join(rootDir, 'probe.ts'), 'const value: any = input as any; // TODO\n');
     writeFileSync(barrelDisciplineInputPath, JSON.stringify({
@@ -949,6 +991,11 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
         requiredField: 'manifest',
       },
       {
+        subcommand: 'execute-js-pre-write',
+        args: ['execute-js-pre-write', '--input', jsPreWriteInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'manifest-evidence-summary-with-reads',
         args: [
           'manifest-evidence-summary-with-reads',
@@ -1270,6 +1317,19 @@ function resultPayloadMatchesProbe(json, probe) {
       Array.isArray(json.edges) &&
       json.edges.length === 1;
   }
+  if (probe.subcommand === 'execute-js-pre-write') {
+    return json.schemaVersion === 'lumin-pre-write-lifecycle-result.v1' &&
+      isObject(json.block) &&
+      json.block.executionOwner === 'lumin-audit-core' &&
+      json.block.engine === 'js' &&
+      json.block.language === 'js-ts' &&
+      json.block.producer === 'pre-write.mjs' &&
+      json.block.ran === true &&
+      json.block.advisoryInvocationId === 'PROBE' &&
+      json.exitCode === 0 &&
+      json.stdout === undefined &&
+      json.stderr === undefined;
+  }
   const payload = json[probe.requiredField];
   return isObject(payload) &&
     isObject(payload.scanRange) &&
@@ -1399,6 +1459,9 @@ function copyAuditCoreSourceFallback(outDir) {
 
 function auditCoreSourceFallbackLock(lockText) {
   const packages = parseCargoLockPackages(lockText);
+  if (packages.length === 0) {
+    throw new Error('failed to parse experiments/Cargo.lock while preparing audit-core source fallback');
+  }
   const byName = new Map();
   const byNameVersion = new Map();
   for (const pkg of packages) {
@@ -1431,9 +1494,13 @@ function auditCoreSourceFallbackLock(lockText) {
 }
 
 function parseCargoLockPackages(lockText) {
-  return lockText
-    .split(/\n(?=\[\[package\]\]\n)/)
-    .filter((block) => block.startsWith('[[package]]'))
+  const normalized = lockText.replace(/\r\n/g, '\n');
+  const starts = [...normalized.matchAll(/^\[\[package\]\]$/gm)].map((match) => match.index);
+  return starts
+    .map((start, index) => {
+      const end = starts[index + 1] ?? normalized.length;
+      return normalized.slice(start, end).trimEnd();
+    })
     .map((block, index) => {
       const name = lockField(block, 'name');
       const version = lockField(block, 'version') ?? '';

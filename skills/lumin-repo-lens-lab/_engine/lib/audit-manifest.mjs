@@ -201,6 +201,14 @@ export function executeRustPreWriteLifecycle(request) {
   );
 }
 
+export function executeJsPreWriteLifecycle(request) {
+  return runJsonInputResultFileCommand(
+    'execute-js-pre-write',
+    'executeJsPreWriteLifecycle',
+    request,
+  );
+}
+
 export function executePostWriteLifecycle(request) {
   return runJsonInputResultFileCommand(
     'execute-post-write',

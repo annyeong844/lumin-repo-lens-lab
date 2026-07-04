@@ -24,8 +24,9 @@ use lumin_audit_core::post_write_lifecycle::{
     execute_post_write_lifecycle, execute_post_write_lifecycle_streaming, PostWriteLifecycleRequest,
 };
 use lumin_audit_core::pre_write_lifecycle::{
+    execute_js_pre_write_lifecycle, execute_js_pre_write_lifecycle_streaming,
     execute_rust_pre_write_lifecycle, execute_rust_pre_write_lifecycle_streaming,
-    RustPreWriteLifecycleRequest,
+    JsPreWriteLifecycleRequest, RustPreWriteLifecycleRequest,
 };
 use lumin_audit_core::pre_write_routing::{resolve_pre_write_route, PreWriteRoutingRequest};
 
@@ -186,6 +187,43 @@ pub(super) fn run_execute_rust_pre_write(args: Vec<String>) -> Result<()> {
         write_json_file(&result_output, &result)
     } else {
         let result = execute_rust_pre_write_lifecycle(request)?;
+        write_stdout_json(&result)
+    }
+}
+
+pub(super) fn run_execute_js_pre_write(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut result_output = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            "--result-output" => result_output = Some(take_path(&mut args, "--result-output")?),
+            _ => bail!("execute-js-pre-write: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("execute-js-pre-write: missing --input <path|->")?;
+    let json = read_json_input(&input, "execute-js-pre-write")?;
+    let request = serde_json::from_value::<JsPreWriteLifecycleRequest>(json)
+        .context("execute-js-pre-write: invalid request shape")?;
+    if let Some(result_output) = result_output {
+        let mut result = execute_js_pre_write_lifecycle_streaming(request)?;
+        if let Some(stdout) = result.stdout.as_deref() {
+            io::stdout()
+                .write_all(stdout.as_bytes())
+                .context("failed to replay js pre-write stdout")?;
+        }
+        if let Some(stderr) = result.stderr.as_deref() {
+            io::stderr()
+                .write_all(stderr.as_bytes())
+                .context("failed to replay js pre-write stderr")?;
+        }
+        result.stdout = None;
+        result.stderr = None;
+        write_json_file(&result_output, &result)
+    } else {
+        let result = execute_js_pre_write_lifecycle(request)?;
         write_stdout_json(&result)
     }
 }
