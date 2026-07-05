@@ -15,6 +15,7 @@ use crate::orchestration_plan::{
     build_orchestration_plan, AuditProfile, OrchestrationPlan, OrchestrationPlanOptions,
     ORCHESTRATION_PLAN_SCHEMA_VERSION,
 };
+use crate::source_commit::git_head_commit_or_unknown;
 
 pub const EXECUTOR_REQUEST_SCHEMA_VERSION: &str = "lumin-audit-executor-request.v1";
 pub const EXECUTOR_RESULT_SCHEMA_VERSION: &str = "lumin-audit-executor-result.v1";
@@ -837,16 +838,13 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
     };
 
     let artifact_path = request.output.join(RUST_ANALYZER_ARTIFACT);
+    let source_commit = rust_analyzer_source_commit(request);
     let mut args = invocation.prefix_args.clone();
     args.extend([
         "--root".to_string(),
         request.root.to_string_lossy().to_string(),
         "--source-commit".to_string(),
-        request
-            .rust_analyzer
-            .source_commit
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string()),
+        source_commit.clone(),
         "--output".to_string(),
         artifact_path.to_string_lossy().to_string(),
         "--source-health-profile".to_string(),
@@ -885,7 +883,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
                 reason: None,
                 artifact: Some(RUST_ANALYZER_ARTIFACT.to_string()),
                 path: Some(artifact_path.to_string_lossy().to_string()),
-                source_commit: request.rust_analyzer.source_commit.clone(),
+                source_commit: Some(source_commit),
                 producer: Some(RUST_ANALYZER_STEP.to_string()),
                 analyzer_invocation: Some(artifact_invocation(&invocation)),
             },
@@ -917,11 +915,22 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
             reason: Some("lumin-rust-analyzer did not complete".to_string()),
             artifact: None,
             path: None,
-            source_commit: request.rust_analyzer.source_commit.clone(),
+            source_commit: Some(source_commit),
             producer: Some(RUST_ANALYZER_STEP.to_string()),
             analyzer_invocation: None,
         },
     })
+}
+
+fn rust_analyzer_source_commit(request: &ExecutorRequest) -> String {
+    request
+        .rust_analyzer
+        .source_commit
+        .as_deref()
+        .map(str::trim)
+        .filter(|commit| !commit.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| git_head_commit_or_unknown(&request.root))
 }
 
 fn rust_analyzer_skip(
@@ -950,7 +959,7 @@ fn rust_analyzer_skip(
             reason: Some(reason),
             artifact: None,
             path: None,
-            source_commit: request.rust_analyzer.source_commit.clone(),
+            source_commit: Some(rust_analyzer_source_commit(request)),
             producer: None,
             analyzer_invocation: None,
         },

@@ -45,7 +45,6 @@
 // step is a child process invocation of the existing .mjs. Failure of
 // any step is captured but never hidden.
 
-import { execFileSync } from 'node:child_process';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -335,18 +334,6 @@ function forwardedIncrementalArgs() {
   return args;
 }
 
-function gitHeadCommit(root) {
-  try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return 'unknown';
-  }
-}
-
 function rustAnalyzerInvocation() {
   const configuredBinary = process.env.LUMIN_RUST_ANALYZER_BIN?.trim();
   if (configuredBinary) {
@@ -499,7 +486,7 @@ function buildRuntimeExecutorRequest() {
     rustAnalyzer: {
       requested: values['rust-analyzer'] === true,
       rustFiles: 0,
-      sourceCommit: values['rust-analyzer'] === true ? gitHeadCommit(ROOT) : null,
+      sourceCommit: null,
       invocation: values['rust-analyzer'] === true ? rustAnalyzerInvocationOrNull() : null,
       forwardedArgs: forwardedRustAnalyzerArgs(),
     },
@@ -553,7 +540,6 @@ function buildRustPreWriteLifecycleRequest({
   advisoryInvocationId,
   rustNativePath,
   rustNativeLatestPath,
-  sourceCommit,
 }) {
   const failures = [];
   return {
@@ -561,7 +547,6 @@ function buildRustPreWriteLifecycleRequest({
     root: ROOT,
     output: OUT,
     invocationId: advisoryInvocationId,
-    sourceCommit,
     rustNativeArtifactPath: rustNativePath,
     rustNativeLatestPath,
     analyzer: {
@@ -724,7 +709,6 @@ if (lifecycleRequestGuard.status === 'blocked') {
   }
 
   if (preWriteRoute?.engine === 'rust') {
-    const sourceCommit = gitHeadCommit(ROOT);
     const advisoryInvocationId = generateInvocationId();
     const rustNativePath = path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`);
     const rustNativeLatestPath = path.join(OUT, 'rust-pre-write-artifact.latest.json');
@@ -735,7 +719,6 @@ if (lifecycleRequestGuard.status === 'blocked') {
       advisoryInvocationId,
       rustNativePath,
       rustNativeLatestPath,
-      sourceCommit,
     }));
     preWriteBlock = result.block;
     if (finalExitCode === 0) finalExitCode = result.exitCode;

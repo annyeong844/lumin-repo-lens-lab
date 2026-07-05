@@ -166,6 +166,32 @@ fn rust_pre_write_runs_analyzer_and_wraps_native_artifact_as_standard_advisory()
     Ok(())
 }
 
+#[test]
+fn rust_pre_write_fills_missing_source_commit_inside_audit_core() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let out = temp.path().join("out");
+    fs::create_dir_all(&out)?;
+    write_inventory_fixture(temp.path())?;
+    let fake = write_fake_analyzer(temp.path(), 0)?;
+    let mut value = request(temp.path(), &out, &fake);
+    value
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("request should be an object"))?
+        .remove("sourceCommit");
+
+    let result = execute_rust_pre_write_lifecycle(parse_request(value)?)?;
+
+    assert_eq!(result.exit_code, 0, "result={result:#?}");
+    assert_eq!(result.block.source_commit.as_deref(), Some("unknown"));
+    let logged_args = fs::read_to_string(temp.path().join("args.log"))?.replace("\r\n", "\n");
+    assert!(logged_args.contains("--source-commit\nunknown"));
+    let advisory: Value = serde_json::from_str(&fs::read_to_string(
+        out.join("pre-write-advisory.latest.json"),
+    )?)?;
+    assert_eq!(advisory["preWrite"]["sourceCommit"], "unknown");
+    Ok(())
+}
+
 fn write_inventory_fixture(root: &Path) -> Result<()> {
     fs::create_dir_all(root.join("src"))?;
     fs::write(

@@ -43,6 +43,7 @@ pub mod rust_analysis;
 pub mod sarif;
 pub mod scan_scope;
 pub mod shape_index;
+mod source_commit;
 pub mod staleness;
 pub mod symbol_graph;
 pub mod topology;

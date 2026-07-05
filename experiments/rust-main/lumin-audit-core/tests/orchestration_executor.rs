@@ -308,6 +308,26 @@ fn rust_analyzer_success_preserves_public_invocation_shape_without_command() -> 
 }
 
 #[test]
+fn rust_analyzer_fills_missing_source_commit_inside_audit_core() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let analyzer = write_fake_analyzer(temp.path(), true)?;
+    let mut value = rust_analyzer_request(temp.path(), &analyzer);
+    value["rustAnalyzer"]
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("rustAnalyzer should be an object"))?
+        .remove("sourceCommit");
+
+    let result = execute_base_plan(request(value)?)?;
+
+    assert_eq!(result.rust_analysis_run.status, "complete");
+    assert_eq!(
+        result.rust_analysis_run.source_commit.as_deref(),
+        Some("unknown")
+    );
+    Ok(())
+}
+
+#[test]
 fn rust_analyzer_uses_current_triage_over_stale_request_count() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let analyzer = write_fake_analyzer(temp.path(), true)?;

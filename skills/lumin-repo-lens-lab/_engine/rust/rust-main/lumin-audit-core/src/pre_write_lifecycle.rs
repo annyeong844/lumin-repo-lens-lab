@@ -7,6 +7,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::source_commit::git_head_commit_or_unknown;
+
 pub const PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
     "lumin-rust-pre-write-lifecycle-request.v1";
 pub const JS_PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
@@ -19,7 +21,8 @@ pub struct PreWriteLifecycleRequest {
     pub schema_version: String,
     pub root: PathBuf,
     pub output: PathBuf,
-    pub source_commit: String,
+    #[serde(default)]
+    pub source_commit: Option<String>,
     #[serde(rename = "invocationId")]
     pub advisory_invocation_id: String,
     pub rust_native_artifact_path: PathBuf,
@@ -256,7 +259,8 @@ fn execute_pre_write_lifecycle_with_stdio(
     child_stdio: ChildStdio,
 ) -> Result<PreWriteLifecycleResult> {
     validate_request(&request)?;
-    let child = run_rust_pre_write_child(&request, child_stdio);
+    let source_commit = effective_source_commit(&request);
+    let child = run_rust_pre_write_child(&request, &source_commit, child_stdio);
     if !child.status_success {
         return Ok(PreWriteLifecycleResult {
             schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
@@ -287,7 +291,7 @@ fn execute_pre_write_lifecycle_with_stdio(
     };
 
     copy_rust_native_latest(&request)?;
-    let advisory = build_rust_pre_write_advisory(&request, &rust_artifact);
+    let advisory = build_rust_pre_write_advisory(&request, &rust_artifact, &source_commit);
     let written = write_advisory(&request.output, &advisory)?;
 
     Ok(PreWriteLifecycleResult {
@@ -306,7 +310,7 @@ fn execute_pre_write_lifecycle_with_stdio(
             evidence_availability: None,
             rust_native_artifact_path: Some(path_string(&request.rust_native_artifact_path)),
             rust_native_latest_path: Some(path_string(&request.rust_native_latest_path)),
-            source_commit: Some(request.source_commit.clone()),
+            source_commit: Some(source_commit),
             analyzer_invocation: Some(analyzer_invocation_block(&request)),
             reason: None,
         },
@@ -333,6 +337,16 @@ fn validate_js_request(request: &JsPreWriteLifecycleRequest) -> Result<()> {
         bail!("execute-js-pre-write: childIntentFlag must be a non-empty string");
     }
     Ok(())
+}
+
+fn effective_source_commit(request: &PreWriteLifecycleRequest) -> String {
+    request
+        .source_commit
+        .as_deref()
+        .map(str::trim)
+        .filter(|commit| !commit.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| git_head_commit_or_unknown(&request.root))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -386,6 +400,7 @@ struct ChildOutput {
 
 fn run_rust_pre_write_child(
     request: &PreWriteLifecycleRequest,
+    source_commit: &str,
     child_stdio: ChildStdio,
 ) -> ChildOutput {
     let mut args = request.analyzer_invocation.prefix_args.clone();
@@ -394,7 +409,7 @@ fn run_rust_pre_write_child(
         "--root".to_string(),
         path_string(&request.root),
         "--source-commit".to_string(),
-        request.source_commit.clone(),
+        source_commit.to_string(),
         "--intent".to_string(),
         "-".to_string(),
         "--output".to_string(),
@@ -626,6 +641,7 @@ fn copy_rust_native_latest(request: &PreWriteLifecycleRequest) -> Result<()> {
 fn build_rust_pre_write_advisory(
     request: &PreWriteLifecycleRequest,
     rust_artifact: &RustPreWriteArtifact,
+    source_commit: &str,
 ) -> Value {
     let intent = rust_intent(rust_artifact.intent.as_ref());
     let producer = rust_artifact
@@ -669,7 +685,7 @@ fn build_rust_pre_write_advisory(
         "preWrite": {
             "fileInventory": request.file_inventory.clone(),
             "rustNativeArtifactPath": path_string(&request.rust_native_artifact_path),
-            "sourceCommit": request.source_commit,
+            "sourceCommit": source_commit,
         },
         "rustPreWrite": {
             "schemaVersion": rust_artifact.schema_version.clone(),
