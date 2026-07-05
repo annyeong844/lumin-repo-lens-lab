@@ -49,8 +49,6 @@ import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { formatBlindZonesSummary } from './_lib/blind-zones.mjs';
-import { loadIfExists as loadArtifact } from './_lib/artifacts.mjs';
 import { normalizeIncludeTests } from './_lib/cli.mjs';
 import { collectFiles } from './_lib/collect-files.mjs';
 import { assertRuntimeSetup, formatRuntimeSetupError } from './_lib/dependency-guard.mjs';
@@ -70,13 +68,9 @@ import {
   executePostWriteLifecycle,
   applyLifecycleExitPolicy,
   evaluateLifecycleRequestGuard,
-  buildManifestArtifactsProducedUpdate,
   buildManifestRootWithEvidence,
-  finalizeAuditRun,
+  finalizeAuditRunWithCompanions,
   applyLifecycleAndRefreshManifestEvidence,
-  writeAuditSummaryWithAuditCore,
-  writeAuditReviewPackWithAuditCore,
-  writeTopologyMermaidWithAuditCore,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
 import { repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
@@ -315,9 +309,6 @@ const skipped = [];
 let rustAnalysisRun = { requested: values['rust-analyzer'] === true, ran: false, status: 'not-requested' };
 
 const artifactReadMetrics = createArtifactReadMetrics({ rootDir: OUT });
-const loadIfExists = (name) => loadArtifact(OUT, name, {
-  onRead: artifactReadMetrics.observeRead,
-});
 
 function forwardedScanArgs() {
   const args = [];
@@ -753,21 +744,6 @@ Object.assign(manifest, applyLifecycleAndRefreshManifestEvidence({
   },
   ...manifestEvidenceOptions(),
 }));
-const topologyArtifact = loadIfExists('topology.json');
-const moduleReachabilityArtifact = loadIfExists('module-reachability.json');
-let topologyMermaidPath = null;
-let auditSummaryPath = null;
-let reviewPackPath = null;
-if (topologyArtifact) {
-  topologyMermaidPath = path.join(OUT, 'topology.mermaid.md');
-  writeTopologyMermaidWithAuditCore({
-    topology: topologyArtifact,
-    outputPath: topologyMermaidPath,
-  });
-  Object.assign(manifest, buildManifestArtifactsProducedUpdate(OUT, {
-    rustAnalysis: manifest.rustAnalysis,
-  }));
-}
 const SHOULD_WRITE_SUMMARY = (
   RUN_BASE_PIPELINE ||
   preWriteBlock?.requested ||
@@ -775,43 +751,8 @@ const SHOULD_WRITE_SUMMARY = (
   manifest.canonDraft?.requested ||
   manifest.checkCanon?.requested
 );
-if (SHOULD_WRITE_SUMMARY) {
-  auditSummaryPath = path.join(OUT, 'audit-summary.latest.md');
-  const summaryResult = writeAuditSummaryWithAuditCore({
-    manifest,
-    checklistFacts: loadIfExists('checklist-facts.json'),
-    fixPlan: loadIfExists('fix-plan.json'),
-    topology: topologyArtifact,
-    discipline: loadIfExists('discipline.json'),
-    callGraph: loadIfExists('call-graph.json'),
-    functionClones: loadIfExists('function-clones.json'),
-    symbols: loadIfExists('symbols.json'),
-    moduleReachability: moduleReachabilityArtifact,
-    outputPath: auditSummaryPath,
-  });
-  auditSummaryPreview = summaryResult.preview ?? null;
-}
-if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
-  reviewPackPath = path.join(OUT, 'audit-review-pack.latest.md');
-  writeAuditReviewPackWithAuditCore({
-    manifest,
-    checklistFacts: loadIfExists('checklist-facts.json'),
-    fixPlan: loadIfExists('fix-plan.json'),
-    topology: loadIfExists('topology.json'),
-    discipline: loadIfExists('discipline.json'),
-    callGraph: loadIfExists('call-graph.json'),
-    functionClones: loadIfExists('function-clones.json'),
-    barrels: loadIfExists('barrels.json'),
-    shapeIndex: loadIfExists('shape-index.json'),
-    deadClassify: loadIfExists('dead-classify.json'),
-    symbols: loadIfExists('symbols.json'),
-    moduleReachability: moduleReachabilityArtifact,
-    outputPath: reviewPackPath,
-  });
-}
-const manifestWrite = finalizeAuditRun({
+const manifestWrite = finalizeAuditRunWithCompanions({
   manifest,
-  generated: manifest.meta.generated,
   root: ROOT,
   outDir: OUT,
   profile: PROFILE,
@@ -823,33 +764,37 @@ const manifestWrite = finalizeAuditRun({
   cacheRoot: performanceCacheRoot(),
   clearIncrementalCache: values['clear-incremental-cache'] === true,
   generatedArtifactsMode: GENERATED_ARTIFACTS_MODE,
-  artifactReads: artifactReadMetrics.summary(),
+  artifactReadEvents: artifactReadMetrics.events(),
   rustAnalysis: manifest.rustAnalysis,
   commandsRun,
   skipped,
-  topologyMermaidPath,
-  auditSummaryPath,
-  reviewPackPath,
+  companions: {
+    topologyMermaid: true,
+    auditSummary: SHOULD_WRITE_SUMMARY,
+    reviewPack: RUN_BASE_PIPELINE && PROFILE !== 'quick',
+  },
 });
 Object.assign(manifest, manifestWrite.closeoutUpdate ?? {});
+auditSummaryPreview = manifestWrite.auditSummaryPreview ?? null;
 
 // ─── Console report ───────────────────────────────────────
 console.log('');
 console.log(`[audit-repo] wrote ${manifestWrite.manifestPath ?? path.join(OUT, 'manifest.json')}`);
-console.log(`[audit-repo] artifacts: ${manifest.artifactsProduced.length} produced`);
-if (manifest.auditSummary?.path) {
-  console.log(`[audit-repo] summary: ${manifest.auditSummary.path}`);
+console.log(`[audit-repo] artifacts: ${manifestWrite.artifactsProducedCount ?? manifest.artifactsProduced.length} produced`);
+if (manifestWrite.auditSummaryPath) {
+  console.log(`[audit-repo] summary: ${manifestWrite.auditSummaryPath}`);
 }
-if (manifest.reviewPack?.path) {
-  console.log(`[audit-repo] review pack: ${manifest.reviewPack.path}`);
+if (manifestWrite.reviewPackPath) {
+  console.log(`[audit-repo] review pack: ${manifestWrite.reviewPackPath}`);
 }
 if (auditSummaryPreview) {
   console.log('');
   console.log(auditSummaryPreview);
 }
-if ((manifest.blindZones ?? []).length > 0) {
-  console.log(`[audit-repo] ${formatBlindZonesSummary(manifest.blindZones)}`);
-  for (const z of manifest.blindZones) {
+const finalBlindZones = manifestWrite.blindZones ?? manifest.blindZones ?? [];
+if (finalBlindZones.length > 0) {
+  console.log(`[audit-repo] ${manifestWrite.blindZonesSummary}`);
+  for (const z of finalBlindZones) {
     console.log(`             • ${z.area} (${z.severity}) — ${z.effect.slice(0, 80)}${z.effect.length > 80 ? '…' : ''}`);
   }
 } else {

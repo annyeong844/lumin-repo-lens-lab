@@ -289,6 +289,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'finalize-audit-run: missing --input <path|->',
     ],
     [
+      ['finalize-audit-run-with-companions'],
+      'finalize-audit-run-with-companions: missing --input <path|->',
+    ],
+    [
       ['execute-js-pre-write'],
       'execute-js-pre-write: missing --input <path|->',
     ],
@@ -438,6 +442,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const auditReviewPackOutputPath = path.join(tempDir, 'audit-review-pack.latest.md');
   const auditSummaryInputPath = path.join(tempDir, 'audit-summary-render.json');
   const auditSummaryOutputPath = path.join(tempDir, 'audit-summary.latest.md');
+  const finalizeWithCompanionsInputPath = path.join(tempDir, 'finalize-audit-run-with-companions.json');
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(outputDir, { recursive: true });
@@ -453,6 +458,37 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
         resolvedInternal: 0,
         unresolvedInternal: 0,
         unresolvedInternalRatio: 0,
+      },
+      meta: {
+        supports: {
+          anyContamination: true,
+        },
+      },
+      helperOwnersByIdentity: {},
+      typeOwnersByIdentity: {},
+    }));
+    writeFileSync(path.join(outputDir, 'topology.json'), JSON.stringify({
+      meta: { generated: '2026-07-02T00:00:00.000Z' },
+      summary: { lens: 'runtime', sccCount: 0 },
+      crossSubmoduleEdges: [
+        { from: 'apps/web', to: 'packages/ui', count: 4 },
+      ],
+      sccs: [],
+      edges: [],
+    }));
+    writeFileSync(path.join(outputDir, 'fix-plan.json'), JSON.stringify({
+      summary: {
+        SAFE_FIX: 1,
+        REVIEW_FIX: 2,
+        DEGRADED: 0,
+        MUTED: 0,
+      },
+    }));
+    writeFileSync(path.join(outputDir, 'checklist-facts.json'), JSON.stringify({
+      E2_silent_catch: {
+        count: 1,
+        nonEmptyAnonymousCount: 0,
+        unusedParamCount: 0,
       },
     }));
     writeFileSync(rootInputPath, JSON.stringify({
@@ -1127,6 +1163,54 @@ writeFileSync(latest, JSON.stringify(advisory));
         typeOwnersByIdentity: {},
       },
     }));
+    writeFileSync(finalizeWithCompanionsInputPath, JSON.stringify({
+      manifest: {
+        meta: { generated: '2026-07-02T00:00:00.000Z' },
+        profile: 'full',
+        scanRange: {
+          files: 2,
+          languages: ['ts'],
+          includeTests: true,
+        },
+        confidence: {
+          parseErrors: 0,
+          unresolvedInternalRatio: 0,
+        },
+        artifactsProduced: [],
+        blindZones: [],
+        rustAnalysis: {
+          requested: false,
+        },
+      },
+      context: {
+        generated: '2026-07-02T00:00:00.000Z',
+        root: rootDir,
+        output: outputDir,
+        profile: 'full',
+        includeTests: true,
+        production: false,
+        excludes: [],
+        autoExcludes: [],
+        noIncremental: false,
+        cacheRoot: path.join(outputDir, '.cache'),
+        clearIncrementalCache: false,
+        generatedArtifactsMode: 'default',
+      },
+      artifactReadEvents: {
+        schemaVersion: 'lumin-audit-artifact-read-events.v1',
+        rootDir: outputDir,
+        largestLimit: 10,
+        reads: [],
+      },
+      commandsRun: [],
+      skipped: [],
+      rustAnalysis: null,
+      companions: {
+        topologyMermaid: true,
+        auditSummary: true,
+        reviewPack: true,
+      },
+    }));
 
     const probes = [
       {
@@ -1273,6 +1357,12 @@ writeFileSync(latest, JSON.stringify(advisory));
         args: ['audit-summary-render', '--input', auditSummaryInputPath],
         requiresArtifactReads: false,
         outputPath: auditSummaryOutputPath,
+      },
+      {
+        subcommand: 'finalize-audit-run-with-companions',
+        args: ['finalize-audit-run-with-companions', '--input', finalizeWithCompanionsInputPath],
+        requiresArtifactReads: false,
+        outputDir,
       },
     ];
 
@@ -1534,6 +1624,42 @@ function resultPayloadMatchesProbe(json, probe) {
       json.preview.includes('[audit-repo] artifact brief preview:') &&
       json.preview.includes('[audit-repo]   Read First:') &&
       json.bytes === Buffer.byteLength(markdown, 'utf8');
+  }
+  if (probe.subcommand === 'finalize-audit-run-with-companions') {
+    const manifestPath = path.join(probe.outputDir, 'manifest.json');
+    const producerPerformancePath = path.join(probe.outputDir, 'producer-performance.json');
+    const topologyMermaidPath = path.join(probe.outputDir, 'topology.mermaid.md');
+    const auditSummaryPath = path.join(probe.outputDir, 'audit-summary.latest.md');
+    const reviewPackPath = path.join(probe.outputDir, 'audit-review-pack.latest.md');
+    if (
+      json.manifestPath !== manifestPath ||
+      json.producerPerformancePath !== producerPerformancePath ||
+      json.topologyMermaidPath !== topologyMermaidPath ||
+      json.auditSummaryPath !== auditSummaryPath ||
+      json.reviewPackPath !== reviewPackPath ||
+      typeof json.auditSummaryPreview !== 'string' ||
+      typeof json.artifactsProducedCount !== 'number' ||
+      !Array.isArray(json.blindZones) ||
+      typeof json.blindZonesSummary !== 'string' ||
+      !isObject(json.closeoutUpdate)
+    ) {
+      return false;
+    }
+    if (!existsSync(manifestPath) || !existsSync(producerPerformancePath)) return false;
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const performance = JSON.parse(readFileSync(producerPerformancePath, 'utf8'));
+    const topologyMermaid = readFileSync(topologyMermaidPath, 'utf8');
+    const auditSummary = readFileSync(auditSummaryPath, 'utf8');
+    const reviewPack = readFileSync(reviewPackPath, 'utf8');
+    return Array.isArray(manifest.artifactsProduced) &&
+      manifest.auditSummary?.path === auditSummaryPath &&
+      manifest.reviewPack?.path === reviewPackPath &&
+      manifest.topologyMermaid?.path === topologyMermaidPath &&
+      isObject(performance.artifactReads) &&
+      topologyMermaid.startsWith('# Topology Mermaid') &&
+      auditSummary.startsWith('# Audit Artifact Brief') &&
+      reviewPack.startsWith('# Audit Review Pack') &&
+      json.auditSummaryPreview.includes('[audit-repo] artifact brief preview:');
   }
   if (probe.subcommand === 'execute-js-pre-write') {
     return json.schemaVersion === 'lumin-pre-write-lifecycle-result.v1' &&

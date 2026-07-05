@@ -502,6 +502,182 @@ fn cli_finalize_audit_run_writes_performance_and_manifest() -> Result<()> {
 }
 
 #[test]
+fn cli_finalize_audit_run_with_companions_renders_and_closes_manifest() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root_dir = temp.path().join("repo");
+    let output_dir = root_dir.join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        output_dir.join("topology.json"),
+        serde_json::to_vec(&json!({
+            "meta": { "generated": "2026-07-02T00:00:00.000Z" },
+            "summary": { "lens": "runtime", "sccCount": 0 },
+            "crossSubmoduleEdges": [
+                { "from": "apps/web", "to": "packages/ui", "count": 4 }
+            ],
+            "sccs": [],
+            "edges": []
+        }))?,
+    )?;
+    fs::write(
+        output_dir.join("checklist-facts.json"),
+        serde_json::to_vec(&json!({
+            "E2_silent_catch": {
+                "count": 1,
+                "nonEmptyAnonymousCount": 0,
+                "unusedParamCount": 0
+            }
+        }))?,
+    )?;
+    fs::write(
+        output_dir.join("fix-plan.json"),
+        serde_json::to_vec(&json!({
+            "summary": {
+                "SAFE_FIX": 1,
+                "REVIEW_FIX": 2,
+                "DEGRADED": 0,
+                "MUTED": 0
+            }
+        }))?,
+    )?;
+    fs::write(
+        output_dir.join("symbols.json"),
+        serde_json::to_vec(&json!({
+            "meta": { "supports": { "anyContamination": true } },
+            "helperOwnersByIdentity": {},
+            "typeOwnersByIdentity": {}
+        }))?,
+    )?;
+    fs::write(output_dir.join("audit-summary.latest.md"), "stale summary")?;
+    fs::write(
+        output_dir.join("audit-review-pack.latest.md"),
+        "stale review",
+    )?;
+    fs::write(output_dir.join("topology.mermaid.md"), "stale mermaid")?;
+
+    let result_path = temp.path().join("finalize-result.json");
+    let input = json!({
+        "manifest": {
+            "meta": { "generated": "2026-07-02T00:00:00.000Z" },
+            "profile": "full",
+            "scanRange": {
+                "files": 2,
+                "languages": ["ts"],
+                "includeTests": true
+            },
+            "confidence": {
+                "parseErrors": 0,
+                "unresolvedInternalRatio": 0
+            },
+            "artifactsProduced": [],
+            "blindZones": [],
+            "rustAnalysis": {
+                "requested": false
+            }
+        },
+        "context": {
+            "generated": "2026-07-02T00:00:00.000Z",
+            "root": root_dir,
+            "output": output_dir,
+            "profile": "full",
+            "includeTests": true,
+            "production": false,
+            "excludes": [],
+            "autoExcludes": [],
+            "noIncremental": false,
+            "cacheRoot": output_dir.join(".cache"),
+            "clearIncrementalCache": false,
+            "generatedArtifactsMode": "default"
+        },
+        "artifactReadEvents": {
+            "schemaVersion": "lumin-audit-artifact-read-events.v1",
+            "rootDir": output_dir,
+            "largestLimit": 10,
+            "reads": []
+        },
+        "commandsRun": [
+            { "step": "triage-repo.mjs", "status": "ok", "ms": 3 }
+        ],
+        "skipped": [],
+        "rustAnalysis": {
+            "status": "unavailable",
+            "available": false
+        },
+        "companions": {
+            "topologyMermaid": true,
+            "auditSummary": true,
+            "reviewPack": true
+        }
+    });
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("finalize-audit-run-with-companions")
+        .arg("--input")
+        .arg("-")
+        .arg("--result-output")
+        .arg(&result_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+    use std::io::Write;
+    let mut stdin = child.stdin.take().context("stdin is piped")?;
+    stdin.write_all(input.to_string().as_bytes())?;
+    drop(stdin);
+    let output = child.wait_with_output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    let result = serde_json::from_str::<Value>(&fs::read_to_string(&result_path)?)?;
+    assert!(result["manifestPath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("manifest.json")));
+    assert!(result["producerPerformancePath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("producer-performance.json")));
+    assert!(result["topologyMermaidPath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("topology.mermaid.md")));
+    assert!(result["auditSummaryPath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("audit-summary.latest.md")));
+    assert!(result["reviewPackPath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("audit-review-pack.latest.md")));
+    assert!(result["auditSummaryPreview"]
+        .as_str()
+        .is_some_and(|preview| preview.contains("[audit-repo] artifact brief preview:")));
+    assert_eq!(result["blindZones"], json!([]));
+
+    let summary = fs::read_to_string(output_dir.join("audit-summary.latest.md"))?;
+    let review = fs::read_to_string(output_dir.join("audit-review-pack.latest.md"))?;
+    let mermaid = fs::read_to_string(output_dir.join("topology.mermaid.md"))?;
+    assert!(summary.starts_with("# Audit Artifact Brief"));
+    assert!(review.starts_with("# Audit Review Pack"));
+    assert!(mermaid.starts_with("# Topology Mermaid"));
+    let performance = serde_json::from_str::<Value>(&fs::read_to_string(
+        output_dir.join("producer-performance.json"),
+    )?)?;
+    assert!(performance["artifactReads"]["totalReadCount"]
+        .as_u64()
+        .is_some_and(|count| count > 0));
+    let manifest =
+        serde_json::from_str::<Value>(&fs::read_to_string(output_dir.join("manifest.json"))?)?;
+    assert_eq!(manifest["auditSummary"]["format"], "markdown");
+    assert_eq!(manifest["reviewPack"]["format"], "markdown");
+    assert_eq!(manifest["topologyMermaid"]["format"], "markdown");
+    assert!(manifest["artifactsProduced"]
+        .as_array()
+        .context("written artifactsProduced should be an array")?
+        .iter()
+        .any(|artifact| artifact.as_str() == Some("producer-performance.json")));
+    Ok(())
+}
+
+#[test]
 fn cli_manifest_final_summary_update_hard_stops_on_malformed_performance_artifact() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let output_dir = temp.path().join(".audit");

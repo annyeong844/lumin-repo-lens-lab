@@ -7,11 +7,20 @@ use super::io_support::{
     read_json_input, read_optional_json, read_optional_json_input,
     read_optional_output_json_observed, read_optional_output_json_tolerant_observed,
     read_required_json, take_path, take_string, write_json_file, write_pretty_json_file,
-    write_stdout_json, OptionalOutputJsonRead,
+    write_stdout_json, write_text_file, OptionalOutputJsonRead,
 };
 use super::usage::USAGE;
 use lumin_audit_core::artifact_read_metrics::{
-    ArtifactReadObservation, ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
+    summarize_artifact_read_events, ArtifactReadMetricsRequest, ArtifactReadObservation,
+    ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
+};
+use lumin_audit_core::audit_review_pack::{
+    render_audit_review_pack_request, AuditReviewPackRenderRequest,
+    AUDIT_REVIEW_PACK_RENDER_REQUEST_SCHEMA_VERSION,
+};
+use lumin_audit_core::audit_summary::{
+    render_audit_summary_request, AuditSummaryRenderRequest,
+    AUDIT_SUMMARY_RENDER_REQUEST_SCHEMA_VERSION,
 };
 use lumin_audit_core::generated_artifacts::GeneratedArtifactsMode;
 use lumin_audit_core::lifecycle::{
@@ -38,9 +47,14 @@ use lumin_audit_core::manifest_root::{
 };
 use lumin_audit_core::orchestration_events::{
     build_producer_performance_artifact_for_audit_run_from_output,
-    ProducerPerformanceAuditRunContext, ProducerPerformanceRuntimeObservations,
+    ProducerPerformanceAuditRunContext, ProducerPerformanceRuntimeObservations, RuntimeCommandRun,
+    RuntimeSkippedRun,
 };
 use lumin_audit_core::rust_analysis::RustAnalysisRunObservation;
+use lumin_audit_core::topology_mermaid::{
+    render_topology_mermaid_request, TopologyMermaidOptions, TopologyMermaidRenderRequest,
+    TOPOLOGY_MERMAID_RENDER_REQUEST_SCHEMA_VERSION,
+};
 
 const MANIFEST_EVIDENCE_WITH_READS_SCHEMA_VERSION: &str =
     "lumin-manifest-evidence-with-artifact-reads.v1";
@@ -171,6 +185,48 @@ struct FinalizeAuditRunCliInput {
 struct FinalizeAuditRunResult {
     producer_performance_path: String,
     manifest_path: String,
+    closeout_update: ManifestCloseoutUpdate,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalizeAuditRunWithCompanionsCliInput {
+    manifest: serde_json::Value,
+    context: ProducerPerformanceAuditRunContext,
+    artifact_read_events: ArtifactReadMetricsRequest,
+    #[serde(default)]
+    commands_run: Vec<RuntimeCommandRun>,
+    #[serde(default)]
+    skipped: Vec<RuntimeSkippedRun>,
+    #[serde(default)]
+    rust_analysis: Option<serde_json::Value>,
+    #[serde(default)]
+    companions: FinalizeAuditRunCompanionPlan,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalizeAuditRunCompanionPlan {
+    #[serde(default)]
+    topology_mermaid: bool,
+    #[serde(default)]
+    audit_summary: bool,
+    #[serde(default)]
+    review_pack: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalizeAuditRunWithCompanionsResult {
+    producer_performance_path: String,
+    manifest_path: String,
+    topology_mermaid_path: Option<String>,
+    audit_summary_path: Option<String>,
+    review_pack_path: Option<String>,
+    audit_summary_preview: Option<String>,
+    artifacts_produced_count: usize,
+    blind_zones: Vec<serde_json::Value>,
+    blind_zones_summary: String,
     closeout_update: ManifestCloseoutUpdate,
 }
 
@@ -352,6 +408,195 @@ pub(super) fn run_finalize_audit_run(args: Vec<String>) -> Result<()> {
         manifest_path: manifest_path.to_string_lossy().to_string(),
         closeout_update: update,
     })
+}
+
+pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Result<()> {
+    let mut input = None;
+    let mut result_output = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--input" => input = Some(take_string(&mut args, "--input")?),
+            "--result-output" => result_output = Some(take_path(&mut args, "--result-output")?),
+            _ => bail!("finalize-audit-run-with-companions: unknown argument '{arg}'\n{USAGE}"),
+        }
+    }
+
+    let input = input.context("finalize-audit-run-with-companions: missing --input <path|->")?;
+    let json = read_json_input(&input, "finalize-audit-run-with-companions")?;
+    let request = serde_json::from_value::<FinalizeAuditRunWithCompanionsCliInput>(json)
+        .context("finalize-audit-run-with-companions: invalid request shape")?;
+    let output = Path::new(&request.context.output).to_path_buf();
+    let mut manifest = request.manifest;
+    let mut artifact_read_events = request.artifact_read_events;
+
+    let topology = companion_artifact(&output, "topology.json", &mut artifact_read_events.reads);
+    let module_reachability = companion_artifact(
+        &output,
+        "module-reachability.json",
+        &mut artifact_read_events.reads,
+    );
+
+    let mut topology_mermaid_path = None;
+    if request.companions.topology_mermaid && !topology.is_null() {
+        let output_path = output.join("topology.mermaid.md");
+        let render_request = TopologyMermaidRenderRequest {
+            schema_version: TOPOLOGY_MERMAID_RENDER_REQUEST_SCHEMA_VERSION.to_string(),
+            topology: topology.clone(),
+            output_path: output_path.to_string_lossy().to_string(),
+            options: TopologyMermaidOptions::default(),
+        };
+        let (markdown, _result) = render_topology_mermaid_request(&render_request)?;
+        write_text_file(&output_path, &markdown)?;
+        topology_mermaid_path = Some(output_path.to_string_lossy().to_string());
+
+        let update =
+            build_manifest_artifacts_produced_update(&output, request.rust_analysis.as_ref())?;
+        apply_artifacts_produced_update(&mut manifest, update.artifacts_produced)?;
+    }
+
+    let mut audit_summary_path = None;
+    let mut audit_summary_preview = None;
+    if request.companions.audit_summary {
+        let output_path = output.join("audit-summary.latest.md");
+        let render_request = AuditSummaryRenderRequest {
+            schema_version: AUDIT_SUMMARY_RENDER_REQUEST_SCHEMA_VERSION.to_string(),
+            manifest: manifest.clone(),
+            checklist_facts: companion_artifact(
+                &output,
+                "checklist-facts.json",
+                &mut artifact_read_events.reads,
+            ),
+            fix_plan: companion_artifact(&output, "fix-plan.json", &mut artifact_read_events.reads),
+            topology: topology.clone(),
+            discipline: companion_artifact(
+                &output,
+                "discipline.json",
+                &mut artifact_read_events.reads,
+            ),
+            call_graph: companion_artifact(
+                &output,
+                "call-graph.json",
+                &mut artifact_read_events.reads,
+            ),
+            function_clones: companion_artifact(
+                &output,
+                "function-clones.json",
+                &mut artifact_read_events.reads,
+            ),
+            symbols: companion_artifact(&output, "symbols.json", &mut artifact_read_events.reads),
+            module_reachability: module_reachability.clone(),
+            output_path: output_path.to_string_lossy().to_string(),
+        };
+        let (markdown, result) = render_audit_summary_request(&render_request)?;
+        write_text_file(&output_path, &markdown)?;
+        audit_summary_preview = result.preview;
+        audit_summary_path = Some(output_path.to_string_lossy().to_string());
+    }
+
+    let mut review_pack_path = None;
+    if request.companions.review_pack {
+        let output_path = output.join("audit-review-pack.latest.md");
+        let render_request = AuditReviewPackRenderRequest {
+            schema_version: AUDIT_REVIEW_PACK_RENDER_REQUEST_SCHEMA_VERSION.to_string(),
+            manifest: manifest.clone(),
+            checklist_facts: companion_artifact(
+                &output,
+                "checklist-facts.json",
+                &mut artifact_read_events.reads,
+            ),
+            fix_plan: companion_artifact(&output, "fix-plan.json", &mut artifact_read_events.reads),
+            topology,
+            discipline: companion_artifact(
+                &output,
+                "discipline.json",
+                &mut artifact_read_events.reads,
+            ),
+            call_graph: companion_artifact(
+                &output,
+                "call-graph.json",
+                &mut artifact_read_events.reads,
+            ),
+            function_clones: companion_artifact(
+                &output,
+                "function-clones.json",
+                &mut artifact_read_events.reads,
+            ),
+            barrels: companion_artifact(&output, "barrels.json", &mut artifact_read_events.reads),
+            shape_index: companion_artifact(
+                &output,
+                "shape-index.json",
+                &mut artifact_read_events.reads,
+            ),
+            dead_classify: companion_artifact(
+                &output,
+                "dead-classify.json",
+                &mut artifact_read_events.reads,
+            ),
+            symbols: companion_artifact(&output, "symbols.json", &mut artifact_read_events.reads),
+            module_reachability,
+            output_path: output_path.to_string_lossy().to_string(),
+        };
+        let (markdown, _result) = render_audit_review_pack_request(&render_request)?;
+        write_text_file(&output_path, &markdown)?;
+        review_pack_path = Some(output_path.to_string_lossy().to_string());
+    }
+
+    let artifact_reads = summarize_artifact_read_events(artifact_read_events)
+        .context("finalize-audit-run-with-companions: invalid artifact read events")?;
+    let observations = ProducerPerformanceRuntimeObservations {
+        artifact_reads,
+        artifacts_produced: Vec::new(),
+        rust_analysis: request.rust_analysis.clone(),
+        commands_run: request.commands_run,
+        skipped: request.skipped,
+    };
+    let producer_performance = build_producer_performance_artifact_for_audit_run_from_output(
+        request.context,
+        observations,
+    )?;
+    let producer_performance_path = output.join("producer-performance.json");
+    write_pretty_json_file(&producer_performance_path, &producer_performance)?;
+
+    let producer_performance_json = serde_json::to_value(&producer_performance)
+        .context("finalize-audit-run-with-companions: invalid producer-performance shape")?;
+    let companion = ManifestCloseoutCompanionInput {
+        topology_mermaid_path: topology_mermaid_path.clone(),
+        audit_summary_path: audit_summary_path.clone(),
+        review_pack_path: review_pack_path.clone(),
+    };
+    let update = build_manifest_closeout_update(
+        &output,
+        &producer_performance_json,
+        request.rust_analysis.as_ref(),
+        companion,
+    )?;
+    apply_manifest_closeout_update(&mut manifest, update.clone())?;
+    let manifest_path = output.join("manifest.json");
+    write_pretty_json_file(&manifest_path, &manifest)?;
+
+    let blind_zones = manifest
+        .get("blindZones")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let artifacts_produced_count = manifest
+        .get("artifactsProduced")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    let result = FinalizeAuditRunWithCompanionsResult {
+        producer_performance_path: producer_performance_path.to_string_lossy().to_string(),
+        manifest_path: manifest_path.to_string_lossy().to_string(),
+        topology_mermaid_path,
+        audit_summary_path,
+        review_pack_path,
+        audit_summary_preview,
+        artifacts_produced_count,
+        blind_zones_summary: format_blind_zones_summary(&blind_zones).unwrap_or_default(),
+        blind_zones,
+        closeout_update: update,
+    };
+    write_json_result(result_output, &result)
 }
 
 pub(super) fn run_manifest_lifecycle_evidence_refresh(args: Vec<String>) -> Result<()> {
@@ -859,6 +1104,108 @@ fn write_json_result<T: Serialize>(result_output: Option<PathBuf>, value: &T) ->
         write_json_file(&result_output, value)
     } else {
         write_stdout_json(value)
+    }
+}
+
+fn companion_artifact(
+    output: &Path,
+    artifact_name: &str,
+    artifact_reads: &mut Vec<ArtifactReadObservation>,
+) -> serde_json::Value {
+    let observed = read_optional_output_json_tolerant_observed(output, artifact_name);
+    if let Some(observation) = observed.observation {
+        artifact_reads.push(observation);
+    }
+    match observed.value {
+        Some(value) if !is_malformed_optional_artifact(&value) => value,
+        _ => serde_json::Value::Null,
+    }
+}
+
+fn is_malformed_optional_artifact(value: &serde_json::Value) -> bool {
+    value
+        .get("reason")
+        .and_then(|reason| reason.get("kind"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|kind| kind == "read-error" || kind == "malformed-json")
+}
+
+fn apply_artifacts_produced_update(
+    manifest: &mut serde_json::Value,
+    artifacts_produced: Vec<String>,
+) -> Result<()> {
+    let manifest = manifest
+        .as_object_mut()
+        .context("finalize-audit-run-with-companions: manifest must be a JSON object")?;
+    manifest.insert(
+        "artifactsProduced".to_string(),
+        serde_json::to_value(artifacts_produced)
+            .context("finalize-audit-run-with-companions: invalid artifactsProduced update")?,
+    );
+    Ok(())
+}
+
+fn format_blind_zones_summary(zones: &[serde_json::Value]) -> Option<String> {
+    if zones.is_empty() {
+        return None;
+    }
+    let scan_gap = severity_count(zones, "scan-gap");
+    let precision_gap = severity_count(zones, "precision-gap");
+    let confidence_gap = severity_count(zones, "confidence-gap");
+    let mut parts = Vec::new();
+    if scan_gap > 0 {
+        parts.push(format!("{scan_gap} scan-gap"));
+    }
+    if precision_gap > 0 {
+        parts.push(format!("{precision_gap} precision-gap"));
+    }
+    if confidence_gap > 0 {
+        parts.push(format!("{confidence_gap} confidence-gap"));
+    }
+    let resolver_reasons = zones
+        .iter()
+        .find(|zone| {
+            zone.get("area")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|area| area == "resolver")
+        })
+        .and_then(|zone| zone.pointer("/details/topUnresolvedReasons"))
+        .and_then(format_unresolved_reason_counts);
+    Some(format!(
+        "blindZones: {}{}",
+        parts.join(", "),
+        resolver_reasons
+            .map(|reasons| format!("; resolver reasons: {reasons}"))
+            .unwrap_or_default()
+    ))
+}
+
+fn severity_count(zones: &[serde_json::Value], severity: &str) -> usize {
+    zones
+        .iter()
+        .filter(|zone| {
+            zone.get("severity")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|value| value == severity)
+        })
+        .count()
+}
+
+fn format_unresolved_reason_counts(reasons: &serde_json::Value) -> Option<String> {
+    let reasons = reasons.as_array()?;
+    let parts = reasons
+        .iter()
+        .take(3)
+        .filter_map(|item| {
+            let reason = item.get("reason")?.as_str()?;
+            let count = item.get("count")?.as_i64()?;
+            Some(format!("{reason} {count}"))
+        })
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(", "))
     }
 }
 

@@ -109,6 +109,9 @@ pub fn run() -> Result<()> {
         Some("manifest-write") => run_manifest_write(args.collect()),
         Some("manifest-closeout-write") => run_manifest_closeout_write(args.collect()),
         Some("finalize-audit-run") => run_finalize_audit_run(args.collect()),
+        Some("finalize-audit-run-with-companions") => {
+            run_finalize_audit_run_with_companions(args.collect())
+        }
         Some("manifest-lifecycle-evidence-refresh") => {
             run_manifest_lifecycle_evidence_refresh(args.collect())
         }

@@ -198,7 +198,16 @@ export function createArtifactReadMetrics({ rootDir, largestLimit = 10 } = {}) {
     });
   }
 
-  return { observeRead, summary };
+  function events() {
+    return {
+      schemaVersion: ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
+      rootDir,
+      largestLimit,
+      reads: [...reads],
+    };
+  }
+
+  return { observeRead, summary, events };
 }
 
 export function finalizeAuditRun({
@@ -254,6 +263,53 @@ export function finalizeAuditRun({
         auditSummaryPath,
         reviewPackPath,
       },
+    },
+  );
+}
+
+export function finalizeAuditRunWithCompanions({
+  manifest,
+  root,
+  outDir,
+  profile,
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  noIncremental = false,
+  cacheRoot,
+  clearIncrementalCache = false,
+  generatedArtifactsMode = 'default',
+  artifactReadEvents,
+  rustAnalysis = null,
+  commandsRun = [],
+  skipped = [],
+  companions = {},
+}) {
+  return runJsonInputResultFileCommand(
+    'finalize-audit-run-with-companions',
+    'finalizeAuditRunWithCompanions',
+    {
+      manifest: manifest ?? null,
+      context: {
+        generated: manifest?.meta?.generated ?? new Date().toISOString(),
+        root,
+        output: outDir,
+        profile,
+        includeTests,
+        production,
+        excludes,
+        autoExcludes,
+        noIncremental,
+        cacheRoot,
+        clearIncrementalCache,
+        generatedArtifactsMode,
+      },
+      artifactReadEvents,
+      commandsRun,
+      skipped,
+      rustAnalysis,
+      companions,
     },
   );
 }
