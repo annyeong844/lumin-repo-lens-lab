@@ -1,8 +1,14 @@
 {
   "schemaVersion": "lumin-audit-core-packaged-platforms.v1",
   "packageScope": "current-platform-binary-with-source-fallback",
-  "binaryPackageScope": "win32-x64",
+  "binaryPackageScope": "multi-platform",
   "platforms": [
+    {
+      "key": "linux-x64",
+      "platform": "linux",
+      "arch": "x64",
+      "executable": "lumin-audit-core"
+    },
     {
       "key": "win32-x64",
       "platform": "win32",

@@ -9,10 +9,11 @@
     "distribution": "skill",
     "auditCore": {
       "packagedPlatforms": [
+        "linux-x64",
         "win32-x64"
       ],
       "platformScope": "current-platform-binary-with-source-fallback",
-      "binaryPlatformScope": "win32-x64",
+      "binaryPlatformScope": "multi-platform",
       "sourceFallback": true,
       "sourceFallbackManifest": "_engine/rust/Cargo.toml",
       "platformOverrideEnv": "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
