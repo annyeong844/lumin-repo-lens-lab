@@ -55,6 +55,7 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core orchestration-plan [--profile <quick|full|ci>] [--sarif] [--pre-write] [--post-write] [--canon-draft] [--check-canon] [--rust-analyzer]
        lumin-audit-core execute-base-plan --input <path|->
        lumin-audit-core execute-base-runtime --input <path|->
+       lumin-audit-core execute-audit-lifecycle --input <path|-> --result-output <path>
        lumin-audit-core execute-canon-draft --input <path|->
        lumin-audit-core execute-check-canon --input <path|->
        lumin-audit-core pre-write-route --input <path|->

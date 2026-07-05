@@ -136,6 +136,7 @@ pub fn run() -> Result<()> {
         Some("execute-base-runtime") => run_execute_base_runtime(args.collect()),
         Some("execute-canon-draft") => run_execute_canon_draft(args.collect()),
         Some("execute-check-canon") => run_execute_check_canon(args.collect()),
+        Some("execute-audit-lifecycle") => run_execute_audit_lifecycle(args.collect()),
         Some("pre-write-route") => run_pre_write_route(args.collect()),
         Some("execute-js-pre-write") => run_execute_js_pre_write(args.collect()),
         Some("execute-rust-pre-write") => run_execute_rust_pre_write(args.collect()),

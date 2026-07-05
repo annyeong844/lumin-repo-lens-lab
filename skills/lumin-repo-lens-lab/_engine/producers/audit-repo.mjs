@@ -60,14 +60,7 @@ import {
 import {
   createArtifactReadMetrics,
   executeBaseRuntime,
-  executeCanonDraftLifecycle,
-  executeCheckCanonLifecycle,
-  resolvePreWriteRoute,
-  executeJsPreWriteLifecycle,
-  executeRustPreWriteLifecycle,
-  executePostWriteLifecycle,
-  applyLifecycleExitPolicy,
-  evaluateLifecycleRequestGuard,
+  executeAuditLifecycle,
   buildManifestRootWithEvidence,
   finalizeAuditRunWithCompanions,
   applyLifecycleAndRefreshManifestEvidence,
@@ -402,6 +395,25 @@ function buildPreWriteRoutingRequest(requestedEngine, intentFlag) {
   };
 }
 
+function buildPreWriteRoutingRequestOrFailure(requestedEngine, intentFlag) {
+  try {
+    return {
+      routing: buildPreWriteRoutingRequest(requestedEngine, intentFlag),
+      routingFailure: null,
+    };
+  } catch (error) {
+    return {
+      routing: {
+        schemaVersion: 'lumin-pre-write-routing-request.v1',
+        requestedEngine,
+        intentFlag: intentFlag === '-' ? '-' : String(intentFlag ?? 'missing'),
+        intentText: '{}',
+      },
+      routingFailure: error?.message ?? 'unknown pre-write routing input failure',
+    };
+  }
+}
+
 function buildLifecycleRequestGuardRequest() {
   return {
     schemaVersion: 'lumin-lifecycle-request-guard.v1',
@@ -526,7 +538,6 @@ function buildPostWriteLifecycleRequest() {
 
 function buildRustPreWriteLifecycleRequest({
   invocation,
-  preWriteRoute,
   advisoryInvocationId,
   rustNativePath,
   rustNativeLatestPath,
@@ -539,14 +550,12 @@ function buildRustPreWriteLifecycleRequest({
     invocationId: advisoryInvocationId,
     rustNativeArtifactPath: rustNativePath,
     rustNativeLatestPath,
-    analyzer: {
+    analyzer: invocation ? {
       command: invocation.command,
       prefixArgs: invocation.prefixArgs,
       source: invocation.source,
       ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
-    },
-    intentInput: preWriteRoute.childIntentInput,
-    engineSelection: preWriteRoute.engineSelection,
+    } : null,
     includeTests: INCLUDE_TESTS,
     production: INCLUDE_TESTS === false,
     excludes: EFFECTIVE_EXCLUDES,
@@ -555,16 +564,13 @@ function buildRustPreWriteLifecycleRequest({
   };
 }
 
-function buildJsPreWriteLifecycleRequest(preWriteRoute) {
+function buildJsPreWriteLifecycleRequest() {
   return {
     schemaVersion: 'lumin-js-pre-write-lifecycle-request.v1',
     root: ROOT,
     output: OUT,
     scriptsDir: __dirname,
     nodeExecutable: process.execPath,
-    childIntentFlag: preWriteRoute.childIntentFlag,
-    childIntentInput: preWriteRoute.childIntentInput ?? null,
-    engineSelection: preWriteRoute.engineSelection,
     noFreshAudit: values['no-fresh-audit'] === true,
     scanArgs: forwardedScanArgs(),
   };
@@ -633,106 +639,56 @@ let checkCanonBlock = undefined;
 let finalExitCode = basePipelineExitCode;
 let auditSummaryPreview = null;
 
-const lifecycleRequestGuard = evaluateLifecycleRequestGuard(buildLifecycleRequestGuardRequest());
-if (typeof lifecycleRequestGuard.stderr === 'string' && lifecycleRequestGuard.stderr.length > 0) {
-  process.stderr.write(lifecycleRequestGuard.stderr);
-}
-
-if (lifecycleRequestGuard.status === 'blocked') {
-  preWriteBlock = lifecycleRequestGuard.preWrite ?? undefined;
-  postWriteBlock = lifecycleRequestGuard.postWrite ?? undefined;
-  finalExitCode = lifecycleRequestGuard.exitCode;
-} else if (values['pre-write']) {
-  let preWriteRoute = null;
-  try {
-    preWriteRoute = resolvePreWriteRoute(
-      buildPreWriteRoutingRequest(REQUESTED_PRE_WRITE_ENGINE, values.intent),
-    );
-  } catch (error) {
-    preWriteBlock = {
-      requested: true,
-      ran: false,
-      engine: REQUESTED_PRE_WRITE_ENGINE,
-      reason: `pre-write engine selection failed: ${error.message}`,
-    };
-    finalExitCode = 2;
-  }
-
-  if (preWriteRoute?.engine === 'rust') {
-    const advisoryInvocationId = generateInvocationId();
-    const rustNativePath = path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`);
-    const rustNativeLatestPath = path.join(OUT, 'rust-pre-write-artifact.latest.json');
-    const invocation = rustAnalyzerInvocation();
-    const result = executeRustPreWriteLifecycle(buildRustPreWriteLifecycleRequest({
-      invocation,
-      preWriteRoute,
+const advisoryInvocationId = generateInvocationId();
+const preWriteRouting = values['pre-write'] === true && values.intent
+  ? buildPreWriteRoutingRequestOrFailure(REQUESTED_PRE_WRITE_ENGINE, values.intent)
+  : {
+    routing: {
+      schemaVersion: 'lumin-pre-write-routing-request.v1',
+      requestedEngine: REQUESTED_PRE_WRITE_ENGINE,
+      intentFlag: 'unused',
+      intentText: '{}',
+    },
+    routingFailure: null,
+  };
+const lifecycleExecution = executeAuditLifecycle({
+  schemaVersion: 'lumin-audit-lifecycle-execution-request.v1',
+  baseExitCode: basePipelineExitCode,
+  lifecycleRequestGuard: buildLifecycleRequestGuardRequest(),
+  preWrite: values['pre-write'] === true ? {
+    requested: values['pre-write'] === true,
+    routing: preWriteRouting.routing,
+    routingFailure: preWriteRouting.routingFailure,
+    rust: buildRustPreWriteLifecycleRequest({
+      invocation: rustAnalyzerInvocationOrNull(),
       advisoryInvocationId,
-      rustNativePath,
-      rustNativeLatestPath,
-    }));
-    preWriteBlock = result.block;
-    if (finalExitCode === 0) finalExitCode = result.exitCode;
-  } else if (preWriteRoute?.engine === 'js') {
-    const result = executeJsPreWriteLifecycle(buildJsPreWriteLifecycleRequest(preWriteRoute));
-    preWriteBlock = result.block;
-    if (finalExitCode === 0) finalExitCode = result.exitCode;
-  }
-} else if (values['post-write']) {
-  const result = executePostWriteLifecycle(buildPostWriteLifecycleRequest());
-  postWriteBlock = result.block;
-  if (finalExitCode === 0) finalExitCode = result.exitCode;
-}
-
-// ─── P3-4-b: opt-in canon-draft orchestrator ─────────────
-//
-// Thin spawn wrapper. Each source runs a separate `generate-canon-draft.mjs`
-// invocation; per-source outcomes populate `manifest.canonDraft.perSource`.
-// Orthogonal with --pre-write / --post-write — all three can coexist on
-// one invocation.
-//
-// Exit contract (advisory):
-//   - `manifest.canonDraft.ran === true` iff ≥ 1 requested source succeeded.
-//   - Orchestrator exit 0 if ran; exit 1 if every requested source failed
-//     OR if --sources contained an unknown value.
-
-if (values['canon-draft']) {
-  const result = executeCanonDraftLifecycle(buildCanonDraftLifecycleRequest());
-  canonDraftBlock = result.block;
-  if (result.forceExitCode || finalExitCode === 0) finalExitCode = result.exitCode;
-}
-
-// ─── P5-4: check-canon orchestrator ──────────────────────────────
-//
-// Thin spawn wrapper mirroring the --canon-draft block. When every source is
-// requested, spawn `check-canon.mjs --source all` once and copy its perSource
-// entries into manifest.checkCanon. For subsets, spawn one child per source.
-// Child exit 1 (drift) and exit 2 (attempted-but-failed-to-check, e.g.
-// missing canon) are LEGITIMATE per-source outcomes recorded into manifest —
-// NOT spawn failures. Only a true ENOENT-style failure produces ran=false on
-// that source.
-//
-// Advisory default: orchestrator exit 0 if manifest.checkCanon.ran === true.
-// --strict-check-canon escalates:
-//   summary.driftCount > 0 → orchestrator exit 1
-//   summary.sourcesChecked === 0 → orchestrator exit 2
-
-if (values['check-canon']) {
-  const result = executeCheckCanonLifecycle(buildCheckCanonLifecycleRequest());
-  checkCanonBlock = result.block;
-  if (finalExitCode === 0) finalExitCode = result.exitCode;
-}
-
-const lifecycleExitPolicy = applyLifecycleExitPolicy({
-  schemaVersion: 'lumin-lifecycle-exit-policy-request.v1',
-  currentExitCode: finalExitCode,
-  strictPostWrite: values['strict-post-write'] === true,
-  strictPostWriteConfidence: values['strict-post-write-confidence'] === true,
-  postWrite: postWriteBlock ?? null,
+      rustNativePath: path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`),
+      rustNativeLatestPath: path.join(OUT, 'rust-pre-write-artifact.latest.json'),
+    }),
+    js: buildJsPreWriteLifecycleRequest(),
+  } : null,
+  postWrite: values['post-write'] === true ? {
+    requested: values['post-write'] === true,
+    request: buildPostWriteLifecycleRequest(),
+  } : null,
+  canonDraft: values['canon-draft'] === true ? {
+    requested: values['canon-draft'] === true,
+    request: buildCanonDraftLifecycleRequest(),
+  } : null,
+  checkCanon: values['check-canon'] === true ? {
+    requested: values['check-canon'] === true,
+    request: buildCheckCanonLifecycleRequest(),
+  } : null,
+  exitPolicy: {
+    strictPostWrite: values['strict-post-write'] === true,
+    strictPostWriteConfidence: values['strict-post-write-confidence'] === true,
+  },
 });
-if (typeof lifecycleExitPolicy.stderr === 'string' && lifecycleExitPolicy.stderr.length > 0) {
-  process.stderr.write(lifecycleExitPolicy.stderr);
-}
-finalExitCode = lifecycleExitPolicy.exitCode;
+preWriteBlock = lifecycleExecution.preWrite ?? undefined;
+postWriteBlock = lifecycleExecution.postWrite ?? undefined;
+canonDraftBlock = lifecycleExecution.canonDraft ?? undefined;
+checkCanonBlock = lifecycleExecution.checkCanon ?? undefined;
+finalExitCode = lifecycleExecution.finalExitCode ?? basePipelineExitCode;
 
 Object.assign(manifest, applyLifecycleAndRefreshManifestEvidence({
   manifest,

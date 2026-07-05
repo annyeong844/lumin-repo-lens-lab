@@ -297,6 +297,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'execute-js-pre-write: missing --input <path|->',
     ],
     [
+      ['execute-audit-lifecycle'],
+      'execute-audit-lifecycle: missing --input <path|->',
+    ],
+    [
       ['barrel-discipline-artifact'],
       'barrel-discipline-artifact: missing --input <path|->',
     ],
@@ -416,6 +420,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const outputDir = path.join(tempDir, 'out');
   const rootInputPath = path.join(tempDir, 'manifest-root-with-evidence.json');
   const lifecycleInputPath = path.join(tempDir, 'manifest-lifecycle-evidence-refresh.json');
+  const auditLifecycleInputPath = path.join(tempDir, 'execute-audit-lifecycle.json');
   const jsPreWriteInputPath = path.join(tempDir, 'execute-js-pre-write.json');
   const jsPreWriteScriptsDir = path.join(tempDir, 'js-pre-write-scripts');
   const barrelDisciplineInputPath = path.join(tempDir, 'barrel-discipline-artifact.json');
@@ -550,6 +555,21 @@ writeFileSync(latest, JSON.stringify(advisory));
       },
       noFreshAudit: false,
       scanArgs: [],
+    }));
+    writeFileSync(auditLifecycleInputPath, JSON.stringify({
+      schemaVersion: 'lumin-audit-lifecycle-execution-request.v1',
+      baseExitCode: 0,
+      lifecycleRequestGuard: {
+        schemaVersion: 'lumin-lifecycle-request-guard.v1',
+        preWriteRequested: false,
+        postWriteRequested: false,
+        preWriteIntentPresent: false,
+        requestedPreWriteEngine: 'auto',
+      },
+      exitPolicy: {
+        strictPostWrite: false,
+        strictPostWriteConfidence: false,
+      },
     }));
     writeFileSync(path.join(rootDir, 'probe.ts'), 'const value: any = input as any; // TODO\n');
     writeFileSync(barrelDisciplineInputPath, JSON.stringify({
@@ -1229,6 +1249,11 @@ writeFileSync(latest, JSON.stringify(advisory));
         requiresArtifactReads: false,
       },
       {
+        subcommand: 'execute-audit-lifecycle',
+        args: ['execute-audit-lifecycle', '--input', auditLifecycleInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'manifest-evidence-summary-with-reads',
         args: [
           'manifest-evidence-summary-with-reads',
@@ -1673,6 +1698,14 @@ function resultPayloadMatchesProbe(json, probe) {
       json.exitCode === 0 &&
       json.stdout === undefined &&
       json.stderr === undefined;
+  }
+  if (probe.subcommand === 'execute-audit-lifecycle') {
+    return json.schemaVersion === 'lumin-audit-lifecycle-execution-result.v1' &&
+      json.preWrite === null &&
+      json.postWrite === null &&
+      json.canonDraft === null &&
+      json.checkCanon === null &&
+      json.finalExitCode === 0;
   }
   const payload = json[probe.requiredField];
   return isObject(payload) &&

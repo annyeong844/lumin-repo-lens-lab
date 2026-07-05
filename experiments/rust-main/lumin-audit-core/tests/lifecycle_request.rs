@@ -133,6 +133,137 @@ fn cli_lifecycle_request_guard_emits_json_and_rejects_bad_schema() -> Result<()>
     Ok(())
 }
 
+#[test]
+fn cli_execute_audit_lifecycle_preserves_empty_lifecycle_result_file() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("request.json");
+    let result_path = temp.path().join("result.json");
+    fs::write(
+        &input_path,
+        serde_json::to_string(&json!({
+            "schemaVersion": "lumin-audit-lifecycle-execution-request.v1",
+            "baseExitCode": 1,
+            "lifecycleRequestGuard": {
+                "schemaVersion": "lumin-lifecycle-request-guard.v1",
+                "preWriteRequested": false,
+                "postWriteRequested": false,
+                "preWriteIntentPresent": false,
+                "requestedPreWriteEngine": "auto"
+            },
+            "exitPolicy": {
+                "strictPostWrite": false,
+                "strictPostWriteConfidence": false
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("execute-audit-lifecycle")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    let result: Value = serde_json::from_slice(&fs::read(&result_path)?)?;
+    assert_eq!(
+        result["schemaVersion"],
+        "lumin-audit-lifecycle-execution-result.v1"
+    );
+    assert!(result["preWrite"].is_null());
+    assert!(result["postWrite"].is_null());
+    assert!(result["canonDraft"].is_null());
+    assert!(result["checkCanon"].is_null());
+    assert_eq!(result["finalExitCode"], 1);
+    Ok(())
+}
+
+#[test]
+fn cli_execute_audit_lifecycle_blocks_missing_pre_write_intent_before_route_parse() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("request.json");
+    let result_path = temp.path().join("result.json");
+    fs::write(
+        &input_path,
+        serde_json::to_string(&json!({
+            "schemaVersion": "lumin-audit-lifecycle-execution-request.v1",
+            "baseExitCode": 0,
+            "lifecycleRequestGuard": {
+                "schemaVersion": "lumin-lifecycle-request-guard.v1",
+                "preWriteRequested": true,
+                "postWriteRequested": false,
+                "preWriteIntentPresent": false,
+                "requestedPreWriteEngine": "rust"
+            },
+            "preWrite": {
+                "requested": true,
+                "routing": {
+                    "schemaVersion": "lumin-pre-write-routing-request.v1",
+                    "requestedEngine": "rust",
+                    "intentFlag": "unused",
+                    "intentText": "not valid JSON because the guard must fire first"
+                },
+                "rust": {
+                    "root": "repo",
+                    "output": "out",
+                    "invocationId": "INV-1",
+                    "rustNativeArtifactPath": "out/rust-pre-write-artifact.INV-1.json",
+                    "rustNativeLatestPath": "out/rust-pre-write-artifact.latest.json",
+                    "analyzer": null,
+                    "includeTests": true,
+                    "production": false,
+                    "excludes": [],
+                    "fileInventory": { "status": "available", "files": [] },
+                    "failures": []
+                },
+                "js": {
+                    "root": "repo",
+                    "output": "out",
+                    "scriptsDir": "scripts",
+                    "nodeExecutable": "node",
+                    "noFreshAudit": false,
+                    "scanArgs": []
+                }
+            },
+            "exitPolicy": {
+                "strictPostWrite": false,
+                "strictPostWriteConfidence": false
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("execute-audit-lifecycle")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--intent <file|-> missing"));
+    let result: Value = serde_json::from_slice(&fs::read(&result_path)?)?;
+    assert_eq!(result["preWrite"]["requested"], true);
+    assert_eq!(result["preWrite"]["ran"], false);
+    assert_eq!(result["preWrite"]["engine"], "rust");
+    assert_eq!(result["preWrite"]["producer"], "lumin-rust-analyzer");
+    assert_eq!(result["preWrite"]["reason"], "--intent missing");
+    assert_eq!(result["finalExitCode"], 2);
+    Ok(())
+}
+
 fn audit_core_bin() -> &'static str {
     env!("CARGO_BIN_EXE_lumin-audit-core")
 }

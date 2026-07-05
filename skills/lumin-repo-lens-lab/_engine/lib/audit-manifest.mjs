@@ -318,6 +318,14 @@ export function executeBaseRuntime(request) {
   return runJsonInputCommand('execute-base-runtime', 'executeBaseRuntime', request);
 }
 
+export function executeAuditLifecycle(request) {
+  return runJsonInputResultFileCommand(
+    'execute-audit-lifecycle',
+    'executeAuditLifecycle',
+    request,
+  );
+}
+
 export function executeCanonDraftLifecycle(request) {
   return runJsonInputCommand('execute-canon-draft', 'executeCanonDraftLifecycle', request);
 }
