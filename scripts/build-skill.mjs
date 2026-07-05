@@ -376,6 +376,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       ['topology-mermaid-render'],
       'topology-mermaid-render: missing --input <path|->',
     ],
+    [
+      ['audit-review-pack-render'],
+      'audit-review-pack-render: missing --input <path|->',
+    ],
   ]) {
     const result = spawnSync(binaryPath, args, {
       cwd: ROOT,
@@ -426,6 +430,8 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const topologyInputPath = path.join(tempDir, 'topology-artifact.json');
   const topologyMermaidInputPath = path.join(tempDir, 'topology-mermaid-render.json');
   const topologyMermaidOutputPath = path.join(tempDir, 'topology.mermaid.md');
+  const auditReviewPackInputPath = path.join(tempDir, 'audit-review-pack-render.json');
+  const auditReviewPackOutputPath = path.join(tempDir, 'audit-review-pack.latest.md');
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(outputDir, { recursive: true });
@@ -997,6 +1003,64 @@ writeFileSync(latest, JSON.stringify(advisory));
         edges: [],
       },
     }));
+    writeFileSync(auditReviewPackInputPath, JSON.stringify({
+      schemaVersion: 'lumin-audit-review-pack-render-request.v1',
+      outputPath: auditReviewPackOutputPath,
+      manifest: {
+        profile: 'full',
+        scanRange: {
+          files: 2,
+          languages: ['ts'],
+          includeTests: true,
+        },
+        rustAnalysis: {
+          requested: false,
+        },
+      },
+      checklistFacts: {
+        E2_silent_catch: {
+          count: 1,
+          nonEmptyAnonymousCount: 0,
+          unusedParamCount: 0,
+        },
+      },
+      fixPlan: {
+        summary: {
+          SAFE_FIX: 1,
+          REVIEW_FIX: 2,
+          DEGRADED: 0,
+          MUTED: 0,
+        },
+      },
+      topology: {
+        summary: {
+          sccCount: 1,
+        },
+        sccs: [],
+      },
+      discipline: {
+        totals: {
+          ':any': 1,
+        },
+      },
+      callGraph: {
+        summary: {
+          semiDead: 1,
+        },
+      },
+      barrels: {
+        root: {},
+      },
+      symbols: {
+        meta: {
+          supports: {
+            anyContamination: true,
+          },
+        },
+        helperOwnersByIdentity: {},
+        typeOwnersByIdentity: {},
+      },
+    }));
 
     const probes = [
       {
@@ -1131,6 +1195,12 @@ writeFileSync(latest, JSON.stringify(advisory));
         args: ['topology-mermaid-render', '--input', topologyMermaidInputPath],
         requiresArtifactReads: false,
         outputPath: topologyMermaidOutputPath,
+      },
+      {
+        subcommand: 'audit-review-pack-render',
+        args: ['audit-review-pack-render', '--input', auditReviewPackInputPath],
+        requiresArtifactReads: false,
+        outputPath: auditReviewPackOutputPath,
       },
     ];
 
@@ -1356,7 +1426,23 @@ function resultPayloadMatchesProbe(json, probe) {
       markdown.includes('sub0["apps/web"]') &&
       markdown.includes('sub0 -->|4| sub1') &&
       markdown.includes('## Citation Contract') &&
-      json.bytes === markdown.length;
+      json.bytes === Buffer.byteLength(markdown, 'utf8');
+  }
+  if (probe.subcommand === 'audit-review-pack-render') {
+    if (
+      json.schemaVersion !== 'lumin-audit-review-pack-render-result.v1' ||
+      json.path !== probe.outputPath ||
+      typeof json.bytes !== 'number' ||
+      json.bytes <= 0
+    ) {
+      return false;
+    }
+    const markdown = readFileSync(probe.outputPath, 'utf8');
+    return markdown.startsWith('# Audit Review Pack') &&
+      markdown.includes('Lane 1') &&
+      markdown.includes('Lane 4') &&
+      markdown.includes('Merge Instructions') &&
+      json.bytes === Buffer.byteLength(markdown, 'utf8');
   }
   if (probe.subcommand === 'execute-js-pre-write') {
     return json.schemaVersion === 'lumin-pre-write-lifecycle-result.v1' &&

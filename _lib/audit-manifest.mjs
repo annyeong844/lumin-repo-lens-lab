@@ -108,6 +108,43 @@ export function writeTopologyMermaidWithAuditCore({ topology, outputPath, option
   );
 }
 
+export function writeAuditReviewPackWithAuditCore({
+  manifest,
+  checklistFacts = null,
+  fixPlan = null,
+  topology = null,
+  discipline = null,
+  callGraph = null,
+  functionClones = null,
+  barrels = null,
+  shapeIndex = null,
+  deadClassify = null,
+  symbols = null,
+  moduleReachability = null,
+  outputPath,
+}) {
+  return runJsonInputResultFileCommand(
+    'audit-review-pack-render',
+    'writeAuditReviewPack',
+    {
+      schemaVersion: 'lumin-audit-review-pack-render-request.v1',
+      manifest,
+      checklistFacts,
+      fixPlan,
+      topology,
+      discipline,
+      callGraph,
+      functionClones,
+      barrels,
+      shapeIndex,
+      deadClassify,
+      symbols,
+      moduleReachability,
+      outputPath,
+    },
+  );
+}
+
 export function createArtifactReadMetrics({ rootDir, largestLimit = 10 } = {}) {
   const reads = [];
 

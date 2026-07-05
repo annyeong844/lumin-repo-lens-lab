@@ -2,6 +2,7 @@ pub mod artifact_measurement;
 pub mod artifact_read_metrics;
 pub mod artifact_registry;
 pub mod artifact_summaries;
+pub mod audit_review_pack;
 pub mod barrel_discipline;
 pub mod blind_zones;
 pub mod block_clones;

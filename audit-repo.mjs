@@ -54,7 +54,6 @@ import { loadIfExists as loadArtifact } from './_lib/artifacts.mjs';
 import { normalizeIncludeTests } from './_lib/cli.mjs';
 import { collectFiles } from './_lib/collect-files.mjs';
 import { renderAuditSummary } from './_lib/audit-summary.mjs';
-import { renderAuditReviewPack } from './_lib/audit-review-pack.mjs';
 import { assertRuntimeSetup, formatRuntimeSetupError } from './_lib/dependency-guard.mjs';
 import { detectMaintainerSelfAuditExcludes, mergeExcludes } from './_lib/self-audit-excludes.mjs';
 import {
@@ -76,6 +75,7 @@ import {
   buildManifestRootWithEvidence,
   finalizeAuditRun,
   applyLifecycleAndRefreshManifestEvidence,
+  writeAuditReviewPackWithAuditCore,
   writeTopologyMermaidWithAuditCore,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
@@ -833,7 +833,7 @@ if (SHOULD_WRITE_SUMMARY) {
 }
 if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
   reviewPackPath = path.join(OUT, 'audit-review-pack.latest.md');
-  const reviewPackMarkdown = renderAuditReviewPack({
+  writeAuditReviewPackWithAuditCore({
     manifest,
     checklistFacts: loadIfExists('checklist-facts.json'),
     fixPlan: loadIfExists('fix-plan.json'),
@@ -846,8 +846,8 @@ if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
     deadClassify: loadIfExists('dead-classify.json'),
     symbols: loadIfExists('symbols.json'),
     moduleReachability: moduleReachabilityArtifact,
+    outputPath: reviewPackPath,
   });
-  writeFileSync(reviewPackPath, reviewPackMarkdown);
 }
 const manifestWrite = finalizeAuditRun({
   manifest,

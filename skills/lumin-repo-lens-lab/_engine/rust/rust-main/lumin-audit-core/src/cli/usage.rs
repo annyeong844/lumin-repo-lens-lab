@@ -5,6 +5,7 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core rust-analysis-run-merge --input <path|->
        lumin-audit-core generated-artifacts-summary --root <repo> [--symbols <path>] [--generated-artifacts <default|present|prepared>] [--include-tests|--no-include-tests] [--exclude <path> ...]
        lumin-audit-core artifact-summary --artifact-kind <framework-resource-surfaces|unused-deps|block-clones> --artifact <path>
+       lumin-audit-core audit-review-pack-render --input <path|-> [--result-output <path>]
        lumin-audit-core barrel-discipline-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core block-clones-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core call-graph-artifact --input <path|-> [--result-output <path>]

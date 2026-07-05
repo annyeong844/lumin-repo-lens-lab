@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 
 mod args;
 mod artifact;
+mod audit_review_pack;
 mod barrel_discipline;
 mod block_clones;
 mod call_graph;
@@ -30,6 +31,7 @@ mod unused_deps;
 mod usage;
 
 use artifact::*;
+use audit_review_pack::*;
 use barrel_discipline::*;
 use block_clones::*;
 use call_graph::*;
@@ -66,6 +68,7 @@ pub fn run() -> Result<()> {
         Some("rust-analysis-run-merge") => run_rust_analysis_run_merge(args.collect()),
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
         Some("artifact-summary") => run_artifact_summary(args.collect()),
+        Some("audit-review-pack-render") => run_audit_review_pack_render(args.collect()),
         Some("barrel-discipline-artifact") => run_barrel_discipline_artifact(args.collect()),
         Some("block-clones-artifact") => run_block_clones_artifact(args.collect()),
         Some("call-graph-artifact") => run_call_graph_artifact(args.collect()),
