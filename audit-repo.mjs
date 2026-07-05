@@ -45,7 +45,7 @@
 // step is a child process invocation of the existing .mjs. Failure of
 // any step is captured but never hidden.
 
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -53,7 +53,6 @@ import { formatBlindZonesSummary } from './_lib/blind-zones.mjs';
 import { loadIfExists as loadArtifact } from './_lib/artifacts.mjs';
 import { normalizeIncludeTests } from './_lib/cli.mjs';
 import { collectFiles } from './_lib/collect-files.mjs';
-import { renderAuditSummary } from './_lib/audit-summary.mjs';
 import { assertRuntimeSetup, formatRuntimeSetupError } from './_lib/dependency-guard.mjs';
 import { detectMaintainerSelfAuditExcludes, mergeExcludes } from './_lib/self-audit-excludes.mjs';
 import {
@@ -75,6 +74,7 @@ import {
   buildManifestRootWithEvidence,
   finalizeAuditRun,
   applyLifecycleAndRefreshManifestEvidence,
+  writeAuditSummaryWithAuditCore,
   writeAuditReviewPackWithAuditCore,
   writeTopologyMermaidWithAuditCore,
 } from './_lib/audit-manifest.mjs';
@@ -605,46 +605,6 @@ function buildPreWriteFileInventory(failures) {
   }
 }
 
-function shortenConsoleLine(line, max = 150) {
-  const normalized = String(line ?? '').replace(/\s+/g, ' ').trim();
-  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
-}
-
-function collectSummarySectionLines(markdown, heading, limit) {
-  const lines = String(markdown ?? '').split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === heading);
-  if (start < 0) return [];
-  const out = [];
-  for (const line of lines.slice(start + 1)) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('## ')) break;
-    if (!trimmed) continue;
-    if (/^(?:-|\d+\.)\s+/.test(trimmed)) {
-      out.push(shortenConsoleLine(trimmed));
-      if (out.length >= limit) break;
-    }
-  }
-  return out;
-}
-
-function renderSummaryConsolePreview(markdown) {
-  const sections = [
-    ['Command Result', collectSummarySectionLines(markdown, '## Command Result', 3)],
-    ['Read First', collectSummarySectionLines(markdown, '## Read First', 2)],
-    ['Measured Cues', collectSummarySectionLines(markdown, '## Measured Cues (Unranked)', 3)],
-    ['Living Audit Tracking', collectSummarySectionLines(markdown, '## Living Audit Tracking', 2)],
-    ['Guardrails', collectSummarySectionLines(markdown, '## Guardrails', 2)],
-  ].filter(([, lines]) => lines.length > 0);
-  if (sections.length === 0) return null;
-
-  const out = ['[audit-repo] artifact brief preview:'];
-  for (const [label, lines] of sections) {
-    out.push(`[audit-repo]   ${label}:`);
-    for (const line of lines) out.push(`[audit-repo]     ${line}`);
-  }
-  return out.join('\n');
-}
-
 console.log(`[audit-repo] profile=${PROFILE}  root=${ROOT}  output=${OUT}`);
 
 const baseExecution = executeBaseRuntime(buildRuntimeExecutorRequest());
@@ -817,7 +777,7 @@ const SHOULD_WRITE_SUMMARY = (
 );
 if (SHOULD_WRITE_SUMMARY) {
   auditSummaryPath = path.join(OUT, 'audit-summary.latest.md');
-  const summaryMarkdown = renderAuditSummary({
+  const summaryResult = writeAuditSummaryWithAuditCore({
     manifest,
     checklistFacts: loadIfExists('checklist-facts.json'),
     fixPlan: loadIfExists('fix-plan.json'),
@@ -827,9 +787,9 @@ if (SHOULD_WRITE_SUMMARY) {
     functionClones: loadIfExists('function-clones.json'),
     symbols: loadIfExists('symbols.json'),
     moduleReachability: moduleReachabilityArtifact,
+    outputPath: auditSummaryPath,
   });
-  writeFileSync(auditSummaryPath, summaryMarkdown);
-  auditSummaryPreview = renderSummaryConsolePreview(summaryMarkdown);
+  auditSummaryPreview = summaryResult.preview ?? null;
 }
 if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
   reviewPackPath = path.join(OUT, 'audit-review-pack.latest.md');

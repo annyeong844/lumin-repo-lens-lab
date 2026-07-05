@@ -55,6 +55,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'audit-review-pack-render: missing --input <path|->',
   ],
   [
+    ['audit-summary-render'],
+    'audit-summary-render: missing --input <path|->',
+  ],
+  [
     ['manifest-write'],
     'manifest-write: missing --output <dir>',
   ],
@@ -163,6 +167,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'manifest-evidence-summary-with-reads',
   'manifest-evidence-refresh-with-reads',
   'audit-review-pack-render',
+  'audit-summary-render',
   'barrel-discipline-artifact',
   'block-clones-artifact',
   'call-graph-artifact',
@@ -342,6 +347,8 @@ function auditCoreBinaryWritesResultFiles(command) {
   const topologyMermaidOutputPath = path.join(tempDir, 'topology.mermaid.md');
   const auditReviewPackInputPath = path.join(tempDir, 'audit-review-pack-render.json');
   const auditReviewPackOutputPath = path.join(tempDir, 'audit-review-pack.latest.md');
+  const auditSummaryInputPath = path.join(tempDir, 'audit-summary-render.json');
+  const auditSummaryOutputPath = path.join(tempDir, 'audit-summary.latest.md');
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(outputDir, { recursive: true });
@@ -971,6 +978,66 @@ writeFileSync(latest, JSON.stringify(advisory));
         typeOwnersByIdentity: {},
       },
     }));
+    writeFileSync(auditSummaryInputPath, JSON.stringify({
+      schemaVersion: 'lumin-audit-summary-render-request.v1',
+      outputPath: auditSummaryOutputPath,
+      manifest: {
+        meta: { generated: '2026-07-02T00:00:00.000Z' },
+        profile: 'full',
+        scanRange: {
+          files: 2,
+          languages: ['ts'],
+          includeTests: true,
+        },
+        confidence: {
+          parseErrors: 0,
+          unresolvedInternalRatio: 0,
+        },
+        rustAnalysis: {
+          requested: false,
+        },
+      },
+      checklistFacts: {
+        E2_silent_catch: {
+          count: 1,
+          nonEmptyAnonymousCount: 0,
+          unusedParamCount: 0,
+        },
+      },
+      fixPlan: {
+        summary: {
+          SAFE_FIX: 1,
+          REVIEW_FIX: 2,
+          DEGRADED: 0,
+          MUTED: 0,
+        },
+      },
+      topology: {
+        summary: {
+          sccCount: 1,
+        },
+        sccs: [],
+      },
+      discipline: {
+        totals: {
+          ':any': 1,
+        },
+      },
+      callGraph: {
+        summary: {
+          semiDead: 1,
+        },
+      },
+      symbols: {
+        meta: {
+          supports: {
+            anyContamination: true,
+          },
+        },
+        helperOwnersByIdentity: {},
+        typeOwnersByIdentity: {},
+      },
+    }));
 
     const probes = [
       {
@@ -1111,6 +1178,12 @@ writeFileSync(latest, JSON.stringify(advisory));
         args: ['audit-review-pack-render', '--input', auditReviewPackInputPath],
         requiresArtifactReads: false,
         outputPath: auditReviewPackOutputPath,
+      },
+      {
+        subcommand: 'audit-summary-render',
+        args: ['audit-summary-render', '--input', auditSummaryInputPath],
+        requiresArtifactReads: false,
+        outputPath: auditSummaryOutputPath,
       },
     ];
 
@@ -1351,6 +1424,25 @@ function resultPayloadMatchesProbe(json, probe) {
       markdown.includes('Lane 1') &&
       markdown.includes('Lane 4') &&
       markdown.includes('Merge Instructions') &&
+      json.bytes === Buffer.byteLength(markdown, 'utf8');
+  }
+  if (probe.subcommand === 'audit-summary-render') {
+    if (
+      json.schemaVersion !== 'lumin-audit-summary-render-result.v1' ||
+      json.path !== probe.outputPath ||
+      typeof json.bytes !== 'number' ||
+      json.bytes <= 0 ||
+      typeof json.preview !== 'string'
+    ) {
+      return false;
+    }
+    const markdown = readFileSync(probe.outputPath, 'utf8');
+    return markdown.startsWith('# Audit Artifact Brief') &&
+      markdown.includes('## Read First') &&
+      markdown.includes('## Measured Cues (Unranked)') &&
+      markdown.includes('## Guardrails') &&
+      json.preview.includes('[audit-repo] artifact brief preview:') &&
+      json.preview.includes('[audit-repo]   Read First:') &&
       json.bytes === Buffer.byteLength(markdown, 'utf8');
   }
   if (probe.subcommand === 'execute-js-pre-write') {

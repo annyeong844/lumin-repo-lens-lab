@@ -3,6 +3,7 @@ use anyhow::{bail, Result};
 mod args;
 mod artifact;
 mod audit_review_pack;
+mod audit_summary;
 mod barrel_discipline;
 mod block_clones;
 mod call_graph;
@@ -32,6 +33,7 @@ mod usage;
 
 use artifact::*;
 use audit_review_pack::*;
+use audit_summary::*;
 use barrel_discipline::*;
 use block_clones::*;
 use call_graph::*;
@@ -69,6 +71,7 @@ pub fn run() -> Result<()> {
         Some("generated-artifacts-summary") => run_generated_artifacts_summary(args.collect()),
         Some("artifact-summary") => run_artifact_summary(args.collect()),
         Some("audit-review-pack-render") => run_audit_review_pack_render(args.collect()),
+        Some("audit-summary-render") => run_audit_summary_render(args.collect()),
         Some("barrel-discipline-artifact") => run_barrel_discipline_artifact(args.collect()),
         Some("block-clones-artifact") => run_block_clones_artifact(args.collect()),
         Some("call-graph-artifact") => run_call_graph_artifact(args.collect()),

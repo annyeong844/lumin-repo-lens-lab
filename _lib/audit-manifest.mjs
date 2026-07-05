@@ -108,6 +108,37 @@ export function writeTopologyMermaidWithAuditCore({ topology, outputPath, option
   );
 }
 
+export function writeAuditSummaryWithAuditCore({
+  manifest,
+  checklistFacts = null,
+  fixPlan = null,
+  topology = null,
+  discipline = null,
+  callGraph = null,
+  functionClones = null,
+  symbols = null,
+  moduleReachability = null,
+  outputPath,
+}) {
+  return runJsonInputResultFileCommand(
+    'audit-summary-render',
+    'writeAuditSummary',
+    {
+      schemaVersion: 'lumin-audit-summary-render-request.v1',
+      manifest,
+      checklistFacts,
+      fixPlan,
+      topology,
+      discipline,
+      callGraph,
+      functionClones,
+      symbols,
+      moduleReachability,
+      outputPath,
+    },
+  );
+}
+
 export function writeAuditReviewPackWithAuditCore({
   manifest,
   checklistFacts = null,
