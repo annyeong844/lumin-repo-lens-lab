@@ -3,6 +3,9 @@
 // Helpers for audit-repo.mjs manifest evidence and artifact enumeration.
 // NO producer orchestration. Migrated manifest contracts call lumin-audit-core.
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { runAuditCoreJson, runAuditCoreJsonResultFile } from './audit-core.mjs';
 
 function runManifestEvidenceCommand(command, label, root, outDir, {
@@ -93,6 +96,22 @@ function runJsonInputResultFileCommand(command, label, input) {
   return runAuditCoreJsonResultFile([command, '--input', '-'], label, {
     input: JSON.stringify(input ?? {}),
   });
+}
+
+function runJsonFileInputResultFileCommand(command, label, input, options = {}) {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-input-'));
+  const inputPath = path.join(tempDir, 'input.json');
+  try {
+    writeFileSync(inputPath, JSON.stringify(input ?? {}));
+    return runAuditCoreJsonResultFile([command, '--input', inputPath], label, options);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function lifecycleRequestNeedsInheritedStdin(request) {
+  return request?.preWrite?.requested === true &&
+    request?.preWrite?.routingInput?.intentFlag === '-';
 }
 
 export function writeTopologyMermaidWithAuditCore({ topology, outputPath, options = {} }) {
@@ -321,6 +340,14 @@ export function executeBaseRuntime(request) {
 }
 
 export function executeAuditLifecycle(request) {
+  if (lifecycleRequestNeedsInheritedStdin(request)) {
+    return runJsonFileInputResultFileCommand(
+      'execute-audit-lifecycle',
+      'executeAuditLifecycle',
+      request,
+      { inheritStdin: true },
+    );
+  }
   return runJsonInputResultFileCommand(
     'execute-audit-lifecycle',
     'executeAuditLifecycle',

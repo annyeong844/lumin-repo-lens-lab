@@ -1,7 +1,8 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::fs;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use lumin_audit_core::lifecycle_request::{
     evaluate_lifecycle_request_guard, LifecycleRequestGuardInput,
@@ -260,6 +261,189 @@ fn cli_execute_audit_lifecycle_blocks_missing_pre_write_intent_before_route_pars
     assert_eq!(result["preWrite"]["engine"], "rust");
     assert_eq!(result["preWrite"]["producer"], "lumin-rust-analyzer");
     assert_eq!(result["preWrite"]["reason"], "--intent missing");
+    assert_eq!(result["finalExitCode"], 2);
+    Ok(())
+}
+
+#[test]
+fn cli_execute_audit_lifecycle_blocks_mutex_before_routing_input_file_read() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("request.json");
+    let result_path = temp.path().join("result.json");
+    let missing_intent_path = temp.path().join("missing-intent.json");
+    fs::write(
+        &input_path,
+        serde_json::to_string(&json!({
+            "schemaVersion": "lumin-audit-lifecycle-execution-request.v1",
+            "baseExitCode": 0,
+            "lifecycleRequestGuard": {
+                "schemaVersion": "lumin-lifecycle-request-guard.v1",
+                "preWriteRequested": true,
+                "postWriteRequested": true,
+                "preWriteIntentPresent": true,
+                "requestedPreWriteEngine": "auto"
+            },
+            "preWrite": {
+                "requested": true,
+                "routingInput": {
+                    "schemaVersion": "lumin-pre-write-routing-input.v1",
+                    "requestedEngine": "auto",
+                    "intentFlag": missing_intent_path
+                },
+                "rust": {
+                    "root": "repo",
+                    "output": "out",
+                    "invocationId": "INV-1",
+                    "rustNativeArtifactPath": "out/rust-pre-write-artifact.INV-1.json",
+                    "rustNativeLatestPath": "out/rust-pre-write-artifact.latest.json",
+                    "analyzer": null,
+                    "includeTests": true,
+                    "production": false,
+                    "excludes": [],
+                    "fileInventory": { "status": "available", "files": [] },
+                    "failures": []
+                },
+                "js": {
+                    "root": "repo",
+                    "output": "out",
+                    "scriptsDir": "scripts",
+                    "nodeExecutable": "node",
+                    "noFreshAudit": false,
+                    "scanArgs": []
+                }
+            },
+            "postWrite": {
+                "requested": true,
+                "request": {
+                    "schemaVersion": "lumin-post-write-lifecycle-request.v1",
+                    "root": temp.path(),
+                    "output": temp.path().join("out"),
+                    "scriptsDir": temp.path(),
+                    "nodeExecutable": "node",
+                    "advisoryPath": null,
+                    "deltaOut": null,
+                    "noFreshAudit": false,
+                    "scanArgs": [],
+                    "incrementalArgs": []
+                }
+            },
+            "exitPolicy": {
+                "strictPostWrite": false,
+                "strictPostWriteConfidence": false
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("execute-audit-lifecycle")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("--pre-write and --post-write are mutually exclusive"));
+    let result: Value = serde_json::from_slice(&fs::read(&result_path)?)?;
+    assert_eq!(
+        result["preWrite"]["reason"],
+        "--pre-write and --post-write are mutually exclusive"
+    );
+    assert_eq!(
+        result["postWrite"]["reason"],
+        "--pre-write and --post-write are mutually exclusive"
+    );
+    assert_eq!(result["finalExitCode"], 2);
+    Ok(())
+}
+
+#[test]
+fn cli_execute_audit_lifecycle_reads_routing_input_stdin_after_guard_passes() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("request.json");
+    let result_path = temp.path().join("result.json");
+    fs::write(
+        &input_path,
+        serde_json::to_string(&json!({
+            "schemaVersion": "lumin-audit-lifecycle-execution-request.v1",
+            "baseExitCode": 0,
+            "lifecycleRequestGuard": {
+                "schemaVersion": "lumin-lifecycle-request-guard.v1",
+                "preWriteRequested": true,
+                "postWriteRequested": false,
+                "preWriteIntentPresent": true,
+                "requestedPreWriteEngine": "auto"
+            },
+            "preWrite": {
+                "requested": true,
+                "routingInput": {
+                    "schemaVersion": "lumin-pre-write-routing-input.v1",
+                    "requestedEngine": "auto",
+                    "intentFlag": "-"
+                },
+                "rust": {
+                    "root": "repo",
+                    "output": "out",
+                    "invocationId": "INV-1",
+                    "rustNativeArtifactPath": "out/rust-pre-write-artifact.INV-1.json",
+                    "rustNativeLatestPath": "out/rust-pre-write-artifact.latest.json",
+                    "analyzer": null,
+                    "includeTests": true,
+                    "production": false,
+                    "excludes": [],
+                    "fileInventory": { "status": "available", "files": [] },
+                    "failures": []
+                },
+                "js": {
+                    "root": "repo",
+                    "output": "out",
+                    "scriptsDir": "scripts",
+                    "nodeExecutable": "node",
+                    "noFreshAudit": false,
+                    "scanArgs": []
+                }
+            },
+            "exitPolicy": {
+                "strictPostWrite": false,
+                "strictPostWriteConfidence": false
+            }
+        }))?,
+    )?;
+
+    let mut child = Command::new(audit_core_bin())
+        .arg("execute-audit-lifecycle")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--result-output")
+        .arg(&result_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    child
+        .stdin
+        .as_mut()
+        .context("stdin was piped")?
+        .write_all(br#"{ "language": "python" }"#)?;
+    let output = child.wait_with_output()?;
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&fs::read(&result_path)?)?;
+    assert_eq!(result["preWrite"]["requested"], true);
+    assert_eq!(result["preWrite"]["ran"], false);
+    assert!(result["preWrite"]["reason"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("intent.language must be \"rust\" or \"js-ts\""));
     assert_eq!(result["finalExitCode"], 2);
     Ok(())
 }

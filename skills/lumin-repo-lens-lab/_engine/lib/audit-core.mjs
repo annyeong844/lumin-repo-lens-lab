@@ -1732,9 +1732,12 @@ export function runAuditCoreJsonResultFile(args, label, options = {}) {
   const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-'));
   const resultPath = path.join(tempDir, 'result.json');
   try {
+    const stdinMode = options.input === undefined
+      ? (options.inheritStdin ? 'inherit' : 'ignore')
+      : 'pipe';
     const childOptions = {
       encoding: 'utf8',
-      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'inherit', 'inherit'],
+      stdio: [stdinMode, 'inherit', 'inherit'],
     };
     if (options.input !== undefined) childOptions.input = options.input;
     execFileSync(command, [...args, '--result-output', resultPath], childOptions);

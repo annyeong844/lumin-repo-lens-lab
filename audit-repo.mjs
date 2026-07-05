@@ -45,7 +45,7 @@
 // step is a child process invocation of the existing .mjs. Failure of
 // any step is captured but never hidden.
 
-import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -365,53 +365,12 @@ function forwardedRustAnalyzerArgs() {
   return args;
 }
 
-function readPreWriteIntentText(intentFlag) {
-  if (intentFlag === '-') {
-    try {
-      return readFileSync(0, 'utf8');
-    } catch (error) {
-      throw new Error(`failed to read --intent -: ${error.message}`);
-    }
-  }
-
-  const intentPath = path.resolve(intentFlag);
-  if (!existsSync(intentPath)) {
-    throw new Error(`intent file not found: ${intentPath}`);
-  }
-  try {
-    return readFileSync(intentPath, 'utf8');
-  } catch (error) {
-    throw new Error(`failed to read intent: ${error.message}`);
-  }
-}
-
-function buildPreWriteRoutingRequest(requestedEngine, intentFlag) {
-  const intentText = readPreWriteIntentText(intentFlag);
+function buildPreWriteRoutingInput(requestedEngine, intentFlag) {
   return {
-    schemaVersion: 'lumin-pre-write-routing-request.v1',
+    schemaVersion: 'lumin-pre-write-routing-input.v1',
     requestedEngine,
     intentFlag: intentFlag === '-' ? '-' : path.resolve(intentFlag),
-    intentText,
   };
-}
-
-function buildPreWriteRoutingRequestOrFailure(requestedEngine, intentFlag) {
-  try {
-    return {
-      routing: buildPreWriteRoutingRequest(requestedEngine, intentFlag),
-      routingFailure: null,
-    };
-  } catch (error) {
-    return {
-      routing: {
-        schemaVersion: 'lumin-pre-write-routing-request.v1',
-        requestedEngine,
-        intentFlag: intentFlag === '-' ? '-' : String(intentFlag ?? 'missing'),
-        intentText: '{}',
-      },
-      routingFailure: error?.message ?? 'unknown pre-write routing input failure',
-    };
-  }
 }
 
 function buildLifecycleRequestGuardRequest() {
@@ -641,28 +600,13 @@ let auditSummaryPreview = null;
 
 const advisoryInvocationId = generateInvocationId();
 const lifecycleRequestGuard = buildLifecycleRequestGuardRequest();
-const shouldReadPreWriteIntent = values['pre-write'] === true &&
-  Boolean(values.intent) &&
-  !(lifecycleRequestGuard.preWriteRequested && lifecycleRequestGuard.postWriteRequested);
-const preWriteRouting = shouldReadPreWriteIntent
-  ? buildPreWriteRoutingRequestOrFailure(REQUESTED_PRE_WRITE_ENGINE, values.intent)
-  : {
-    routing: {
-      schemaVersion: 'lumin-pre-write-routing-request.v1',
-      requestedEngine: REQUESTED_PRE_WRITE_ENGINE,
-      intentFlag: 'unused',
-      intentText: '{}',
-    },
-    routingFailure: null,
-  };
 const lifecycleExecution = executeAuditLifecycle({
   schemaVersion: 'lumin-audit-lifecycle-execution-request.v1',
   baseExitCode: basePipelineExitCode,
   lifecycleRequestGuard,
   preWrite: values['pre-write'] === true ? {
     requested: values['pre-write'] === true,
-    routing: preWriteRouting.routing,
-    routingFailure: preWriteRouting.routingFailure,
+    routingInput: buildPreWriteRoutingInput(REQUESTED_PRE_WRITE_ENGINE, values.intent ?? 'missing'),
     rust: buildRustPreWriteLifecycleRequest({
       invocation: rustAnalyzerInvocationOrNull(),
       advisoryInvocationId,

@@ -1,8 +1,9 @@
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::io::{self, Write};
-use std::path::PathBuf;
+use std::fs;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 
 use super::io_support::{
     read_json_input, take_path, take_string, write_json_file, write_stdout_json,
@@ -65,9 +66,19 @@ struct AuditLifecyclePreWriteRequest {
     #[serde(default)]
     routing: Option<PreWriteRoutingRequest>,
     #[serde(default)]
+    routing_input: Option<PreWriteRoutingInput>,
+    #[serde(default)]
     routing_failure: Option<String>,
     rust: RustPreWriteLifecycleTemplate,
     js: JsPreWriteLifecycleTemplate,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreWriteRoutingInput {
+    schema_version: String,
+    requested_engine: String,
+    intent_flag: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,14 +258,7 @@ fn execute_audit_lifecycle_request(request: AuditLifecycleExecutionRequest) -> R
         let pre_write = request.pre_write.context(
             "execute-audit-lifecycle: preWrite requested but preWrite request is missing",
         )?;
-        let route_result = if let Some(reason) = pre_write.routing_failure.as_deref() {
-            Err(anyhow::anyhow!("{reason}"))
-        } else {
-            let routing = pre_write.routing.clone().context(
-                "execute-audit-lifecycle: preWrite requested but routing request is missing",
-            )?;
-            resolve_pre_write_route(routing)
-        };
+        let route_result = resolve_pre_write_route_for_lifecycle(&pre_write);
         match route_result {
             Ok(route) if route.engine == "rust" => {
                 let result = execute_rust_pre_write_lifecycle_streaming(
@@ -364,6 +368,56 @@ fn execute_audit_lifecycle_request(request: AuditLifecycleExecutionRequest) -> R
         "checkCanon": check_canon_block,
         "finalExitCode": final_exit_code,
     }))
+}
+
+fn resolve_pre_write_route_for_lifecycle(
+    pre_write: &AuditLifecyclePreWriteRequest,
+) -> Result<PreWriteRoutingResult> {
+    if let Some(reason) = pre_write.routing_failure.as_deref() {
+        return Err(anyhow::anyhow!("{reason}"));
+    }
+    if let Some(routing) = pre_write.routing.clone() {
+        return resolve_pre_write_route(routing);
+    }
+    let routing_input = pre_write
+        .routing_input
+        .clone()
+        .context("execute-audit-lifecycle: preWrite requested but routing request is missing")?;
+    resolve_pre_write_route(build_pre_write_routing_request(routing_input)?)
+}
+
+fn build_pre_write_routing_request(input: PreWriteRoutingInput) -> Result<PreWriteRoutingRequest> {
+    if input.schema_version != "lumin-pre-write-routing-input.v1" {
+        bail!(
+            "unsupported pre-write routing input schemaVersion '{}'",
+            input.schema_version
+        );
+    }
+    let intent_text = read_pre_write_intent_text(&input.intent_flag)?;
+    Ok(PreWriteRoutingRequest {
+        schema_version: "lumin-pre-write-routing-request.v1".to_string(),
+        requested_engine: input.requested_engine,
+        intent_flag: input.intent_flag,
+        intent_text,
+    })
+}
+
+fn read_pre_write_intent_text(intent_flag: &str) -> Result<String> {
+    if intent_flag == "-" {
+        let mut text = String::new();
+        io::stdin()
+            .read_to_string(&mut text)
+            .context("failed to read --intent -")?;
+        return Ok(text);
+    }
+    if intent_flag.is_empty() {
+        bail!("intentFlag must be non-empty");
+    }
+    let path = Path::new(intent_flag);
+    if !path.exists() {
+        bail!("intent file not found: {}", path.display());
+    }
+    fs::read_to_string(path).map_err(|error| anyhow::anyhow!("failed to read intent: {error}"))
 }
 
 fn build_rust_pre_write_request(
