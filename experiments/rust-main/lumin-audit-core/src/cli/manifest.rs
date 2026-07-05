@@ -202,9 +202,11 @@ struct FinalizeAuditRunWithCompanionsCliInput {
     rust_analysis: Option<serde_json::Value>,
     #[serde(default)]
     companions: FinalizeAuditRunCompanionPlan,
+    #[serde(default)]
+    companion_policy: Option<FinalizeAuditRunCompanionPolicy>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FinalizeAuditRunCompanionPlan {
     #[serde(default)]
@@ -213,6 +215,13 @@ struct FinalizeAuditRunCompanionPlan {
     audit_summary: bool,
     #[serde(default)]
     review_pack: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalizeAuditRunCompanionPolicy {
+    #[serde(default)]
+    base_pipeline_planned: bool,
 }
 
 #[derive(Serialize)]
@@ -427,6 +436,11 @@ pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Resul
     let request = serde_json::from_value::<FinalizeAuditRunWithCompanionsCliInput>(json)
         .context("finalize-audit-run-with-companions: invalid request shape")?;
     let output = Path::new(&request.context.output).to_path_buf();
+    let companions = request
+        .companion_policy
+        .as_ref()
+        .map(|policy| build_finalize_companion_plan(policy, &request.context, &request.manifest))
+        .unwrap_or_else(|| request.companions.clone());
     let mut manifest = request.manifest;
     let mut artifact_read_events = request.artifact_read_events;
 
@@ -438,7 +452,7 @@ pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Resul
     );
 
     let mut topology_mermaid_path = None;
-    if request.companions.topology_mermaid && !topology.is_null() {
+    if companions.topology_mermaid && !topology.is_null() {
         let output_path = output.join("topology.mermaid.md");
         let render_request = TopologyMermaidRenderRequest {
             schema_version: TOPOLOGY_MERMAID_RENDER_REQUEST_SCHEMA_VERSION.to_string(),
@@ -457,7 +471,7 @@ pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Resul
 
     let mut audit_summary_path = None;
     let mut audit_summary_preview = None;
-    if request.companions.audit_summary {
+    if companions.audit_summary {
         let output_path = output.join("audit-summary.latest.md");
         let render_request = AuditSummaryRenderRequest {
             schema_version: AUDIT_SUMMARY_RENDER_REQUEST_SCHEMA_VERSION.to_string(),
@@ -495,7 +509,7 @@ pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Resul
     }
 
     let mut review_pack_path = None;
-    if request.companions.review_pack {
+    if companions.review_pack {
         let output_path = output.join("audit-review-pack.latest.md");
         let render_request = AuditReviewPackRenderRequest {
             schema_version: AUDIT_REVIEW_PACK_RENDER_REQUEST_SCHEMA_VERSION.to_string(),
@@ -1105,6 +1119,30 @@ fn write_json_result<T: Serialize>(result_output: Option<PathBuf>, value: &T) ->
     } else {
         write_stdout_json(value)
     }
+}
+
+fn build_finalize_companion_plan(
+    policy: &FinalizeAuditRunCompanionPolicy,
+    context: &ProducerPerformanceAuditRunContext,
+    manifest: &serde_json::Value,
+) -> FinalizeAuditRunCompanionPlan {
+    let lifecycle_requested = lifecycle_block_requested(manifest, "preWrite")
+        || lifecycle_block_requested(manifest, "postWrite")
+        || lifecycle_block_requested(manifest, "canonDraft")
+        || lifecycle_block_requested(manifest, "checkCanon");
+    FinalizeAuditRunCompanionPlan {
+        topology_mermaid: true,
+        audit_summary: policy.base_pipeline_planned || lifecycle_requested,
+        review_pack: policy.base_pipeline_planned && context.profile != "quick",
+    }
+}
+
+fn lifecycle_block_requested(manifest: &serde_json::Value, field: &str) -> bool {
+    manifest
+        .get(field)
+        .and_then(|block| block.get("requested"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
 }
 
 fn companion_artifact(

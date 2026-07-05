@@ -1225,10 +1225,8 @@ writeFileSync(latest, JSON.stringify(advisory));
       commandsRun: [],
       skipped: [],
       rustAnalysis: null,
-      companions: {
-        topologyMermaid: true,
-        auditSummary: true,
-        reviewPack: true,
+      companionPolicy: {
+        basePipelinePlanned: true,
       },
     }));
 

@@ -285,6 +285,7 @@ export function finalizeAuditRunWithCompanions({
   commandsRun = [],
   skipped = [],
   companions = {},
+  companionPolicy = null,
 }) {
   return runJsonInputResultFileCommand(
     'finalize-audit-run-with-companions',
@@ -310,6 +311,7 @@ export function finalizeAuditRunWithCompanions({
       skipped,
       rustAnalysis,
       companions,
+      companionPolicy,
     },
   );
 }

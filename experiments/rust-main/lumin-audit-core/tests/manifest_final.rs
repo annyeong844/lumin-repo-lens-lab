@@ -603,10 +603,8 @@ fn cli_finalize_audit_run_with_companions_renders_and_closes_manifest() -> Resul
             "status": "unavailable",
             "available": false
         },
-        "companions": {
-            "topologyMermaid": true,
-            "auditSummary": true,
-            "reviewPack": true
+        "companionPolicy": {
+            "basePipelinePlanned": true
         }
     });
 
@@ -674,6 +672,105 @@ fn cli_finalize_audit_run_with_companions_renders_and_closes_manifest() -> Resul
         .context("written artifactsProduced should be an array")?
         .iter()
         .any(|artifact| artifact.as_str() == Some("producer-performance.json")));
+    Ok(())
+}
+
+#[test]
+fn cli_finalize_companion_policy_skips_summary_without_base_or_lifecycle() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root_dir = temp.path().join("repo");
+    let output_dir = root_dir.join(".audit");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        output_dir.join("topology.json"),
+        serde_json::to_vec(&json!({
+            "meta": { "generated": "2026-07-02T00:00:00.000Z" },
+            "summary": { "lens": "runtime", "sccCount": 0 },
+            "crossSubmoduleEdges": [],
+            "sccs": [],
+            "edges": []
+        }))?,
+    )?;
+
+    let result_path = temp.path().join("finalize-result.json");
+    let input = json!({
+        "manifest": {
+            "meta": { "generated": "2026-07-02T00:00:00.000Z" },
+            "profile": "full",
+            "scanRange": {
+                "files": 1,
+                "languages": ["ts"],
+                "includeTests": true
+            },
+            "confidence": {
+                "parseErrors": 0,
+                "unresolvedInternalRatio": 0
+            },
+            "artifactsProduced": [],
+            "blindZones": []
+        },
+        "context": {
+            "generated": "2026-07-02T00:00:00.000Z",
+            "root": root_dir,
+            "output": output_dir,
+            "profile": "full",
+            "includeTests": true,
+            "production": false,
+            "excludes": [],
+            "autoExcludes": [],
+            "noIncremental": false,
+            "cacheRoot": output_dir.join(".cache"),
+            "clearIncrementalCache": false,
+            "generatedArtifactsMode": "default"
+        },
+        "artifactReadEvents": {
+            "schemaVersion": "lumin-audit-artifact-read-events.v1",
+            "rootDir": output_dir,
+            "largestLimit": 10,
+            "reads": []
+        },
+        "commandsRun": [],
+        "skipped": [],
+        "rustAnalysis": null,
+        "companionPolicy": {
+            "basePipelinePlanned": false
+        }
+    });
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lumin-audit-core"))
+        .arg("finalize-audit-run-with-companions")
+        .arg("--input")
+        .arg("-")
+        .arg("--result-output")
+        .arg(&result_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+    use std::io::Write;
+    let mut stdin = child.stdin.take().context("stdin is piped")?;
+    stdin.write_all(input.to_string().as_bytes())?;
+    drop(stdin);
+    let output = child.wait_with_output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result = serde_json::from_str::<Value>(&fs::read_to_string(&result_path)?)?;
+    assert!(result["topologyMermaidPath"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("topology.mermaid.md")));
+    assert!(result["auditSummaryPath"].is_null());
+    assert!(result["reviewPackPath"].is_null());
+    assert!(!output_dir.join("audit-summary.latest.md").exists());
+    assert!(!output_dir.join("audit-review-pack.latest.md").exists());
+
+    let manifest =
+        serde_json::from_str::<Value>(&fs::read_to_string(output_dir.join("manifest.json"))?)?;
+    assert_eq!(manifest["topologyMermaid"]["format"], "markdown");
+    assert!(manifest.get("auditSummary").is_none());
+    assert!(manifest.get("reviewPack").is_none());
     Ok(())
 }
 

@@ -640,7 +640,11 @@ let finalExitCode = basePipelineExitCode;
 let auditSummaryPreview = null;
 
 const advisoryInvocationId = generateInvocationId();
-const preWriteRouting = values['pre-write'] === true && values.intent
+const lifecycleRequestGuard = buildLifecycleRequestGuardRequest();
+const shouldReadPreWriteIntent = values['pre-write'] === true &&
+  Boolean(values.intent) &&
+  !(lifecycleRequestGuard.preWriteRequested && lifecycleRequestGuard.postWriteRequested);
+const preWriteRouting = shouldReadPreWriteIntent
   ? buildPreWriteRoutingRequestOrFailure(REQUESTED_PRE_WRITE_ENGINE, values.intent)
   : {
     routing: {
@@ -654,7 +658,7 @@ const preWriteRouting = values['pre-write'] === true && values.intent
 const lifecycleExecution = executeAuditLifecycle({
   schemaVersion: 'lumin-audit-lifecycle-execution-request.v1',
   baseExitCode: basePipelineExitCode,
-  lifecycleRequestGuard: buildLifecycleRequestGuardRequest(),
+  lifecycleRequestGuard,
   preWrite: values['pre-write'] === true ? {
     requested: values['pre-write'] === true,
     routing: preWriteRouting.routing,
@@ -700,13 +704,6 @@ Object.assign(manifest, applyLifecycleAndRefreshManifestEvidence({
   },
   ...manifestEvidenceOptions(),
 }));
-const SHOULD_WRITE_SUMMARY = (
-  RUN_BASE_PIPELINE ||
-  preWriteBlock?.requested ||
-  postWriteBlock?.requested ||
-  manifest.canonDraft?.requested ||
-  manifest.checkCanon?.requested
-);
 const manifestWrite = finalizeAuditRunWithCompanions({
   manifest,
   root: ROOT,
@@ -724,10 +721,8 @@ const manifestWrite = finalizeAuditRunWithCompanions({
   rustAnalysis: manifest.rustAnalysis,
   commandsRun,
   skipped,
-  companions: {
-    topologyMermaid: true,
-    auditSummary: SHOULD_WRITE_SUMMARY,
-    reviewPack: RUN_BASE_PIPELINE && PROFILE !== 'quick',
+  companionPolicy: {
+    basePipelinePlanned: RUN_BASE_PIPELINE,
   },
 });
 Object.assign(manifest, manifestWrite.closeoutUpdate ?? {});

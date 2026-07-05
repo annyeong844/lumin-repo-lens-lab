@@ -303,6 +303,16 @@ fn execute_audit_lifecycle_request(request: AuditLifecycleExecutionRequest) -> R
         }
     } else if let Some(post_write) = request.post_write.filter(|step| step.requested) {
         let result = execute_post_write_lifecycle_streaming(post_write.request)?;
+        if let Some(stdout) = result.stdout.as_deref() {
+            io::stdout()
+                .write_all(stdout.as_bytes())
+                .context("failed to replay post-write stdout")?;
+        }
+        if let Some(stderr) = result.stderr.as_deref() {
+            io::stderr()
+                .write_all(stderr.as_bytes())
+                .context("failed to replay post-write stderr")?;
+        }
         post_write_block = serde_json::to_value(result.block)?;
         if final_exit_code == 0 {
             final_exit_code = result.exit_code;

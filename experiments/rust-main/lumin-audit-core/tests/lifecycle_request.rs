@@ -264,6 +264,73 @@ fn cli_execute_audit_lifecycle_blocks_missing_pre_write_intent_before_route_pars
     Ok(())
 }
 
+#[test]
+fn cli_execute_audit_lifecycle_replays_post_write_missing_advisory_stderr() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input_path = temp.path().join("request.json");
+    let result_path = temp.path().join("result.json");
+    let output_dir = temp.path().join("out");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(
+        &input_path,
+        serde_json::to_string(&json!({
+            "schemaVersion": "lumin-audit-lifecycle-execution-request.v1",
+            "baseExitCode": 0,
+            "lifecycleRequestGuard": {
+                "schemaVersion": "lumin-lifecycle-request-guard.v1",
+                "preWriteRequested": false,
+                "postWriteRequested": true,
+                "preWriteIntentPresent": false,
+                "requestedPreWriteEngine": "auto"
+            },
+            "postWrite": {
+                "requested": true,
+                "request": {
+                    "schemaVersion": "lumin-post-write-lifecycle-request.v1",
+                    "root": temp.path(),
+                    "output": output_dir,
+                    "scriptsDir": temp.path(),
+                    "nodeExecutable": "node",
+                    "advisoryPath": null,
+                    "deltaOut": null,
+                    "noFreshAudit": false,
+                    "scanArgs": [],
+                    "incrementalArgs": []
+                }
+            },
+            "exitPolicy": {
+                "strictPostWrite": false,
+                "strictPostWriteConfidence": false
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("execute-audit-lifecycle")
+        .arg("--input")
+        .arg(&input_path)
+        .arg("--result-output")
+        .arg(&result_path)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--pre-write-advisory <file> missing"));
+    let result: Value = serde_json::from_slice(&fs::read(&result_path)?)?;
+    assert_eq!(result["postWrite"]["requested"], true);
+    assert_eq!(result["postWrite"]["ran"], false);
+    assert_eq!(
+        result["postWrite"]["reason"],
+        "--pre-write-advisory missing"
+    );
+    assert_eq!(result["finalExitCode"], 2);
+    Ok(())
+}
+
 fn audit_core_bin() -> &'static str {
     env!("CARGO_BIN_EXE_lumin-audit-core")
 }
