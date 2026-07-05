@@ -25,6 +25,7 @@ mod shape_index;
 mod staleness;
 mod symbol_graph;
 mod topology;
+mod topology_mermaid;
 mod unused_deps;
 mod usage;
 
@@ -51,6 +52,7 @@ use shape_index::*;
 use staleness::*;
 use symbol_graph::*;
 use topology::*;
+use topology_mermaid::*;
 use unused_deps::*;
 use usage::USAGE;
 
@@ -87,6 +89,7 @@ pub fn run() -> Result<()> {
         Some("staleness-artifact") => run_staleness_artifact(args.collect()),
         Some("symbol-graph-artifact") => run_symbol_graph_artifact(args.collect()),
         Some("topology-artifact") => run_topology_artifact(args.collect()),
+        Some("topology-mermaid-render") => run_topology_mermaid_render(args.collect()),
         Some("unused-deps-artifact") => run_unused_deps_artifact(args.collect()),
         Some("resolver-diagnostics-summary") => run_resolver_diagnostics_summary(args.collect()),
         Some("blind-zones-summary") => run_blind_zones_summary(args.collect()),

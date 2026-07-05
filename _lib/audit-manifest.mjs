@@ -95,6 +95,19 @@ function runJsonInputResultFileCommand(command, label, input) {
   });
 }
 
+export function writeTopologyMermaidWithAuditCore({ topology, outputPath, options = {} }) {
+  return runJsonInputResultFileCommand(
+    'topology-mermaid-render',
+    'writeTopologyMermaid',
+    {
+      schemaVersion: 'lumin-topology-mermaid-render-request.v1',
+      topology,
+      outputPath,
+      options,
+    },
+  );
+}
+
 export function createArtifactReadMetrics({ rootDir, largestLimit = 10 } = {}) {
   const reads = [];
 

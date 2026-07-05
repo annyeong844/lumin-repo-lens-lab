@@ -228,3 +228,31 @@ pub(super) fn write_pretty_json_file<T: Serialize>(path: &Path, value: &T) -> Re
     fs::write(path, bytes)
         .with_context(|| format!("failed to write audit-core JSON file {}", path.display()))
 }
+
+pub(super) fn write_text_file(path: &Path, value: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create parent directory {}", parent.display()))?;
+    }
+    let temp = path.with_extension("tmp");
+    fs::write(&temp, value)
+        .with_context(|| format!("failed to write audit-core text file {}", temp.display()))?;
+    replace_file(&temp, path).with_context(|| {
+        format!(
+            "failed to move audit-core text file {} to {}",
+            temp.display(),
+            path.display()
+        )
+    })
+}
+
+fn replace_file(temp: &Path, path: &Path) -> std::io::Result<()> {
+    match fs::rename(temp, path) {
+        Ok(()) => Ok(()),
+        Err(_error) if cfg!(windows) && path.exists() => {
+            fs::remove_file(path)?;
+            fs::rename(temp, path)
+        }
+        Err(error) => Err(error),
+    }
+}

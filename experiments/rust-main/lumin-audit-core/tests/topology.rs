@@ -70,6 +70,62 @@ fn cli_topology_artifact_writes_result_file() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn cli_topology_mermaid_render_writes_markdown_and_small_result() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("request.json");
+    let output_path = temp.path().join("topology.mermaid.md");
+    let result = temp.path().join("result.json");
+    fs::write(&output_path, "stale markdown\n")?;
+    fs::write(
+        &input,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-topology-mermaid-render-request.v1",
+            "outputPath": output_path,
+            "topology": {
+                "meta": { "generated": "2026-05-01T00:00:00.000Z" },
+                "summary": { "lens": "runtime", "sccCount": 1 },
+                "crossSubmoduleEdges": [
+                    { "from": "apps/web", "to": "packages/ui", "count": 4 }
+                ],
+                "topFanIn": [{ "file": "packages/ui/src/button.ts", "count": 8 }],
+                "topFanOut": [{ "file": "apps/web/src/app.ts", "count": 5 }],
+                "sccs": [{ "size": 2, "members": ["src/a.ts", "src/b.ts"] }],
+                "edges": [
+                    { "from": "src/a.ts", "to": "src/b.ts", "typeOnly": false },
+                    { "from": "src/b.ts", "to": "src/a.ts", "typeOnly": false }
+                ]
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("topology-mermaid-render")
+        .arg("--input")
+        .arg(&input)
+        .arg("--result-output")
+        .arg(&result)
+        .output()?;
+
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    let markdown = fs::read_to_string(&output_path)?;
+    assert!(markdown.starts_with("# Topology Mermaid"));
+    assert!(markdown.contains("This document is a visual companion"));
+    assert!(markdown.contains("sub0[\"apps/web\"]"));
+    assert!(markdown.contains("sub0 -->|4| sub1"));
+    assert!(markdown.contains("## Citation Contract"));
+    assert!(!markdown.contains("stale markdown"));
+    let result: Value = serde_json::from_slice(&fs::read(&result)?)?;
+    assert_eq!(
+        result["schemaVersion"],
+        "lumin-topology-mermaid-render-result.v1"
+    );
+    assert_eq!(result["path"], output_path.to_string_lossy().to_string());
+    assert_eq!(result["bytes"], markdown.len());
+    Ok(())
+}
+
 fn audit_core_bin() -> &'static str {
     env!("CARGO_BIN_EXE_lumin-audit-core")
 }

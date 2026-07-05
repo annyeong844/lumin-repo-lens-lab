@@ -47,4 +47,5 @@ mod source_commit;
 pub mod staleness;
 pub mod symbol_graph;
 pub mod topology;
+pub mod topology_mermaid;
 pub mod unused_deps;

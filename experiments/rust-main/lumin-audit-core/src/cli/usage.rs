@@ -24,6 +24,7 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core staleness-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core symbol-graph-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core topology-artifact --input <path|-> [--result-output <path>]
+       lumin-audit-core topology-mermaid-render --input <path|-> [--result-output <path>]
        lumin-audit-core unused-deps-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core resolver-diagnostics-summary [--symbols <path>] [--resolver-capabilities <path>] [--resolver-diagnostics <path>]
        lumin-audit-core blind-zones-summary [--input <fixture.json>|--cases <cases.json>|--root <repo> --output <dir> [--rust-analysis-ran]]

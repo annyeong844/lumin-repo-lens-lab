@@ -51,12 +51,10 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { formatBlindZonesSummary } from './_lib/blind-zones.mjs';
 import { loadIfExists as loadArtifact } from './_lib/artifacts.mjs';
-import { atomicWrite } from './_lib/atomic-write.mjs';
 import { normalizeIncludeTests } from './_lib/cli.mjs';
 import { collectFiles } from './_lib/collect-files.mjs';
 import { renderAuditSummary } from './_lib/audit-summary.mjs';
 import { renderAuditReviewPack } from './_lib/audit-review-pack.mjs';
-import { renderTopologyMermaid } from './_lib/topology-mermaid.mjs';
 import { assertRuntimeSetup, formatRuntimeSetupError } from './_lib/dependency-guard.mjs';
 import { detectMaintainerSelfAuditExcludes, mergeExcludes } from './_lib/self-audit-excludes.mjs';
 import {
@@ -78,6 +76,7 @@ import {
   buildManifestRootWithEvidence,
   finalizeAuditRun,
   applyLifecycleAndRefreshManifestEvidence,
+  writeTopologyMermaidWithAuditCore,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
 import { repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
@@ -801,7 +800,10 @@ let auditSummaryPath = null;
 let reviewPackPath = null;
 if (topologyArtifact) {
   topologyMermaidPath = path.join(OUT, 'topology.mermaid.md');
-  atomicWrite(topologyMermaidPath, renderTopologyMermaid(topologyArtifact));
+  writeTopologyMermaidWithAuditCore({
+    topology: topologyArtifact,
+    outputPath: topologyMermaidPath,
+  });
   Object.assign(manifest, buildManifestArtifactsProducedUpdate(OUT, {
     rustAnalysis: manifest.rustAnalysis,
   }));

@@ -146,6 +146,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     ['topology-artifact'],
     'topology-artifact: missing --input <path|->',
   ],
+  [
+    ['topology-mermaid-render'],
+    'topology-mermaid-render: missing --input <path|->',
+  ],
 ];
 
 const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
@@ -172,6 +176,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'staleness-artifact',
   'symbol-graph-artifact',
   'topology-artifact',
+  'topology-mermaid-render',
 ]);
 
 function executableOnPath(exe) {
@@ -328,6 +333,8 @@ function auditCoreBinaryWritesResultFiles(command) {
   const stalenessInputPath = path.join(tempDir, 'staleness-artifact.json');
   const symbolGraphInputPath = path.join(tempDir, 'symbol-graph-artifact.json');
   const topologyInputPath = path.join(tempDir, 'topology-artifact.json');
+  const topologyMermaidInputPath = path.join(tempDir, 'topology-mermaid-render.json');
+  const topologyMermaidOutputPath = path.join(tempDir, 'topology.mermaid.md');
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(outputDir, { recursive: true });
@@ -886,6 +893,19 @@ writeFileSync(latest, JSON.stringify(advisory));
       },
       rustMetadata: {},
     }));
+    writeFileSync(topologyMermaidInputPath, JSON.stringify({
+      schemaVersion: 'lumin-topology-mermaid-render-request.v1',
+      outputPath: topologyMermaidOutputPath,
+      topology: {
+        meta: { generated: '2026-07-02T00:00:00.000Z' },
+        summary: { lens: 'runtime' },
+        crossSubmoduleEdges: [
+          { from: 'apps/web', to: 'packages/ui', count: 4 },
+        ],
+        sccs: [],
+        edges: [],
+      },
+    }));
 
     const probes = [
       {
@@ -1014,6 +1034,12 @@ writeFileSync(latest, JSON.stringify(advisory));
         subcommand: 'topology-artifact',
         args: ['topology-artifact', '--input', topologyInputPath],
         requiresArtifactReads: false,
+      },
+      {
+        subcommand: 'topology-mermaid-render',
+        args: ['topology-mermaid-render', '--input', topologyMermaidInputPath],
+        requiresArtifactReads: false,
+        outputPath: topologyMermaidOutputPath,
       },
     ];
 
@@ -1223,6 +1249,22 @@ function resultPayloadMatchesProbe(json, probe) {
       isObject(json.nodes) &&
       Array.isArray(json.edges) &&
       json.edges.length === 1;
+  }
+  if (probe.subcommand === 'topology-mermaid-render') {
+    if (
+      json.schemaVersion !== 'lumin-topology-mermaid-render-result.v1' ||
+      json.path !== probe.outputPath ||
+      typeof json.bytes !== 'number' ||
+      json.bytes <= 0
+    ) {
+      return false;
+    }
+    const markdown = readFileSync(probe.outputPath, 'utf8');
+    return markdown.startsWith('# Topology Mermaid') &&
+      markdown.includes('sub0["apps/web"]') &&
+      markdown.includes('sub0 -->|4| sub1') &&
+      markdown.includes('## Citation Contract') &&
+      json.bytes === markdown.length;
   }
   if (probe.subcommand === 'execute-js-pre-write') {
     return json.schemaVersion === 'lumin-pre-write-lifecycle-result.v1' &&
