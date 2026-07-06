@@ -377,13 +377,13 @@ fn cli_execute_audit_lifecycle_reads_routing_input_stdin_after_guard_passes() ->
                 "preWriteRequested": true,
                 "postWriteRequested": false,
                 "preWriteIntentPresent": true,
-                "requestedPreWriteEngine": "auto"
+                "requestedPreWriteEngine": "rust"
             },
             "preWrite": {
                 "requested": true,
                 "routingInput": {
                     "schemaVersion": "lumin-pre-write-routing-input.v1",
-                    "requestedEngine": "auto",
+                    "requestedEngine": "rust",
                     "intentFlag": "-"
                 },
                 "rust": {
@@ -440,6 +440,7 @@ fn cli_execute_audit_lifecycle_reads_routing_input_stdin_after_guard_passes() ->
     let result: Value = serde_json::from_slice(&fs::read(&result_path)?)?;
     assert_eq!(result["preWrite"]["requested"], true);
     assert_eq!(result["preWrite"]["ran"], false);
+    assert_eq!(result["preWrite"]["engine"], "rust");
     assert!(result["preWrite"]["reason"]
         .as_str()
         .unwrap_or_default()

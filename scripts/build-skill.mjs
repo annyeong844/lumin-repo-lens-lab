@@ -7,6 +7,7 @@
 // templates, and selected references.
 
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdtempSync,
@@ -421,6 +422,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const rootInputPath = path.join(tempDir, 'manifest-root-with-evidence.json');
   const lifecycleInputPath = path.join(tempDir, 'manifest-lifecycle-evidence-refresh.json');
   const auditLifecycleInputPath = path.join(tempDir, 'execute-audit-lifecycle.json');
+  const auditLifecycleIntentPath = path.join(tempDir, 'execute-audit-lifecycle-intent.json');
   const jsPreWriteInputPath = path.join(tempDir, 'execute-js-pre-write.json');
   const jsPreWriteScriptsDir = path.join(tempDir, 'js-pre-write-scripts');
   const barrelDisciplineInputPath = path.join(tempDir, 'barrel-discipline-artifact.json');
@@ -561,16 +563,46 @@ writeFileSync(latest, JSON.stringify(advisory));
       baseExitCode: 0,
       lifecycleRequestGuard: {
         schemaVersion: 'lumin-lifecycle-request-guard.v1',
-        preWriteRequested: false,
+        preWriteRequested: true,
         postWriteRequested: false,
-        preWriteIntentPresent: false,
+        preWriteIntentPresent: true,
         requestedPreWriteEngine: 'auto',
+      },
+      preWrite: {
+        requested: true,
+        routingInput: {
+          schemaVersion: 'lumin-pre-write-routing-input.v1',
+          requestedEngine: 'auto',
+          intentFlag: auditLifecycleIntentPath,
+        },
+        rust: {
+          root: rootDir,
+          output: outputDir,
+          invocationId: 'PROBE-LIFECYCLE',
+          rustNativeArtifactPath: path.join(outputDir, 'rust-pre-write-artifact.PROBE-LIFECYCLE.json'),
+          rustNativeLatestPath: path.join(outputDir, 'rust-pre-write-artifact.latest.json'),
+          analyzer: null,
+          includeTests: true,
+          production: false,
+          excludes: [],
+          fileInventory: { status: 'available', files: [] },
+          failures: [],
+        },
+        js: {
+          root: rootDir,
+          output: outputDir,
+          scriptsDir: jsPreWriteScriptsDir,
+          nodeExecutable: process.execPath,
+          noFreshAudit: false,
+          scanArgs: [],
+        },
       },
       exitPolicy: {
         strictPostWrite: false,
         strictPostWriteConfidence: false,
       },
     }));
+    writeFileSync(auditLifecycleIntentPath, JSON.stringify({ language: 'js-ts' }));
     writeFileSync(path.join(rootDir, 'probe.ts'), 'const value: any = input as any; // TODO\n');
     writeFileSync(barrelDisciplineInputPath, JSON.stringify({
       schemaVersion: 'lumin-barrel-discipline-producer-request.v1',
@@ -1699,7 +1731,13 @@ function resultPayloadMatchesProbe(json, probe) {
   }
   if (probe.subcommand === 'execute-audit-lifecycle') {
     return json.schemaVersion === 'lumin-audit-lifecycle-execution-result.v1' &&
-      json.preWrite === null &&
+      isObject(json.preWrite) &&
+      json.preWrite.executionOwner === 'lumin-audit-core' &&
+      json.preWrite.engine === 'js' &&
+      json.preWrite.language === 'js-ts' &&
+      json.preWrite.producer === 'pre-write.mjs' &&
+      json.preWrite.ran === true &&
+      json.preWrite.advisoryInvocationId === 'PROBE' &&
       json.postWrite === null &&
       json.canonDraft === null &&
       json.checkCanon === null &&
@@ -1804,6 +1842,12 @@ function copyDirRel(srcRel, destRel, outDir) {
   if (!existsSync(src)) throw new Error(`missing source dir: ${srcRel}`);
   mkdirSync(path.dirname(dest), { recursive: true });
   cpSync(src, dest, { recursive: true });
+}
+
+function ensurePackagedAuditCoreMode(dest, platform) {
+  if (platform !== 'win32') {
+    chmodSync(dest, 0o755);
+  }
 }
 
 function copyAuditCoreSourceFallback(outDir) {
@@ -2200,6 +2244,7 @@ function copyAuditCoreBinaries(outDir) {
     );
     ensureDir(dest);
     cpSync(source.path, dest);
+    ensurePackagedAuditCoreMode(dest, source.platform);
   }
   writeAuditCorePlatformManifest(outDir, sources);
   return sources;

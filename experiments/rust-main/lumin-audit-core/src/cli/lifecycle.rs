@@ -289,17 +289,10 @@ fn execute_audit_lifecycle_request(request: AuditLifecycleExecutionRequest) -> R
                 pre_write_block = json!({
                     "requested": true,
                     "ran": false,
-                    "engine": lifecycle_request_guard
-                        .pre_write
-                        .as_ref()
-                        .and_then(|block| block.engine.clone())
-                        .or_else(|| {
-                            pre_write
-                                .routing
-                                .as_ref()
-                                .map(|routing| routing.requested_engine.clone())
-                        })
-                        .unwrap_or_else(|| "auto".to_string()),
+                    "engine": failed_pre_write_requested_engine(
+                        &request.lifecycle_request_guard,
+                        &pre_write
+                    ),
                     "reason": format!("pre-write engine selection failed: {error}"),
                 });
                 final_exit_code = 2;
@@ -368,6 +361,23 @@ fn execute_audit_lifecycle_request(request: AuditLifecycleExecutionRequest) -> R
         "checkCanon": check_canon_block,
         "finalExitCode": final_exit_code,
     }))
+}
+
+fn failed_pre_write_requested_engine(
+    lifecycle_request_guard: &LifecycleRequestGuardInput,
+    pre_write: &AuditLifecyclePreWriteRequest,
+) -> String {
+    pre_write
+        .routing_input
+        .as_ref()
+        .map(|routing_input| routing_input.requested_engine.clone())
+        .or_else(|| {
+            pre_write
+                .routing
+                .as_ref()
+                .map(|routing| routing.requested_engine.clone())
+        })
+        .unwrap_or_else(|| lifecycle_request_guard.requested_pre_write_engine.clone())
 }
 
 fn resolve_pre_write_route_for_lifecycle(
