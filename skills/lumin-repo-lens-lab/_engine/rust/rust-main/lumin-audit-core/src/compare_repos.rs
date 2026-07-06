@@ -275,7 +275,8 @@ fn value_or_null(value: Option<&Value>) -> Value {
 fn coalesce(values: &[Option<&Value>]) -> Value {
     values
         .iter()
-        .find_map(|value| value.as_ref().copied())
+        .filter_map(|value| value.as_ref().copied())
+        .find(|value| !value.is_null())
         .cloned()
         .unwrap_or(Value::Null)
 }

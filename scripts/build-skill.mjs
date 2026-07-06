@@ -423,6 +423,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-contract-'));
   const rootDir = path.join(tempDir, 'root');
   const outputDir = path.join(tempDir, 'out');
+  const lifecycleOutputDir = path.join(tempDir, 'lifecycle-out');
   const rootInputPath = path.join(tempDir, 'manifest-root-with-evidence.json');
   const lifecycleInputPath = path.join(tempDir, 'manifest-lifecycle-evidence-refresh.json');
   const auditLifecycleInputPath = path.join(tempDir, 'execute-audit-lifecycle.json');
@@ -460,6 +461,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(outputDir, { recursive: true });
+    mkdirSync(lifecycleOutputDir, { recursive: true });
     mkdirSync(compareLeftDir, { recursive: true });
     mkdirSync(compareRightDir, { recursive: true });
     mkdirSync(jsPreWriteScriptsDir, { recursive: true });
@@ -541,10 +543,11 @@ for (let i = 0; i < process.argv.length; i += 1) {
 }
 if (!output) process.exit(2);
 mkdirSync(output, { recursive: true });
-const specific = path.join(output, 'pre-write-advisory.PROBE.json');
+const advisoryId = output.includes('lifecycle-out') ? 'PROBE-LIFECYCLE' : 'PROBE';
+const specific = path.join(output, \`pre-write-advisory.\${advisoryId}.json\`);
 const latest = path.join(output, 'pre-write-advisory.latest.json');
 const advisory = {
-  invocationId: 'PROBE',
+  invocationId: advisoryId,
   artifactPaths: { invocationSpecific: specific, latest },
   evidenceAvailability: { status: 'available', producer: 'pre-write.mjs' },
 };
@@ -586,10 +589,10 @@ writeFileSync(latest, JSON.stringify(advisory));
         },
         rust: {
           root: rootDir,
-          output: outputDir,
+          output: lifecycleOutputDir,
           invocationId: 'PROBE-LIFECYCLE',
-          rustNativeArtifactPath: path.join(outputDir, 'rust-pre-write-artifact.PROBE-LIFECYCLE.json'),
-          rustNativeLatestPath: path.join(outputDir, 'rust-pre-write-artifact.latest.json'),
+          rustNativeArtifactPath: path.join(lifecycleOutputDir, 'rust-pre-write-artifact.PROBE-LIFECYCLE.json'),
+          rustNativeLatestPath: path.join(lifecycleOutputDir, 'rust-pre-write-artifact.latest.json'),
           analyzer: null,
           includeTests: true,
           production: false,
@@ -599,7 +602,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         },
         js: {
           root: rootDir,
-          output: outputDir,
+          output: lifecycleOutputDir,
           scriptsDir: jsPreWriteScriptsDir,
           nodeExecutable: process.execPath,
           noFreshAudit: false,
@@ -1778,7 +1781,9 @@ function resultPayloadMatchesProbe(json, probe) {
       json.preWrite.language === 'js-ts' &&
       json.preWrite.producer === 'pre-write.mjs' &&
       json.preWrite.ran === true &&
-      json.preWrite.advisoryInvocationId === 'PROBE' &&
+      json.preWrite.advisoryInvocationId === 'PROBE-LIFECYCLE' &&
+      typeof json.preWrite.advisoryPath === 'string' &&
+      json.preWrite.advisoryPath.includes('pre-write-advisory.PROBE-LIFECYCLE.json') &&
       json.postWrite === null &&
       json.canonDraft === null &&
       json.checkCanon === null &&

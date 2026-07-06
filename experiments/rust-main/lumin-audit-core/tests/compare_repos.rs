@@ -16,12 +16,16 @@ fn cli_compare_repos_artifact_projects_summaries_and_deltas() -> Result<()> {
     fs::write(
         left.join("triage.json"),
         serde_json::to_vec(&json!({
-            "summary": { "files": 4, "loc": 100, "buildSystem": "npm" }
+            "summary": { "files": null, "loc": null, "buildSystem": null },
+            "files": 4,
+            "loc": 100,
+            "buildSystem": "npm"
         }))?,
     )?;
     fs::write(
         right.join("triage.json"),
         serde_json::to_vec(&json!({
+            "summary": { "files": null, "loc": null },
             "files": 7,
             "loc": 140,
             "buildSystem": "pnpm"
