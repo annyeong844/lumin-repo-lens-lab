@@ -1,6 +1,6 @@
 // Specifier → filesystem path resolver.
 //
-// `makeResolver(root, aliasMap)` returns a closure that takes (fromFile,
+// `makeResolver(root, aliasMap[, options])` returns a closure that takes (fromFile,
 // spec) and returns ONE of:
 //   - an absolute file path when resolved to a local source file,
 //   - 'NON_SOURCE_ASSET' when the spec resolves to an existing asset
@@ -39,7 +39,7 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { mapOutputToSource, unsupportedOutputSourceLayoutForTarget } from './alias-map.mjs';
-import { fileExists, dirExists, relPath } from './paths.mjs';
+import { fileExists as rawFileExists, dirExists as rawDirExists, relPath } from './paths.mjs';
 import { fileIsInsideScope, matchSpec } from './tsconfig-paths.mjs';
 import {
   GENERATED_ARTIFACT_MISSING_HINT,
@@ -75,6 +75,56 @@ const OUTPUT_SOURCE_LAYOUT_UNSUPPORTED_FAMILY = 'output-to-source-mapping';
 
 const JS_SOURCE_EXT_RE = /\.(d\.)?(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/i;
 
+const DEFAULT_PROBE_CONTEXT = Object.freeze({
+  fileExists: rawFileExists,
+  dirExists: rawDirExists,
+  isKnownSourceFile: () => false,
+});
+
+function createResolverProbeContext(options = {}) {
+  const sourceFiles = options.sourceFiles ?? options.sourceFileSet;
+  const sourceFileSet = sourceFiles
+    ? new Set([...sourceFiles].map((filePath) => canonicalProbeKey(filePath)))
+    : null;
+  const fileExistsCache = new Map();
+  const dirExistsCache = new Map();
+
+  function canonicalProbeKey(candidate) {
+    const value = String(candidate);
+    return path.isAbsolute(value) ? value : path.resolve(value);
+  }
+
+  function sourceKey(candidate) {
+    if (!sourceFileSet || !JS_SOURCE_EXT_RE.test(String(candidate))) return null;
+    return canonicalProbeKey(candidate);
+  }
+
+  function isKnownSourceFile(candidate) {
+    const key = sourceKey(candidate);
+    return key !== null && sourceFileSet.has(key);
+  }
+
+  function fileExists(candidate) {
+    const knownSourceKey = sourceKey(candidate);
+    if (knownSourceKey !== null) return sourceFileSet.has(knownSourceKey);
+    const cacheKey = canonicalProbeKey(candidate);
+    if (fileExistsCache.has(cacheKey)) return fileExistsCache.get(cacheKey);
+    const exists = rawFileExists(candidate);
+    fileExistsCache.set(cacheKey, exists);
+    return exists;
+  }
+
+  function dirExists(candidate) {
+    const key = canonicalProbeKey(candidate);
+    if (dirExistsCache.has(key)) return dirExistsCache.get(key);
+    const exists = rawDirExists(candidate);
+    dirExistsCache.set(key, exists);
+    return exists;
+  }
+
+  return { fileExists, dirExists, isKnownSourceFile };
+}
+
 function resourceQueryStart(spec) {
   const q = spec.indexOf('?');
   const h = spec.indexOf('#');
@@ -103,9 +153,10 @@ function looksLikeNonSourceAsset(spec) {
 //
 // Cache realpath calls — invariant for a given audit run.
 const realpathCache = new Map();
-function canonicalize(p) {
+function canonicalize(p, probeContext = DEFAULT_PROBE_CONTEXT) {
   if (p === null || p === 'EXTERNAL' || p === 'UNRESOLVED_INTERNAL' || p === NON_SOURCE_ASSET_RESOLUTION) return p;
   if (isGeneratedVirtualResolution(p)) return p;
+  if (probeContext.isKnownSourceFile(p)) return p;
   const cached = realpathCache.get(p);
   if (cached !== undefined) return cached;
   let real;
@@ -183,21 +234,21 @@ function cloneResolverStageStats(stats) {
 //
 // Runs the extension + /index.* + .mjs→.ts swap fallback chain against
 // a literal base path. Returns the first match or null.
-function probeTarget(literal) {
-  if (fileExists(literal)) return literal;
+function probeTarget(literal, probeContext = DEFAULT_PROBE_CONTEXT) {
+  if (probeContext.fileExists(literal)) return literal;
   for (const ext of RESOLVE_FILE_EXTS) {
-    if (ext && fileExists(literal + ext)) return literal + ext;
+    if (ext && probeContext.fileExists(literal + ext)) return literal + ext;
   }
   for (const ext of RESOLVE_INDEX_EXTS) {
-    if (fileExists(literal + ext)) return literal + ext;
+    if (probeContext.fileExists(literal + ext)) return literal + ext;
   }
   if (/\.jsx$/.test(literal)) {
     const swap = literal.replace(/\.jsx$/, '.tsx');
-    if (fileExists(swap)) return swap;
+    if (probeContext.fileExists(swap)) return swap;
   } else {
     for (const alt of ['.ts', '.tsx']) {
       const swap = literal.replace(/\.(mjs|cjs|js)$/, alt);
-      if (swap !== literal && fileExists(swap)) return swap;
+      if (swap !== literal && probeContext.fileExists(swap)) return swap;
     }
   }
   return null;
@@ -208,21 +259,21 @@ function probeTarget(literal) {
 // /index.* suffixes. Kept separate because the "from-root" case handles
 // both relative-like specs (`src/foo/bar.js`) and self-reference
 // (`<rootBasename>/...`), which have slightly different shape needs.
-function probeRootCandidate(base) {
+function probeRootCandidate(base, probeContext = DEFAULT_PROBE_CONTEXT) {
   for (const ext of RESOLVE_FILE_EXTS) {
-    if (fileExists(base + ext)) return base + ext;
+    if (probeContext.fileExists(base + ext)) return base + ext;
   }
   for (const ext of RESOLVE_INDEX_EXTS) {
-    if (fileExists(base + ext)) return base + ext;
+    if (probeContext.fileExists(base + ext)) return base + ext;
   }
   if (/\.(mjs|cjs|js|jsx)$/.test(base)) {
     for (const alt of ['.ts', '.tsx', '.mts', '.cts']) {
       const cand = base.replace(/\.(mjs|cjs|js|jsx)$/, alt);
-      if (fileExists(cand)) return cand;
+      if (probeContext.fileExists(cand)) return cand;
     }
     const stripped = base.replace(/\.(mjs|cjs|js|jsx)$/, '');
     for (const idx of RESOLVE_INDEX_EXTS) {
-      if (fileExists(stripped + idx)) return stripped + idx;
+      if (probeContext.fileExists(stripped + idx)) return stripped + idx;
     }
   }
   return null;
@@ -238,7 +289,7 @@ function relativeProbeCacheKey(fromFile, spec) {
   return `${path.dirname(fromFile)}\0${spec}`;
 }
 
-function resolveRelative(fromFile, spec, probeCache, stageStats) {
+function resolveRelative(fromFile, spec, probeCache, stageStats, probeContext = DEFAULT_PROBE_CONTEXT) {
   const cacheKey = relativeProbeCacheKey(fromFile, spec);
   if (probeCache?.has(cacheKey)) {
     if (stageStats) stageStats.cacheHits++;
@@ -250,7 +301,7 @@ function resolveRelative(fromFile, spec, probeCache, stageStats) {
   const fsSpec = stripResourceQuery(spec);
   if (looksLikeNonSourceAsset(spec)) {
     const asset = path.resolve(path.dirname(fromFile), fsSpec);
-    if (fileExists(asset)) {
+    if (probeContext.fileExists(asset)) {
       result = NON_SOURCE_ASSET_RESOLUTION;
       probeCache?.set(cacheKey, result);
       return result;
@@ -259,14 +310,14 @@ function resolveRelative(fromFile, spec, probeCache, stageStats) {
 
   const base = path.resolve(path.dirname(fromFile), spec);
   for (const ext of RESOLVE_FILE_EXTS) {
-    if (fileExists(base + ext)) {
+    if (probeContext.fileExists(base + ext)) {
       result = base + ext;
       probeCache?.set(cacheKey, result);
       return result;
     }
   }
   for (const ext of RESOLVE_INDEX_EXTS) {
-    if (fileExists(base + ext)) {
+    if (probeContext.fileExists(base + ext)) {
       result = base + ext;
       probeCache?.set(cacheKey, result);
       return result;
@@ -277,7 +328,7 @@ function resolveRelative(fromFile, spec, probeCache, stageStats) {
     for (const alt of ['.ts', '.tsx', '.mts', '.cts']) {
       const swapped = spec.replace(/\.(mjs|cjs|js|jsx)$/, alt);
       const p = path.resolve(path.dirname(fromFile), swapped);
-      if (fileExists(p)) {
+      if (probeContext.fileExists(p)) {
         result = p;
         probeCache?.set(cacheKey, result);
         return result;
@@ -285,7 +336,7 @@ function resolveRelative(fromFile, spec, probeCache, stageStats) {
     }
     const stripped = base.replace(/\.(mjs|cjs|js|jsx)$/, '');
     for (const idx of RESOLVE_INDEX_EXTS) {
-      if (fileExists(stripped + idx)) {
+      if (probeContext.fileExists(stripped + idx)) {
         result = stripped + idx;
         probeCache?.set(cacheKey, result);
         return result;
@@ -307,11 +358,13 @@ function resolveRelative(fromFile, spec, probeCache, stageStats) {
 //
 // Returns: file path | 'UNRESOLVED_INTERNAL' | undefined (no match).
 
-function resolveAliasFallbackAfterTsconfigMiss(spec, aliasMap) {
-  for (const resolver of [resolveExactAlias, resolveWildcard, resolveHashWildcard]) {
-    const hit = resolver(spec, aliasMap);
-    if (isResolvedFile(hit) || isGeneratedVirtualResolution(hit)) return hit;
-  }
+function resolveAliasFallbackAfterTsconfigMiss(spec, aliasMap, probeContext = DEFAULT_PROBE_CONTEXT) {
+  const exact = resolveExactAlias(spec, aliasMap, probeContext);
+  if (isResolvedFile(exact) || isGeneratedVirtualResolution(exact)) return exact;
+  const wildcard = resolveWildcard(spec, aliasMap, undefined, undefined, probeContext);
+  if (isResolvedFile(wildcard) || isGeneratedVirtualResolution(wildcard)) return wildcard;
+  const hashWildcard = resolveHashWildcard(spec, aliasMap, probeContext);
+  if (isResolvedFile(hashWildcard) || isGeneratedVirtualResolution(hashWildcard)) return hashWildcard;
   return null;
 }
 
@@ -329,7 +382,7 @@ function scopedTsconfigProbeCacheKey(entry, star, spec) {
   ].join('\0');
 }
 
-function resolveScopedTsconfig(fromFile, spec, scoped, aliasMap, probeCache, stageStats) {
+function resolveScopedTsconfig(fromFile, spec, scoped, aliasMap, probeCache, stageStats, probeContext = DEFAULT_PROBE_CONTEXT) {
   for (const entry of scoped) {
     if (!fileIsInsideScope(fromFile, entry.scopeDir)) continue;
     const star = matchSpec(spec, entry);
@@ -347,7 +400,7 @@ function resolveScopedTsconfig(fromFile, spec, scoped, aliasMap, probeCache, sta
         ? target.replace('*', star)
         : target;
       const literal = path.resolve(entry.baseUrlDir, substituted);
-      const hit = probeTarget(literal);
+      const hit = probeTarget(literal, probeContext);
       if (hit) {
         if (stageStats) stageStats.probeHits++;
         probeCache?.set(cacheKey, hit);
@@ -355,7 +408,7 @@ function resolveScopedTsconfig(fromFile, spec, scoped, aliasMap, probeCache, sta
       }
       if (stageStats) stageStats.probeMisses++;
     }
-    const fallback = resolveAliasFallbackAfterTsconfigMiss(spec, aliasMap);
+    const fallback = resolveAliasFallbackAfterTsconfigMiss(spec, aliasMap, probeContext);
     if (fallback) {
       if (stageStats) stageStats.fallbackHits++;
       probeCache?.set(cacheKey, fallback);
@@ -437,7 +490,7 @@ function scopedBaseUrlProbeCacheKey(entry, spec) {
   ].join('\0');
 }
 
-function resolveScopedBaseUrlEntry(spec, entry, probeCache, stageStats) {
+function resolveScopedBaseUrlEntry(spec, entry, probeCache, stageStats, probeContext = DEFAULT_PROBE_CONTEXT) {
   const key = scopedBaseUrlProbeCacheKey(entry, spec);
   if (probeCache?.has(key)) {
     if (stageStats) stageStats.cacheHits++;
@@ -446,25 +499,25 @@ function resolveScopedBaseUrlEntry(spec, entry, probeCache, stageStats) {
   if (probeCache && stageStats) stageStats.cacheMisses++;
 
   const literal = path.resolve(entry.baseUrlDir, spec);
-  const hit = probeTarget(literal);
+  const hit = probeTarget(literal, probeContext);
   if (hit) {
     probeCache?.set(key, hit);
     return hit;
   }
 
   const firstSegment = firstSegmentCandidate(entry.baseUrlDir, spec);
-  const result = firstSegment && (dirExists(firstSegment) || probeTarget(firstSegment))
+  const result = firstSegment && (probeContext.dirExists(firstSegment) || probeTarget(firstSegment, probeContext))
     ? 'UNRESOLVED_INTERNAL'
     : SCOPED_BASEURL_NO_MATCH;
   probeCache?.set(key, result);
   return result;
 }
 
-function resolveScopedBaseUrl(fromFile, spec, scopedBaseUrls, probeCache, stageStats) {
+function resolveScopedBaseUrl(fromFile, spec, scopedBaseUrls, probeCache, stageStats, probeContext = DEFAULT_PROBE_CONTEXT) {
   for (const entry of scopedBaseUrls) {
     if (!fileIsInsideScope(fromFile, entry.scopeDir)) continue;
 
-    const result = resolveScopedBaseUrlEntry(spec, entry, probeCache, stageStats);
+    const result = resolveScopedBaseUrlEntry(spec, entry, probeCache, stageStats, probeContext);
     if (result !== SCOPED_BASEURL_NO_MATCH) return result;
   }
   return undefined;
@@ -476,7 +529,7 @@ function explainScopedBaseUrl(root, fromFile, spec, scopedBaseUrls) {
 
     const literal = path.resolve(entry.baseUrlDir, spec);
     const firstSegment = firstSegmentCandidate(entry.baseUrlDir, spec);
-    if (firstSegment && (dirExists(firstSegment) || probeTarget(firstSegment))) {
+    if (firstSegment && (rawDirExists(firstSegment) || probeTarget(firstSegment))) {
       return unresolvedRecord(root, 'baseurl-target-missing', {
         stage: 'tsconfig-baseurl',
         matchedPattern: entry.scopeDir,
@@ -489,14 +542,14 @@ function explainScopedBaseUrl(root, fromFile, spec, scopedBaseUrls) {
 
 // ── Stage 4: exact alias ─────────────────────────────────
 
-function resolveExactAlias(spec, aliasMap) {
+function resolveExactAlias(spec, aliasMap, probeContext = DEFAULT_PROBE_CONTEXT) {
   if (!aliasMap.has(spec)) return undefined;
   const entry = aliasMap.get(spec);
   if (entry.type !== 'exact') return undefined;
   // Exact aliases are local intent. If the alias is declared but cannot
   // resolve to a concrete file, surface resolver blindness instead of
   // falling through as if nothing matched.
-  return probeTarget(entry.path) ?? 'UNRESOLVED_INTERNAL';
+  return probeTarget(entry.path, probeContext) ?? 'UNRESOLVED_INTERNAL';
 }
 
 function explainExactAlias(root, spec, aliasMap) {
@@ -545,7 +598,7 @@ function wildcardAliasProbeCacheKey(spec) {
   return spec;
 }
 
-function resolveWildcard(spec, aliasMap, probeCache, stageStats) {
+function resolveWildcard(spec, aliasMap, probeCache, stageStats, probeContext = DEFAULT_PROBE_CONTEXT) {
   const cacheKey = wildcardAliasProbeCacheKey(spec);
   if (probeCache?.has(cacheKey)) {
     if (stageStats) stageStats.cacheHits++;
@@ -579,19 +632,19 @@ function resolveWildcard(spec, aliasMap, probeCache, stageStats) {
   // full subpath as the stem and run the same TS/JS probe chain used by
   // relative and baseUrl resolution instead of assuming the last dot is a
   // real file extension.
-  const literalHit = probeTarget(literal);
+  const literalHit = probeTarget(literal, probeContext);
   if (literalHit) {
     probeCache?.set(cacheKey, literalHit);
     return literalHit;
   }
   const remapped = mapOutputToSource(entry.pkgDir, substituted);
-  if (fileExists(remapped)) {
+  if (probeContext.fileExists(remapped)) {
     probeCache?.set(cacheKey, remapped);
     return remapped;
   }
   const strippedLit = literal.replace(/\.(ts|tsx|mjs|cjs|js|jsx|mts|cts)$/, '');
   for (const idx of RESOLVE_INDEX_EXTS) {
-    if (fileExists(strippedLit + idx)) {
+    if (probeContext.fileExists(strippedLit + idx)) {
       const hit = strippedLit + idx;
       probeCache?.set(cacheKey, hit);
       return hit;
@@ -674,7 +727,7 @@ function explainWildcard(root, spec, aliasMap) {
 
 // ── Stage 6: Node #imports subpath / unsupported family ──
 
-function resolveHashWildcard(spec, aliasMap) {
+function resolveHashWildcard(spec, aliasMap, probeContext = DEFAULT_PROBE_CONTEXT) {
   let matched = false;
   for (const [, entry] of aliasMap) {
     if (entry.type === 'hash-unsupported') {
@@ -699,7 +752,7 @@ function resolveHashWildcard(spec, aliasMap) {
     for (const targetPattern of targetPatterns) {
       for (const tailCandidate of tailCandidates) {
         const candidate = path.join(entry.pkgDir, targetPattern.replace('*', tailCandidate));
-        const hit = probeTarget(candidate);
+        const hit = probeTarget(candidate, probeContext);
         if (hit) return hit;
       }
     }
@@ -780,7 +833,7 @@ function explainHashWildcard(root, spec, aliasMap) {
 //   (b) SELF-reference: root = `/path/src`, spec = `src/bootstrap/...`
 //       → spec's first segment equals root's basename, strip it.
 
-function resolveRootPrefix(spec, root) {
+function resolveRootPrefix(spec, root, probeContext = DEFAULT_PROBE_CONTEXT) {
   const firstSlash = spec.indexOf('/');
   if (firstSlash <= 0) return undefined;
 
@@ -791,15 +844,15 @@ function resolveRootPrefix(spec, root) {
   // dir under root (filters out the huge number of specs where
   // root-prefix doesn't apply).
   const rootCandidate = path.join(root, firstSegment);
-  if (dirExists(rootCandidate)) {
-    const hit = probeRootCandidate(path.resolve(root, spec));
+  if (probeContext.dirExists(rootCandidate)) {
+    const hit = probeRootCandidate(path.resolve(root, spec), probeContext);
     if (hit) return hit;
   }
 
   // (b) self-reference interpretation
   if (firstSegment === rootBasename) {
     const stripped = spec.slice(firstSlash + 1);
-    const hit = probeRootCandidate(path.resolve(root, stripped));
+    const hit = probeRootCandidate(path.resolve(root, stripped), probeContext);
     if (hit) return hit;
   }
 
@@ -847,7 +900,7 @@ export function explainUnresolvedSpecifier(root, aliasMap, fromFile, spec) {
 
 // ── Orchestrator ─────────────────────────────────────────
 
-export function makeResolver(root, aliasMap) {
+export function makeResolver(root, aliasMap, options = {}) {
   // FP-36: pre-sort scoped tsconfig paths by scope depth (deeper = more
   // specific) and pattern specificity. More-local tsconfig wins over
   // less-local; longer matchPrefix wins over shorter.
@@ -864,6 +917,7 @@ export function makeResolver(root, aliasMap) {
     : [];
 
   const stageStats = createResolverStageStats();
+  const probeContext = createResolverProbeContext(options);
   const relativeProbeCache = new Map();
   const scopedTsconfigProbeCache = new Map();
   const scopedBaseUrlProbeCache = new Map();
@@ -899,7 +953,7 @@ export function makeResolver(root, aliasMap) {
     }
     if (spec.startsWith('.')) {
       return runResolverStage('relative', () =>
-        resolveRelative(fromFile, spec, relativeProbeCache, stageStats.relative));
+        resolveRelative(fromFile, spec, relativeProbeCache, stageStats.relative, probeContext));
     }
 
     let hit;
@@ -910,19 +964,20 @@ export function makeResolver(root, aliasMap) {
         scoped,
         aliasMap,
         scopedTsconfigProbeCache,
-        stageStats.scopedTsconfig));
+        stageStats.scopedTsconfig,
+        probeContext));
     if (hit !== undefined) return hit;
     hit = runResolverStage('scopedBaseUrl', () =>
-      resolveScopedBaseUrl(fromFile, spec, scopedBaseUrls, scopedBaseUrlProbeCache, stageStats.scopedBaseUrl));
+      resolveScopedBaseUrl(fromFile, spec, scopedBaseUrls, scopedBaseUrlProbeCache, stageStats.scopedBaseUrl, probeContext));
     if (hit !== undefined) return hit;
-    hit = runResolverStage('exactAlias', () => resolveExactAlias(spec, aliasMap));
+    hit = runResolverStage('exactAlias', () => resolveExactAlias(spec, aliasMap, probeContext));
     if (hit !== undefined) return hit;
     hit = runResolverStage('wildcardAlias', () =>
-      resolveWildcard(spec, aliasMap, wildcardAliasProbeCache, stageStats.wildcardAlias));
+      resolveWildcard(spec, aliasMap, wildcardAliasProbeCache, stageStats.wildcardAlias, probeContext));
     if (hit !== undefined) return hit;
-    hit = runResolverStage('hashWildcard', () => resolveHashWildcard(spec, aliasMap));
+    hit = runResolverStage('hashWildcard', () => resolveHashWildcard(spec, aliasMap, probeContext));
     if (hit !== undefined) return hit;
-    hit = runResolverStage('rootPrefix', () => resolveRootPrefix(spec, root));
+    hit = runResolverStage('rootPrefix', () => resolveRootPrefix(spec, root, probeContext));
     if (hit !== undefined) return hit;
 
     recordInstantStage('external');
@@ -952,7 +1007,7 @@ export function makeResolver(root, aliasMap) {
     memoStats.misses++;
     const rawValue = resolveRaw(fromFile, spec);
     const canonicalizeStarted = performance.now();
-    const value = canonicalize(rawValue);
+    const value = canonicalize(rawValue, probeContext);
     const canonicalizeStage = stageStats.canonicalize;
     canonicalizeStage.attempts++;
     canonicalizeStage.terminalResults++;

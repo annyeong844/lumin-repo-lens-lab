@@ -110,7 +110,7 @@ const languageSupport = {
 
 const repoMode = detectRepoMode(ROOT);
 const aliasMap = buildAliasMap(ROOT, repoMode, { exclude: cli.exclude });
-const _resolveRaw = makeResolver(ROOT, aliasMap);
+let _resolveRaw = null;
 // Extension-aware resolver: Python files use the Python module resolver;
 // anything else falls through to the TS/JS alias-aware resolver. EXTERNAL
 // (stdlib / npm) is collapsed to `null` for consistent downstream handling.
@@ -136,6 +136,9 @@ function resolveSpecifier(from, use) {
   if (from.endsWith(".go")) {
     const hits = resolveGoImport(ROOT, goModule, spec);
     return hits[0] ?? null;
+  }
+  if (!_resolveRaw) {
+    throw new Error("symbol resolver used before repo snapshot initialization");
   }
   const r = _resolveRaw(from, spec);
   // v1.9.7: preserve resolver sentinels so the caller can distinguish
@@ -215,6 +218,7 @@ const snapshot = phaseTimer.runPhase("snapshot", () =>
 const snapshotEntries = Object.values(snapshot.files);
 const files = snapshotEntries.map((entry) => entry.absPath);
 const scannedJsSourceFiles = new Set(files.filter(isJsFamilyFile));
+_resolveRaw = makeResolver(ROOT, aliasMap, { sourceFiles: scannedJsSourceFiles });
 const mdxSourceFiles = files.filter(isMdxFamilyFile);
 const sfcSourceFiles = files.filter(isSfcFamilyFile);
 const jsTotal = files.filter(isJsFamilyFile).length;
