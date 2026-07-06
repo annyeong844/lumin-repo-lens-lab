@@ -1,0 +1,137 @@
+use anyhow::{bail, Result};
+use serde_json::json;
+
+use super::io_support::write_stdout_json;
+use super::usage::USAGE;
+
+const RUNTIME_CONTRACT_SCHEMA_VERSION: &str = "lumin-audit-core-runtime-contract.v1";
+const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v1";
+
+const SUPPORTED_SUBCOMMANDS: &[&str] = &[
+    "artifact-registry",
+    "artifact-size-summary",
+    "artifact-read-metrics-summary",
+    "rust-analysis-summary",
+    "rust-analysis-run-merge",
+    "generated-artifacts-summary",
+    "artifact-summary",
+    "audit-review-pack-render",
+    "audit-summary-render",
+    "barrel-discipline-artifact",
+    "block-clones-artifact",
+    "call-graph-artifact",
+    "checklist-facts-artifact",
+    "compare-repos-artifact",
+    "dead-classify-artifact",
+    "discipline-artifact",
+    "entry-surface-artifact",
+    "export-action-safety-artifact",
+    "framework-resource-surfaces-artifact",
+    "function-clones-artifact",
+    "module-reachability-artifact",
+    "rank-fixes-artifact",
+    "resolver-diagnostics-artifacts",
+    "runtime-evidence-artifact",
+    "sarif-artifact",
+    "shape-index-artifact",
+    "staleness-artifact",
+    "symbol-graph-artifact",
+    "topology-artifact",
+    "topology-mermaid-render",
+    "unused-deps-artifact",
+    "resolver-diagnostics-summary",
+    "blind-zones-summary",
+    "lifecycle-summary",
+    "manifest-lifecycle-update",
+    "lifecycle-exit-policy",
+    "lifecycle-request-guard",
+    "manifest-meta",
+    "manifest-root",
+    "manifest-root-with-evidence",
+    "manifest-write",
+    "manifest-closeout-write",
+    "finalize-audit-run",
+    "finalize-audit-run-with-companions",
+    "manifest-lifecycle-evidence-refresh",
+    "manifest-evidence-update",
+    "manifest-evidence-refresh",
+    "manifest-evidence-refresh-with-reads",
+    "manifest-companion-update",
+    "manifest-artifacts-produced-update",
+    "manifest-final-summary-update",
+    "manifest-closeout-update",
+    "manifest-core-summary",
+    "manifest-evidence-summary",
+    "manifest-evidence-summary-with-reads",
+    "orchestration-plan",
+    "execute-base-plan",
+    "execute-base-runtime",
+    "execute-canon-draft",
+    "execute-check-canon",
+    "execute-audit-lifecycle",
+    "pre-write-route",
+    "execute-js-pre-write",
+    "execute-rust-pre-write",
+    "execute-post-write",
+    "orchestration-result-summary",
+    "producer-performance-summary",
+    "producer-performance-artifact",
+    "producer-performance-runtime-artifact",
+    "producer-performance-audit-run-artifact",
+    "living-audit-summary",
+    "runtime-contract",
+];
+
+const RESULT_OUTPUT_SUBCOMMANDS: &[&str] = &[
+    "manifest-root-with-evidence",
+    "manifest-lifecycle-evidence-refresh",
+    "execute-js-pre-write",
+    "execute-rust-pre-write",
+    "execute-post-write",
+    "manifest-evidence-summary-with-reads",
+    "manifest-evidence-refresh-with-reads",
+    "audit-review-pack-render",
+    "audit-summary-render",
+    "finalize-audit-run-with-companions",
+    "execute-audit-lifecycle",
+    "barrel-discipline-artifact",
+    "block-clones-artifact",
+    "call-graph-artifact",
+    "checklist-facts-artifact",
+    "compare-repos-artifact",
+    "dead-classify-artifact",
+    "discipline-artifact",
+    "entry-surface-artifact",
+    "export-action-safety-artifact",
+    "framework-resource-surfaces-artifact",
+    "function-clones-artifact",
+    "module-reachability-artifact",
+    "rank-fixes-artifact",
+    "resolver-diagnostics-artifacts",
+    "runtime-evidence-artifact",
+    "sarif-artifact",
+    "shape-index-artifact",
+    "staleness-artifact",
+    "symbol-graph-artifact",
+    "topology-artifact",
+    "topology-mermaid-render",
+    "unused-deps-artifact",
+];
+
+pub(super) fn run_runtime_contract(args: Vec<String>) -> Result<()> {
+    if let Some(arg) = args.first() {
+        bail!("runtime-contract: unknown argument '{arg}'\n{USAGE}");
+    }
+
+    write_stdout_json(&json!({
+        "schemaVersion": RUNTIME_CONTRACT_SCHEMA_VERSION,
+        "contractVersion": JS_RUNTIME_BRIDGE_CONTRACT_VERSION,
+        "binary": "lumin-audit-core",
+        "features": {
+            "resultOutput": true,
+            "resultOutputSilencesStdout": true
+        },
+        "supportedSubcommands": SUPPORTED_SUBCOMMANDS,
+        "resultOutputSubcommands": RESULT_OUTPUT_SUBCOMMANDS
+    }))
+}

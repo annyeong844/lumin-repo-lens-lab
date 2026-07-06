@@ -234,33 +234,66 @@ function probeRootCandidate(base) {
 // result. Returns file path OR null (terminal; relative-not-found is not
 // an external package candidate).
 
-function resolveRelative(fromFile, spec) {
+function relativeProbeCacheKey(fromFile, spec) {
+  return `${path.dirname(fromFile)}\0${spec}`;
+}
+
+function resolveRelative(fromFile, spec, probeCache, stageStats) {
+  const cacheKey = relativeProbeCacheKey(fromFile, spec);
+  if (probeCache?.has(cacheKey)) {
+    if (stageStats) stageStats.cacheHits++;
+    return probeCache.get(cacheKey);
+  }
+  if (probeCache && stageStats) stageStats.cacheMisses++;
+
+  let result = null;
   const fsSpec = stripResourceQuery(spec);
   if (looksLikeNonSourceAsset(spec)) {
     const asset = path.resolve(path.dirname(fromFile), fsSpec);
-    if (fileExists(asset)) return NON_SOURCE_ASSET_RESOLUTION;
+    if (fileExists(asset)) {
+      result = NON_SOURCE_ASSET_RESOLUTION;
+      probeCache?.set(cacheKey, result);
+      return result;
+    }
   }
 
   const base = path.resolve(path.dirname(fromFile), spec);
   for (const ext of RESOLVE_FILE_EXTS) {
-    if (fileExists(base + ext)) return base + ext;
+    if (fileExists(base + ext)) {
+      result = base + ext;
+      probeCache?.set(cacheKey, result);
+      return result;
+    }
   }
   for (const ext of RESOLVE_INDEX_EXTS) {
-    if (fileExists(base + ext)) return base + ext;
+    if (fileExists(base + ext)) {
+      result = base + ext;
+      probeCache?.set(cacheKey, result);
+      return result;
+    }
   }
   // ESM-compiled JS in source trees often maps to TS/TSX originals.
   if (/\.(mjs|cjs|js|jsx)$/.test(spec)) {
     for (const alt of ['.ts', '.tsx', '.mts', '.cts']) {
       const swapped = spec.replace(/\.(mjs|cjs|js|jsx)$/, alt);
       const p = path.resolve(path.dirname(fromFile), swapped);
-      if (fileExists(p)) return p;
+      if (fileExists(p)) {
+        result = p;
+        probeCache?.set(cacheKey, result);
+        return result;
+      }
     }
     const stripped = base.replace(/\.(mjs|cjs|js|jsx)$/, '');
     for (const idx of RESOLVE_INDEX_EXTS) {
-      if (fileExists(stripped + idx)) return stripped + idx;
+      if (fileExists(stripped + idx)) {
+        result = stripped + idx;
+        probeCache?.set(cacheKey, result);
+        return result;
+      }
     }
   }
-  return null;
+  probeCache?.set(cacheKey, result);
+  return result;
 }
 
 // ── Stage 2: scoped tsconfig paths (FP-36) ───────────────
@@ -831,6 +864,7 @@ export function makeResolver(root, aliasMap) {
     : [];
 
   const stageStats = createResolverStageStats();
+  const relativeProbeCache = new Map();
   const scopedTsconfigProbeCache = new Map();
   const scopedBaseUrlProbeCache = new Map();
   const wildcardAliasProbeCache = new Map();
@@ -864,7 +898,8 @@ export function makeResolver(root, aliasMap) {
       return null;
     }
     if (spec.startsWith('.')) {
-      return runResolverStage('relative', () => resolveRelative(fromFile, spec));
+      return runResolverStage('relative', () =>
+        resolveRelative(fromFile, spec, relativeProbeCache, stageStats.relative));
     }
 
     let hit;

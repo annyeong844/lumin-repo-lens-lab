@@ -9,6 +9,7 @@ mod block_clones;
 mod call_graph;
 mod checklist_facts;
 mod compare_repos;
+mod contract;
 mod dead_classify;
 mod discipline;
 mod entry_surface;
@@ -40,6 +41,7 @@ use block_clones::*;
 use call_graph::*;
 use checklist_facts::*;
 use compare_repos::*;
+use contract::*;
 use dead_classify::*;
 use discipline::*;
 use entry_surface::*;
@@ -79,6 +81,7 @@ pub fn run() -> Result<()> {
         Some("call-graph-artifact") => run_call_graph_artifact(args.collect()),
         Some("checklist-facts-artifact") => run_checklist_facts_artifact(args.collect()),
         Some("compare-repos-artifact") => run_compare_repos_artifact(args.collect()),
+        Some("runtime-contract") => run_runtime_contract(args.collect()),
         Some("dead-classify-artifact") => run_dead_classify_artifact(args.collect()),
         Some("discipline-artifact") => run_discipline_artifact(args.collect()),
         Some("entry-surface-artifact") => run_entry_surface_artifact(args.collect()),

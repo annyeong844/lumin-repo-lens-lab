@@ -176,6 +176,8 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'manifest-root-with-evidence',
   'manifest-lifecycle-evidence-refresh',
   'execute-js-pre-write',
+  'execute-rust-pre-write',
+  'execute-post-write',
   'manifest-evidence-summary-with-reads',
   'manifest-evidence-refresh-with-reads',
   'audit-review-pack-render',
@@ -191,6 +193,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'discipline-artifact',
   'entry-surface-artifact',
   'export-action-safety-artifact',
+  'framework-resource-surfaces-artifact',
   'function-clones-artifact',
   'module-reachability-artifact',
   'rank-fixes-artifact',
@@ -202,7 +205,14 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'symbol-graph-artifact',
   'topology-artifact',
   'topology-mermaid-render',
+  'unused-deps-artifact',
 ]);
+
+const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v1';
+const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
+  AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
+);
 
 function executableOnPath(exe) {
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
@@ -321,6 +331,49 @@ function candidateSignatureKey(commands) {
 }
 
 function auditCoreBinarySupportsCurrentContract(command) {
+  if (process.env.LUMIN_AUDIT_CORE_FULL_CONTRACT_PROBE === '1') {
+    return auditCoreBinarySupportsFixtureContract(command);
+  }
+  return auditCoreBinaryReportsCurrentContract(command);
+}
+
+function auditCoreBinaryReportsCurrentContract(command) {
+  const result = spawnSync(command, ['runtime-contract'], {
+    encoding: 'utf8',
+  });
+  if (result.error || result.status !== 0) return false;
+  if ((result.stderr ?? '').trim().length > 0) return false;
+
+  let contract;
+  try {
+    contract = JSON.parse(result.stdout ?? '');
+  } catch {
+    return false;
+  }
+
+  if (contract?.schemaVersion !== AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION) return false;
+  if (contract?.contractVersion !== AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION) return false;
+  if (contract?.features?.resultOutput !== true) return false;
+  if (contract?.features?.resultOutputSilencesStdout !== true) return false;
+
+  const supported = new Set(Array.isArray(contract.supportedSubcommands)
+    ? contract.supportedSubcommands
+    : []);
+  for (const subcommand of AUDIT_CORE_REQUIRED_SUBCOMMANDS) {
+    if (!supported.has(subcommand)) return false;
+  }
+
+  const resultOutput = new Set(Array.isArray(contract.resultOutputSubcommands)
+    ? contract.resultOutputSubcommands
+    : []);
+  for (const subcommand of RESULT_FILE_REQUIRED_SUBCOMMANDS) {
+    if (!resultOutput.has(subcommand)) return false;
+  }
+
+  return true;
+}
+
+function auditCoreBinarySupportsFixtureContract(command) {
   for (const [args, expected] of AUDIT_CORE_CONTRACT_PROBES) {
     const result = spawnSync(command, args, {
       encoding: 'utf8',
