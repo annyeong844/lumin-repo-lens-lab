@@ -11,6 +11,7 @@ pub mod call_graph;
 pub mod canon_draft_lifecycle;
 pub mod check_canon_lifecycle;
 pub mod checklist_facts;
+pub mod compare_repos;
 pub mod dead_classify;
 pub mod discipline;
 pub mod entry_surface;

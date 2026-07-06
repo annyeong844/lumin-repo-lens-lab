@@ -318,6 +318,10 @@ function validateRunnableAuditCoreBinary(binaryPath) {
       'checklist-facts-artifact: missing --input <path|->',
     ],
     [
+      ['compare-repos-artifact'],
+      'compare-repos-artifact: missing --input <path|->',
+    ],
+    [
       ['dead-classify-artifact'],
       'dead-classify-artifact: missing --input <path|->',
     ],
@@ -429,6 +433,9 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const blockClonesInputPath = path.join(tempDir, 'block-clones-artifact.json');
   const callGraphInputPath = path.join(tempDir, 'call-graph-artifact.json');
   const checklistFactsInputPath = path.join(tempDir, 'checklist-facts-artifact.json');
+  const compareReposInputPath = path.join(tempDir, 'compare-repos-artifact.json');
+  const compareLeftDir = path.join(tempDir, 'compare-left');
+  const compareRightDir = path.join(tempDir, 'compare-right');
   const deadClassifyInputPath = path.join(tempDir, 'dead-classify-artifact.json');
   const disciplineInputPath = path.join(tempDir, 'discipline-artifact.json');
   const entrySurfaceInputPath = path.join(tempDir, 'entry-surface-artifact.json');
@@ -453,6 +460,8 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(outputDir, { recursive: true });
+    mkdirSync(compareLeftDir, { recursive: true });
+    mkdirSync(compareRightDir, { recursive: true });
     mkdirSync(jsPreWriteScriptsDir, { recursive: true });
     spawnSync('git', ['init'], { cwd: rootDir, encoding: 'utf8' });
     writeFileSync(path.join(outputDir, 'triage.json'), JSON.stringify({
@@ -843,6 +852,21 @@ writeFileSync(latest, JSON.stringify(advisory));
           unusedParamSites: [],
         },
       },
+    }));
+    writeFileSync(path.join(compareLeftDir, 'triage.json'), JSON.stringify({
+      summary: { files: 1, loc: 10 },
+    }));
+    writeFileSync(path.join(compareRightDir, 'triage.json'), JSON.stringify({
+      summary: { files: 3, loc: 16 },
+    }));
+    writeFileSync(path.join(compareRightDir, 'runtime-evidence.json'), '{}');
+    writeFileSync(compareReposInputPath, JSON.stringify({
+      schemaVersion: 'lumin-compare-repos-producer-request.v1',
+      generated: '2026-07-02T00:00:00.000Z',
+      left: compareLeftDir,
+      right: compareRightDir,
+      leftLabel: 'left',
+      rightLabel: 'right',
     }));
     writeFileSync(deadClassifyInputPath, JSON.stringify({
       schemaVersion: 'lumin-dead-classify-producer-request.v1',
@@ -1336,6 +1360,11 @@ writeFileSync(latest, JSON.stringify(advisory));
         requiresArtifactReads: false,
       },
       {
+        subcommand: 'compare-repos-artifact',
+        args: ['compare-repos-artifact', '--input', compareReposInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'dead-classify-artifact',
         args: ['dead-classify-artifact', '--input', deadClassifyInputPath],
         requiresArtifactReads: false,
@@ -1514,6 +1543,18 @@ function resultPayloadMatchesProbe(json, probe) {
       json.E2_silent_catch?.analysis === 'oxc-ast-catch-clause' &&
       Array.isArray(json._not_computed) &&
       json._not_computed.length >= 20;
+  }
+  if (probe.subcommand === 'compare-repos-artifact') {
+    return isObject(json.meta) &&
+      json.meta.tool === 'compare-repos.mjs' &&
+      json.left?.label === 'left' &&
+      json.right?.label === 'right' &&
+      json.deltas?.files === 2 &&
+      json.deltas?.loc === 6 &&
+      Array.isArray(json.right?.artifactsFound) &&
+      json.right.artifactsFound.includes('runtime-evidence.json') &&
+      Array.isArray(json.missingArtifacts?.left) &&
+      json.missingArtifacts.left.includes('runtime-evidence.json');
   }
   if (probe.subcommand === 'dead-classify-artifact') {
     return json.summary?.category_C === 1 &&

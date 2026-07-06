@@ -11,6 +11,7 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core block-clones-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core call-graph-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core checklist-facts-artifact --input <path|-> [--result-output <path>]
+       lumin-audit-core compare-repos-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core dead-classify-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core discipline-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core entry-surface-artifact --input <path|-> [--result-output <path>]
