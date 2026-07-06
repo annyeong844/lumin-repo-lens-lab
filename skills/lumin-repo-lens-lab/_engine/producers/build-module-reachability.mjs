@@ -4,9 +4,9 @@
 import path from 'node:path';
 
 import { atomicWrite } from '../lib/atomic-write.mjs';
+import { runAuditCoreJsonResultFile } from '../lib/audit-core.mjs';
 import { loadIfExists } from '../lib/artifacts.mjs';
 import { parseCliArgs } from '../lib/cli.mjs';
-import { buildModuleReachabilityArtifact } from '../lib/module-reachability.mjs';
 
 function readPositiveInteger(value, fallback, label) {
   if (value === undefined || value === null) return fallback;
@@ -35,13 +35,21 @@ if (!entrySurface) {
   process.exit(1);
 }
 
-const artifact = buildModuleReachabilityArtifact({
-  root: ROOT,
-  symbolsData,
-  entrySurface,
-  maxFilesVisited: readPositiveInteger(cli.raw['max-files-visited'], 200000, '--max-files-visited'),
-  maxEdgesVisited: readPositiveInteger(cli.raw['max-edges-visited'], 400000, '--max-edges-visited'),
-});
+const artifact = runAuditCoreJsonResultFile(
+  ['module-reachability-artifact', '--input', '-'],
+  'module-reachability-artifact',
+  {
+    input: JSON.stringify({
+      schemaVersion: 'lumin-module-reachability-producer-request.v1',
+      root: ROOT,
+      generated: new Date().toISOString(),
+      symbols: symbolsData,
+      entrySurface,
+      maxFilesVisited: readPositiveInteger(cli.raw['max-files-visited'], 200000, '--max-files-visited'),
+      maxEdgesVisited: readPositiveInteger(cli.raw['max-edges-visited'], 400000, '--max-edges-visited'),
+    }),
+  },
+);
 
 const outPath = path.join(OUTPUT, 'module-reachability.json');
 atomicWrite(outPath, JSON.stringify(artifact, null, 2));
