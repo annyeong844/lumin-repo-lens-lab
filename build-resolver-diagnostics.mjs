@@ -4,9 +4,9 @@
 import path from 'node:path';
 
 import { atomicWrite } from './_lib/atomic-write.mjs';
+import { runAuditCoreJsonResultFile } from './_lib/audit-core.mjs';
 import { loadIfExists } from './_lib/artifacts.mjs';
 import { parseCliArgs } from './_lib/cli.mjs';
-import { buildResolverDiagnosticsArtifacts } from './_lib/resolver-capabilities.mjs';
 
 const cli = parseCliArgs({});
 const OUTPUT = cli.output;
@@ -17,7 +17,17 @@ if (!symbolsData) {
   process.exit(1);
 }
 
-const { capabilities, diagnostics } = buildResolverDiagnosticsArtifacts(symbolsData);
+const { capabilities, diagnostics } = runAuditCoreJsonResultFile(
+  ['resolver-diagnostics-artifacts', '--input', '-'],
+  'resolver-diagnostics-artifacts',
+  {
+    input: JSON.stringify({
+      schemaVersion: 'lumin-resolver-diagnostics-producer-request.v1',
+      symbols: symbolsData,
+      capabilityArtifact: 'resolver-capabilities.json',
+    }),
+  },
+);
 
 const capabilitiesPath = path.join(OUTPUT, 'resolver-capabilities.json');
 const diagnosticsPath = path.join(OUTPUT, 'resolver-diagnostics.json');
