@@ -155,7 +155,8 @@ if (verbose) console.error(`[symbols] root: ${ROOT}, mode: ${repoMode.mode}`);
 // main scan loop below doesn't switch on language after this point.
 
 // ─── 전체 스캔 (incremental-aware, multi-language) ───────
-const langList = [...JS_FAMILY_LANGS];
+const MDX_FAMILY_LANGS = ["mdx"];
+const langList = [...JS_FAMILY_LANGS, ...SFC_FAMILY_LANGS, ...MDX_FAMILY_LANGS];
 if (pyEnabled) langList.push("py");
 if (tsEnabled) langList.push("go");
 
@@ -166,6 +167,18 @@ const PARSER_IDENTITY = "symbol-graph-extractors:v3";
 
 function isJsFamilyFile(filePath) {
   return JS_FAMILY_LANGS.includes(
+    path.extname(filePath).slice(1).toLowerCase(),
+  );
+}
+
+function isSfcFamilyFile(filePath) {
+  return SFC_FAMILY_LANGS.includes(
+    path.extname(filePath).slice(1).toLowerCase(),
+  );
+}
+
+function isMdxFamilyFile(filePath) {
+  return MDX_FAMILY_LANGS.includes(
     path.extname(filePath).slice(1).toLowerCase(),
   );
 }
@@ -202,7 +215,11 @@ const snapshot = phaseTimer.runPhase("snapshot", () =>
 const snapshotEntries = Object.values(snapshot.files);
 const files = snapshotEntries.map((entry) => entry.absPath);
 const scannedJsSourceFiles = new Set(files.filter(isJsFamilyFile));
+const mdxSourceFiles = files.filter(isMdxFamilyFile);
+const sfcSourceFiles = files.filter(isSfcFamilyFile);
 const jsTotal = files.filter(isJsFamilyFile).length;
+const mdxTotal = mdxSourceFiles.length;
+const sfcTotal = sfcSourceFiles.length;
 const pyTotal = files.filter((f) => f.endsWith(".py")).length;
 const goTotal = files.filter((f) => f.endsWith(".go")).length;
 phaseTimer.setCounter("snapshotFiles", files.length);
@@ -215,10 +232,12 @@ phaseTimer.setCounter(
   snapshotEntries.filter((entry) => !entry.readable).length,
 );
 phaseTimer.setCounter("snapshotJsFiles", jsTotal);
+phaseTimer.setCounter("snapshotMdxFiles", mdxTotal);
+phaseTimer.setCounter("snapshotSfcFiles", sfcTotal);
 phaseTimer.setCounter("snapshotPythonFiles", pyTotal);
 phaseTimer.setCounter("snapshotGoFiles", goTotal);
 console.error(
-  `[symbols] scanning ${files.length} files (python=${pyEnabled ? `on, ${pyTotal} .py` : "off"}, go=${tsEnabled ? `on, ${goTotal} .go` : "off"})`,
+  `[symbols] scanning ${files.length} files (mdx=${mdxTotal}, sfc=${sfcTotal}, python=${pyEnabled ? `on, ${pyTotal} .py` : "off"}, go=${tsEnabled ? `on, ${goTotal} .go` : "off"})`,
 );
 
 const incrementalEnabled = cli.raw?.["no-incremental"] !== true;
@@ -306,6 +325,8 @@ if (incrementalEnabled) {
 const extractChangedFilesStarted = Date.now();
 const changedPy = changed.filter((f) => f.endsWith(".py"));
 const changedJs = changed.filter(isJsFamilyFile);
+const changedMdx = changed.filter(isMdxFamilyFile);
+const changedSfc = changed.filter(isSfcFamilyFile);
 // v1.8.2: collect non-fatal failure records for explicit inclusion in
 // the artifact. Previously these went to stderr (or got silently
 // swallowed at a deeper level). The `warnings[]` field in
@@ -341,6 +362,8 @@ if (changedPy.length > 0 && pyEnabled) {
 // Pre-batch Go files (and any other tree-sitter languages).
 const changedTs = changed.filter((f) => f.endsWith(".go"));
 phaseTimer.setCounter("changedJsFiles", changedJs.length);
+phaseTimer.setCounter("changedMdxFiles", changedMdx.length);
+phaseTimer.setCounter("changedSfcFiles", changedSfc.length);
 phaseTimer.setCounter("changedPythonFiles", changedPy.length);
 phaseTimer.setCounter("changedGoFiles", changedTs.length);
 let tsBatch = new Map();
@@ -360,6 +383,8 @@ if (changedTs.length > 0 && tsEnabled) {
 let parseErrors = 0;
 let extractedFiles = 0;
 let extractedJsFiles = 0;
+let extractedMdxFiles = 0;
+let extractedSfcFiles = 0;
 let extractedPythonFiles = 0;
 let extractedGoFiles = 0;
 for (const f of changed) {
@@ -400,6 +425,10 @@ for (const f of changed) {
         continue;
       }
       payload = goExtractShape(f, goRec);
+    } else if (isMdxFamilyFile(f)) {
+      payload = { defs: [], uses: [], reExports: [], loc: 0 };
+    } else if (isSfcFamilyFile(f)) {
+      payload = { defs: [], uses: [], reExports: [], loc: 0 };
     } else {
       payload = extractDefinitionsAndUses(f, {
         artifactFilePath: relPath(ROOT, f),
@@ -413,6 +442,10 @@ for (const f of changed) {
       extractedGoFiles++;
     } else if (isJsFamilyFile(f)) {
       extractedJsFiles++;
+    } else if (isMdxFamilyFile(f)) {
+      extractedMdxFiles++;
+    } else if (isSfcFamilyFile(f)) {
+      extractedSfcFiles++;
     }
     if (incrementalEnabled && entry) {
       putFact(nextProducerCache, {
@@ -444,6 +477,8 @@ for (const [f, entry] of Object.entries(nextCache.entries)) {
 }
 phaseTimer.setCounter("extractedFiles", extractedFiles);
 phaseTimer.setCounter("extractedJsFiles", extractedJsFiles);
+phaseTimer.setCounter("extractedMdxFiles", extractedMdxFiles);
+phaseTimer.setCounter("extractedSfcFiles", extractedSfcFiles);
 phaseTimer.setCounter("extractedPythonFiles", extractedPythonFiles);
 phaseTimer.setCounter("extractedGoFiles", extractedGoFiles);
 phaseTimer.setCounter("parseErrorCount", parseErrors);
@@ -1863,6 +1898,7 @@ const mdxImportConsumers = collectMdxImportConsumers({
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
+  files: mdxSourceFiles,
 });
 phaseTimer.setCounter(
   "mdxImportConsumerCandidateCount",
@@ -1882,6 +1918,7 @@ const sfcImportConsumers = collectSfcImportConsumers({
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
+  files: sfcSourceFiles,
 });
 phaseTimer.setCounter(
   "sfcScriptImportConsumerCandidateCount",
@@ -1901,6 +1938,7 @@ const sfcScriptSources = collectSfcScriptSources({
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
+  files: sfcSourceFiles,
 });
 phaseTimer.setCounter("sfcScriptSrcCandidateCount", sfcScriptSources.length);
 sfcScriptSrcReachabilityUses =
@@ -1915,6 +1953,7 @@ const sfcStyleAssets = collectSfcStyleAssetReferences({
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
+  files: sfcSourceFiles,
 });
 phaseTimer.setCounter("sfcStyleAssetCandidateCount", sfcStyleAssets.length);
 sfcStyleAssetReferenceUses = processSfcStyleAssetReferences(sfcStyleAssets);
@@ -1928,6 +1967,7 @@ const sfcTemplateRefs = collectSfcTemplateComponentRefs({
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
+  files: sfcSourceFiles,
 });
 phaseTimer.setCounter(
   "sfcTemplateComponentRefCandidateCount",
@@ -1944,6 +1984,7 @@ const sfcGlobalRegistrations = collectSfcGlobalComponentRegistrations({
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
+  files,
 });
 phaseTimer.setCounter(
   "sfcGlobalComponentRegistrationCandidateCount",
@@ -1978,6 +2019,7 @@ const sfcFrameworkConventions = collectSfcFrameworkConventionComponents({
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
+  files: sfcSourceFiles,
 });
 phaseTimer.setCounter(
   "sfcFrameworkConventionComponentCandidateCount",

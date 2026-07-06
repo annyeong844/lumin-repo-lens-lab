@@ -54,6 +54,48 @@ function sfcLanguageForFile(filePath) {
   return path.extname(filePath).replace(/^\./, "").toLowerCase();
 }
 
+function filesForLanguages({
+  root,
+  includeTests = true,
+  exclude = [],
+  languages,
+  files = null,
+}) {
+  if (Array.isArray(files)) {
+    const allowed = new Set(languages);
+    return files.filter((filePath) => allowed.has(sfcLanguageForFile(filePath)));
+  }
+  return collectFiles(root, {
+    includeTests,
+    exclude,
+    languages,
+  });
+}
+
+function jsFamilyFiles({
+  root,
+  includeTests = true,
+  exclude = [],
+  files = null,
+}) {
+  if (Array.isArray(files)) {
+    const allowed = new Set(JS_FAMILY_LANGS);
+    return files.filter((filePath) => allowed.has(sfcLanguageForFile(filePath)));
+  }
+  return collectFiles(root, {
+    includeTests,
+    exclude,
+    languages: JS_FAMILY_LANGS,
+  });
+}
+
+const GLOBAL_COMPONENT_REGISTRATION_SOURCE_RE =
+  /(?:\.|\?\.)\s*component\s*\(|\[\s*["']component["']\s*\]\s*\(/;
+
+function mayContainGlobalComponentRegistration(src) {
+  return GLOBAL_COMPONENT_REGISTRATION_SOURCE_RE.test(`${src ?? ""}`);
+}
+
 function stripHtmlComments(src) {
   return `${src ?? ""}`.replace(/<!--[\s\S]*?-->/g, (match) =>
     " ".repeat(match.length),
@@ -1816,17 +1858,20 @@ function collectSfcNuxtComponentsAliasConventions({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   if (!hasNuxtConventionSignal(root)) return [];
   const out = [];
   const manifestByName = nuxtGeneratedManifestLookup(root);
-  const files = collectFiles(root, {
+  const sfcFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: SFC_FAMILY_LANGS,
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of sfcFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -2973,15 +3018,18 @@ export function collectSfcImportConsumers({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const sfcFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: SFC_FAMILY_LANGS,
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of sfcFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -3002,15 +3050,18 @@ export function collectSfcTemplateComponentRefs({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const sfcFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: SFC_FAMILY_LANGS,
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of sfcFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -3027,21 +3078,24 @@ export function collectSfcGlobalComponentRegistrations({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const sourceFiles = jsFamilyFiles({
+    root,
     includeTests,
     exclude,
-    languages: JS_FAMILY_LANGS,
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of sourceFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
     } catch {
       continue;
     }
+    if (!mayContainGlobalComponentRegistration(src)) continue;
     out.push(...parseSfcGlobalComponentRegistrations(src, filePath));
   }
 
@@ -3074,6 +3128,7 @@ export function collectSfcFrameworkConventionComponents({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
   const resolvedRoot = path.resolve(root);
@@ -3083,6 +3138,7 @@ export function collectSfcFrameworkConventionComponents({
       root: resolvedRoot,
       includeTests,
       exclude,
+      files,
     }),
   );
   out.push(
@@ -3090,6 +3146,7 @@ export function collectSfcFrameworkConventionComponents({
       root: resolvedRoot,
       includeTests,
       exclude,
+      files,
     }),
   );
   out.push(
@@ -3097,6 +3154,7 @@ export function collectSfcFrameworkConventionComponents({
       root: resolvedRoot,
       includeTests,
       exclude,
+      files,
     }),
   );
   out.push(
@@ -3104,6 +3162,7 @@ export function collectSfcFrameworkConventionComponents({
       root: resolvedRoot,
       includeTests,
       exclude,
+      files,
     }),
   );
   out.push(
@@ -3111,6 +3170,7 @@ export function collectSfcFrameworkConventionComponents({
       root: resolvedRoot,
       includeTests,
       exclude,
+      files,
     }),
   );
   out.push(
@@ -3118,6 +3178,7 @@ export function collectSfcFrameworkConventionComponents({
       root: resolvedRoot,
       includeTests,
       exclude,
+      files,
     }),
   );
   out.push(...collectSfcNuxtComponentsDirConfigConventions({ root: resolvedRoot }));
@@ -3140,13 +3201,15 @@ export function collectSfcFrameworkConventionComponents({
   if (hasNuxtConventionSignal(resolvedRoot)) {
     const hasAppDirConventionSignal =
       hasNuxtAppDirConventionSignal(resolvedRoot);
-    const files = collectFiles(resolvedRoot, {
+    const vueFiles = filesForLanguages({
+      root: resolvedRoot,
       includeTests,
       exclude,
       languages: ["vue"],
+      files,
     });
 
-    for (const filePath of files) {
+    for (const filePath of vueFiles) {
       const rel = path.relative(resolvedRoot, filePath);
       const conventionRoot = nuxtConventionRootForRelPath(rel);
       if (!conventionRoot) continue;
@@ -3173,15 +3236,18 @@ function collectSfcVueOptionsRegistrationConventions({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const vueFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: ["vue"],
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of vueFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -3208,15 +3274,18 @@ function collectSfcVueMacroRegistrationConventions({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const vueFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: ["vue"],
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of vueFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -3243,15 +3312,18 @@ function collectSfcSvelteActionDirectiveConventions({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const svelteFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: ["svelte"],
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of svelteFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -3280,15 +3352,18 @@ function collectSfcSvelteStoreSubscriptionConventions({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const svelteFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: ["svelte"],
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of svelteFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -3333,15 +3408,18 @@ function collectSfcAstroClientDirectiveConventions({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const astroFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: ["astro"],
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of astroFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -3370,15 +3448,18 @@ export function collectSfcStyleAssetReferences({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const sfcFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: SFC_FAMILY_LANGS,
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of sfcFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
@@ -3395,15 +3476,18 @@ export function collectSfcScriptSources({
   root,
   includeTests = true,
   exclude = [],
+  files = null,
 }) {
   const out = [];
-  const files = collectFiles(root, {
+  const sfcFiles = filesForLanguages({
+    root,
     includeTests,
     exclude,
     languages: SFC_FAMILY_LANGS,
+    files,
   });
 
-  for (const filePath of files) {
+  for (const filePath of sfcFiles) {
     let src;
     try {
       src = readFileSync(filePath, "utf8");
