@@ -88,22 +88,6 @@ function importBindingNames(source) {
   return { named, namespace };
 }
 
-function hasMemberAccess(source, localName) {
-  return new RegExp(String.raw`\b${escapeRegExp(localName)}\s*(?:\.|\?\s*\.|\[)`).test(source);
-}
-
-function sourceWithoutStaticImports(source) {
-  return source
-    .replace(/\bimport\s+(?:type\s+)?[\s\S]*?\s+from\s*["'][^"']+["']\s*;?/g, '')
-    .replace(/\bimport\s*["'][^"']+["']\s*;?/g, '');
-}
-
-function hasIdentifierUse(source, localName) {
-  return new RegExp(String.raw`\b${escapeRegExp(localName)}\b`).test(
-    sourceWithoutStaticImports(source),
-  );
-}
-
 function exportedLocalNames(source) {
   const names = new Set();
   for (const match of source.matchAll(/\bexport\s*\{([^}]*)\}/gms)) {
@@ -150,14 +134,6 @@ export function rustJsEligibilityForSource(source) {
   const imports = importBindingNames(source);
   if (imports.namespace.size > 0) {
     return { eligible: false, reason: 'namespace-import' };
-  }
-  for (const localName of imports.named) {
-    if (hasMemberAccess(source, localName)) {
-      return { eligible: false, reason: 'named-import-member-access' };
-    }
-    if (hasIdentifierUse(source, localName)) {
-      return { eligible: false, reason: 'named-import-alias-escape' };
-    }
   }
 
   return { eligible: true, reason: null };

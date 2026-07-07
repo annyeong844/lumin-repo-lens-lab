@@ -101,6 +101,15 @@ export default class Widget {
                 "kind": "reExportNamespace",
                 "typeOnly": false,
                 "line": 5
+            },
+            {
+                "fromSpec": "./dep",
+                "name": "foo",
+                "kind": "imported-namespace-escape",
+                "typeOnly": false,
+                "line": 1,
+                "localName": "localFoo",
+                "degraded": true
             }
         ])
     );
@@ -185,6 +194,99 @@ fn cli_js_ts_extract_preserves_namespace_import_consumers() -> Result<()> {
             "line": 1,
             "localName": "api"
         }])
+    );
+    Ok(())
+}
+
+#[test]
+fn cli_js_ts_extract_preserves_named_import_member_precision() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("request.json");
+    let result = temp.path().join("result.json");
+    fs::write(
+        &input,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-js-ts-extract-request.v1",
+            "files": [{
+                "filePath": "C:/repo/src/consumer.ts",
+                "artifactFilePath": "src/consumer.ts",
+                "source": concat!(
+                    "import { api, api as escaped, safe, shadowed } from \"./barrel\";\n",
+                    "api.foo();\n",
+                    "consume(escaped);\n",
+                    "if (safe) {}\n",
+                    "function inner(shadowed) { shadowed.foo(); }\n"
+                )
+            }]
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("js-ts-extract-artifact")
+        .arg("--input")
+        .arg(&input)
+        .arg("--result-output")
+        .arg(&result)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let artifact: Value = serde_json::from_slice(&fs::read(&result)?)?;
+    assert_eq!(
+        artifact["files"][0]["uses"],
+        json!([
+            {
+                "fromSpec": "./barrel",
+                "name": "api",
+                "kind": "import",
+                "typeOnly": false,
+                "line": 1
+            },
+            {
+                "fromSpec": "./barrel",
+                "name": "api",
+                "kind": "import",
+                "typeOnly": false,
+                "line": 1,
+                "localName": "escaped"
+            },
+            {
+                "fromSpec": "./barrel",
+                "name": "safe",
+                "kind": "import",
+                "typeOnly": false,
+                "line": 1
+            },
+            {
+                "fromSpec": "./barrel",
+                "name": "shadowed",
+                "kind": "import",
+                "typeOnly": false,
+                "line": 1
+            },
+            {
+                "fromSpec": "./barrel",
+                "name": "api",
+                "memberName": "foo",
+                "kind": "imported-namespace-member",
+                "typeOnly": false,
+                "line": 2,
+                "localName": "api"
+            },
+            {
+                "fromSpec": "./barrel",
+                "name": "api",
+                "kind": "imported-namespace-escape",
+                "typeOnly": false,
+                "line": 1,
+                "localName": "escaped",
+                "degraded": true
+            }
+        ])
     );
     Ok(())
 }

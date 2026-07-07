@@ -1,16 +1,21 @@
 use anyhow::{anyhow, bail, Result};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    BindingPattern, Class, ClassElement, Declaration, ExportAllDeclaration,
-    ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportNamedDeclaration, Expression,
-    ImportDeclarationSpecifier, ImportOrExportKind, MethodDefinition, MethodDefinitionKind,
-    ModuleExportName, Program, PropertyDefinition, PropertyKey, Statement, TSAccessibility,
-    VariableDeclaration, VariableDeclarationKind,
+    AssignmentExpression, BindingIdentifier, BindingPattern, Class, ClassElement, Declaration,
+    ExportAllDeclaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind,
+    ExportNamedDeclaration, Expression, IdentifierReference, IfStatement, ImportDeclaration,
+    ImportDeclarationSpecifier, ImportOrExportKind, LogicalExpression, MemberExpression,
+    MethodDefinition, MethodDefinitionKind, ModuleExportName, Program, PropertyDefinition,
+    PropertyKey, SimpleAssignmentTarget, Statement, TSAccessibility, UnaryExpression,
+    UpdateExpression, VariableDeclaration, VariableDeclarationKind,
 };
+use oxc_ast_visit::{walk, Visit};
 use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType, Span};
+use oxc_syntax::operator::UnaryOperator;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 pub const JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION: &str = "lumin-js-ts-extract-request.v1";
@@ -73,11 +78,15 @@ pub struct DefinitionRecord {
 pub struct UseRecord {
     pub from_spec: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member_name: Option<String>,
     pub kind: String,
     pub type_only: bool,
     pub line: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_name: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub degraded: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved_file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -115,6 +124,32 @@ pub struct ClassMethodRecord {
 struct LocalDeclaration {
     node_kind: &'static str,
     span: Span,
+}
+
+#[derive(Debug)]
+struct NamedImportSeed {
+    from_spec: String,
+    imported_name: String,
+    local_name: String,
+    type_only: bool,
+    line: usize,
+}
+
+#[derive(Debug)]
+struct NamedImportMemberUse {
+    name: String,
+    line: usize,
+}
+
+#[derive(Debug)]
+struct NamedImportPrecisionRecord {
+    from_spec: String,
+    imported_name: String,
+    local_name: String,
+    type_only: bool,
+    line: usize,
+    members: Vec<NamedImportMemberUse>,
+    degraded: bool,
 }
 
 pub fn build_js_ts_extract_response(request: JsTsExtractRequest) -> Result<JsTsExtractResponse> {
@@ -186,6 +221,7 @@ fn extract_file(
     let mut uses = Vec::new();
     let mut re_exports = Vec::new();
     let local_declarations = collect_top_level_declaration_targets(&parsed.program);
+    let named_imports = collect_named_import_seeds(&parsed.program, &line_starts);
 
     for statement in &parsed.program.body {
         collect_export_definitions(
@@ -198,6 +234,11 @@ fn extract_file(
         collect_re_exports(statement, &mut re_exports, &mut uses, &line_starts);
         collect_imports(statement, &mut uses, &line_starts);
     }
+    uses.extend(collect_named_import_precision_uses(
+        &parsed.program,
+        named_imports,
+        &line_starts,
+    ));
     annotate_relative_resolutions(&input.file_path, &mut uses, relative_resolver);
 
     let class_methods =
@@ -214,6 +255,11 @@ fn extract_file(
         loc: line_count(&input.source),
         error: None,
     })
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn source_type_for_path(file_path: &str) -> SourceType {
@@ -625,11 +671,13 @@ fn collect_re_exports(
                 uses.push(UseRecord {
                     from_spec: source.value.to_string(),
                     name,
+                    member_name: None,
                     kind: "reExport".to_string(),
                     type_only: is_type_only(export.export_kind)
                         || is_type_only(specifier.export_kind),
                     line: line_for_span(line_starts, specifier.span),
                     local_name: None,
+                    degraded: false,
                     resolved_file: None,
                     resolver_stage: None,
                 });
@@ -660,6 +708,7 @@ fn collect_export_all(
     uses.push(UseRecord {
         from_spec: export.source.value.to_string(),
         name: namespace.unwrap_or_else(|| "*".to_string()),
+        member_name: None,
         kind: if export.exported.is_some() {
             "reExportNamespace"
         } else {
@@ -669,6 +718,7 @@ fn collect_export_all(
         type_only: is_type_only(export.export_kind),
         line: line_for_span(line_starts, export.span),
         local_name: None,
+        degraded: false,
         resolved_file: None,
         resolver_stage: None,
     });
@@ -686,10 +736,12 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
         uses.push(UseRecord {
             from_spec: import.source.value.to_string(),
             name: "*".to_string(),
+            member_name: None,
             kind: "import-side-effect".to_string(),
             type_only: false,
             line: line_for_span(line_starts, import.span),
             local_name: None,
+            degraded: false,
             resolved_file: None,
             resolver_stage: None,
         });
@@ -705,11 +757,13 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
                 uses.push(UseRecord {
                     from_spec: import.source.value.to_string(),
                     name: imported_name.clone(),
+                    member_name: None,
                     kind: "import".to_string(),
                     type_only: is_type_only(import.import_kind)
                         || is_type_only(specifier.import_kind),
                     line: line_for_span(line_starts, specifier.span),
                     local_name: (local_name != imported_name).then_some(local_name),
+                    degraded: false,
                     resolved_file: None,
                     resolver_stage: None,
                 });
@@ -718,10 +772,12 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
                 uses.push(UseRecord {
                     from_spec: import.source.value.to_string(),
                     name: "default".to_string(),
+                    member_name: None,
                     kind: "default".to_string(),
                     type_only: is_type_only(import.import_kind),
                     line: line_for_span(line_starts, specifier.span),
                     local_name: None,
+                    degraded: false,
                     resolved_file: None,
                     resolver_stage: None,
                 });
@@ -730,15 +786,423 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
                 uses.push(UseRecord {
                     from_spec: import.source.value.to_string(),
                     name: "*".to_string(),
+                    member_name: None,
                     kind: "namespace".to_string(),
                     type_only: is_type_only(import.import_kind),
                     line: line_for_span(line_starts, specifier.span),
                     local_name: Some(specifier.local.name.to_string()),
+                    degraded: false,
                     resolved_file: None,
                     resolver_stage: None,
                 });
             }
         }
+    }
+}
+
+fn collect_named_import_seeds(
+    program: &Program<'_>,
+    line_starts: &[usize],
+) -> Vec<NamedImportSeed> {
+    let mut out = Vec::new();
+    for statement in &program.body {
+        let Statement::ImportDeclaration(import) = statement else {
+            continue;
+        };
+        let specifiers = import
+            .specifiers
+            .as_ref()
+            .map_or(&[][..], |items| items.as_slice());
+        for specifier in specifiers {
+            let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier else {
+                continue;
+            };
+            let imported_name = module_export_identifier_name(&specifier.imported)
+                .unwrap_or_else(|| specifier.local.name.to_string());
+            out.push(NamedImportSeed {
+                from_spec: import.source.value.to_string(),
+                imported_name,
+                local_name: specifier.local.name.to_string(),
+                type_only: is_type_only(import.import_kind) || is_type_only(specifier.import_kind),
+                line: line_for_span(line_starts, specifier.span),
+            });
+        }
+    }
+    out
+}
+
+fn collect_named_import_precision_uses(
+    program: &Program<'_>,
+    seeds: Vec<NamedImportSeed>,
+    line_starts: &[usize],
+) -> Vec<UseRecord> {
+    if seeds.is_empty() {
+        return Vec::new();
+    }
+    let mut visitor = NamedImportPrecisionVisitor::new(seeds, line_starts);
+    visitor.visit_program(program);
+    visitor.into_uses()
+}
+
+struct NamedImportPrecisionVisitor<'a> {
+    records: Vec<NamedImportPrecisionRecord>,
+    index_by_local: BTreeMap<String, usize>,
+    scopes: Vec<BTreeSet<String>>,
+    line_starts: &'a [usize],
+    non_escaping_identifier_depth: usize,
+}
+
+impl<'a> NamedImportPrecisionVisitor<'a> {
+    fn new(seeds: Vec<NamedImportSeed>, line_starts: &'a [usize]) -> Self {
+        let mut records = Vec::with_capacity(seeds.len());
+        let mut index_by_local = BTreeMap::new();
+        for seed in seeds {
+            let index = records.len();
+            index_by_local
+                .entry(seed.local_name.clone())
+                .or_insert(index);
+            records.push(NamedImportPrecisionRecord {
+                from_spec: seed.from_spec,
+                imported_name: seed.imported_name,
+                local_name: seed.local_name,
+                type_only: seed.type_only,
+                line: seed.line,
+                members: Vec::new(),
+                degraded: false,
+            });
+        }
+        Self {
+            records,
+            index_by_local,
+            scopes: vec![BTreeSet::new()],
+            line_starts,
+            non_escaping_identifier_depth: 0,
+        }
+    }
+
+    fn into_uses(self) -> Vec<UseRecord> {
+        let mut uses = Vec::new();
+        for record in self.records {
+            if !record.members.is_empty() && !record.degraded {
+                for member in record.members {
+                    uses.push(UseRecord {
+                        from_spec: record.from_spec.clone(),
+                        name: record.imported_name.clone(),
+                        member_name: Some(member.name),
+                        kind: "imported-namespace-member".to_string(),
+                        type_only: record.type_only,
+                        line: member.line,
+                        local_name: Some(record.local_name.clone()),
+                        degraded: false,
+                        resolved_file: None,
+                        resolver_stage: None,
+                    });
+                }
+            } else if record.degraded {
+                uses.push(UseRecord {
+                    from_spec: record.from_spec,
+                    name: record.imported_name,
+                    member_name: None,
+                    kind: "imported-namespace-escape".to_string(),
+                    type_only: record.type_only,
+                    line: record.line,
+                    local_name: Some(record.local_name),
+                    degraded: true,
+                    resolved_file: None,
+                    resolver_stage: None,
+                });
+            }
+        }
+        uses
+    }
+
+    fn active_record_index(&self, local_name: &str) -> Option<usize> {
+        if self
+            .scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.contains(local_name))
+        {
+            return None;
+        }
+        self.index_by_local.get(local_name).copied()
+    }
+
+    fn add_binding(&mut self, binding: &BindingIdentifier<'_>) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(binding.name.to_string());
+        }
+    }
+
+    fn record_member(&mut self, local_name: &str, member_name: String, line: usize) {
+        if let Some(index) = self.active_record_index(local_name) {
+            self.records[index].members.push(NamedImportMemberUse {
+                name: member_name,
+                line,
+            });
+        }
+    }
+
+    fn degrade(&mut self, local_name: &str) {
+        if let Some(index) = self.active_record_index(local_name) {
+            self.records[index].degraded = true;
+        }
+    }
+
+    fn with_non_escaping_identifiers(&mut self, f: impl FnOnce(&mut Self)) {
+        self.non_escaping_identifier_depth += 1;
+        f(self);
+        self.non_escaping_identifier_depth -= 1;
+    }
+}
+
+impl<'a> Visit<'a> for NamedImportPrecisionVisitor<'_> {
+    fn enter_scope(
+        &mut self,
+        _flags: oxc_syntax::scope::ScopeFlags,
+        _scope_id: &Cell<Option<oxc_syntax::scope::ScopeId>>,
+    ) {
+        self.scopes.push(BTreeSet::new());
+    }
+
+    fn leave_scope(&mut self) {
+        self.scopes.pop();
+        if self.scopes.is_empty() {
+            self.scopes.push(BTreeSet::new());
+        }
+    }
+
+    fn visit_import_declaration(&mut self, _it: &ImportDeclaration<'a>) {}
+
+    fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
+        self.add_binding(it);
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        if self.non_escaping_identifier_depth == 0 {
+            self.degrade(it.name.as_str());
+        }
+    }
+
+    fn visit_member_expression(&mut self, it: &MemberExpression<'a>) {
+        if let Some(local_name) = member_object_identifier_name(it) {
+            if let Some(member_name) = static_member_property_name(it) {
+                let line = line_for_span(self.line_starts, it.span());
+                self.record_member(&local_name, member_name, line);
+            } else {
+                self.degrade(&local_name);
+                if let MemberExpression::ComputedMemberExpression(member) = it {
+                    self.visit_expression(&member.expression);
+                }
+            }
+            return;
+        }
+        walk::walk_member_expression(self, it);
+    }
+
+    fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
+        if let Some(local_name) = assignment_target_identifier_name(&it.left) {
+            self.degrade(&local_name);
+            self.visit_expression(&it.right);
+            return;
+        }
+        if let Some(local_name) = assignment_target_member_object_identifier_name(&it.left) {
+            self.degrade(&local_name);
+            self.visit_expression(&it.right);
+            return;
+        }
+        walk::walk_assignment_expression(self, it);
+    }
+
+    fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
+        if let Some(local_name) = simple_assignment_target_identifier_name(&it.argument) {
+            self.degrade(&local_name);
+            return;
+        }
+        if let Some(local_name) =
+            simple_assignment_target_member_object_identifier_name(&it.argument)
+        {
+            self.degrade(&local_name);
+            return;
+        }
+        walk::walk_update_expression(self, it);
+    }
+
+    fn visit_unary_expression(&mut self, it: &UnaryExpression<'a>) {
+        if it.operator == UnaryOperator::Typeof {
+            self.with_non_escaping_identifiers(|visitor| {
+                visitor.visit_expression(&it.argument);
+            });
+            return;
+        }
+        if it.operator == UnaryOperator::Delete {
+            if let Some(local_name) = expression_identifier_name(&it.argument) {
+                self.degrade(&local_name);
+                return;
+            }
+            if let Some(local_name) = expression_member_object_identifier_name(&it.argument) {
+                self.degrade(&local_name);
+                return;
+            }
+        }
+        walk::walk_unary_expression(self, it);
+    }
+
+    fn visit_if_statement(&mut self, it: &IfStatement<'a>) {
+        self.with_non_escaping_identifiers(|visitor| {
+            visitor.visit_expression(&it.test);
+        });
+        self.visit_statement(&it.consequent);
+        if let Some(alternate) = &it.alternate {
+            self.visit_statement(alternate);
+        }
+    }
+
+    fn visit_logical_expression(&mut self, it: &LogicalExpression<'a>) {
+        self.with_non_escaping_identifiers(|visitor| {
+            visitor.visit_expression(&it.left);
+        });
+        self.visit_expression(&it.right);
+    }
+}
+
+fn expression_identifier_name(expression: &Expression<'_>) -> Option<String> {
+    match expression {
+        Expression::Identifier(identifier) => Some(identifier.name.to_string()),
+        Expression::ParenthesizedExpression(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        Expression::ChainExpression(_) => None,
+        Expression::TSAsExpression(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        Expression::TSSatisfiesExpression(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        Expression::TSNonNullExpression(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        Expression::TSTypeAssertion(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        Expression::TSInstantiationExpression(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        _ => None,
+    }
+}
+
+fn expression_member_object_identifier_name(expression: &Expression<'_>) -> Option<String> {
+    match expression {
+        Expression::ParenthesizedExpression(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        Expression::ChainExpression(expression) => expression
+            .expression
+            .as_member_expression()
+            .and_then(member_object_identifier_name),
+        Expression::TSAsExpression(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        Expression::TSSatisfiesExpression(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        Expression::TSNonNullExpression(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        Expression::TSTypeAssertion(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        Expression::TSInstantiationExpression(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        expression => expression
+            .as_member_expression()
+            .and_then(member_object_identifier_name),
+    }
+}
+
+fn member_object_identifier_name(member: &MemberExpression<'_>) -> Option<String> {
+    match member {
+        MemberExpression::StaticMemberExpression(member) => {
+            expression_identifier_name(&member.object)
+        }
+        MemberExpression::ComputedMemberExpression(member) => {
+            expression_identifier_name(&member.object)
+        }
+        MemberExpression::PrivateFieldExpression(member) => {
+            expression_identifier_name(&member.object)
+        }
+    }
+}
+
+fn static_member_property_name(member: &MemberExpression<'_>) -> Option<String> {
+    match member {
+        MemberExpression::StaticMemberExpression(member) => Some(member.property.name.to_string()),
+        MemberExpression::ComputedMemberExpression(member) => match &member.expression {
+            Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+            _ => None,
+        },
+        MemberExpression::PrivateFieldExpression(_) => None,
+    }
+}
+
+fn assignment_target_identifier_name(
+    target: &oxc_ast::ast::AssignmentTarget<'_>,
+) -> Option<String> {
+    target
+        .as_simple_assignment_target()
+        .and_then(simple_assignment_target_identifier_name)
+}
+
+fn assignment_target_member_object_identifier_name(
+    target: &oxc_ast::ast::AssignmentTarget<'_>,
+) -> Option<String> {
+    target
+        .as_simple_assignment_target()
+        .and_then(simple_assignment_target_member_object_identifier_name)
+}
+
+fn simple_assignment_target_identifier_name(target: &SimpleAssignmentTarget<'_>) -> Option<String> {
+    match target {
+        SimpleAssignmentTarget::AssignmentTargetIdentifier(identifier) => {
+            Some(identifier.name.to_string())
+        }
+        SimpleAssignmentTarget::TSAsExpression(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        SimpleAssignmentTarget::TSSatisfiesExpression(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        SimpleAssignmentTarget::TSNonNullExpression(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        SimpleAssignmentTarget::TSTypeAssertion(expression) => {
+            expression_identifier_name(&expression.expression)
+        }
+        _ => None,
+    }
+}
+
+fn simple_assignment_target_member_object_identifier_name(
+    target: &SimpleAssignmentTarget<'_>,
+) -> Option<String> {
+    match target {
+        SimpleAssignmentTarget::TSAsExpression(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        SimpleAssignmentTarget::TSSatisfiesExpression(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        SimpleAssignmentTarget::TSNonNullExpression(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        SimpleAssignmentTarget::TSTypeAssertion(expression) => {
+            expression_member_object_identifier_name(&expression.expression)
+        }
+        target => target
+            .as_member_expression()
+            .and_then(member_object_identifier_name),
     }
 }
 

@@ -21,8 +21,10 @@ lumin-rust-common = { path = "rust-common", default-features = false }
 lumin-rust-source-health = { path = "rust-sidecar/rust-source-health" }
 oxc_allocator = "0.139.0"
 oxc_ast = "0.139.0"
+oxc_ast_visit = "0.139.0"
 oxc_parser = "0.139.0"
 oxc_span = "0.139.0"
+oxc_syntax = "0.139.0"
 ra_ap_syntax = "=0.0.337"
 rayon = "1"
 serde = "1"
