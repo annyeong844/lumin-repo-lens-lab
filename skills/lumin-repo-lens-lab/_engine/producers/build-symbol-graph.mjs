@@ -339,9 +339,27 @@ const changedSfc = changed.filter(isSfcFamilyFile);
 // tools like `triage-repo` see what couldn't be processed — and decide
 // how to react.
 const warnings = [];
+const extractPhaseMs = {
+  pythonBatch: 0,
+  goBatch: 0,
+  jsFiles: 0,
+  mdxFiles: 0,
+  sfcFiles: 0,
+  pythonShapes: 0,
+  goShapes: 0,
+};
+function timeExtractPhase(bucket, action) {
+  const started = Date.now();
+  try {
+    return action();
+  } finally {
+    extractPhaseMs[bucket] += Date.now() - started;
+  }
+}
 
 let pyBatch = new Map();
 if (changedPy.length > 0 && pyEnabled) {
+  const pythonBatchStarted = Date.now();
   try {
     pyBatch = extractPythonBatch(changedPy) ?? new Map();
     // Python extractor surfaces stream-parse failures via a __meta__ key.
@@ -361,6 +379,8 @@ if (changedPy.length > 0 && pyEnabled) {
       message: e.message,
       affected: changedPy.length,
     });
+  } finally {
+    extractPhaseMs.pythonBatch += Date.now() - pythonBatchStarted;
   }
 }
 
@@ -373,6 +393,7 @@ phaseTimer.setCounter("changedPythonFiles", changedPy.length);
 phaseTimer.setCounter("changedGoFiles", changedTs.length);
 let tsBatch = new Map();
 if (changedTs.length > 0 && tsEnabled) {
+  const goBatchStarted = Date.now();
   try {
     tsBatch = (await extractTreeSitterBatch(changedTs)) ?? new Map();
   } catch (e) {
@@ -382,6 +403,8 @@ if (changedTs.length > 0 && tsEnabled) {
       message: e.message,
       affected: changedTs.length,
     });
+  } finally {
+    extractPhaseMs.goBatch += Date.now() - goBatchStarted;
   }
 }
 
@@ -412,7 +435,9 @@ for (const f of changed) {
         }
         continue;
       }
-      payload = pythonExtractShape(f, pyRec);
+      payload = timeExtractPhase("pythonShapes", () =>
+        pythonExtractShape(f, pyRec),
+      );
     } else if (f.endsWith(".go")) {
       const goRec = tsBatch.get(f);
       if (!goRec || goRec.error) {
@@ -429,15 +454,27 @@ for (const f of changed) {
         }
         continue;
       }
-      payload = goExtractShape(f, goRec);
+      payload = timeExtractPhase("goShapes", () => goExtractShape(f, goRec));
     } else if (isMdxFamilyFile(f)) {
-      payload = { defs: [], uses: [], reExports: [], loc: 0 };
+      payload = timeExtractPhase("mdxFiles", () => ({
+        defs: [],
+        uses: [],
+        reExports: [],
+        loc: 0,
+      }));
     } else if (isSfcFamilyFile(f)) {
-      payload = { defs: [], uses: [], reExports: [], loc: 0 };
+      payload = timeExtractPhase("sfcFiles", () => ({
+        defs: [],
+        uses: [],
+        reExports: [],
+        loc: 0,
+      }));
     } else {
-      payload = extractDefinitionsAndUses(f, {
-        artifactFilePath: relPath(ROOT, f),
-      });
+      payload = timeExtractPhase("jsFiles", () =>
+        extractDefinitionsAndUses(f, {
+          artifactFilePath: relPath(ROOT, f),
+        }),
+      );
     }
     nextCache.entries[f] = { ...payload, parseError: false };
     extractedFiles++;
@@ -472,6 +509,13 @@ for (const f of changed) {
     }
   }
 }
+phaseTimer.recordPhase("extract-python-batch", extractPhaseMs.pythonBatch);
+phaseTimer.recordPhase("extract-go-batch", extractPhaseMs.goBatch);
+phaseTimer.recordPhase("extract-js-files", extractPhaseMs.jsFiles);
+phaseTimer.recordPhase("extract-mdx-files", extractPhaseMs.mdxFiles);
+phaseTimer.recordPhase("extract-sfc-files", extractPhaseMs.sfcFiles);
+phaseTimer.recordPhase("extract-python-shapes", extractPhaseMs.pythonShapes);
+phaseTimer.recordPhase("extract-go-shapes", extractPhaseMs.goShapes);
 phaseTimer.recordPhase(
   "extract-changed-files",
   Date.now() - extractChangedFilesStarted,
