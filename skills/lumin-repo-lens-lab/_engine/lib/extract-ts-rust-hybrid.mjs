@@ -13,9 +13,10 @@ const MAX_BATCH_SOURCE_BYTES = 16 * 1024 * 1024;
 // look unreferenced to downstream dead-export consumers.
 const STATIC_UNSUPPORTED_PATTERNS = [
   ['cjs-require', /\brequire\s*\(/],
-  ['cjs-export-surface', /\b(?:module\s*\.\s*exports|exports\s*\.)/],
+  ['cjs-export-surface', /\b(?:module\s*\.\s*)?exports\s*(?:\.|\[|=)/],
   ['dynamic-import', /\bimport\s*\(/],
   ['import-meta', /\bimport\s*\.\s*meta\b/],
+  ['comment-type-escape', /@ts-(?:ignore|expect-error|nocheck)\b/],
   ['type-escape', /\b(?:any|unknown)\b/],
 ];
 
@@ -47,8 +48,10 @@ const LOCAL_OPERATION_VERBS = [
   'write',
 ];
 
-const LOCAL_OPERATION_PATTERN = new RegExp(
-  String.raw`\bexport\s+(?:async\s+)?(?:function|const)\s+[$A-Z_a-z][$\w]*[\s\S]{0,2000}\b(?:function|const)\s+(?:${LOCAL_OPERATION_VERBS.join('|')})[$A-Z_a-z0-9_]*\b`,
+const IDENTIFIER_PATTERN = String.raw`[$A-Z_a-z][$\w]*`;
+const LOCAL_OPERATION_DECL_PATTERN = String.raw`\b(?:function|const|let|var)\s+(?:${LOCAL_OPERATION_VERBS.join('|')})[$A-Z_a-z0-9_]*\b`;
+const INLINE_EXPORTED_LOCAL_OPERATION_PATTERN = new RegExp(
+  String.raw`\bexport\s+(?:default\s+)?(?:async\s+)?(?:function(?:\s+${IDENTIFIER_PATTERN})?|const\s+${IDENTIFIER_PATTERN})[\s\S]{0,2000}${LOCAL_OPERATION_DECL_PATTERN}`,
 );
 
 function emptyReasonCounts() {
@@ -86,14 +89,61 @@ function importBindingNames(source) {
 }
 
 function hasMemberAccess(source, localName) {
-  return new RegExp(String.raw`\b${escapeRegExp(localName)}\s*\.`).test(source);
+  return new RegExp(String.raw`\b${escapeRegExp(localName)}\s*(?:\.|\?\s*\.|\[)`).test(source);
+}
+
+function sourceWithoutStaticImports(source) {
+  return source
+    .replace(/\bimport\s+(?:type\s+)?[\s\S]*?\s+from\s*["'][^"']+["']\s*;?/g, '')
+    .replace(/\bimport\s*["'][^"']+["']\s*;?/g, '');
+}
+
+function hasIdentifierUse(source, localName) {
+  return new RegExp(String.raw`\b${escapeRegExp(localName)}\b`).test(
+    sourceWithoutStaticImports(source),
+  );
+}
+
+function exportedLocalNames(source) {
+  const names = new Set();
+  for (const match of source.matchAll(/\bexport\s*\{([^}]*)\}/gms)) {
+    const rest = source.slice(match.index + match[0].length);
+    if (/^\s*from\b/.test(rest)) continue;
+    for (const rawPart of match[1].split(',')) {
+      const part = rawPart.trim().replace(/^type\s+/, '');
+      if (!part) continue;
+      const localName = part.match(/^([$A-Z_a-z][$\w]*)/)?.[1];
+      if (localName) names.add(localName);
+    }
+  }
+  for (const match of source.matchAll(/\bexport\s+default\s+([$A-Z_a-z][$\w]*)\b/g)) {
+    names.add(match[1]);
+  }
+  return names;
+}
+
+function hasLocalOperationInDeclaration(source, localName) {
+  const name = escapeRegExp(localName);
+  return [
+    new RegExp(String.raw`\b(?:async\s+)?function\s+${name}\b[\s\S]{0,2000}${LOCAL_OPERATION_DECL_PATTERN}`),
+    new RegExp(String.raw`\b(?:const|let|var)\s+${name}\b[\s\S]{0,2000}${LOCAL_OPERATION_DECL_PATTERN}`),
+    new RegExp(String.raw`\bclass\s+${name}\b[\s\S]{0,2000}${LOCAL_OPERATION_DECL_PATTERN}`),
+  ].some((pattern) => pattern.test(source));
+}
+
+function hasExportedLocalOperationCandidate(source) {
+  if (INLINE_EXPORTED_LOCAL_OPERATION_PATTERN.test(source)) return true;
+  for (const localName of exportedLocalNames(source)) {
+    if (hasLocalOperationInDeclaration(source, localName)) return true;
+  }
+  return false;
 }
 
 export function rustJsEligibilityForSource(source) {
   for (const [reason, pattern] of STATIC_UNSUPPORTED_PATTERNS) {
     if (pattern.test(source)) return { eligible: false, reason };
   }
-  if (LOCAL_OPERATION_PATTERN.test(source)) {
+  if (hasExportedLocalOperationCandidate(source)) {
     return { eligible: false, reason: 'local-operation-candidate' };
   }
 
@@ -104,6 +154,9 @@ export function rustJsEligibilityForSource(source) {
   for (const localName of imports.named) {
     if (hasMemberAccess(source, localName)) {
       return { eligible: false, reason: 'named-import-member-access' };
+    }
+    if (hasIdentifierUse(source, localName)) {
+      return { eligible: false, reason: 'named-import-alias-escape' };
     }
   }
 
