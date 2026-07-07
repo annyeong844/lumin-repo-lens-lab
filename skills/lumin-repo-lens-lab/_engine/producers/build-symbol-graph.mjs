@@ -141,6 +141,7 @@ function resolveSpecifier(from, use) {
   if (!_resolveRaw) {
     throw new Error("symbol resolver used before repo snapshot initialization");
   }
+  if (isRustResolvedRelativeUse(use)) return use.resolvedFile;
   const r = _resolveRaw(from, spec);
   // v1.9.7: preserve resolver sentinels so the caller can distinguish
   // external packages (react, oxc-parser) from failed local aliases
@@ -167,7 +168,7 @@ if (tsEnabled) langList.push("go");
 const PRODUCER_ID = "symbols";
 const PRODUCER_VERSION = 1;
 const FACT_SCHEMA_VERSION = 5;
-const PARSER_IDENTITY = "symbol-graph-extractors:v4-rust-js-hybrid";
+const PARSER_IDENTITY = "symbol-graph-extractors:v5-rust-js-relative-resolve";
 const incrementalEnabled = cli.raw?.["no-incremental"] !== true;
 
 function isJsFamilyFile(filePath) {
@@ -417,6 +418,7 @@ let rustJsHybrid = {
     eligibleFiles: 0,
     fallbackFiles: changedJs.length,
     rustExtractedFiles: 0,
+    rustResolvedRelativeUses: 0,
     rustParseErrorFiles: 0,
     readErrorFiles: 0,
     commandFailedFiles: 0,
@@ -432,6 +434,7 @@ if (changedJs.length > 0) {
     rustJsHybrid = extractRustJsHybridBatch({
       root: ROOT,
       files: changedJs,
+      sourceFiles: scannedJsSourceFiles,
       verbose,
     });
     warnings.push(...rustJsHybrid.warnings);
@@ -598,6 +601,10 @@ phaseTimer.setCounter(
   rustJsHybrid.summary.rustExtractedFiles,
 );
 phaseTimer.setCounter(
+  "rustJsExtractorResolvedRelativeUses",
+  rustJsHybrid.summary.rustResolvedRelativeUses ?? 0,
+);
+phaseTimer.setCounter(
   "rustJsExtractorParseErrorFiles",
   rustJsHybrid.summary.rustParseErrorFiles,
 );
@@ -729,6 +736,7 @@ let unresolvedUses = 0;
 // blind spots. Feeds into fix-plan's resolverBlindness gate.
 let resolvedInternalUses = 0;
 let resolvedGeneratedVirtualUses = 0;
+let rustResolvedRelativeUses = 0;
 let nonSourceAssetUses = 0;
 let externalUses = 0;
 let unresolvedInternalUses = 0;
@@ -791,6 +799,15 @@ function isImportedNamespaceAliasUse(use) {
   return (
     use?.kind === "imported-namespace-member" ||
     use?.kind === "imported-namespace-escape"
+  );
+}
+
+function isRustResolvedRelativeUse(use) {
+  return (
+    typeof use === "object" &&
+    use?.resolverStage === "relative" &&
+    typeof use.resolvedFile === "string" &&
+    use.resolvedFile.length > 0
   );
 }
 
@@ -1401,6 +1418,7 @@ for (const [consumerFile, info] of fileData) {
     const resolveStarted = performance.now();
     const target = resolveSpecifier(consumerFile, u);
     addSourceUseTiming("resolve", resolveStarted);
+    if (isRustResolvedRelativeUse(u)) rustResolvedRelativeUses++;
     if (target === "EXTERNAL") {
       const branchStarted = performance.now();
       incrementSourceUseBranch("external");
@@ -1587,6 +1605,7 @@ phaseTimer.recordPhase(
   sourceUseTimings.resolvedInternal,
 );
 phaseTimer.setCounter("sourceUseResolveMs", sourceUseTimings.resolve);
+phaseTimer.setCounter("sourceUseRustResolvedRelativeCount", rustResolvedRelativeUses);
 phaseTimer.setCounter("sourceUseExternalMs", sourceUseTimings.external);
 phaseTimer.setCounter("sourceUseAssetMs", sourceUseTimings.asset);
 phaseTimer.setCounter("sourceUseUnresolvedMs", sourceUseTimings.unresolved);

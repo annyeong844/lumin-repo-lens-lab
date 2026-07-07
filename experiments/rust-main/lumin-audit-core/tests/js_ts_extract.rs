@@ -247,6 +247,78 @@ fn cli_js_ts_extract_retries_jsx_for_js_module_extensions() -> Result<()> {
 }
 
 #[test]
+fn cli_js_ts_extract_annotates_known_relative_source_targets() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("request.json");
+    let result = temp.path().join("result.json");
+    fs::write(
+        &input,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-js-ts-extract-request.v1",
+            "sourceFiles": [
+                "C:/repo/src/dep.ts",
+                "C:/repo/src/nested/index.ts",
+                "C:/repo/src/compiled.ts"
+            ],
+            "files": [{
+                "filePath": "C:/repo/src/consumer.ts",
+                "artifactFilePath": "src/consumer.ts",
+                "source": "import { foo } from \"./dep\";\nimport ns from \"./nested\";\nexport { thing } from \"./compiled.js\";\n"
+            }]
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("js-ts-extract-artifact")
+        .arg("--input")
+        .arg(&input)
+        .arg("--result-output")
+        .arg(&result)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let artifact: Value = serde_json::from_slice(&fs::read(&result)?)?;
+    assert_eq!(
+        artifact["files"][0]["uses"],
+        json!([
+            {
+                "fromSpec": "./dep",
+                "name": "foo",
+                "kind": "import",
+                "typeOnly": false,
+                "line": 1,
+                "resolvedFile": "C:/repo/src/dep.ts",
+                "resolverStage": "relative"
+            },
+            {
+                "fromSpec": "./nested",
+                "name": "default",
+                "kind": "default",
+                "typeOnly": false,
+                "line": 2,
+                "resolvedFile": "C:/repo/src/nested/index.ts",
+                "resolverStage": "relative"
+            },
+            {
+                "fromSpec": "./compiled.js",
+                "name": "thing",
+                "kind": "reExport",
+                "typeOnly": false,
+                "line": 3,
+                "resolvedFile": "C:/repo/src/compiled.ts",
+                "resolverStage": "relative"
+            }
+        ])
+    );
+    Ok(())
+}
+
+#[test]
 fn cli_js_ts_extract_records_parse_error_per_file() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let input = temp.path().join("request.json");

@@ -22,6 +22,8 @@ pub struct JsTsExtractRequest {
     pub schema_version: String,
     #[serde(default)]
     pub files: Vec<JsTsExtractInputFile>,
+    #[serde(default)]
+    pub source_files: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +78,10 @@ pub struct UseRecord {
     pub line: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolver_stage: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -119,10 +125,11 @@ pub fn build_js_ts_extract_response(request: JsTsExtractRequest) -> Result<JsTsE
         );
     }
 
+    let relative_resolver = RelativeSourceResolver::new(request.source_files);
     let files = request
         .files
         .into_iter()
-        .map(extract_file_or_error)
+        .map(|input| extract_file_or_error(input, &relative_resolver))
         .collect();
     Ok(JsTsExtractResponse {
         schema_version: JS_TS_EXTRACT_RESPONSE_SCHEMA_VERSION,
@@ -130,13 +137,16 @@ pub fn build_js_ts_extract_response(request: JsTsExtractRequest) -> Result<JsTsE
     })
 }
 
-fn extract_file_or_error(input: JsTsExtractInputFile) -> JsTsExtractFileResult {
+fn extract_file_or_error(
+    input: JsTsExtractInputFile,
+    relative_resolver: &RelativeSourceResolver,
+) -> JsTsExtractFileResult {
     let artifact_file_path = input
         .artifact_file_path
         .clone()
         .unwrap_or_else(|| input.file_path.clone());
     let loc = line_count(&input.source);
-    match extract_file(&input, &artifact_file_path) {
+    match extract_file(&input, &artifact_file_path, relative_resolver) {
         Ok(mut result) => {
             result.loc = loc;
             result
@@ -166,6 +176,7 @@ fn empty_file_result(
 fn extract_file(
     input: &JsTsExtractInputFile,
     artifact_file_path: &str,
+    relative_resolver: &RelativeSourceResolver,
 ) -> Result<JsTsExtractFileResult> {
     let allocator = Allocator::default();
     let source_type = source_type_for_path(&input.file_path);
@@ -187,6 +198,7 @@ fn extract_file(
         collect_re_exports(statement, &mut re_exports, &mut uses, &line_starts);
         collect_imports(statement, &mut uses, &line_starts);
     }
+    annotate_relative_resolutions(&input.file_path, &mut uses, relative_resolver);
 
     let class_methods =
         collect_class_method_surface(&parsed.program, &line_starts, artifact_file_path);
@@ -618,6 +630,8 @@ fn collect_re_exports(
                         || is_type_only(specifier.export_kind),
                     line: line_for_span(line_starts, specifier.span),
                     local_name: None,
+                    resolved_file: None,
+                    resolver_stage: None,
                 });
             }
         }
@@ -655,6 +669,8 @@ fn collect_export_all(
         type_only: is_type_only(export.export_kind),
         line: line_for_span(line_starts, export.span),
         local_name: None,
+        resolved_file: None,
+        resolver_stage: None,
     });
 }
 
@@ -674,6 +690,8 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
             type_only: false,
             line: line_for_span(line_starts, import.span),
             local_name: None,
+            resolved_file: None,
+            resolver_stage: None,
         });
         return;
     }
@@ -692,6 +710,8 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
                         || is_type_only(specifier.import_kind),
                     line: line_for_span(line_starts, specifier.span),
                     local_name: (local_name != imported_name).then_some(local_name),
+                    resolved_file: None,
+                    resolver_stage: None,
                 });
             }
             ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) => {
@@ -702,6 +722,8 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
                     type_only: is_type_only(import.import_kind),
                     line: line_for_span(line_starts, specifier.span),
                     local_name: None,
+                    resolved_file: None,
+                    resolver_stage: None,
                 });
             }
             ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
@@ -712,10 +734,183 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
                     type_only: is_type_only(import.import_kind),
                     line: line_for_span(line_starts, specifier.span),
                     local_name: Some(specifier.local.name.to_string()),
+                    resolved_file: None,
+                    resolver_stage: None,
                 });
             }
         }
     }
+}
+
+const RESOLVE_FILE_EXTS: &[&str] = &[
+    "", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".d.ts", ".d.mts", ".d.cts",
+];
+
+const RESOLVE_INDEX_EXTS: &[&str] = &[
+    "/index.ts",
+    "/index.tsx",
+    "/index.js",
+    "/index.jsx",
+    "/index.mjs",
+    "/index.cjs",
+    "/index.mts",
+    "/index.cts",
+    "/index.d.ts",
+    "/index.d.mts",
+    "/index.d.cts",
+];
+
+#[derive(Debug)]
+struct RelativeSourceResolver {
+    source_files: BTreeMap<String, String>,
+}
+
+impl RelativeSourceResolver {
+    fn new(source_files: Vec<String>) -> Self {
+        let mut out = BTreeMap::new();
+        for source_file in source_files {
+            out.entry(normalize_path_text(&source_file))
+                .or_insert(source_file);
+        }
+        Self { source_files: out }
+    }
+
+    fn resolve(&self, from_file: &str, spec: &str) -> Option<String> {
+        if !spec.starts_with("./") && !spec.starts_with("../") {
+            return None;
+        }
+        let base = join_relative_spec(dirname_text(from_file), spec);
+        for ext in RESOLVE_FILE_EXTS {
+            if let Some(resolved) = self.source_file(&format!("{base}{ext}")) {
+                return Some(resolved);
+            }
+        }
+        for ext in RESOLVE_INDEX_EXTS {
+            if let Some(resolved) = self.source_file(&format!("{base}{ext}")) {
+                return Some(resolved);
+            }
+        }
+        if js_output_extension(spec) {
+            for alt in [".ts", ".tsx", ".mts", ".cts"] {
+                if let Some(swapped) = replace_js_output_extension(spec, alt) {
+                    let candidate = join_relative_spec(dirname_text(from_file), &swapped);
+                    if let Some(resolved) = self.source_file(&candidate) {
+                        return Some(resolved);
+                    }
+                }
+            }
+            if let Some(stripped) = strip_js_output_extension(&base) {
+                for ext in RESOLVE_INDEX_EXTS {
+                    if let Some(resolved) = self.source_file(&format!("{stripped}{ext}")) {
+                        return Some(resolved);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn source_file(&self, candidate: &str) -> Option<String> {
+        self.source_files
+            .get(&normalize_path_text(candidate))
+            .cloned()
+    }
+}
+
+fn annotate_relative_resolutions(
+    from_file: &str,
+    uses: &mut [UseRecord],
+    resolver: &RelativeSourceResolver,
+) {
+    for use_record in uses {
+        if let Some(resolved) = resolver.resolve(from_file, &use_record.from_spec) {
+            use_record.resolved_file = Some(resolved);
+            use_record.resolver_stage = Some("relative");
+        }
+    }
+}
+
+fn dirname_text(path: &str) -> &str {
+    let normalized = path.rfind(['/', '\\']);
+    normalized.map_or("", |index| &path[..index])
+}
+
+fn join_relative_spec(base: &str, spec: &str) -> String {
+    let joined = if base.is_empty() {
+        spec.to_string()
+    } else {
+        format!("{base}/{spec}")
+    };
+    normalize_path_text(&joined)
+}
+
+fn normalize_path_text(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let (prefix, rest) = split_path_prefix(&normalized);
+    let absolute = rest.starts_with('/');
+    let mut parts = Vec::new();
+    for part in rest.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." {
+            if let Some(last) = parts.last() {
+                if last != &".." {
+                    parts.pop();
+                    continue;
+                }
+            }
+            if !absolute {
+                parts.push(part);
+            }
+            continue;
+        }
+        parts.push(part);
+    }
+
+    let body = parts.join("/");
+    match (prefix.is_empty(), absolute, body.is_empty()) {
+        (false, _, false) => format!("{prefix}/{body}"),
+        (false, _, true) => prefix.to_string(),
+        (true, true, false) => format!("/{body}"),
+        (true, true, true) => "/".to_string(),
+        (true, false, false) => body,
+        (true, false, true) => ".".to_string(),
+    }
+}
+
+fn split_path_prefix(path: &str) -> (&str, &str) {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        let prefix = &path[..2];
+        let rest = path.get(2..).unwrap_or_default();
+        return (prefix, rest);
+    }
+    ("", path)
+}
+
+fn js_output_extension(spec: &str) -> bool {
+    [".mjs", ".cjs", ".js", ".jsx"]
+        .iter()
+        .any(|ext| spec.ends_with(ext))
+}
+
+fn replace_js_output_extension(spec: &str, alt: &str) -> Option<String> {
+    for ext in [".mjs", ".cjs", ".js", ".jsx"] {
+        if let Some(prefix) = spec.strip_suffix(ext) {
+            return Some(format!("{prefix}{alt}"));
+        }
+    }
+    None
+}
+
+fn strip_js_output_extension(spec: &str) -> Option<&str> {
+    for ext in [".mjs", ".cjs", ".js", ".jsx"] {
+        if let Some(prefix) = spec.strip_suffix(ext) {
+            return Some(prefix);
+        }
+    }
+    None
 }
 
 fn collect_class_method_surface(

@@ -171,7 +171,12 @@ function pushRequestFile(batch, root, filePath, source) {
   });
 }
 
-export function extractRustJsHybridBatch({ root, files, verbose = false }) {
+export function extractRustJsHybridBatch({
+  root,
+  files,
+  sourceFiles = files,
+  verbose = false,
+}) {
   const results = new Map();
   const warnings = [];
   const fallbackByReason = emptyReasonCounts();
@@ -182,6 +187,7 @@ export function extractRustJsHybridBatch({ root, files, verbose = false }) {
     eligibleFiles: 0,
     fallbackFiles: 0,
     rustExtractedFiles: 0,
+    rustResolvedRelativeUses: 0,
     rustParseErrorFiles: 0,
     readErrorFiles: 0,
     commandFailedFiles: 0,
@@ -203,6 +209,7 @@ export function extractRustJsHybridBatch({ root, files, verbose = false }) {
     if (batch.length === 0 || disabledReason) return;
     const request = {
       schemaVersion: REQUEST_SCHEMA_VERSION,
+      sourceFiles: [...sourceFiles],
       files: batch,
     };
     const currentBatch = batch;
@@ -250,7 +257,12 @@ export function extractRustJsHybridBatch({ root, files, verbose = false }) {
       }
       results.set(file.filePath, result);
       if (result.error) summary.rustParseErrorFiles++;
-      else summary.rustExtractedFiles++;
+      else {
+        summary.rustExtractedFiles++;
+        summary.rustResolvedRelativeUses += (result.uses ?? []).filter(
+          (use) => use?.resolverStage === 'relative' && typeof use.resolvedFile === 'string',
+        ).length;
+      }
     }
   }
 
