@@ -17,7 +17,6 @@ const STATIC_UNSUPPORTED_PATTERNS = [
   ['dynamic-import', /\bimport\s*\(/],
   ['import-meta', /\bimport\s*\.\s*meta\b/],
   ['comment-type-escape', /@ts-(?:ignore|expect-error|nocheck)\b/],
-  ['type-escape', /\b(?:any|unknown)\b/],
 ];
 
 const LOCAL_OPERATION_VERBS = [

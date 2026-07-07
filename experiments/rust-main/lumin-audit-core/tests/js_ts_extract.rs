@@ -421,6 +421,88 @@ fn cli_js_ts_extract_annotates_known_relative_source_targets() -> Result<()> {
 }
 
 #[test]
+fn cli_js_ts_extract_emits_type_escape_facts() -> Result<()> {
+    let source = concat!(
+        "type A = any;\n",
+        "const b = (x as any);\n",
+        "const c = (<any>x);\n",
+        "const d = (x as unknown as Foo);\n",
+        "function e(...args: any[]) {}\n",
+        "type F = { [k: string]: any };\n",
+        "type G<T = any> = T;\n",
+        "// eslint-disable-next-line no-explicit-any\nconst j = 1;\n",
+        "/** @type {any} */\nconst k = readValue();\n",
+    );
+    let artifact = run_js_ts_extract_for_source("src/escapes.ts", source)?;
+    let escapes = type_escapes(&artifact);
+    let kinds: Vec<&str> = escapes
+        .iter()
+        .filter_map(|entry| entry["escapeKind"].as_str())
+        .collect();
+
+    assert_eq!(
+        kinds,
+        vec![
+            "explicit-any",
+            "as-any",
+            "angle-any",
+            "as-unknown-as-T",
+            "rest-any-args",
+            "index-sig-any",
+            "generic-default-any",
+            "no-explicit-any-disable",
+            "jsdoc-any",
+        ]
+    );
+    assert!(escapes.iter().all(|entry| {
+        entry["file"] == "src/escapes.ts"
+            && entry["occurrenceKey"]
+                .as_str()
+                .is_some_and(|key| key.starts_with("sha256:"))
+            && entry["normalizedCodeShape"].as_str().is_some()
+    }));
+    Ok(())
+}
+
+#[test]
+fn cli_js_ts_extract_type_escapes_preserve_export_identity_and_normalization() -> Result<()> {
+    let source = concat!(
+        "export type X = any;\n",
+        "function foo() { return value   as    any ; }\n",
+        "export { foo as bar };\n",
+        "export default () => (x as any);\n",
+        "const literal = (\"a   b\" as any);\n",
+    );
+    let artifact = run_js_ts_extract_for_source("src/owners.ts", source)?;
+    let escapes = type_escapes(&artifact);
+
+    let explicit = escape_by_kind(&escapes, "explicit-any");
+    assert_eq!(explicit["insideExportedIdentity"], "src/owners.ts::X");
+
+    let bar = escapes.iter().find(|entry| {
+        entry["insideExportedIdentity"] == "src/owners.ts::bar" && entry["escapeKind"] == "as-any"
+    });
+    assert!(bar.is_some());
+
+    let default = escapes.iter().find(|entry| {
+        entry["insideExportedIdentity"] == "src/owners.ts::default"
+            && entry["escapeKind"] == "as-any"
+    });
+    assert!(default.is_some());
+
+    let literal = escapes.iter().find(|entry| {
+        entry["codeShape"]
+            .as_str()
+            .is_some_and(|shape| shape.contains("a   b"))
+    });
+    let Some(literal) = literal else {
+        panic!("missing string-literal as-any escape");
+    };
+    assert_eq!(literal["normalizedCodeShape"], "\"a   b\" as any");
+    Ok(())
+}
+
+#[test]
 fn cli_js_ts_extract_records_parse_error_per_file() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let input = temp.path().join("request.json");
@@ -461,4 +543,53 @@ fn cli_js_ts_extract_records_parse_error_per_file() -> Result<()> {
 
 fn audit_core_bin() -> &'static str {
     env!("CARGO_BIN_EXE_lumin-audit-core")
+}
+
+fn run_js_ts_extract_for_source(artifact_file_path: &str, source: &str) -> Result<Value> {
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("request.json");
+    let result = temp.path().join("result.json");
+    fs::write(
+        &input,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-js-ts-extract-request.v1",
+            "files": [{
+                "filePath": format!("C:/repo/{artifact_file_path}"),
+                "artifactFilePath": artifact_file_path,
+                "source": source
+            }]
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("js-ts-extract-artifact")
+        .arg("--input")
+        .arg(&input)
+        .arg("--result-output")
+        .arg(&result)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let artifact: Value = serde_json::from_slice(&fs::read(&result)?)?;
+    Ok(artifact["files"][0].clone())
+}
+
+fn type_escapes(file_artifact: &Value) -> Vec<Value> {
+    let Some(items) = file_artifact["typeEscapes"].as_array() else {
+        panic!("typeEscapes is not an array");
+    };
+    items.clone()
+}
+
+fn escape_by_kind(escapes: &[Value], kind: &str) -> Value {
+    for entry in escapes {
+        if entry["escapeKind"] == kind {
+            return entry.clone();
+        }
+    }
+    panic!("missing escape kind {kind}");
 }
