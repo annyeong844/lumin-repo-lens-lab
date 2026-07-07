@@ -1540,6 +1540,13 @@ function sourceUseAssemblyReExportEntries(map) {
   return entries;
 }
 
+function sourceUseAssemblyPhasePrefix(counterPrefix) {
+  return String(counterPrefix).replace(
+    /[A-Z]/g,
+    (char) => `-${char.toLowerCase()}`,
+  );
+}
+
 function runSourceUseAssemblyForRecords(records, counterPrefix, warningKind) {
   phaseTimer.setCounter(
     `${counterPrefix}RustAssemblyCandidateCount`,
@@ -1548,21 +1555,62 @@ function runSourceUseAssemblyForRecords(records, counterPrefix, warningKind) {
   if (records.length === 0) {
     return { handled: new Set(), resolvedInternalUses: 0 };
   }
+  const phasePrefix = sourceUseAssemblyPhasePrefix(counterPrefix);
   try {
-    const result = runAuditCoreJsonResultFile(
-      ["source-use-assembly-artifact", "--input", "-"],
-      "source-use-assembly-artifact",
-      {
-        input: JSON.stringify({
-          schemaVersion: "lumin-source-use-assembly-request.v1",
-          root: ROOT,
-          sourceFiles: [...scannedJsSourceFiles],
-          namespaceReExports: sourceUseAssemblyReExportEntries(namespaceReExportsByFile),
-          namedReExports: sourceUseAssemblyReExportEntries(namedReExportsByFile),
-          records,
-        }),
-      },
+    const requestBuildStarted = Date.now();
+    const sourceFiles = [...scannedJsSourceFiles];
+    const namespaceReExports = sourceUseAssemblyReExportEntries(
+      namespaceReExportsByFile,
     );
+    const namedReExports = sourceUseAssemblyReExportEntries(namedReExportsByFile);
+    const request = {
+      schemaVersion: "lumin-source-use-assembly-request.v1",
+      root: ROOT,
+      sourceFiles,
+      namespaceReExports,
+      namedReExports,
+      records,
+    };
+    phaseTimer.recordPhase(
+      `${phasePrefix}-rust-assembly-request-build`,
+      Date.now() - requestBuildStarted,
+    );
+    phaseTimer.setCounter(
+      `${counterPrefix}RustAssemblySourceFileCount`,
+      sourceFiles.length,
+    );
+    phaseTimer.setCounter(
+      `${counterPrefix}RustAssemblyNamespaceReExportEntryCount`,
+      namespaceReExports.length,
+    );
+    phaseTimer.setCounter(
+      `${counterPrefix}RustAssemblyNamedReExportEntryCount`,
+      namedReExports.length,
+    );
+    const stringifyStarted = Date.now();
+    const input = JSON.stringify(request);
+    phaseTimer.recordPhase(
+      `${phasePrefix}-rust-assembly-request-json`,
+      Date.now() - stringifyStarted,
+    );
+    phaseTimer.setCounter(
+      `${counterPrefix}RustAssemblyInputBytes`,
+      Buffer.byteLength(input, "utf8"),
+    );
+    let result;
+    const commandStarted = Date.now();
+    try {
+      result = runAuditCoreJsonResultFile(
+        ["source-use-assembly-artifact", "--input", "-"],
+        "source-use-assembly-artifact",
+        { input },
+      );
+    } finally {
+      phaseTimer.recordPhase(
+        `${phasePrefix}-rust-assembly-command`,
+        Date.now() - commandStarted,
+      );
+    }
     phaseTimer.setCounter(
       `${counterPrefix}RustAssemblyHandledCount`,
       result.summary?.handledCount ?? 0,
@@ -1571,8 +1619,24 @@ function runSourceUseAssemblyForRecords(records, counterPrefix, warningKind) {
       `${counterPrefix}RustAssemblySkippedCount`,
       result.summary?.skippedCount ?? 0,
     );
+    phaseTimer.setCounter(
+      `${counterPrefix}RustAssemblyResolvedInternalEdgeCount`,
+      Array.isArray(result.resolvedInternalEdges)
+        ? result.resolvedInternalEdges.length
+        : 0,
+    );
+    phaseTimer.setCounter(
+      `${counterPrefix}RustAssemblyDirectConsumerCount`,
+      Array.isArray(result.directConsumers) ? result.directConsumers.length : 0,
+    );
+    const applyStarted = Date.now();
+    const handled = applySourceUseAssemblyResult(result);
+    phaseTimer.recordPhase(
+      `${phasePrefix}-rust-assembly-apply`,
+      Date.now() - applyStarted,
+    );
     return {
-      handled: applySourceUseAssemblyResult(result),
+      handled,
       resolvedInternalUses: result.counters?.resolvedInternalUses ?? 0,
     };
   } catch (error) {
@@ -2841,6 +2905,7 @@ phaseTimer.recordPhase(
 const outPath = path.join(output, "symbols.json");
 const requestPath = path.join(output, ".symbols-artifact-request.tmp.json");
 const generated = new Date().toISOString();
+const buildArtifactRequestStarted = Date.now();
 const artifactRequest = {
   schemaVersion: "lumin-symbol-graph-producer-request.v1",
   generated,
@@ -2910,14 +2975,58 @@ const artifactRequest = {
     reason: incrementalEnabled ? null : "disabled-by-flag",
   },
 };
+phaseTimer.recordPhase(
+  "build-symbol-artifact-request",
+  Date.now() - buildArtifactRequestStarted,
+);
+phaseTimer.setCounter("symbolGraphArtifactRequestFileCount", files.length);
+phaseTimer.setCounter(
+  "symbolGraphArtifactRequestFileDataCount",
+  artifactRequest.fileData.length,
+);
+phaseTimer.setCounter(
+  "symbolGraphArtifactRequestDefIndexCount",
+  artifactRequest.defIndex.length,
+);
+phaseTimer.setCounter(
+  "symbolGraphArtifactRequestResolvedInternalEdgeCount",
+  resolvedInternalEdges.length,
+);
+phaseTimer.setCounter(
+  "symbolGraphArtifactRequestDeadCandidateCount",
+  dead.length,
+);
 const writeArtifactStarted = Date.now();
 try {
-  writeFileSync(requestPath, JSON.stringify(artifactRequest));
-  runAuditCoreJsonToResultFile(
-    ["symbol-graph-artifact", "--input", requestPath],
-    "symbol-graph-artifact",
-    outPath,
+  const requestJsonStarted = Date.now();
+  const artifactRequestJson = JSON.stringify(artifactRequest);
+  phaseTimer.recordPhase(
+    "symbol-graph-artifact-request-json",
+    Date.now() - requestJsonStarted,
   );
+  phaseTimer.setCounter(
+    "symbolGraphArtifactRequestBytes",
+    Buffer.byteLength(artifactRequestJson, "utf8"),
+  );
+  const requestWriteStarted = Date.now();
+  writeFileSync(requestPath, artifactRequestJson);
+  phaseTimer.recordPhase(
+    "symbol-graph-artifact-request-write",
+    Date.now() - requestWriteStarted,
+  );
+  const commandStarted = Date.now();
+  try {
+    runAuditCoreJsonToResultFile(
+      ["symbol-graph-artifact", "--input", requestPath],
+      "symbol-graph-artifact",
+      outPath,
+    );
+  } finally {
+    phaseTimer.recordPhase(
+      "symbol-graph-artifact-command",
+      Date.now() - commandStarted,
+    );
+  }
 } finally {
   rmSync(requestPath, { force: true });
 }
