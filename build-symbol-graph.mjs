@@ -167,6 +167,7 @@ const PRODUCER_ID = "symbols";
 const PRODUCER_VERSION = 1;
 const FACT_SCHEMA_VERSION = 5;
 const PARSER_IDENTITY = "symbol-graph-extractors:v3";
+const incrementalEnabled = cli.raw?.["no-incremental"] !== true;
 
 function isJsFamilyFile(filePath) {
   return JS_FAMILY_LANGS.includes(
@@ -213,6 +214,7 @@ const snapshot = phaseTimer.runPhase("snapshot", () =>
     exclude: cli.exclude,
     languages: langList,
     contextFingerprint,
+    hashContents: incrementalEnabled,
   }),
 );
 const snapshotEntries = Object.values(snapshot.files);
@@ -244,7 +246,6 @@ console.error(
   `[symbols] scanning ${files.length} files (mdx=${mdxTotal}, sfc=${sfcTotal}, python=${pyEnabled ? `on, ${pyTotal} .py` : "off"}, go=${tsEnabled ? `on, ${goTotal} .go` : "off"})`,
 );
 
-const incrementalEnabled = cli.raw?.["no-incremental"] !== true;
 const cacheStore = openIncrementalCacheStore({
   root: ROOT,
   cacheRoot: cli.raw?.["cache-root"],

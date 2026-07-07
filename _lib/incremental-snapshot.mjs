@@ -72,6 +72,18 @@ export function defaultPackageScopeOf(root, absPath) {
   return '.';
 }
 
+function createCachedPackageScopeOf(packageScopeOf) {
+  const cache = new Map();
+  return function cachedPackageScopeOf(scopeRoot, absPath) {
+    const dir = path.dirname(path.resolve(absPath));
+    const cached = cache.get(dir);
+    if (cached !== undefined) return cached;
+    const value = packageScopeOf(scopeRoot, absPath);
+    cache.set(dir, value);
+    return value;
+  };
+}
+
 export function repoFingerprintForRoot(root) {
   let realRoot = path.resolve(root);
   try {
@@ -99,6 +111,7 @@ export function buildFileSnapshotEntry({
   absPath,
   contextFingerprint,
   packageScopeOf = defaultPackageScopeOf,
+  hashContents = true,
 }) {
   const relPath = normalizeRepoRel(root, absPath);
   const language = languageOf(absPath);
@@ -122,6 +135,22 @@ export function buildFileSnapshotEntry({
       contentHash: null,
       contextFingerprint,
       readError: { kind: error?.code ?? 'stat-failed' },
+    };
+  }
+
+  if (!hashContents) {
+    return {
+      relPath,
+      absPath,
+      language,
+      isTestLike,
+      packageScope,
+      readable: true,
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      hash: null,
+      contentHash: null,
+      contextFingerprint,
     };
   }
 
@@ -171,16 +200,19 @@ export function buildRepoSnapshot({
   contextFingerprint,
   previousSnapshot = null,
   packageScopeOf = defaultPackageScopeOf,
+  hashContents = true,
 }) {
   const files = collectFiles(root, { includeTests, exclude, languages });
   const entries = {};
+  const cachedPackageScopeOf = createCachedPackageScopeOf(packageScopeOf);
 
   for (const absPath of files) {
     const entry = buildFileSnapshotEntry({
       root,
       absPath,
       contextFingerprint,
-      packageScopeOf,
+      packageScopeOf: cachedPackageScopeOf,
+      hashContents,
     });
     entries[entry.relPath] = entry;
   }
