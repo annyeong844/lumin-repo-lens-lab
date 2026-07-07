@@ -1405,6 +1405,12 @@ function sourceUseRecordId(consumerFile, index) {
   return `${relPath(ROOT, consumerFile)}#${index}`;
 }
 
+function outOfBandSourceUseRecordId(source, index, use) {
+  const consumerFile = relPath(ROOT, use?.consumerFile ?? "");
+  const fromSpec = use?.fromSpec ?? "";
+  return `${source}:${index}:${consumerFile}:${fromSpec}`;
+}
+
 function sourceUseAssemblyPath(file) {
   if (typeof file !== "string" || file.length === 0) return null;
   return path.isAbsolute(file) ? file : path.resolve(ROOT, file);
@@ -1418,26 +1424,49 @@ function isSourceUseAssemblyCandidate(use) {
   );
 }
 
+function sourceUseAssemblyRecord(recordId, consumerFile, use) {
+  if (!isSourceUseAssemblyCandidate(use)) return null;
+  return {
+    recordId,
+    consumerFile,
+    resolvedFile: use.resolvedFile,
+    fromSpec: use.fromSpec,
+    name: use.name,
+    memberName: use.memberName,
+    kind: use.kind,
+    typeOnly: use.typeOnly === true,
+    line: Number.isFinite(use.line) ? use.line : undefined,
+    sfcLanguage: use.sfcLanguage,
+    resolverStage: use.resolverStage,
+  };
+}
+
 function buildSourceUseAssemblyCandidates() {
   const records = [];
   for (const [consumerFile, info] of fileData) {
     for (let index = 0; index < info.uses.length; index++) {
       const use = info.uses[index];
-      if (!isSourceUseAssemblyCandidate(use)) continue;
-      records.push({
-        recordId: sourceUseRecordId(consumerFile, index),
+      const record = sourceUseAssemblyRecord(
+        sourceUseRecordId(consumerFile, index),
         consumerFile,
-        resolvedFile: use.resolvedFile,
-        fromSpec: use.fromSpec,
-        name: use.name,
-        memberName: use.memberName,
-        kind: use.kind,
-        typeOnly: use.typeOnly === true,
-        line: Number.isFinite(use.line) ? use.line : undefined,
-        sfcLanguage: use.sfcLanguage,
-        resolverStage: use.resolverStage,
-      });
+        use,
+      );
+      if (record) records.push(record);
     }
+  }
+  return records;
+}
+
+function buildOutOfBandSourceUseAssemblyCandidates(consumers, source) {
+  const records = [];
+  for (let index = 0; index < consumers.length; index++) {
+    const use = consumers[index];
+    const record = sourceUseAssemblyRecord(
+      outOfBandSourceUseRecordId(source, index, use),
+      use.consumerFile,
+      use,
+    );
+    if (record) records.push(record);
   }
   return records;
 }
@@ -1503,10 +1532,14 @@ function sourceUseAssemblyReExportEntries(map) {
   return entries;
 }
 
-function runSourceUseAssembly() {
-  const records = buildSourceUseAssemblyCandidates();
-  phaseTimer.setCounter("sourceUseRustAssemblyCandidateCount", records.length);
-  if (records.length === 0) return new Set();
+function runSourceUseAssemblyForRecords(records, counterPrefix, warningKind) {
+  phaseTimer.setCounter(
+    `${counterPrefix}RustAssemblyCandidateCount`,
+    records.length,
+  );
+  if (records.length === 0) {
+    return { handled: new Set(), resolvedInternalUses: 0 };
+  }
   try {
     const result = runAuditCoreJsonResultFile(
       ["source-use-assembly-artifact", "--input", "-"],
@@ -1523,31 +1556,45 @@ function runSourceUseAssembly() {
       },
     );
     phaseTimer.setCounter(
-      "sourceUseRustAssemblyHandledCount",
+      `${counterPrefix}RustAssemblyHandledCount`,
       result.summary?.handledCount ?? 0,
     );
     phaseTimer.setCounter(
-      "sourceUseRustAssemblySkippedCount",
+      `${counterPrefix}RustAssemblySkippedCount`,
       result.summary?.skippedCount ?? 0,
     );
-    return applySourceUseAssemblyResult(result);
+    return {
+      handled: applySourceUseAssemblyResult(result),
+      resolvedInternalUses: result.counters?.resolvedInternalUses ?? 0,
+    };
   } catch (error) {
     warnings.push({
-      kind: "rust-source-use-assembly-unavailable",
+      kind: warningKind,
       message: error instanceof Error ? error.message : String(error),
       candidateCount: records.length,
     });
-    phaseTimer.setCounter("sourceUseRustAssemblyFailedCandidateCount", records.length);
-    return new Set();
+    phaseTimer.setCounter(
+      `${counterPrefix}RustAssemblyFailedCandidateCount`,
+      records.length,
+    );
+    return { handled: new Set(), resolvedInternalUses: 0 };
   }
 }
 
-const rustSourceUseHandledRecords = runSourceUseAssembly();
+function runSourceUseAssembly() {
+  return runSourceUseAssemblyForRecords(
+    buildSourceUseAssemblyCandidates(),
+    "sourceUse",
+    "rust-source-use-assembly-unavailable",
+  );
+}
+
+const rustSourceUseAssembly = runSourceUseAssembly();
 
 for (const [consumerFile, info] of fileData) {
   for (let useIndex = 0; useIndex < info.uses.length; useIndex++) {
     const u = info.uses[useIndex];
-    if (rustSourceUseHandledRecords.has(sourceUseRecordId(consumerFile, useIndex))) {
+    if (rustSourceUseAssembly.handled.has(sourceUseRecordId(consumerFile, useIndex))) {
       continue;
     }
     if (u?.kind === "import-meta-glob") {
@@ -1878,9 +1925,13 @@ phaseTimer.recordPhase(
   Date.now() - assembleSourceUsesStarted,
 );
 
-function processOutOfBandImportConsumers(consumers, source) {
+function processOutOfBandImportConsumers(consumers, source, handledRecords = new Set()) {
   let resolvedConsumerUses = 0;
-  for (const u of consumers) {
+  for (let index = 0; index < consumers.length; index++) {
+    const u = consumers[index];
+    if (handledRecords.has(outOfBandSourceUseRecordId(source, index, u))) {
+      continue;
+    }
     const target = resolveSpecifier(u.consumerFile, u);
     if (target === "EXTERNAL") {
       externalUses++;
@@ -2235,10 +2286,16 @@ phaseTimer.setCounter(
   "mdxImportConsumerCandidateCount",
   mdxImportConsumers.length,
 );
+const mdxSourceUseAssembly = runSourceUseAssemblyForRecords(
+  buildOutOfBandSourceUseAssemblyCandidates(mdxImportConsumers, "mdx-import"),
+  "mdxSourceUse",
+  "rust-mdx-source-use-assembly-unavailable",
+);
 mdxConsumerUses = processOutOfBandImportConsumers(
   mdxImportConsumers,
   "mdx-import",
-);
+  mdxSourceUseAssembly.handled,
+) + mdxSourceUseAssembly.resolvedInternalUses;
 phaseTimer.recordPhase(
   "assemble-mdx-uses",
   Date.now() - assembleMdxUsesStarted,
@@ -2255,10 +2312,19 @@ phaseTimer.setCounter(
   "sfcScriptImportConsumerCandidateCount",
   sfcImportConsumers.length,
 );
+const sfcScriptSourceUseAssembly = runSourceUseAssemblyForRecords(
+  buildOutOfBandSourceUseAssemblyCandidates(
+    sfcImportConsumers,
+    "sfc-script-import",
+  ),
+  "sfcScriptSourceUse",
+  "rust-sfc-script-source-use-assembly-unavailable",
+);
 sfcScriptConsumerUses = processOutOfBandImportConsumers(
   sfcImportConsumers,
   "sfc-script-import",
-);
+  sfcScriptSourceUseAssembly.handled,
+) + sfcScriptSourceUseAssembly.resolvedInternalUses;
 phaseTimer.recordPhase(
   "assemble-sfc-script-uses",
   Date.now() - assembleSfcScriptUsesStarted,
