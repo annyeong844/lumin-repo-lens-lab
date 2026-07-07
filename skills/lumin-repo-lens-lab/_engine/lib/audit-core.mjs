@@ -159,6 +159,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'shape-index-artifact: missing --input <path|->',
   ],
   [
+    ['source-use-assembly-artifact'],
+    'source-use-assembly-artifact: missing --input <path|->',
+  ],
+  [
     ['staleness-artifact'],
     'staleness-artifact: missing --input <path|->',
   ],
@@ -206,6 +210,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'runtime-evidence-artifact',
   'sarif-artifact',
   'shape-index-artifact',
+  'source-use-assembly-artifact',
   'staleness-artifact',
   'symbol-graph-artifact',
   'topology-artifact',
@@ -426,6 +431,7 @@ function auditCoreBinaryWritesResultFiles(command) {
   const runtimeEvidenceInputPath = path.join(tempDir, 'runtime-evidence-artifact.json');
   const sarifInputPath = path.join(tempDir, 'sarif-artifact.json');
   const shapeIndexInputPath = path.join(tempDir, 'shape-index-artifact.json');
+  const sourceUseAssemblyInputPath = path.join(tempDir, 'source-use-assembly-artifact.json');
   const stalenessInputPath = path.join(tempDir, 'staleness-artifact.json');
   const symbolGraphInputPath = path.join(tempDir, 'symbol-graph-artifact.json');
   const topologyInputPath = path.join(tempDir, 'topology-artifact.json');
@@ -1052,6 +1058,33 @@ writeFileSync(latest, JSON.stringify(advisory));
         reason: 'contract-probe',
       },
     }));
+    writeFileSync(sourceUseAssemblyInputPath, JSON.stringify({
+      schemaVersion: 'lumin-source-use-assembly-request.v1',
+      root: rootDir,
+      sourceFiles: [
+        path.join(rootDir, 'src', 'consumer.ts'),
+        path.join(rootDir, 'src', 'dep.ts'),
+      ],
+      records: [
+        {
+          recordId: 'src/consumer.ts#0',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          fromSpec: './dep',
+          name: 'value',
+          kind: 'import',
+          typeOnly: false,
+          line: 1,
+          resolverStage: 'relative',
+        },
+        {
+          recordId: 'src/consumer.ts#1',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          fromSpec: './dep',
+          kind: 'namespace',
+          resolverStage: 'relative',
+        },
+      ],
+    }));
     writeFileSync(stalenessInputPath, JSON.stringify({
       schemaVersion: 'lumin-staleness-producer-request.v1',
       root: rootDir,
@@ -1411,6 +1444,11 @@ writeFileSync(latest, JSON.stringify(advisory));
         requiresArtifactReads: false,
       },
       {
+        subcommand: 'source-use-assembly-artifact',
+        args: ['source-use-assembly-artifact', '--input', sourceUseAssemblyInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'staleness-artifact',
         args: ['staleness-artifact', '--input', stalenessInputPath],
         requiresArtifactReads: false,
@@ -1668,6 +1706,22 @@ function resultPayloadMatchesProbe(json, probe) {
       json.facts.length === 1 &&
       isObject(json.groupsByHash) &&
       Array.isArray(json.groupsByHash[`sha256:${'0'.repeat(64)}`]);
+  }
+  if (probe.subcommand === 'source-use-assembly-artifact') {
+    return json.schemaVersion === 'lumin-source-use-assembly-response.v1' &&
+      json.summary?.recordCount === 2 &&
+      json.summary?.handledCount === 2 &&
+      json.counters?.totalUses === 2 &&
+      json.counters?.resolvedInternalUses === 2 &&
+      json.counters?.rustResolvedRelativeUses === 2 &&
+      json.branchCounts?.resolvedInternal === 2 &&
+      json.branchCounts?.directConsumer === 1 &&
+      json.branchCounts?.broadNamespace === 1 &&
+      json.resolvedInternalEdges?.[0]?.from === 'src/consumer.ts' &&
+      json.resolvedInternalEdges?.[0]?.to === 'src/dep.ts' &&
+      json.resolvedInternalEdges?.[0]?.kind === 'import-named' &&
+      json.directConsumers?.[0]?.symbol === 'value' &&
+      json.namespaceUsers?.[0]?.defFile === 'src/dep.ts';
   }
   if (probe.subcommand === 'staleness-artifact') {
     return isObject(json.meta) &&

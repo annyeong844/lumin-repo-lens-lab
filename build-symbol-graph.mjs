@@ -46,7 +46,10 @@ import {
 import { JS_FAMILY_LANGS, SFC_FAMILY_LANGS } from "./_lib/lang.mjs";
 import { isTestLikePath } from "./_lib/test-paths.mjs";
 import { fileExists, relPath, buildSubmoduleResolver } from "./_lib/paths.mjs";
-import { runAuditCoreJsonToResultFile } from "./_lib/audit-core.mjs";
+import {
+  runAuditCoreJsonResultFile,
+  runAuditCoreJsonToResultFile,
+} from "./_lib/audit-core.mjs";
 import { buildAnyContaminationFacts } from "./_lib/any-contamination.mjs";
 import {
   buildContextFingerprint,
@@ -1398,8 +1401,133 @@ function importMetaGlobDiagnosticUse(use, expansion) {
   };
 }
 
+function sourceUseRecordId(consumerFile, index) {
+  return `${relPath(ROOT, consumerFile)}#${index}`;
+}
+
+function sourceUseAssemblyPath(file) {
+  if (typeof file !== "string" || file.length === 0) return null;
+  return path.isAbsolute(file) ? file : path.resolve(ROOT, file);
+}
+
+function isSourceUseAssemblyCandidate(use) {
+  return (
+    typeof use === "object" &&
+    typeof use?.fromSpec === "string" &&
+    (use.fromSpec.startsWith("./") || use.fromSpec.startsWith("../"))
+  );
+}
+
+function buildSourceUseAssemblyCandidates() {
+  const records = [];
+  for (const [consumerFile, info] of fileData) {
+    for (let index = 0; index < info.uses.length; index++) {
+      const use = info.uses[index];
+      if (!isSourceUseAssemblyCandidate(use)) continue;
+      records.push({
+        recordId: sourceUseRecordId(consumerFile, index),
+        consumerFile,
+        resolvedFile: use.resolvedFile,
+        fromSpec: use.fromSpec,
+        name: use.name,
+        kind: use.kind,
+        typeOnly: use.typeOnly === true,
+        line: Number.isFinite(use.line) ? use.line : undefined,
+        sfcLanguage: use.sfcLanguage,
+        resolverStage: use.resolverStage,
+      });
+    }
+  }
+  return records;
+}
+
+function addSourceUseAssemblyBranchCounts(branchCounts) {
+  if (!branchCounts || typeof branchCounts !== "object") return;
+  for (const [name, count] of Object.entries(branchCounts)) {
+    if (!Number.isFinite(count) || count <= 0) continue;
+    sourceUseBranchCounts[name] = (sourceUseBranchCounts[name] ?? 0) + count;
+  }
+}
+
+function applySourceUseAssemblyResult(result) {
+  const handled = new Set(
+    Array.isArray(result?.handledRecordIds) ? result.handledRecordIds : [],
+  );
+  if (handled.size === 0) return handled;
+
+  const counters = result.counters ?? {};
+  totalUses += counters.totalUses ?? 0;
+  resolvedInternalUses += counters.resolvedInternalUses ?? 0;
+  rustResolvedRelativeUses += counters.rustResolvedRelativeUses ?? 0;
+  addSourceUseAssemblyBranchCounts(result.branchCounts);
+
+  for (const edge of result.resolvedInternalEdges ?? []) {
+    if (!edge || typeof edge !== "object") continue;
+    resolvedInternalEdges.push({ ...edge });
+  }
+  for (const direct of result.directConsumers ?? []) {
+    const defFile = sourceUseAssemblyPath(direct.defFile);
+    const consumerFile = sourceUseAssemblyPath(direct.consumerFile);
+    if (!defFile || !consumerFile || typeof direct.symbol !== "string") continue;
+    addConsumer(defFile, direct.symbol, consumerFile, {
+      typeOnly: direct.space === "type",
+    });
+  }
+  for (const broad of result.namespaceUsers ?? []) {
+    const defFile = sourceUseAssemblyPath(broad.defFile);
+    const consumerFile = sourceUseAssemblyPath(broad.consumerFile);
+    if (!defFile || !consumerFile) continue;
+    if (!namespaceUsers.has(defFile)) namespaceUsers.set(defFile, new Set());
+    namespaceUsers.get(defFile).add(consumerFile);
+  }
+  return handled;
+}
+
+function runSourceUseAssembly() {
+  const records = buildSourceUseAssemblyCandidates();
+  phaseTimer.setCounter("sourceUseRustAssemblyCandidateCount", records.length);
+  if (records.length === 0) return new Set();
+  try {
+    const result = runAuditCoreJsonResultFile(
+      ["source-use-assembly-artifact", "--input", "-"],
+      "source-use-assembly-artifact",
+      {
+        input: JSON.stringify({
+          schemaVersion: "lumin-source-use-assembly-request.v1",
+          root: ROOT,
+          sourceFiles: [...scannedJsSourceFiles],
+          records,
+        }),
+      },
+    );
+    phaseTimer.setCounter(
+      "sourceUseRustAssemblyHandledCount",
+      result.summary?.handledCount ?? 0,
+    );
+    phaseTimer.setCounter(
+      "sourceUseRustAssemblySkippedCount",
+      result.summary?.skippedCount ?? 0,
+    );
+    return applySourceUseAssemblyResult(result);
+  } catch (error) {
+    warnings.push({
+      kind: "rust-source-use-assembly-unavailable",
+      message: error instanceof Error ? error.message : String(error),
+      candidateCount: records.length,
+    });
+    phaseTimer.setCounter("sourceUseRustAssemblyFailedCandidateCount", records.length);
+    return new Set();
+  }
+}
+
+const rustSourceUseHandledRecords = runSourceUseAssembly();
+
 for (const [consumerFile, info] of fileData) {
-  for (const u of info.uses) {
+  for (let useIndex = 0; useIndex < info.uses.length; useIndex++) {
+    const u = info.uses[useIndex];
+    if (rustSourceUseHandledRecords.has(sourceUseRecordId(consumerFile, useIndex))) {
+      continue;
+    }
     if (u?.kind === "import-meta-glob") {
       const branchStarted = performance.now();
       const expansion = expandImportMetaGlobPattern({

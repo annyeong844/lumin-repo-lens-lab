@@ -27,6 +27,7 @@ mod resolver_diagnostics_artifacts;
 mod runtime_evidence;
 mod sarif;
 mod shape_index;
+mod source_use_assembly;
 mod staleness;
 mod symbol_graph;
 mod topology;
@@ -59,6 +60,7 @@ use resolver_diagnostics_artifacts::*;
 use runtime_evidence::*;
 use sarif::*;
 use shape_index::*;
+use source_use_assembly::*;
 use staleness::*;
 use symbol_graph::*;
 use topology::*;
@@ -101,6 +103,7 @@ pub fn run() -> Result<()> {
         Some("runtime-evidence-artifact") => run_runtime_evidence_artifact(args.collect()),
         Some("sarif-artifact") => run_sarif_artifact(args.collect()),
         Some("shape-index-artifact") => run_shape_index_artifact(args.collect()),
+        Some("source-use-assembly-artifact") => run_source_use_assembly_artifact(args.collect()),
         Some("staleness-artifact") => run_staleness_artifact(args.collect()),
         Some("symbol-graph-artifact") => run_symbol_graph_artifact(args.collect()),
         Some("topology-artifact") => run_topology_artifact(args.collect()),

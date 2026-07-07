@@ -26,6 +26,7 @@ pub(super) const USAGE: &str = r#"usage: lumin-audit-core artifact-registry --ou
        lumin-audit-core runtime-evidence-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core sarif-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core shape-index-artifact --input <path|-> [--result-output <path>]
+       lumin-audit-core source-use-assembly-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core staleness-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core symbol-graph-artifact --input <path|-> [--result-output <path>]
        lumin-audit-core topology-artifact --input <path|-> [--result-output <path>]

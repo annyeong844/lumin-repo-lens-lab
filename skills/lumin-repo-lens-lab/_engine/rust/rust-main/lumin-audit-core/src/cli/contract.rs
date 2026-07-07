@@ -35,6 +35,7 @@ const SUPPORTED_SUBCOMMANDS: &[&str] = &[
     "runtime-evidence-artifact",
     "sarif-artifact",
     "shape-index-artifact",
+    "source-use-assembly-artifact",
     "staleness-artifact",
     "symbol-graph-artifact",
     "topology-artifact",
@@ -113,6 +114,7 @@ const RESULT_OUTPUT_SUBCOMMANDS: &[&str] = &[
     "runtime-evidence-artifact",
     "sarif-artifact",
     "shape-index-artifact",
+    "source-use-assembly-artifact",
     "staleness-artifact",
     "symbol-graph-artifact",
     "topology-artifact",
@@ -132,7 +134,8 @@ pub(super) fn run_runtime_contract(args: Vec<String>) -> Result<()> {
         "features": {
             "resultOutput": true,
             "resultOutputSilencesStdout": true,
-            "jsTsExtractNamedImportEvidence": true
+            "jsTsExtractNamedImportEvidence": true,
+            "sourceUseAssembly": true
         },
         "supportedSubcommands": SUPPORTED_SUBCOMMANDS,
         "resultOutputSubcommands": RESULT_OUTPUT_SUBCOMMANDS
