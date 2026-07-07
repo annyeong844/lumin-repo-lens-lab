@@ -138,6 +138,10 @@ license = "MIT"
 [workspace.dependencies]
 anyhow = "1"
 lumin-rust-common = { path = "rust-common", default-features = false }
+oxc_allocator = "0.139.0"
+oxc_ast = "0.139.0"
+oxc_parser = "0.139.0"
+oxc_span = "0.139.0"
 serde = "1"
 serde_json = "1"
 sha2 = "0.10"

@@ -17,6 +17,7 @@ mod export_action_safety;
 mod framework_resource_surfaces;
 mod function_clones;
 mod io_support;
+mod js_ts_extract;
 mod lifecycle;
 mod manifest;
 mod module_reachability;
@@ -48,6 +49,7 @@ use entry_surface::*;
 use export_action_safety::*;
 use framework_resource_surfaces::*;
 use function_clones::*;
+use js_ts_extract::*;
 use lifecycle::*;
 use manifest::*;
 use module_reachability::*;
@@ -90,6 +92,7 @@ pub fn run() -> Result<()> {
             run_framework_resource_surfaces_artifact(args.collect())
         }
         Some("function-clones-artifact") => run_function_clones_artifact(args.collect()),
+        Some("js-ts-extract-artifact") => run_js_ts_extract_artifact(args.collect()),
         Some("module-reachability-artifact") => run_module_reachability_artifact(args.collect()),
         Some("rank-fixes-artifact") => run_rank_fixes_artifact(args.collect()),
         Some("resolver-diagnostics-artifacts") => {
