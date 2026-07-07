@@ -2017,14 +2017,61 @@ function processOutOfBandImportConsumers(consumers, source, handledRecords = new
   return resolvedConsumerUses;
 }
 
-function processSfcScriptSourceReachability(consumers, handledRecords = new Set()) {
+const SFC_SCRIPT_SRC_SOURCE_EXTS = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".mts",
+  ".cts",
+  ".d.ts",
+  ".d.mts",
+  ".d.cts",
+];
+const SFC_SCRIPT_SRC_INDEX_EXTS = SFC_SCRIPT_SRC_SOURCE_EXTS.map(
+  (ext) => `/index${ext}`,
+);
+
+function isScannedJsSourceFile(filePath) {
+  if (typeof filePath !== "string" || filePath.length === 0) return false;
+  return (
+    scannedJsSourceFiles.has(filePath) ||
+    scannedJsSourceFiles.has(path.resolve(filePath))
+  );
+}
+
+function stripSfcScriptSrcResourceQuery(spec) {
+  const value = String(spec ?? "");
+  const query = value.indexOf("?");
+  const fragment = value.indexOf("#");
+  const cuts = [query, fragment].filter((index) => index >= 0);
+  return cuts.length === 0 ? value : value.slice(0, Math.min(...cuts));
+}
+
+function resolveSfcScriptScannedSourceFallback(consumerFile, fromSpec) {
+  if (!isSourceUseAssemblyCandidate({ fromSpec })) return null;
+  const base = path.resolve(
+    path.dirname(consumerFile),
+    stripSfcScriptSrcResourceQuery(fromSpec),
+  );
+  for (const ext of SFC_SCRIPT_SRC_SOURCE_EXTS) {
+    const candidate = base + ext;
+    if (isScannedJsSourceFile(candidate)) return candidate;
+  }
+  for (const ext of SFC_SCRIPT_SRC_INDEX_EXTS) {
+    const candidate = base + ext;
+    if (isScannedJsSourceFile(candidate)) return candidate;
+  }
+  return null;
+}
+
+function processSfcScriptSourceReachability(consumers) {
   let resolvedReachabilityUses = 0;
   for (let index = 0; index < consumers.length; index++) {
     const u = consumers[index];
-    if (handledRecords.has(outOfBandSourceUseRecordId("sfc-script-src", index, u))) {
-      continue;
-    }
-    const target = resolveSpecifier(u.consumerFile, u);
+    let target = resolveSpecifier(u.consumerFile, u);
     if (target === "EXTERNAL") continue;
     if (isNonSourceAssetResolution(target)) {
       nonSourceAssetUses++;
@@ -2053,6 +2100,31 @@ function processSfcScriptSourceReachability(consumers, handledRecords = new Set(
     if (isGeneratedVirtualResolution(target)) {
       generatedVirtualSurfaces.set(target.id, target);
       continue;
+    }
+    if (!isScannedJsSourceFile(target)) {
+      const sourceTarget = resolveSfcScriptScannedSourceFallback(
+        u.consumerFile,
+        u.fromSpec,
+      );
+      if (sourceTarget) {
+        target = sourceTarget;
+      } else if (typeof target === "string" && fileExists(target)) {
+        nonSourceAssetUses++;
+        continue;
+      } else {
+        const diagnosticUse = {
+          ...u,
+          reason: "sfc-script-src-unscanned-target",
+          resolverStage: "sfc-script-src",
+          outputLevel: "unsupported",
+          unsupportedFamily: "sfc-script-src",
+          hint: "sfc-script-src-source-target",
+        };
+        unresolvedInternalUses++;
+        unresolvedUses++;
+        recordUnresolvedInternalSpecifier(u.consumerFile, diagnosticUse);
+        continue;
+      }
     }
 
     totalUses++;
@@ -2368,19 +2440,8 @@ const sfcScriptSources = collectSfcScriptSources({
   files: sfcSourceFiles,
 });
 phaseTimer.setCounter("sfcScriptSrcCandidateCount", sfcScriptSources.length);
-const sfcScriptSrcSourceUseAssembly = runSourceUseAssemblyForRecords(
-  buildOutOfBandSourceUseAssemblyCandidates(
-    sfcScriptSources,
-    "sfc-script-src",
-  ),
-  "sfcScriptSrcSourceUse",
-  "rust-sfc-script-src-source-use-assembly-unavailable",
-);
 sfcScriptSrcReachabilityUses =
-  processSfcScriptSourceReachability(
-    sfcScriptSources,
-    sfcScriptSrcSourceUseAssembly.handled,
-  ) + sfcScriptSrcSourceUseAssembly.resolvedInternalUses;
+  processSfcScriptSourceReachability(sfcScriptSources);
 phaseTimer.recordPhase(
   "assemble-sfc-script-src-uses",
   Date.now() - assembleSfcScriptSrcStarted,
