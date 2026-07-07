@@ -14,6 +14,7 @@ import { performance } from "node:perf_hooks";
 
 import { detectBarrelFiles } from "./_lib/alias-map.mjs";
 import { extractDefinitionsAndUses } from "./_lib/extract-ts.mjs";
+import { extractRustJsHybridBatch } from "./_lib/extract-ts-rust-hybrid.mjs";
 import { goExtractShape } from "./_lib/extract-go.mjs";
 import { pythonExtractShape } from "./_lib/extract-py.mjs";
 import { parseCliArgs } from "./_lib/cli.mjs";
@@ -166,7 +167,7 @@ if (tsEnabled) langList.push("go");
 const PRODUCER_ID = "symbols";
 const PRODUCER_VERSION = 1;
 const FACT_SCHEMA_VERSION = 5;
-const PARSER_IDENTITY = "symbol-graph-extractors:v3";
+const PARSER_IDENTITY = "symbol-graph-extractors:v4-rust-js-hybrid";
 const incrementalEnabled = cli.raw?.["no-incremental"] !== true;
 
 function isJsFamilyFile(filePath) {
@@ -342,6 +343,7 @@ const warnings = [];
 const extractPhaseMs = {
   pythonBatch: 0,
   goBatch: 0,
+  rustJsBatch: 0,
   jsFiles: 0,
   mdxFiles: 0,
   sfcFiles: 0,
@@ -408,6 +410,36 @@ if (changedTs.length > 0 && tsEnabled) {
   }
 }
 
+let rustJsHybrid = {
+  results: new Map(),
+  summary: {
+    candidateFiles: changedJs.length,
+    eligibleFiles: 0,
+    fallbackFiles: changedJs.length,
+    rustExtractedFiles: 0,
+    rustParseErrorFiles: 0,
+    readErrorFiles: 0,
+    commandFailedFiles: 0,
+    batchCount: 0,
+    inputBytes: 0,
+    fallbackByReason: {},
+  },
+  warnings: [],
+};
+if (changedJs.length > 0) {
+  const rustJsBatchStarted = Date.now();
+  try {
+    rustJsHybrid = extractRustJsHybridBatch({
+      root: ROOT,
+      files: changedJs,
+      verbose,
+    });
+    warnings.push(...rustJsHybrid.warnings);
+  } finally {
+    extractPhaseMs.rustJsBatch += Date.now() - rustJsBatchStarted;
+  }
+}
+
 let parseErrors = 0;
 let extractedFiles = 0;
 let extractedJsFiles = 0;
@@ -470,11 +502,28 @@ for (const f of changed) {
         loc: 0,
       }));
     } else {
-      payload = timeExtractPhase("jsFiles", () =>
-        extractDefinitionsAndUses(f, {
-          artifactFilePath: relPath(ROOT, f),
-        }),
-      );
+      const rustResult = rustJsHybrid.results.get(f);
+      if (rustResult?.error) {
+        parseErrors++;
+        if (verbose)
+          console.error(`js rust parse fail: ${f}: ${rustResult.error}`);
+        nextCache.entries[f] = { parseError: true };
+        if (incrementalEnabled && entry) {
+          putFact(nextProducerCache, {
+            snapshotEntry: entry,
+            producerMeta: producerCacheMeta,
+            payload: nextCache.entries[f],
+          });
+        }
+        continue;
+      }
+      payload =
+        rustResult ??
+        timeExtractPhase("jsFiles", () =>
+          extractDefinitionsAndUses(f, {
+            artifactFilePath: relPath(ROOT, f),
+          }),
+        );
     }
     nextCache.entries[f] = { ...payload, parseError: false };
     extractedFiles++;
@@ -511,6 +560,7 @@ for (const f of changed) {
 }
 phaseTimer.recordPhase("extract-python-batch", extractPhaseMs.pythonBatch);
 phaseTimer.recordPhase("extract-go-batch", extractPhaseMs.goBatch);
+phaseTimer.recordPhase("extract-rust-js-batch", extractPhaseMs.rustJsBatch);
 phaseTimer.recordPhase("extract-js-files", extractPhaseMs.jsFiles);
 phaseTimer.recordPhase("extract-mdx-files", extractPhaseMs.mdxFiles);
 phaseTimer.recordPhase("extract-sfc-files", extractPhaseMs.sfcFiles);
@@ -531,6 +581,46 @@ phaseTimer.setCounter("extractedSfcFiles", extractedSfcFiles);
 phaseTimer.setCounter("extractedPythonFiles", extractedPythonFiles);
 phaseTimer.setCounter("extractedGoFiles", extractedGoFiles);
 phaseTimer.setCounter("parseErrorCount", parseErrors);
+phaseTimer.setCounter(
+  "rustJsExtractorCandidateFiles",
+  rustJsHybrid.summary.candidateFiles,
+);
+phaseTimer.setCounter(
+  "rustJsExtractorEligibleFiles",
+  rustJsHybrid.summary.eligibleFiles,
+);
+phaseTimer.setCounter(
+  "rustJsExtractorFallbackFiles",
+  rustJsHybrid.summary.fallbackFiles,
+);
+phaseTimer.setCounter(
+  "rustJsExtractorExtractedFiles",
+  rustJsHybrid.summary.rustExtractedFiles,
+);
+phaseTimer.setCounter(
+  "rustJsExtractorParseErrorFiles",
+  rustJsHybrid.summary.rustParseErrorFiles,
+);
+phaseTimer.setCounter(
+  "rustJsExtractorReadErrorFiles",
+  rustJsHybrid.summary.readErrorFiles,
+);
+phaseTimer.setCounter(
+  "rustJsExtractorCommandFailedFiles",
+  rustJsHybrid.summary.commandFailedFiles,
+);
+phaseTimer.setCounter("rustJsExtractorBatchCount", rustJsHybrid.summary.batchCount);
+phaseTimer.setCounter("rustJsExtractorInputBytes", rustJsHybrid.summary.inputBytes);
+for (const [reason, count] of Object.entries(
+  rustJsHybrid.summary.fallbackByReason ?? {},
+)) {
+  const suffix = reason
+    .split("-")
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join("");
+  phaseTimer.setCounter(`rustJsExtractorFallback${suffix}Files`, count);
+}
 
 const assembleSymbolGraphStarted = Date.now();
 const assembleFileDataStarted = Date.now();

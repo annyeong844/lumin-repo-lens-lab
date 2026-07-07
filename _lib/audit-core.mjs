@@ -131,6 +131,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'function-clones-artifact: missing --input <path|->',
   ],
   [
+    ['js-ts-extract-artifact'],
+    'js-ts-extract-artifact: missing --input <path|->',
+  ],
+  [
     ['module-reachability-artifact'],
     'module-reachability-artifact: missing --input <path|->',
   ],
@@ -195,6 +199,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'export-action-safety-artifact',
   'framework-resource-surfaces-artifact',
   'function-clones-artifact',
+  'js-ts-extract-artifact',
   'module-reachability-artifact',
   'rank-fixes-artifact',
   'resolver-diagnostics-artifacts',
@@ -408,6 +413,7 @@ function auditCoreBinaryWritesResultFiles(command) {
   const entrySurfaceInputPath = path.join(tempDir, 'entry-surface-artifact.json');
   const exportActionSafetyInputPath = path.join(tempDir, 'export-action-safety-artifact.json');
   const functionClonesInputPath = path.join(tempDir, 'function-clones-artifact.json');
+  const jsTsExtractInputPath = path.join(tempDir, 'js-ts-extract-artifact.json');
   const moduleReachabilityInputPath = path.join(tempDir, 'module-reachability-artifact.json');
   const rankFixesInputPath = path.join(tempDir, 'rank-fixes-artifact.json');
   const resolverDiagnosticsInputPath = path.join(tempDir, 'resolver-diagnostics-artifacts.json');
@@ -715,6 +721,16 @@ writeFileSync(latest, JSON.stringify(advisory));
       diagnostics: [],
       filesWithParseErrors: [],
       filesWithReadErrors: [],
+    }));
+    writeFileSync(jsTsExtractInputPath, JSON.stringify({
+      schemaVersion: 'lumin-js-ts-extract-request.v1',
+      files: [
+        {
+          filePath: path.join(rootDir, 'src', 'consumer.mjs'),
+          artifactFilePath: 'src/consumer.mjs',
+          source: 'import dep from "./dep";\nexport const view = <dep.Widget />;\n',
+        },
+      ],
     }));
     writeFileSync(symbolGraphInputPath, JSON.stringify({
       schemaVersion: 'lumin-symbol-graph-producer-request.v1',
@@ -1319,6 +1335,11 @@ writeFileSync(latest, JSON.stringify(advisory));
         requiresArtifactReads: false,
       },
       {
+        subcommand: 'js-ts-extract-artifact',
+        args: ['js-ts-extract-artifact', '--input', jsTsExtractInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'symbol-graph-artifact',
         args: ['symbol-graph-artifact', '--input', symbolGraphInputPath],
         requiresArtifactReads: false,
@@ -1502,6 +1523,18 @@ function resultPayloadMatchesProbe(json, probe) {
       json.fanInByIdentity?.['src/a.ts::alpha'] === 0 &&
       json.deadProdList?.[0]?.symbol === 'alpha' &&
       json.unresolvedInternalSummaryByReason?.['alias-miss']?.count === 1;
+  }
+  if (probe.subcommand === 'js-ts-extract-artifact') {
+    const file = json.files?.[0];
+    return json.schemaVersion === 'lumin-js-ts-extract-response.v1' &&
+      isObject(file) &&
+      file.filePath.endsWith(path.join('src', 'consumer.mjs')) &&
+      file.error === undefined &&
+      file.uses?.[0]?.fromSpec === './dep' &&
+      file.uses?.[0]?.name === 'default' &&
+      file.uses?.[0]?.kind === 'default' &&
+      file.defs?.[0]?.name === 'view' &&
+      file.defs?.[0]?.kind === 'const-var';
   }
   if (probe.subcommand === 'checklist-facts-artifact') {
     return isObject(json.meta) &&

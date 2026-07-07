@@ -144,6 +144,109 @@ export default class Widget {
 }
 
 #[test]
+fn cli_js_ts_extract_preserves_namespace_import_consumers() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("request.json");
+    let result = temp.path().join("result.json");
+    fs::write(
+        &input,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-js-ts-extract-request.v1",
+            "files": [{
+                "filePath": "C:/repo/src/consumer.ts",
+                "artifactFilePath": "src/consumer.ts",
+                "source": "import * as api from \"./dep\";\napi.foo();\n"
+            }]
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("js-ts-extract-artifact")
+        .arg("--input")
+        .arg(&input)
+        .arg("--result-output")
+        .arg(&result)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let artifact: Value = serde_json::from_slice(&fs::read(&result)?)?;
+    assert_eq!(
+        artifact["files"][0]["uses"],
+        json!([{
+            "fromSpec": "./dep",
+            "name": "*",
+            "kind": "namespace",
+            "typeOnly": false,
+            "line": 1,
+            "localName": "api"
+        }])
+    );
+    Ok(())
+}
+
+#[test]
+fn cli_js_ts_extract_retries_jsx_for_js_module_extensions() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("request.json");
+    let result = temp.path().join("result.json");
+    fs::write(
+        &input,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-js-ts-extract-request.v1",
+            "files": [
+                {
+                    "filePath": "C:/repo/src/view.mjs",
+                    "artifactFilePath": "src/view.mjs",
+                    "source": "import dep from \"./dep\";\nexport const view = <dep.Widget />;\n"
+                },
+                {
+                    "filePath": "C:/repo/src/template.cjs",
+                    "artifactFilePath": "src/template.cjs",
+                    "source": "const view = <Widget />;\n"
+                }
+            ]
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("js-ts-extract-artifact")
+        .arg("--input")
+        .arg(&input)
+        .arg("--result-output")
+        .arg(&result)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let artifact: Value = serde_json::from_slice(&fs::read(&result)?)?;
+    let mjs = &artifact["files"][0];
+    assert!(mjs.get("error").is_none());
+    assert_eq!(
+        mjs["uses"][0],
+        json!({
+            "fromSpec": "./dep",
+            "name": "default",
+            "kind": "default",
+            "typeOnly": false,
+            "line": 1
+        })
+    );
+    assert_eq!(mjs["defs"][0]["name"], "view");
+    assert_eq!(mjs["defs"][0]["kind"], "const-var");
+    assert!(artifact["files"][1].get("error").is_none());
+    Ok(())
+}
+
+#[test]
 fn cli_js_ts_extract_records_parse_error_per_file() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let input = temp.path().join("request.json");

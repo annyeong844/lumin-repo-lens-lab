@@ -169,7 +169,7 @@ fn extract_file(
 ) -> Result<JsTsExtractFileResult> {
     let allocator = Allocator::default();
     let source_type = source_type_for_path(&input.file_path);
-    let parsed = parse_program(&allocator, &input.source, source_type, &input.file_path)?;
+    let parsed = parse_program(&allocator, &input.source, source_type)?;
     let line_starts = line_starts(&input.source);
     let mut defs = Vec::new();
     let mut uses = Vec::new();
@@ -212,14 +212,13 @@ fn parse_program<'a>(
     allocator: &'a Allocator,
     source: &'a str,
     source_type: SourceType,
-    file_path: &str,
 ) -> Result<oxc_parser::ParserReturn<'a>> {
     let first = Parser::new(allocator, source, source_type).parse();
     if first.diagnostics.is_empty() {
         return Ok(first);
     }
-    if file_path.ends_with(".js") {
-        let jsx = Parser::new(allocator, source, SourceType::jsx()).parse();
+    if source_type.is_javascript() && !source_type.is_jsx() {
+        let jsx = Parser::new(allocator, source, source_type.with_jsx(true)).parse();
         if jsx.diagnostics.is_empty() {
             return Ok(jsx);
         }
@@ -705,7 +704,16 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
                     local_name: None,
                 });
             }
-            ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {}
+            ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
+                uses.push(UseRecord {
+                    from_spec: import.source.value.to_string(),
+                    name: "*".to_string(),
+                    kind: "namespace".to_string(),
+                    type_only: is_type_only(import.import_kind),
+                    line: line_for_span(line_starts, specifier.span),
+                    local_name: Some(specifier.local.name.to_string()),
+                });
+            }
         }
     }
 }
