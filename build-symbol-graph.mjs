@@ -1991,9 +1991,13 @@ function processOutOfBandImportConsumers(consumers, source, handledRecords = new
   return resolvedConsumerUses;
 }
 
-function processSfcScriptSourceReachability(consumers) {
+function processSfcScriptSourceReachability(consumers, handledRecords = new Set()) {
   let resolvedReachabilityUses = 0;
-  for (const u of consumers) {
+  for (let index = 0; index < consumers.length; index++) {
+    const u = consumers[index];
+    if (handledRecords.has(outOfBandSourceUseRecordId("sfc-script-src", index, u))) {
+      continue;
+    }
     const target = resolveSpecifier(u.consumerFile, u);
     if (target === "EXTERNAL") continue;
     if (isNonSourceAssetResolution(target)) {
@@ -2338,8 +2342,19 @@ const sfcScriptSources = collectSfcScriptSources({
   files: sfcSourceFiles,
 });
 phaseTimer.setCounter("sfcScriptSrcCandidateCount", sfcScriptSources.length);
+const sfcScriptSrcSourceUseAssembly = runSourceUseAssemblyForRecords(
+  buildOutOfBandSourceUseAssemblyCandidates(
+    sfcScriptSources,
+    "sfc-script-src",
+  ),
+  "sfcScriptSrcSourceUse",
+  "rust-sfc-script-src-source-use-assembly-unavailable",
+);
 sfcScriptSrcReachabilityUses =
-  processSfcScriptSourceReachability(sfcScriptSources);
+  processSfcScriptSourceReachability(
+    sfcScriptSources,
+    sfcScriptSrcSourceUseAssembly.handled,
+  ) + sfcScriptSrcSourceUseAssembly.resolvedInternalUses;
 phaseTimer.recordPhase(
   "assemble-sfc-script-src-uses",
   Date.now() - assembleSfcScriptSrcStarted,

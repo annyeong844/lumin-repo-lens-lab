@@ -204,6 +204,14 @@ pub fn build_source_use_assembly_response(
             skip(&mut response, record.record_id, "non-relative-specifier");
             continue;
         }
+        if looks_like_non_source_asset(from_spec) {
+            skip(
+                &mut response,
+                record.record_id,
+                "non-source-asset-specifier",
+            );
+            continue;
+        }
         let resolved_file = record
             .resolved_file
             .as_deref()
@@ -327,6 +335,10 @@ pub fn build_source_use_assembly_response(
             increment_branch(&mut response.branch_counts, "sideEffectOnly");
             continue;
         }
+        if kind == "sfc-script-src" {
+            increment_branch(&mut response.branch_counts, "sfcScriptSrcReachability");
+            continue;
+        }
         if kind == "reExportNamespace" {
             increment_branch(&mut response.branch_counts, "reExportNamespaceSkip");
             continue;
@@ -375,6 +387,37 @@ fn is_relative_spec(spec: &str) -> bool {
     spec.starts_with("./") || spec.starts_with("../")
 }
 
+fn looks_like_non_source_asset(spec: &str) -> bool {
+    let stripped = strip_resource_query(spec);
+    has_extension(stripped) && !js_source_extension(stripped)
+}
+
+fn strip_resource_query(spec: &str) -> &str {
+    let query = spec.find('?');
+    let fragment = spec.find('#').filter(|index| *index > 0);
+    match (query, fragment) {
+        (Some(left), Some(right)) => &spec[..left.min(right)],
+        (Some(index), None) | (None, Some(index)) => &spec[..index],
+        (None, None) => spec,
+    }
+}
+
+fn has_extension(spec: &str) -> bool {
+    let file_name = spec.rsplit('/').next().unwrap_or(spec);
+    file_name
+        .rfind('.')
+        .is_some_and(|index| index > 0 && index + 1 < file_name.len())
+}
+
+fn js_source_extension(spec: &str) -> bool {
+    let lower = spec.to_ascii_lowercase();
+    [
+        ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".d.ts", ".d.mts", ".d.cts",
+    ]
+    .iter()
+    .any(|ext| lower.ends_with(ext))
+}
+
 fn is_broad_namespace_use(kind: &str) -> bool {
     matches!(
         kind,
@@ -388,6 +431,7 @@ fn requires_symbol_name(kind: &str) -> bool {
         "cjs-side-effect-only"
             | "import-side-effect"
             | "reExportNamespace"
+            | "sfc-script-src"
             | "namespace"
             | "reExportAll"
             | "dynamic"
@@ -413,6 +457,7 @@ fn edge_kind_for_use(kind: &str) -> &str {
         "cjs-namespace-member" => "cjs-namespace-member",
         "cjs-namespace-escape" => "cjs-namespace-escape",
         "cjs-reexport-broad" => "cjs-reexport-broad",
+        "sfc-script-src" => "sfc-script-src",
         other => other,
     }
 }
@@ -913,6 +958,69 @@ mod tests {
             response.resolved_internal_edges[0].kind,
             "import-side-effect"
         );
+        assert!(response.direct_consumers.is_empty());
+        assert!(response.namespace_users.is_empty());
+    }
+
+    #[test]
+    fn sfc_script_src_uses_keep_reachability_edges_without_consumers() {
+        let response = response(request(json!([
+            {
+                "recordId": "sfc-script-src:0:components/App.vue:../src/setup.ts",
+                "consumerFile": "C:/repo/components/App.vue",
+                "resolvedFile": "C:/repo/src/setup.ts",
+                "fromSpec": "../src/setup.ts",
+                "name": "*",
+                "kind": "sfc-script-src",
+                "sfcLanguage": "vue",
+                "line": 2
+            }
+        ])));
+
+        assert_eq!(response.summary.handled_count, 1);
+        assert_eq!(response.branch_counts["sfcScriptSrcReachability"], 1);
+        assert_eq!(
+            response.resolved_internal_edges[0].from,
+            "components/App.vue"
+        );
+        assert_eq!(response.resolved_internal_edges[0].to, "src/setup.ts");
+        assert_eq!(response.resolved_internal_edges[0].kind, "sfc-script-src");
+        assert_eq!(
+            response.resolved_internal_edges[0].source.as_deref(),
+            Some("../src/setup.ts")
+        );
+        assert!(response.direct_consumers.is_empty());
+        assert!(response.namespace_users.is_empty());
+    }
+
+    #[test]
+    fn non_source_asset_specs_are_left_for_js_asset_filtering() {
+        let request = must_request(json!({
+            "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+            "root": "C:/repo",
+            "sourceFiles": [
+                "C:/repo/components/App.vue",
+                "C:/repo/components/style.css.d.ts"
+            ],
+            "records": [
+                {
+                    "recordId": "sfc-script-src:0:components/App.vue:./style.css",
+                    "consumerFile": "C:/repo/components/App.vue",
+                    "fromSpec": "./style.css",
+                    "name": "*",
+                    "kind": "sfc-script-src"
+                }
+            ]
+        }));
+        let response = response(request);
+
+        assert_eq!(response.summary.handled_count, 0);
+        assert_eq!(response.summary.skipped_count, 1);
+        assert_eq!(
+            response.skipped_records[0].reason,
+            "non-source-asset-specifier"
+        );
+        assert!(response.resolved_internal_edges.is_empty());
         assert!(response.direct_consumers.is_empty());
         assert!(response.namespace_users.is_empty());
     }
