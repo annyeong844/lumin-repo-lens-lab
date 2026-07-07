@@ -1443,18 +1443,26 @@ function sourceUseAssemblyRecord(recordId, consumerFile, use) {
 
 function buildSourceUseAssemblyCandidates() {
   const records = [];
+  const preHandled = new Set();
   for (const [consumerFile, info] of fileData) {
     for (let index = 0; index < info.uses.length; index++) {
       const use = info.uses[index];
+      const recordId = sourceUseRecordId(consumerFile, index);
+      if (isUnresolvableNamespaceReExportUse(use)) {
+        preHandled.add(recordId);
+        incrementSourceUseBranch("namespaceReExport");
+        incrementSourceUseBranch("namespaceReExportMiss");
+        continue;
+      }
       const record = sourceUseAssemblyRecord(
-        sourceUseRecordId(consumerFile, index),
+        recordId,
         consumerFile,
         use,
       );
       if (record) records.push(record);
     }
   }
-  return records;
+  return { records, preHandled };
 }
 
 function buildOutOfBandSourceUseAssemblyCandidates(consumers, source) {
@@ -1582,10 +1590,28 @@ function runSourceUseAssemblyForRecords(records, counterPrefix, warningKind) {
 }
 
 function runSourceUseAssembly() {
-  return runSourceUseAssemblyForRecords(
-    buildSourceUseAssemblyCandidates(),
+  const candidates = buildSourceUseAssemblyCandidates();
+  phaseTimer.setCounter(
+    "sourceUsePreHandledNamespaceReExportMissCount",
+    candidates.preHandled.size,
+  );
+  const result = runSourceUseAssemblyForRecords(
+    candidates.records,
     "sourceUse",
     "rust-source-use-assembly-unavailable",
+  );
+  return {
+    ...result,
+    handled: new Set([...candidates.preHandled, ...result.handled]),
+  };
+}
+
+function isUnresolvableNamespaceReExportUse(use) {
+  return (
+    isSourceUseAssemblyCandidate(use) &&
+    namespaceReExportsByFile.size === 0 &&
+    (use?.kind === "imported-namespace-member" ||
+      use?.kind === "imported-namespace-escape")
   );
 }
 
