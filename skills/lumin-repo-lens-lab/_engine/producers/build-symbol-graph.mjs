@@ -1430,6 +1430,7 @@ function buildSourceUseAssemblyCandidates() {
         resolvedFile: use.resolvedFile,
         fromSpec: use.fromSpec,
         name: use.name,
+        memberName: use.memberName,
         kind: use.kind,
         typeOnly: use.typeOnly === true,
         line: Number.isFinite(use.line) ? use.line : undefined,
@@ -1480,7 +1481,26 @@ function applySourceUseAssemblyResult(result) {
     if (!namespaceUsers.has(defFile)) namespaceUsers.set(defFile, new Set());
     namespaceUsers.get(defFile).add(consumerFile);
   }
+  for (const diagnostic of result.namespaceReExportDiagnostics ?? []) {
+    if (!diagnostic || typeof diagnostic !== "object") continue;
+    namespaceReExportDiagnostics.push({ ...diagnostic });
+  }
   return handled;
+}
+
+function sourceUseAssemblyReExportEntries(map) {
+  const entries = [];
+  for (const [barrelFile, byName] of map) {
+    for (const [exportedName, target] of byName) {
+      entries.push({
+        barrelFile,
+        exportedName,
+        targetFile: target.targetFile,
+        sourceSpec: target.sourceSpec,
+      });
+    }
+  }
+  return entries;
 }
 
 function runSourceUseAssembly() {
@@ -1496,6 +1516,8 @@ function runSourceUseAssembly() {
           schemaVersion: "lumin-source-use-assembly-request.v1",
           root: ROOT,
           sourceFiles: [...scannedJsSourceFiles],
+          namespaceReExports: sourceUseAssemblyReExportEntries(namespaceReExportsByFile),
+          namedReExports: sourceUseAssemblyReExportEntries(namedReExportsByFile),
           records,
         }),
       },
