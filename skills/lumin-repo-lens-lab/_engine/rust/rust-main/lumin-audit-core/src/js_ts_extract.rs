@@ -1902,7 +1902,7 @@ impl RelativeSourceResolver {
             }
         }
         if js_output_extension(spec) {
-            for alt in [".ts", ".tsx", ".mts", ".cts"] {
+            for alt in js_output_source_extensions(spec) {
                 if let Some(swapped) = replace_js_output_extension(spec, alt) {
                     let candidate = join_relative_spec(dirname_text(from_file), &swapped);
                     if let Some(resolved) = self.source_file(&candidate) {
@@ -2004,6 +2004,14 @@ fn js_output_extension(spec: &str) -> bool {
     [".mjs", ".cjs", ".js", ".jsx"]
         .iter()
         .any(|ext| spec.ends_with(ext))
+}
+
+fn js_output_source_extensions(spec: &str) -> &'static [&'static str] {
+    if spec.ends_with(".jsx") {
+        &[".tsx", ".ts"]
+    } else {
+        &[".ts", ".tsx", ".mts", ".cts"]
+    }
 }
 
 fn replace_js_output_extension(spec: &str, alt: &str) -> Option<String> {
@@ -2309,5 +2317,49 @@ fn line_for_span(line_starts: &[usize], span: Span) -> usize {
     match line_starts.binary_search(&offset) {
         Ok(index) => index + 1,
         Err(index) => index,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn extract_with_source_files(source_files: Vec<&str>) -> Result<JsTsExtractResponse> {
+        build_js_ts_extract_response(JsTsExtractRequest {
+            schema_version: JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION.to_string(),
+            source_files: source_files.into_iter().map(str::to_string).collect(),
+            files: vec![JsTsExtractInputFile {
+                file_path: "C:/repo/src/consumer.ts".to_string(),
+                artifact_file_path: None,
+                source: "import { view } from './view.jsx';\nconsole.log(view);\n".to_string(),
+            }],
+        })
+    }
+
+    #[test]
+    fn jsx_output_import_prefers_tsx_before_ts() -> Result<()> {
+        let response = extract_with_source_files(vec![
+            "C:/repo/src/consumer.ts",
+            "C:/repo/src/view.ts",
+            "C:/repo/src/view.tsx",
+        ])?;
+
+        assert_eq!(
+            response.files[0].uses[0].resolved_file.as_deref(),
+            Some("C:/repo/src/view.tsx")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn jsx_output_import_falls_back_to_ts_when_tsx_source_is_absent() -> Result<()> {
+        let response =
+            extract_with_source_files(vec!["C:/repo/src/consumer.ts", "C:/repo/src/view.ts"])?;
+
+        assert_eq!(
+            response.files[0].uses[0].resolved_file.as_deref(),
+            Some("C:/repo/src/view.ts")
+        );
+        Ok(())
     }
 }

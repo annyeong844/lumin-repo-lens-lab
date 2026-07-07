@@ -325,7 +325,7 @@ function resolveRelative(fromFile, spec, probeCache, stageStats, probeContext = 
   }
   // ESM-compiled JS in source trees often maps to TS/TSX originals.
   if (/\.(mjs|cjs|js|jsx)$/.test(spec)) {
-    const sourceExts = /\.jsx$/.test(spec) ? ['.tsx'] : ['.ts', '.tsx', '.mts', '.cts'];
+    const sourceExts = /\.jsx$/.test(spec) ? ['.tsx', '.ts'] : ['.ts', '.tsx', '.mts', '.cts'];
     for (const alt of sourceExts) {
       const swapped = spec.replace(/\.(mjs|cjs|js|jsx)$/, alt);
       const p = path.resolve(path.dirname(fromFile), swapped);

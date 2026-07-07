@@ -587,12 +587,7 @@ impl RelativeSourceResolver {
             }
         }
         if js_output_extension(spec) {
-            let source_exts: &[&str] = if spec.ends_with(".jsx") {
-                &[".tsx"]
-            } else {
-                &[".ts", ".tsx", ".mts", ".cts"]
-            };
-            for alt in source_exts {
+            for alt in js_output_source_extensions(spec) {
                 if let Some(swapped) = replace_js_output_extension(spec, alt) {
                     let candidate = join_relative_spec(dirname_text(from_file), &swapped);
                     if let Some(resolved) = self.source_file(&candidate) {
@@ -683,6 +678,14 @@ fn js_output_extension(spec: &str) -> bool {
     [".mjs", ".cjs", ".js", ".jsx"]
         .iter()
         .any(|ext| spec.ends_with(ext))
+}
+
+fn js_output_source_extensions(spec: &str) -> &'static [&'static str] {
+    if spec.ends_with(".jsx") {
+        &[".tsx", ".ts"]
+    } else {
+        &[".ts", ".tsx", ".mts", ".cts"]
+    }
 }
 
 fn replace_js_output_extension(spec: &str, alt: &str) -> Option<String> {
@@ -964,6 +967,31 @@ mod tests {
 
         assert_eq!(response.summary.handled_count, 1);
         assert_eq!(response.resolved_internal_edges[0].to, "src/view.tsx");
+    }
+
+    #[test]
+    fn jsx_output_import_falls_back_to_ts_when_tsx_source_is_absent() {
+        let request = must_request(json!({
+            "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+            "root": "C:/repo",
+            "sourceFiles": [
+                "C:/repo/src/consumer.ts",
+                "C:/repo/src/view.ts"
+            ],
+            "records": [
+                {
+                    "recordId": "src/consumer.ts#0",
+                    "consumerFile": "C:/repo/src/consumer.ts",
+                    "fromSpec": "./view.jsx",
+                    "name": "view",
+                    "kind": "import"
+                }
+            ]
+        }));
+        let response = response(request);
+
+        assert_eq!(response.summary.handled_count, 1);
+        assert_eq!(response.resolved_internal_edges[0].to, "src/view.ts");
     }
 
     #[test]
