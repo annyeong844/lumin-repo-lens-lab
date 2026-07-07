@@ -95,7 +95,8 @@ function sameProducerMeta(a = {}, b = {}) {
     a.factSchemaVersion === b.factSchemaVersion &&
     a.parserIdentity === b.parserIdentity &&
     a.scanFingerprint === b.scanFingerprint &&
-    a.configFingerprint === b.configFingerprint
+    a.configFingerprint === b.configFingerprint &&
+    a.sourceSetFingerprint === b.sourceSetFingerprint
   );
 }
 

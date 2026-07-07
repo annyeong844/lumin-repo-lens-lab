@@ -293,6 +293,11 @@ function auditCoreBinary() {
   }
   const pathBinary = executableOnPath(exe);
   if (pathBinary && auditCoreCandidateSupportsCurrentContract(pathBinary)) return remember(pathBinary);
+  if (existsSync(packagedPlatform)) {
+    throw new Error(
+      `lumin-audit-core binary at ${packagedPlatform} does not satisfy the required runtime contract.${auditCorePlatformHint()}`
+    );
+  }
   return remember(packagedPlatform);
 }
 
@@ -360,6 +365,7 @@ function auditCoreBinaryReportsCurrentContract(command) {
   if (contract?.contractVersion !== AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION) return false;
   if (contract?.features?.resultOutput !== true) return false;
   if (contract?.features?.resultOutputSilencesStdout !== true) return false;
+  if (contract?.features?.jsTsExtractNamedImportEvidence !== true) return false;
 
   const supported = new Set(Array.isArray(contract.supportedSubcommands)
     ? contract.supportedSubcommands
@@ -728,7 +734,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         {
           filePath: path.join(rootDir, 'src', 'consumer.mjs'),
           artifactFilePath: 'src/consumer.mjs',
-          source: 'import dep from "./dep";\nexport const view = <dep.Widget />;\n',
+          source: 'import { api, bare } from "./dep";\napi.foo();\nexport const view = bare;\n',
         },
       ],
     }));
@@ -1526,13 +1532,25 @@ function resultPayloadMatchesProbe(json, probe) {
   }
   if (probe.subcommand === 'js-ts-extract-artifact') {
     const file = json.files?.[0];
+    const uses = Array.isArray(file?.uses) ? file.uses : [];
     return json.schemaVersion === 'lumin-js-ts-extract-response.v1' &&
       isObject(file) &&
       file.filePath.endsWith(path.join('src', 'consumer.mjs')) &&
       file.error === undefined &&
-      file.uses?.[0]?.fromSpec === './dep' &&
-      file.uses?.[0]?.name === 'default' &&
-      file.uses?.[0]?.kind === 'default' &&
+      uses.some((use) =>
+        use?.fromSpec === './dep' &&
+        use?.name === 'api' &&
+        use?.kind === 'imported-namespace-member' &&
+        use?.memberName === 'foo' &&
+        use?.localName === 'api'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './dep' &&
+        use?.name === 'bare' &&
+        use?.kind === 'imported-namespace-escape' &&
+        use?.localName === 'bare' &&
+        use?.degraded === true
+      ) &&
       file.defs?.[0]?.name === 'view' &&
       file.defs?.[0]?.kind === 'const-var';
   }

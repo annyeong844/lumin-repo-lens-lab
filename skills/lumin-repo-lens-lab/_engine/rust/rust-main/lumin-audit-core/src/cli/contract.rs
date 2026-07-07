@@ -131,7 +131,8 @@ pub(super) fn run_runtime_contract(args: Vec<String>) -> Result<()> {
         "binary": "lumin-audit-core",
         "features": {
             "resultOutput": true,
-            "resultOutputSilencesStdout": true
+            "resultOutputSilencesStdout": true,
+            "jsTsExtractNamedImportEvidence": true
         },
         "supportedSubcommands": SUPPORTED_SUBCOMMANDS,
         "resultOutputSubcommands": RESULT_OUTPUT_SUBCOMMANDS

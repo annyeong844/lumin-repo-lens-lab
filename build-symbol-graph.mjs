@@ -8,6 +8,7 @@
 //
 // Usage: node build-symbol-graph.mjs --root <repo> [--output <dir>]
 
+import { createHash } from "node:crypto";
 import { rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -195,6 +196,16 @@ function countNestedMapEntries(map) {
   return count;
 }
 
+function buildSourceSetFingerprint(root, sourceFiles) {
+  const normalized = [...sourceFiles].map((file) => relPath(root, file)).sort();
+  const hash = createHash("sha256");
+  for (const file of normalized) {
+    hash.update(file, "utf8");
+    hash.update("\n", "utf8");
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
 const contextFingerprint = buildContextFingerprint({
   includeTests: cli.includeTests,
   exclude: cli.exclude,
@@ -222,6 +233,7 @@ const snapshot = phaseTimer.runPhase("snapshot", () =>
 const snapshotEntries = Object.values(snapshot.files);
 const files = snapshotEntries.map((entry) => entry.absPath);
 const scannedJsSourceFiles = new Set(files.filter(isJsFamilyFile));
+const jsSourceSetFingerprint = buildSourceSetFingerprint(ROOT, scannedJsSourceFiles);
 _resolveRaw = makeResolver(ROOT, aliasMap, { sourceFiles: scannedJsSourceFiles });
 const mdxSourceFiles = files.filter(isMdxFamilyFile);
 const sfcSourceFiles = files.filter(isSfcFamilyFile);
@@ -264,6 +276,17 @@ const producerCacheMeta = {
   scanFingerprint: contextFingerprint,
   configFingerprint: contextFingerprint,
 };
+
+function producerCacheMetaForEntry(entry) {
+  if (entry && isJsFamilyFile(entry.absPath)) {
+    return {
+      ...producerCacheMeta,
+      sourceSetFingerprint: jsSourceSetFingerprint,
+    };
+  }
+  return producerCacheMeta;
+}
+
 const priorCache = incrementalEnabled
   ? loadProducerCache(cacheStore, PRODUCER_ID)
   : { entries: {}, meta: { loadStatus: "disabled" } };
@@ -288,7 +311,7 @@ for (const entry of snapshotEntries) {
   const reuse = incrementalEnabled
     ? getReusableFact(priorCache, {
         snapshotEntry: entry,
-        producerMeta: producerCacheMeta,
+        producerMeta: producerCacheMetaForEntry(entry),
       })
     : { status: "miss", reason: "disabled-by-flag" };
 
@@ -297,7 +320,7 @@ for (const entry of snapshotEntries) {
     nextCache.entries[entry.absPath] = reuse.payload;
     putFact(nextProducerCache, {
       snapshotEntry: entry,
-      producerMeta: producerCacheMeta,
+      producerMeta: producerCacheMetaForEntry(entry),
       payload: reuse.payload,
     });
     continue;
@@ -464,7 +487,7 @@ for (const f of changed) {
         if (incrementalEnabled && entry) {
           putFact(nextProducerCache, {
             snapshotEntry: entry,
-            producerMeta: producerCacheMeta,
+            producerMeta: producerCacheMetaForEntry(entry),
             payload: nextCache.entries[f],
           });
         }
@@ -483,7 +506,7 @@ for (const f of changed) {
         if (incrementalEnabled && entry) {
           putFact(nextProducerCache, {
             snapshotEntry: entry,
-            producerMeta: producerCacheMeta,
+            producerMeta: producerCacheMetaForEntry(entry),
             payload: nextCache.entries[f],
           });
         }
@@ -514,7 +537,7 @@ for (const f of changed) {
         if (incrementalEnabled && entry) {
           putFact(nextProducerCache, {
             snapshotEntry: entry,
-            producerMeta: producerCacheMeta,
+            producerMeta: producerCacheMetaForEntry(entry),
             payload: nextCache.entries[f],
           });
         }
@@ -544,7 +567,7 @@ for (const f of changed) {
     if (incrementalEnabled && entry) {
       putFact(nextProducerCache, {
         snapshotEntry: entry,
-        producerMeta: producerCacheMeta,
+        producerMeta: producerCacheMetaForEntry(entry),
         payload: nextCache.entries[f],
       });
     }
@@ -555,7 +578,7 @@ for (const f of changed) {
     if (incrementalEnabled && entry) {
       putFact(nextProducerCache, {
         snapshotEntry: entry,
-        producerMeta: producerCacheMeta,
+        producerMeta: producerCacheMetaForEntry(entry),
         payload: nextCache.entries[f],
       });
     }
