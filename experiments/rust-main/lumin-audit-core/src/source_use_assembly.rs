@@ -587,7 +587,12 @@ impl RelativeSourceResolver {
             }
         }
         if js_output_extension(spec) {
-            for alt in [".ts", ".tsx", ".mts", ".cts"] {
+            let source_exts: &[&str] = if spec.ends_with(".jsx") {
+                &[".tsx"]
+            } else {
+                &[".ts", ".tsx", ".mts", ".cts"]
+            };
+            for alt in source_exts {
                 if let Some(swapped) = replace_js_output_extension(spec, alt) {
                     let candidate = join_relative_spec(dirname_text(from_file), &swapped);
                     if let Some(resolved) = self.source_file(&candidate) {
@@ -936,7 +941,7 @@ mod tests {
     }
 
     #[test]
-    fn jsx_output_import_preserves_js_relative_resolver_swap_order() {
+    fn jsx_output_import_preserves_jsx_to_tsx_swap_order() {
         let request = must_request(json!({
             "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
             "root": "C:/repo",
@@ -958,7 +963,7 @@ mod tests {
         let response = response(request);
 
         assert_eq!(response.summary.handled_count, 1);
-        assert_eq!(response.resolved_internal_edges[0].to, "src/view.ts");
+        assert_eq!(response.resolved_internal_edges[0].to, "src/view.tsx");
     }
 
     #[test]

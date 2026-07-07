@@ -1097,6 +1097,7 @@ impl<'a> Visit<'a> for SpecificTypeEscapeVisitor<'_> {
             self.consumed_any_starts
                 .insert(it.type_annotation.span().start);
             self.push_fact(it.span, "as-any");
+            walk::walk_ts_as_expression(self, it);
             return;
         }
         walk::walk_ts_as_expression(self, it);

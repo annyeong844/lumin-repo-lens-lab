@@ -465,6 +465,27 @@ fn cli_js_ts_extract_emits_type_escape_facts() -> Result<()> {
 }
 
 #[test]
+fn cli_js_ts_extract_keeps_nested_as_any_casts_specific() -> Result<()> {
+    let artifact = run_js_ts_extract_for_source(
+        "src/nested-casts.ts",
+        "const value = (foo as any) as any;\n",
+    )?;
+    let escapes = type_escapes(&artifact);
+    let as_any_count = escapes
+        .iter()
+        .filter(|entry| entry["escapeKind"] == "as-any")
+        .count();
+    let explicit_any_count = escapes
+        .iter()
+        .filter(|entry| entry["escapeKind"] == "explicit-any")
+        .count();
+
+    assert_eq!(as_any_count, 2);
+    assert_eq!(explicit_any_count, 0);
+    Ok(())
+}
+
+#[test]
 fn cli_js_ts_extract_type_escapes_preserve_export_identity_and_normalization() -> Result<()> {
     let source = concat!(
         "export type X = any;\n",
