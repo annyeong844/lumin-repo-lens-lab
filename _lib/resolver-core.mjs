@@ -65,6 +65,8 @@ const RESOLVE_INDEX_EXTS = [
   '/index.mjs', '/index.cjs', '/index.mts', '/index.cts',
   '/index.d.ts', '/index.d.mts', '/index.d.cts',
 ];
+const JS_OUTPUT_SOURCE_EXTS = ['.ts', '.tsx', '.mts', '.cts'];
+const JSX_OUTPUT_SOURCE_EXTS = ['.tsx', '.ts'];
 export const NON_SOURCE_ASSET_RESOLUTION = 'NON_SOURCE_ASSET';
 const NODE_IMPORTS_UNSUPPORTED_REASON = 'hash-imports-unsupported';
 const NODE_IMPORTS_UNSUPPORTED_HINT = 'node-imports-unsupported';
@@ -242,13 +244,10 @@ function probeTarget(literal, probeContext = DEFAULT_PROBE_CONTEXT) {
   for (const ext of RESOLVE_INDEX_EXTS) {
     if (probeContext.fileExists(literal + ext)) return literal + ext;
   }
-  if (/\.jsx$/.test(literal)) {
-    const swap = literal.replace(/\.jsx$/, '.tsx');
-    if (probeContext.fileExists(swap)) return swap;
-  } else {
-    for (const alt of ['.ts', '.tsx']) {
-      const swap = literal.replace(/\.(mjs|cjs|js)$/, alt);
-      if (swap !== literal && probeContext.fileExists(swap)) return swap;
+  if (/\.(mjs|cjs|js|jsx)$/.test(literal)) {
+    for (const alt of sourceFallbackExtensionsForOutputPath(literal)) {
+      const swap = literal.replace(/\.(mjs|cjs|js|jsx)$/, alt);
+      if (probeContext.fileExists(swap)) return swap;
     }
   }
   return null;
@@ -267,7 +266,7 @@ function probeRootCandidate(base, probeContext = DEFAULT_PROBE_CONTEXT) {
     if (probeContext.fileExists(base + ext)) return base + ext;
   }
   if (/\.(mjs|cjs|js|jsx)$/.test(base)) {
-    for (const alt of ['.ts', '.tsx', '.mts', '.cts']) {
+    for (const alt of sourceFallbackExtensionsForOutputPath(base)) {
       const cand = base.replace(/\.(mjs|cjs|js|jsx)$/, alt);
       if (probeContext.fileExists(cand)) return cand;
     }
@@ -325,8 +324,7 @@ function resolveRelative(fromFile, spec, probeCache, stageStats, probeContext = 
   }
   // ESM-compiled JS in source trees often maps to TS/TSX originals.
   if (/\.(mjs|cjs|js|jsx)$/.test(spec)) {
-    const sourceExts = /\.jsx$/.test(spec) ? ['.tsx', '.ts'] : ['.ts', '.tsx', '.mts', '.cts'];
-    for (const alt of sourceExts) {
+    for (const alt of sourceFallbackExtensionsForOutputPath(spec)) {
       const swapped = spec.replace(/\.(mjs|cjs|js|jsx)$/, alt);
       const p = path.resolve(path.dirname(fromFile), swapped);
       if (probeContext.fileExists(p)) {
@@ -346,6 +344,10 @@ function resolveRelative(fromFile, spec, probeCache, stageStats, probeContext = 
   }
   probeCache?.set(cacheKey, result);
   return result;
+}
+
+function sourceFallbackExtensionsForOutputPath(spec) {
+  return /\.jsx$/.test(spec) ? JSX_OUTPUT_SOURCE_EXTS : JS_OUTPUT_SOURCE_EXTS;
 }
 
 // ── Stage 2: scoped tsconfig paths (FP-36) ───────────────
