@@ -22,10 +22,95 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v1"
+        "audit-core-js-runtime-bridge.v21"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
+    assert_eq!(contract["features"]["jsTsExtractNamedImportEvidence"], true);
+    assert_eq!(
+        contract["features"]["jsTsExtractImportMetaGlobEvidence"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["jsTsExtractLiteralDynamicImportEvidence"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["jsTsExtractDynamicImportOpacity"],
+        true
+    );
+    assert_eq!(contract["features"]["jsTsExtractLocalOperations"], true);
+    assert_eq!(contract["features"]["sourceUseAssembly"], true);
+    assert_eq!(
+        contract["features"]["sourceUseAssemblyResolvedRecordTargets"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["nonSourceAssetSourceUseAssembly"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["sourceUseAssemblyConsumerSourceCounters"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["sourceUseAssemblyRootRelativeSourceFiles"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["sourceUseAssemblyRootRelativeRecordPaths"],
+        true
+    );
+    assert_eq!(contract["features"]["symbolGraphTypedFinalization"], true);
+    assert_eq!(
+        contract["features"]["symbolGraphCoreTypedFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphTypedInputFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphFanInInputFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphDeadCandidateInputFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["generatedVirtualSourceUseAssembly"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["importMetaGlobSourceUseAssembly"],
+        true
+    );
+    assert_eq!(contract["features"]["sfcScriptSrcSourceUseAssembly"], true);
+    assert_eq!(
+        contract["features"]["symbolGraphEmbeddedSourceUseFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphSfcStyleAssetFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphSfcTemplateComponentFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphSfcGlobalComponentFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphSfcGeneratedManifestFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphSfcFrameworkConventionFinalization"],
+        true
+    );
 
     let supported = contract["supportedSubcommands"]
         .as_array()

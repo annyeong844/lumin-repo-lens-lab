@@ -2,22 +2,26 @@ use anyhow::{anyhow, bail, Result};
 use lumin_rust_common::sha256_text;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
-    AssignmentExpression, BindingIdentifier, BindingPattern, Class, ClassElement, Comment,
-    Declaration, ExportAllDeclaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind,
-    ExportNamedDeclaration, Expression, FormalParameterRest, IdentifierReference, IfStatement,
-    ImportDeclaration, ImportDeclarationSpecifier, ImportOrExportKind, LogicalExpression,
-    MemberExpression, MethodDefinition, MethodDefinitionKind, ModuleExportName, Program,
-    PropertyDefinition, PropertyKey, SimpleAssignmentTarget, Statement, TSAccessibility,
+    Argument, AssignmentExpression, AssignmentPattern, BindingIdentifier, BindingPattern,
+    CallExpression, Class, ClassElement, Comment, Declaration, ExportAllDeclaration,
+    ExportDefaultDeclaration, ExportDefaultDeclarationKind, ExportNamedDeclaration, Expression,
+    FormalParameter, FormalParameterRest, Function, FunctionBody, IdentifierReference, IfStatement,
+    ImportDeclaration, ImportDeclarationSpecifier, ImportExpression, ImportOrExportKind,
+    LogicalExpression, MemberExpression, MethodDefinition, MethodDefinitionKind, ModuleExportName,
+    Program, PropertyDefinition, PropertyKey, SimpleAssignmentTarget, Statement, TSAccessibility,
     TSAnyKeyword, TSAsExpression, TSIndexSignature, TSType, TSTypeAssertion, TSTypeParameter,
-    UnaryExpression, UpdateExpression, VariableDeclaration, VariableDeclarationKind,
+    TemplateLiteral, UnaryExpression, UpdateExpression, VariableDeclaration,
+    VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::{walk, Visit};
 use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType, Span};
 use oxc_syntax::operator::UnaryOperator;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::Path;
 
 pub const JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION: &str = "lumin-js-ts-extract-request.v1";
@@ -38,7 +42,8 @@ pub struct JsTsExtractRequest {
 pub struct JsTsExtractInputFile {
     pub file_path: String,
     pub artifact_file_path: Option<String>,
-    pub source: String,
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -58,6 +63,8 @@ pub struct JsTsExtractFileResult {
     pub class_methods: Vec<ClassMethodRecord>,
     pub local_operations: Vec<serde_json::Value>,
     pub type_escapes: Vec<TypeEscapeRecord>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dynamic_import_opacity: Vec<DynamicImportOpacityRecord>,
     pub loc: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -93,6 +100,15 @@ pub struct UseRecord {
     pub resolved_file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolver_stage: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicImportOpacityRecord {
+    pub line: usize,
+    pub kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -137,6 +153,25 @@ pub struct TypeEscapeRecord {
 #[derive(Debug, Clone, Copy)]
 struct LocalDeclaration {
     node_kind: &'static str,
+    span: Span,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ContainerDeclaration<'a> {
+    Function(&'a Function<'a>),
+    Variable(&'a VariableDeclarator<'a>),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FactoryContainer<'a> {
+    name: &'a str,
+    container_kind: &'static str,
+    body: &'a FunctionBody<'a>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LocalOperationCandidate<'a> {
+    name: &'a str,
     span: Span,
 }
 
@@ -201,8 +236,26 @@ fn extract_file_or_error(
         .artifact_file_path
         .clone()
         .unwrap_or_else(|| input.file_path.clone());
-    let loc = line_count(&input.source);
-    match extract_file(&input, &artifact_file_path, relative_resolver) {
+    let source = match input.source {
+        Some(source) => source,
+        None => match fs::read_to_string(&input.file_path) {
+            Ok(source) => source,
+            Err(error) => {
+                return empty_file_result(
+                    input.file_path,
+                    0,
+                    Some(format!("failed to read source: {error}")),
+                );
+            }
+        },
+    };
+    let loc = line_count(&source);
+    match extract_file(
+        &input.file_path,
+        &source,
+        &artifact_file_path,
+        relative_resolver,
+    ) {
         Ok(mut result) => {
             result.loc = loc;
             result
@@ -224,20 +277,22 @@ fn empty_file_result(
         class_methods: Vec::new(),
         local_operations: Vec::new(),
         type_escapes: Vec::new(),
+        dynamic_import_opacity: Vec::new(),
         loc,
         error,
     }
 }
 
 fn extract_file(
-    input: &JsTsExtractInputFile,
+    file_path: &str,
+    source: &str,
     artifact_file_path: &str,
     relative_resolver: &RelativeSourceResolver,
 ) -> Result<JsTsExtractFileResult> {
     let allocator = Allocator::default();
-    let source_type = source_type_for_path(&input.file_path);
-    let parsed = parse_program(&allocator, &input.source, source_type)?;
-    let line_starts = line_starts(&input.source);
+    let source_type = source_type_for_path(file_path);
+    let parsed = parse_program(&allocator, source, source_type)?;
+    let line_starts = line_starts(source);
     let mut defs = Vec::new();
     let mut uses = Vec::new();
     let mut re_exports = Vec::new();
@@ -257,33 +312,42 @@ fn extract_file(
         collect_re_exports(statement, &mut re_exports, &mut uses, &line_starts);
         collect_imports(statement, &mut uses, &line_starts);
     }
+    uses.extend(collect_import_meta_glob_uses(&parsed.program, &line_starts));
+    let dynamic_imports = collect_dynamic_import_uses(&parsed.program, &line_starts);
+    uses.extend(dynamic_imports.uses);
     uses.extend(collect_named_import_precision_uses(
         &parsed.program,
         named_imports,
         &line_starts,
     ));
-    annotate_relative_resolutions(&input.file_path, &mut uses, relative_resolver);
+    annotate_relative_resolutions(file_path, &mut uses, relative_resolver);
 
     let class_methods =
         collect_class_method_surface(&parsed.program, &line_starts, artifact_file_path);
+    let local_operations = collect_pre_write_local_operation_surface(
+        &parsed.program,
+        &line_starts,
+        artifact_file_path,
+    );
     let type_escapes = collect_type_escapes(
         &parsed.program,
         &parsed.program.comments,
-        &input.source,
+        source,
         artifact_file_path,
         &line_starts,
         &exported_identity_ranges,
     );
 
     Ok(JsTsExtractFileResult {
-        file_path: input.file_path.clone(),
+        file_path: file_path.to_string(),
         defs,
         uses,
         re_exports,
         class_methods,
-        local_operations: Vec::new(),
+        local_operations,
         type_escapes,
-        loc: line_count(&input.source),
+        dynamic_import_opacity: dynamic_imports.opacity,
+        loc: line_count(source),
         error: None,
     })
 }
@@ -952,6 +1016,379 @@ fn collect_imports(statement: &Statement<'_>, uses: &mut Vec<UseRecord>, line_st
             }
         }
     }
+}
+
+fn collect_import_meta_glob_uses(program: &Program<'_>, line_starts: &[usize]) -> Vec<UseRecord> {
+    let mut visitor = ImportMetaGlobVisitor {
+        line_starts,
+        uses: Vec::new(),
+    };
+    visitor.visit_program(program);
+    visitor.uses
+}
+
+struct ImportMetaGlobVisitor<'a> {
+    line_starts: &'a [usize],
+    uses: Vec<UseRecord>,
+}
+
+impl<'a> Visit<'a> for ImportMetaGlobVisitor<'_> {
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if is_import_meta_glob_call(it) {
+            self.uses.push(UseRecord {
+                from_spec: import_meta_glob_pattern(it)
+                    .unwrap_or_else(|| "import.meta.glob(<nonliteral>)".to_string()),
+                name: "*".to_string(),
+                member_name: None,
+                kind: "import-meta-glob".to_string(),
+                type_only: false,
+                line: line_for_span(self.line_starts, it.span),
+                local_name: None,
+                degraded: true,
+                resolved_file: None,
+                resolver_stage: Some("import-meta-glob"),
+            });
+        }
+        walk::walk_call_expression(self, it);
+    }
+}
+
+fn is_import_meta_glob_call(call: &CallExpression<'_>) -> bool {
+    let Some(member) = call.callee.as_member_expression() else {
+        return false;
+    };
+    if member.static_property_name() != Some("glob") {
+        return false;
+    }
+    matches!(
+        member.object(),
+        Expression::MetaProperty(meta) if meta.meta.name == "import" && meta.property.name == "meta"
+    )
+}
+
+fn import_meta_glob_pattern(call: &CallExpression<'_>) -> Option<String> {
+    match call.arguments.first() {
+        Some(Argument::StringLiteral(literal)) => Some(literal.value.to_string()),
+        _ => None,
+    }
+}
+
+struct DynamicImportFacts {
+    uses: Vec<UseRecord>,
+    opacity: Vec<DynamicImportOpacityRecord>,
+}
+
+#[derive(Debug)]
+struct DynamicImportRecord {
+    from_spec: String,
+    local_name: String,
+    line: usize,
+    members: Vec<(String, usize)>,
+    degraded: bool,
+}
+
+fn collect_dynamic_import_uses(program: &Program<'_>, line_starts: &[usize]) -> DynamicImportFacts {
+    let mut visitor = DynamicImportVisitor {
+        line_starts,
+        scopes: vec![BTreeMap::new()],
+        records: Vec::new(),
+        handled_import_starts: BTreeSet::new(),
+        uses: Vec::new(),
+        opacity: Vec::new(),
+    };
+    visitor.visit_program(program);
+    visitor.finish()
+}
+
+struct DynamicImportVisitor<'a> {
+    line_starts: &'a [usize],
+    scopes: Vec<BTreeMap<String, Option<usize>>>,
+    records: Vec<DynamicImportRecord>,
+    handled_import_starts: BTreeSet<u32>,
+    uses: Vec<UseRecord>,
+    opacity: Vec<DynamicImportOpacityRecord>,
+}
+
+impl DynamicImportVisitor<'_> {
+    fn finish(mut self) -> DynamicImportFacts {
+        for record in self.records {
+            if !record.members.is_empty() && !record.degraded {
+                for (member_name, line) in record.members {
+                    self.uses.push(UseRecord {
+                        from_spec: record.from_spec.clone(),
+                        name: member_name,
+                        member_name: None,
+                        kind: "dynamic-member".to_string(),
+                        type_only: false,
+                        line,
+                        local_name: Some(record.local_name.clone()),
+                        degraded: false,
+                        resolved_file: None,
+                        resolver_stage: None,
+                    });
+                }
+            } else {
+                self.uses.push(UseRecord {
+                    from_spec: record.from_spec,
+                    name: "*".to_string(),
+                    member_name: None,
+                    kind: "dynamic".to_string(),
+                    type_only: false,
+                    line: record.line,
+                    local_name: Some(record.local_name),
+                    degraded: true,
+                    resolved_file: None,
+                    resolver_stage: None,
+                });
+            }
+        }
+
+        DynamicImportFacts {
+            uses: self.uses,
+            opacity: self.opacity,
+        }
+    }
+
+    fn current_scope_mut(&mut self) -> &mut BTreeMap<String, Option<usize>> {
+        if self.scopes.is_empty() {
+            self.scopes.push(BTreeMap::new());
+        }
+        let index = self.scopes.len() - 1;
+        &mut self.scopes[index]
+    }
+
+    fn bind_local(&mut self, name: &str) {
+        self.current_scope_mut().insert(name.to_string(), None);
+    }
+
+    fn bind_dynamic(&mut self, name: &str, index: usize) {
+        self.current_scope_mut()
+            .insert(name.to_string(), Some(index));
+    }
+
+    fn resolve_dynamic(&self, name: &str) -> Option<usize> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name).copied().flatten())
+    }
+
+    fn record_member(&mut self, local_name: &str, member_name: String, line: usize) {
+        if let Some(index) = self.resolve_dynamic(local_name) {
+            self.records[index].members.push((member_name, line));
+        }
+    }
+
+    fn degrade(&mut self, local_name: &str) {
+        if let Some(index) = self.resolve_dynamic(local_name) {
+            self.records[index].degraded = true;
+        }
+    }
+
+    fn push_dynamic_fallback(&mut self, import: &ImportExpression<'_>, from_spec: String) {
+        if self.handled_import_starts.contains(&import.span.start) {
+            return;
+        }
+        self.handled_import_starts.insert(import.span.start);
+        self.uses.push(UseRecord {
+            from_spec,
+            name: "*".to_string(),
+            member_name: None,
+            kind: "dynamic".to_string(),
+            type_only: false,
+            line: line_for_span(self.line_starts, import.span),
+            local_name: None,
+            degraded: true,
+            resolved_file: None,
+            resolver_stage: None,
+        });
+    }
+
+    fn push_opacity(&mut self, import: &ImportExpression<'_>) {
+        if self.handled_import_starts.contains(&import.span.start) {
+            return;
+        }
+        self.handled_import_starts.insert(import.span.start);
+        self.opacity
+            .push(dynamic_import_opacity_record(import, self.line_starts));
+    }
+}
+
+impl<'a> Visit<'a> for DynamicImportVisitor<'_> {
+    fn enter_scope(
+        &mut self,
+        _flags: oxc_syntax::scope::ScopeFlags,
+        _scope_id: &Cell<Option<oxc_syntax::scope::ScopeId>>,
+    ) {
+        self.scopes.push(BTreeMap::new());
+    }
+
+    fn leave_scope(&mut self) {
+        self.scopes.pop();
+        if self.scopes.is_empty() {
+            self.scopes.push(BTreeMap::new());
+        }
+    }
+
+    fn visit_binding_identifier(&mut self, it: &BindingIdentifier<'a>) {
+        self.bind_local(it.name.as_str());
+    }
+
+    fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
+        self.visit_binding_pattern(&it.pattern);
+    }
+
+    fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
+        let local_name = binding_identifier_name_ref(&it.id);
+        let import = it
+            .init
+            .as_ref()
+            .map(unwrap_await_expression)
+            .and_then(expression_import_expression);
+        if let (Some(local_name), Some(import), Some(from_spec)) =
+            (local_name, import, import.and_then(dynamic_import_source))
+        {
+            let index = self.records.len();
+            self.records.push(DynamicImportRecord {
+                from_spec,
+                local_name: local_name.to_string(),
+                line: line_for_span(self.line_starts, import.span),
+                members: Vec::new(),
+                degraded: false,
+            });
+            self.handled_import_starts.insert(import.span.start);
+            self.bind_dynamic(local_name, index);
+            return;
+        }
+
+        self.visit_binding_pattern(&it.id);
+        if let Some(init) = &it.init {
+            self.visit_expression(init);
+        }
+    }
+
+    fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
+        self.degrade(it.name.as_str());
+    }
+
+    fn visit_member_expression(&mut self, it: &MemberExpression<'a>) {
+        if let Some(local_name) = member_object_identifier_name(it) {
+            self.degrade(&local_name);
+            return;
+        }
+        walk::walk_member_expression(self, it);
+    }
+
+    fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
+        if let Some(local_name) = assignment_target_identifier_name(&it.left) {
+            self.degrade(&local_name);
+            self.visit_expression(&it.right);
+            return;
+        }
+        if let Some(local_name) = assignment_target_member_object_identifier_name(&it.left) {
+            self.degrade(&local_name);
+            self.visit_expression(&it.right);
+            return;
+        }
+        walk::walk_assignment_expression(self, it);
+    }
+
+    fn visit_update_expression(&mut self, it: &UpdateExpression<'a>) {
+        if let Some(local_name) = simple_assignment_target_identifier_name(&it.argument) {
+            self.degrade(&local_name);
+            return;
+        }
+        if let Some(local_name) =
+            simple_assignment_target_member_object_identifier_name(&it.argument)
+        {
+            self.degrade(&local_name);
+            return;
+        }
+        walk::walk_update_expression(self, it);
+    }
+
+    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        if let Some(member) = it.callee.as_member_expression() {
+            if let Some(local_name) = member_object_identifier_name(member) {
+                if let Some(member_name) = static_member_property_name(member) {
+                    let line = line_for_span(self.line_starts, member.span());
+                    self.record_member(&local_name, member_name, line);
+                } else {
+                    self.degrade(&local_name);
+                    walk::walk_member_expression(self, member);
+                }
+                for argument in &it.arguments {
+                    self.visit_argument(argument);
+                }
+                return;
+            }
+        }
+        walk::walk_call_expression(self, it);
+    }
+
+    fn visit_import_expression(&mut self, it: &ImportExpression<'a>) {
+        if let Some(from_spec) = dynamic_import_source(it) {
+            self.push_dynamic_fallback(it, from_spec);
+        } else {
+            self.push_opacity(it);
+            walk::walk_import_expression(self, it);
+        }
+    }
+}
+
+fn unwrap_await_expression<'a>(expression: &'a Expression<'a>) -> &'a Expression<'a> {
+    match expression {
+        Expression::AwaitExpression(await_expression) => &await_expression.argument,
+        _ => expression,
+    }
+}
+
+fn expression_import_expression<'a>(
+    expression: &'a Expression<'a>,
+) -> Option<&'a ImportExpression<'a>> {
+    match expression {
+        Expression::ImportExpression(import) => Some(import),
+        _ => None,
+    }
+}
+
+fn dynamic_import_source(import: &ImportExpression<'_>) -> Option<String> {
+    match &import.source {
+        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+        _ => None,
+    }
+}
+
+fn dynamic_import_opacity_record(
+    import: &ImportExpression<'_>,
+    line_starts: &[usize],
+) -> DynamicImportOpacityRecord {
+    if let Expression::TemplateLiteral(template) = &import.source {
+        if let Some(prefix) = dynamic_import_template_prefix(template) {
+            return DynamicImportOpacityRecord {
+                line: line_for_span(line_starts, import.span),
+                kind: "template-prefix",
+                prefix: Some(prefix),
+            };
+        }
+    }
+
+    DynamicImportOpacityRecord {
+        line: line_for_span(line_starts, import.span),
+        kind: "nonliteral",
+        prefix: None,
+    }
+}
+
+fn dynamic_import_template_prefix(template: &TemplateLiteral<'_>) -> Option<String> {
+    if template.expressions.is_empty() {
+        return None;
+    }
+    let prefix = template.quasis.first()?.value.cooked.as_ref()?.as_str();
+    let relative = prefix.starts_with("./") || prefix.starts_with("../");
+    let has_body = prefix.get(2..).is_some_and(|tail| !tail.is_empty());
+    let has_trailing_separator = prefix.ends_with('/') || prefix.ends_with('\\');
+    (relative && has_body && has_trailing_separator).then(|| prefix.to_string())
 }
 
 fn collect_type_escapes(
@@ -1625,6 +2062,21 @@ impl<'a> Visit<'a> for NamedImportPrecisionVisitor<'_> {
         self.add_binding(it);
     }
 
+    fn visit_formal_parameter(&mut self, it: &FormalParameter<'a>) {
+        self.visit_binding_pattern(&it.pattern);
+    }
+
+    fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
+        self.visit_binding_pattern(&it.id);
+        if let Some(init) = &it.init {
+            self.visit_expression(init);
+        }
+    }
+
+    fn visit_assignment_pattern(&mut self, it: &AssignmentPattern<'a>) {
+        self.visit_binding_pattern(&it.left);
+    }
+
     fn visit_identifier_reference(&mut self, it: &IdentifierReference<'a>) {
         if self.non_escaping_identifier_depth == 0 {
             self.degrade(it.name.as_str());
@@ -1677,9 +2129,7 @@ impl<'a> Visit<'a> for NamedImportPrecisionVisitor<'_> {
 
     fn visit_unary_expression(&mut self, it: &UnaryExpression<'a>) {
         if it.operator == UnaryOperator::Typeof {
-            self.with_non_escaping_identifiers(|visitor| {
-                visitor.visit_expression(&it.argument);
-            });
+            self.visit_maybe_non_escaping_identifier(&it.argument);
             return;
         }
         if it.operator == UnaryOperator::Delete {
@@ -1696,9 +2146,7 @@ impl<'a> Visit<'a> for NamedImportPrecisionVisitor<'_> {
     }
 
     fn visit_if_statement(&mut self, it: &IfStatement<'a>) {
-        self.with_non_escaping_identifiers(|visitor| {
-            visitor.visit_expression(&it.test);
-        });
+        self.visit_maybe_non_escaping_identifier(&it.test);
         self.visit_statement(&it.consequent);
         if let Some(alternate) = &it.alternate {
             self.visit_statement(alternate);
@@ -1706,10 +2154,20 @@ impl<'a> Visit<'a> for NamedImportPrecisionVisitor<'_> {
     }
 
     fn visit_logical_expression(&mut self, it: &LogicalExpression<'a>) {
-        self.with_non_escaping_identifiers(|visitor| {
-            visitor.visit_expression(&it.left);
-        });
+        self.visit_maybe_non_escaping_identifier(&it.left);
         self.visit_expression(&it.right);
+    }
+}
+
+impl NamedImportPrecisionVisitor<'_> {
+    fn visit_maybe_non_escaping_identifier(&mut self, expression: &Expression<'_>) {
+        if expression_identifier_name(expression).is_some() {
+            self.with_non_escaping_identifiers(|visitor| {
+                visitor.visit_expression(expression);
+            });
+        } else {
+            self.visit_expression(expression);
+        }
     }
 }
 
@@ -2032,6 +2490,419 @@ fn strip_js_output_extension(spec: &str) -> Option<&str> {
     None
 }
 
+fn collect_pre_write_local_operation_surface(
+    program: &Program<'_>,
+    line_starts: &[usize],
+    artifact_file_path: &str,
+) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    for container in collect_exported_factory_containers(program) {
+        for statement in &container.body.statements {
+            for candidate in local_function_candidates_from_statement(statement) {
+                let Some((operation_family, domain_tokens)) = local_operation_info(candidate.name)
+                else {
+                    continue;
+                };
+                out.push(json!({
+                    "identity": format!("{artifact_file_path}::{}#{}", container.name, candidate.name),
+                    "name": candidate.name,
+                    "ownerFile": artifact_file_path,
+                    "containerName": container.name,
+                    "containerKind": container.container_kind,
+                    "scopeKind": "nested-function",
+                    "matchedField": "preWriteLocalOperationIndex",
+                    "line": line_for_span(line_starts, candidate.span),
+                    "operationFamily": operation_family,
+                    "domainTokens": domain_tokens,
+                    "visibility": "local-only",
+                    "eligibleForDeadExportRanking": false,
+                    "eligibleForSafeFix": false,
+                }));
+            }
+        }
+    }
+    out.sort_by_key(local_operation_sort_key);
+    out
+}
+
+fn local_operation_sort_key(value: &serde_json::Value) -> String {
+    format!(
+        "{}|{}|{}|{:0>6}",
+        value
+            .get("ownerFile")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default(),
+        value
+            .get("containerName")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default(),
+        value
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default(),
+        value
+            .get("line")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_default()
+    )
+}
+
+fn collect_exported_factory_containers<'a>(program: &'a Program<'a>) -> Vec<FactoryContainer<'a>> {
+    let local_declarations = collect_top_level_container_targets(program);
+    let mut containers = Vec::new();
+    for statement in &program.body {
+        match statement {
+            Statement::ExportDefaultDeclaration(export) => {
+                if let ExportDefaultDeclarationKind::FunctionDeclaration(function) =
+                    &export.declaration
+                {
+                    push_factory_container_from_function(function, &mut containers);
+                }
+            }
+            Statement::ExportNamedDeclaration(export) if export.source.is_none() => {
+                if let Some(declaration) = export.declaration.as_ref() {
+                    push_factory_containers_from_declaration(declaration, &mut containers);
+                    continue;
+                }
+                for specifier in &export.specifiers {
+                    let Some(local_name) = module_export_identifier_name(&specifier.local) else {
+                        continue;
+                    };
+                    match local_declarations.get(local_name.as_str()) {
+                        Some(ContainerDeclaration::Function(function)) => {
+                            push_factory_container_from_function(function, &mut containers);
+                        }
+                        Some(ContainerDeclaration::Variable(declarator)) => {
+                            push_factory_container_from_declarator(
+                                declarator,
+                                VariableDeclarationKind::Const,
+                                &mut containers,
+                            );
+                        }
+                        None => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    containers.sort_by(|left, right| {
+        format!("{}|{}", left.name, left.container_kind)
+            .cmp(&format!("{}|{}", right.name, right.container_kind))
+    });
+    containers
+}
+
+fn collect_top_level_container_targets<'a>(
+    program: &'a Program<'a>,
+) -> BTreeMap<String, ContainerDeclaration<'a>> {
+    let mut out = BTreeMap::new();
+    for statement in &program.body {
+        match statement {
+            Statement::FunctionDeclaration(function) => {
+                if let Some(id) = function.id.as_ref() {
+                    out.entry(id.name.to_string())
+                        .or_insert(ContainerDeclaration::Function(function));
+                }
+            }
+            Statement::VariableDeclaration(declaration) => {
+                for declarator in &declaration.declarations {
+                    if binding_identifier_name(&declarator.id).is_some() {
+                        insert_container_declarator(declarator, &mut out);
+                    }
+                }
+            }
+            Statement::ExportNamedDeclaration(export) if export.source.is_none() => {
+                if let Some(declaration) = export.declaration.as_ref() {
+                    collect_container_declaration(declaration, &mut out);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn collect_container_declaration<'a>(
+    declaration: &'a Declaration<'a>,
+    out: &mut BTreeMap<String, ContainerDeclaration<'a>>,
+) {
+    match declaration {
+        Declaration::FunctionDeclaration(function) => {
+            if let Some(id) = function.id.as_ref() {
+                out.entry(id.name.to_string())
+                    .or_insert(ContainerDeclaration::Function(function));
+            }
+        }
+        Declaration::VariableDeclaration(declaration) => {
+            for declarator in &declaration.declarations {
+                insert_container_declarator(declarator, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn insert_container_declarator<'a>(
+    declarator: &'a VariableDeclarator<'a>,
+    out: &mut BTreeMap<String, ContainerDeclaration<'a>>,
+) {
+    if let Some(name) = binding_identifier_name(&declarator.id) {
+        out.entry(name)
+            .or_insert(ContainerDeclaration::Variable(declarator));
+    }
+}
+
+fn push_factory_containers_from_declaration<'a>(
+    declaration: &'a Declaration<'a>,
+    containers: &mut Vec<FactoryContainer<'a>>,
+) {
+    match declaration {
+        Declaration::FunctionDeclaration(function) => {
+            push_factory_container_from_function(function, containers);
+        }
+        Declaration::VariableDeclaration(declaration) => {
+            for declarator in &declaration.declarations {
+                push_factory_container_from_declarator(declarator, declaration.kind, containers);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_factory_container_from_function<'a>(
+    function: &'a Function<'a>,
+    containers: &mut Vec<FactoryContainer<'a>>,
+) {
+    let Some(id) = function.id.as_ref() else {
+        return;
+    };
+    let Some(body) = function.body.as_deref() else {
+        return;
+    };
+    let name = id.name.as_str();
+    if is_local_operation_container_name(name) {
+        containers.push(FactoryContainer {
+            name,
+            container_kind: "function-declaration",
+            body,
+        });
+    }
+}
+
+fn push_factory_container_from_declarator<'a>(
+    declarator: &'a VariableDeclarator<'a>,
+    declaration_kind: VariableDeclarationKind,
+    containers: &mut Vec<FactoryContainer<'a>>,
+) {
+    if declaration_kind != VariableDeclarationKind::Const {
+        return;
+    }
+    let Some(name) = binding_identifier_name_ref(&declarator.id) else {
+        return;
+    };
+    let Some((container_kind, body)) = function_like_init_body(declarator.init.as_ref()) else {
+        return;
+    };
+    if is_local_operation_container_name(name) {
+        containers.push(FactoryContainer {
+            name,
+            container_kind,
+            body,
+        });
+    }
+}
+
+fn function_like_init_body<'a>(
+    expression: Option<&'a Expression<'a>>,
+) -> Option<(&'static str, &'a FunctionBody<'a>)> {
+    match expression {
+        Some(Expression::FunctionExpression(function)) => function
+            .body
+            .as_deref()
+            .map(|body| ("const-function-expression", body)),
+        Some(Expression::ArrowFunctionExpression(arrow)) if !arrow.expression => {
+            Some(("const-arrow-function", arrow.body.as_ref()))
+        }
+        _ => None,
+    }
+}
+
+fn local_function_candidates_from_statement<'a>(
+    statement: &'a Statement<'a>,
+) -> Vec<LocalOperationCandidate<'a>> {
+    match statement {
+        Statement::FunctionDeclaration(function) => function
+            .id
+            .as_ref()
+            .map(|id| {
+                vec![LocalOperationCandidate {
+                    name: id.name.as_str(),
+                    span: id.span,
+                }]
+            })
+            .unwrap_or_default(),
+        Statement::VariableDeclaration(declaration)
+            if declaration.kind == VariableDeclarationKind::Const =>
+        {
+            declaration
+                .declarations
+                .iter()
+                .filter_map(|declarator| {
+                    if !matches!(
+                        declarator.init.as_ref(),
+                        Some(
+                            Expression::FunctionExpression(_)
+                                | Expression::ArrowFunctionExpression(_)
+                        )
+                    ) {
+                        return None;
+                    }
+                    binding_identifier_name_ref(&declarator.id).map(|name| {
+                        LocalOperationCandidate {
+                            name,
+                            span: declarator.id.span(),
+                        }
+                    })
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn is_local_operation_container_name(name: &str) -> bool {
+    let tokens = unique_pre_write_tokens(name);
+    tokens
+        .first()
+        .is_some_and(|token| matches!(token.as_str(), "build" | "create" | "make"))
+        && tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "repository" | "service"))
+}
+
+fn local_operation_info(name: &str) -> Option<(&'static str, Vec<String>)> {
+    let tokens = unique_pre_write_tokens(name);
+    let verb = tokens.first()?;
+    if !is_local_operation_read_query_verb(verb) || is_local_operation_mutation_verb(verb) {
+        return None;
+    }
+    let domain_tokens = tokens
+        .into_iter()
+        .skip(1)
+        .filter(|token| {
+            !token.is_empty()
+                && !is_local_operation_read_query_verb(token)
+                && !is_local_operation_mutation_verb(token)
+        })
+        .collect::<Vec<_>>();
+    (!domain_tokens.is_empty()).then_some(("read-query", domain_tokens))
+}
+
+fn is_local_operation_read_query_verb(token: &str) -> bool {
+    matches!(
+        token,
+        "fetch"
+            | "find"
+            | "get"
+            | "list"
+            | "load"
+            | "lookup"
+            | "query"
+            | "read"
+            | "resolve"
+            | "retrieve"
+            | "search"
+    )
+}
+
+fn is_local_operation_mutation_verb(token: &str) -> bool {
+    matches!(
+        token,
+        "add"
+            | "create"
+            | "delete"
+            | "destroy"
+            | "dispatch"
+            | "emit"
+            | "patch"
+            | "remove"
+            | "save"
+            | "send"
+            | "set"
+            | "update"
+            | "upsert"
+            | "write"
+    )
+}
+
+fn unique_pre_write_tokens(value: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for token in tokenize_pre_write(value) {
+        if !out.contains(&token) {
+            out.push(token);
+        }
+    }
+    out
+}
+
+fn tokenize_pre_write(value: &str) -> Vec<String> {
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    for (index, ch) in chars.iter().copied().enumerate() {
+        if !ch.is_ascii_alphanumeric() {
+            push_normalized_token(&mut tokens, &mut current);
+            continue;
+        }
+        if !current.is_empty()
+            && should_split_pre_write_token(chars[index - 1], ch, chars.get(index + 1).copied())
+        {
+            push_normalized_token(&mut tokens, &mut current);
+        }
+        current.push(ch);
+    }
+    push_normalized_token(&mut tokens, &mut current);
+    tokens
+}
+
+fn should_split_pre_write_token(prev: char, current: char, next: Option<char>) -> bool {
+    (prev.is_ascii_uppercase()
+        && current.is_ascii_uppercase()
+        && next.is_some_and(|next| next.is_ascii_lowercase()))
+        || ((prev.is_ascii_lowercase() || prev.is_ascii_digit()) && current.is_ascii_uppercase())
+        || (prev.is_ascii_alphabetic() && current.is_ascii_digit())
+        || (prev.is_ascii_digit() && current.is_ascii_alphabetic())
+}
+
+fn push_normalized_token(tokens: &mut Vec<String>, current: &mut String) {
+    if current.is_empty() {
+        return;
+    }
+    let normalized = normalize_pre_write_token(current);
+    if !normalized.is_empty() {
+        tokens.push(normalized);
+    }
+    current.clear();
+}
+
+fn normalize_pre_write_token(token: &str) -> String {
+    let lower = token.to_ascii_lowercase();
+    match lower.as_str() {
+        "artifacts" => "artifact".to_string(),
+        "rel" => "relative".to_string(),
+        "ctx" => "context".to_string(),
+        "cfg" => "config".to_string(),
+        "config" => "configuration".to_string(),
+        "exists" | "existing" | "existence" => "exist".to_string(),
+        "series" | "species" => lower,
+        _ if lower.len() > 4 && lower.ends_with("ies") => {
+            format!("{}y", &lower[..lower.len() - 3])
+        }
+        _ => lower,
+    }
+}
+
 fn collect_class_method_surface(
     program: &Program<'_>,
     line_starts: &[usize],
@@ -2224,6 +3095,13 @@ fn binding_identifier_name(pattern: &BindingPattern<'_>) -> Option<String> {
     }
 }
 
+fn binding_identifier_name_ref<'a>(pattern: &'a BindingPattern<'a>) -> Option<&'a str> {
+    match pattern {
+        BindingPattern::BindingIdentifier(identifier) => Some(identifier.name.as_str()),
+        _ => None,
+    }
+}
+
 fn module_export_identifier_name(name: &ModuleExportName<'_>) -> Option<String> {
     match name {
         ModuleExportName::IdentifierName(identifier) => Some(identifier.name.to_string()),
@@ -2324,16 +3202,34 @@ fn line_for_span(line_starts: &[usize], span: Span) -> usize {
 mod tests {
     use super::*;
 
-    fn extract_with_source_files(source_files: Vec<&str>) -> Result<JsTsExtractResponse> {
+    fn extract_source_with_file_path(
+        file_path: &str,
+        source: &str,
+        source_files: Vec<&str>,
+    ) -> Result<JsTsExtractResponse> {
         build_js_ts_extract_response(JsTsExtractRequest {
             schema_version: JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION.to_string(),
             source_files: source_files.into_iter().map(str::to_string).collect(),
             files: vec![JsTsExtractInputFile {
-                file_path: "C:/repo/src/consumer.ts".to_string(),
+                file_path: file_path.to_string(),
                 artifact_file_path: None,
-                source: "import { view } from './view.jsx';\nconsole.log(view);\n".to_string(),
+                source: Some(source.to_string()),
             }],
         })
+    }
+
+    fn extract_source_with_source_files(
+        source: &str,
+        source_files: Vec<&str>,
+    ) -> Result<JsTsExtractResponse> {
+        extract_source_with_file_path("C:/repo/src/consumer.ts", source, source_files)
+    }
+
+    fn extract_with_source_files(source_files: Vec<&str>) -> Result<JsTsExtractResponse> {
+        extract_source_with_source_files(
+            "import { view } from './view.jsx';\nconsole.log(view);\n",
+            source_files,
+        )
     }
 
     #[test]
@@ -2359,6 +3255,131 @@ mod tests {
         assert_eq!(
             response.files[0].uses[0].resolved_file.as_deref(),
             Some("C:/repo/src/view.ts")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn literal_dynamic_import_emits_broad_consumer_use() -> Result<()> {
+        let response = extract_source_with_source_files(
+            "export async function load() {\n  return import('./lazy');\n}\n",
+            vec!["C:/repo/src/consumer.ts", "C:/repo/src/lazy.ts"],
+        )?;
+
+        let dynamic_use = response.files[0]
+            .uses
+            .iter()
+            .find(|use_record| use_record.kind == "dynamic")
+            .ok_or_else(|| anyhow::anyhow!("dynamic import use should be emitted"))?;
+        assert_eq!(dynamic_use.from_spec, "./lazy");
+        assert_eq!(dynamic_use.name, "*");
+        assert!(dynamic_use.degraded);
+        assert_eq!(
+            dynamic_use.resolved_file.as_deref(),
+            Some("C:/repo/src/lazy.ts")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn literal_dynamic_import_in_mjs_emits_broad_consumer_use() -> Result<()> {
+        let response = extract_source_with_file_path(
+            "C:/repo/src/consumer.mjs",
+            "export async function load() {\n  return import('./lazy.mjs');\n}\n",
+            vec!["C:/repo/src/consumer.mjs", "C:/repo/src/lazy.mjs"],
+        )?;
+
+        let dynamic_use = response.files[0]
+            .uses
+            .iter()
+            .find(|use_record| use_record.kind == "dynamic")
+            .ok_or_else(|| anyhow::anyhow!("dynamic import use should be emitted for mjs"))?;
+        assert_eq!(dynamic_use.from_spec, "./lazy.mjs");
+        assert_eq!(
+            dynamic_use.resolved_file.as_deref(),
+            Some("C:/repo/src/lazy.mjs")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn assigned_dynamic_import_preserves_broad_consumer_when_member_escapes() -> Result<()> {
+        let response = extract_source_with_source_files(
+            "export async function load() {\n  const mod = await import('web-tree-sitter');\n  Parser = mod.Parser;\n}\n",
+            vec!["C:/repo/src/consumer.ts"],
+        )?;
+
+        let dynamic_use = response.files[0]
+            .uses
+            .iter()
+            .find(|use_record| use_record.kind == "dynamic")
+            .ok_or_else(|| anyhow::anyhow!("assigned dynamic import should be broad"))?;
+        assert_eq!(dynamic_use.from_spec, "web-tree-sitter");
+        assert_eq!(dynamic_use.name, "*");
+        assert_eq!(dynamic_use.local_name.as_deref(), Some("mod"));
+        assert!(dynamic_use.degraded);
+        Ok(())
+    }
+
+    #[test]
+    fn assigned_dynamic_import_call_member_preserves_member_precision() -> Result<()> {
+        let response = extract_source_with_source_files(
+            "export async function load() {\n  const mod = await import('./lazy');\n  mod.boot();\n}\n",
+            vec!["C:/repo/src/consumer.ts", "C:/repo/src/lazy.ts"],
+        )?;
+
+        let dynamic_use = response.files[0]
+            .uses
+            .iter()
+            .find(|use_record| use_record.kind == "dynamic-member")
+            .ok_or_else(|| anyhow::anyhow!("dynamic member use should be emitted"))?;
+        assert_eq!(dynamic_use.from_spec, "./lazy");
+        assert_eq!(dynamic_use.name, "boot");
+        assert_eq!(dynamic_use.local_name.as_deref(), Some("mod"));
+        assert!(!dynamic_use.degraded);
+        assert_eq!(
+            dynamic_use.resolved_file.as_deref(),
+            Some("C:/repo/src/lazy.ts")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn nonliteral_dynamic_import_emits_opacity_evidence() -> Result<()> {
+        let response = extract_source_with_source_files(
+            "export async function load(target) {\n  return import(target);\n}\n",
+            vec!["C:/repo/src/consumer.ts"],
+        )?;
+
+        assert!(response.files[0].uses.is_empty());
+        assert_eq!(response.files[0].dynamic_import_opacity.len(), 1);
+        assert_eq!(response.files[0].dynamic_import_opacity[0].line, 2);
+        assert_eq!(
+            response.files[0].dynamic_import_opacity[0].kind,
+            "nonliteral"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn template_dynamic_import_emits_prefix_opacity_evidence() -> Result<()> {
+        let response = extract_source_with_source_files(
+            "export async function load(name) {\n  return import(`./pages/${name}.ts`);\n}\n",
+            vec!["C:/repo/src/consumer.ts"],
+        )?;
+
+        assert!(response.files[0].uses.is_empty());
+        assert_eq!(response.files[0].dynamic_import_opacity.len(), 1);
+        assert_eq!(response.files[0].dynamic_import_opacity[0].line, 2);
+        assert_eq!(
+            response.files[0].dynamic_import_opacity[0].kind,
+            "template-prefix"
+        );
+        assert_eq!(
+            response.files[0].dynamic_import_opacity[0]
+                .prefix
+                .as_deref(),
+            Some("./pages/")
         );
         Ok(())
     }

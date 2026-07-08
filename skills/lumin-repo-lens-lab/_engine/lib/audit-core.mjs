@@ -219,7 +219,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v1';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v21';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -346,31 +346,61 @@ function candidateSignatureKey(commands) {
 }
 
 function auditCoreBinarySupportsCurrentContract(command) {
+  if (!auditCoreBinaryReportsCurrentContract(command)) return false;
   if (process.env.LUMIN_AUDIT_CORE_FULL_CONTRACT_PROBE === '1') {
     return auditCoreBinarySupportsFixtureContract(command);
   }
-  return auditCoreBinaryReportsCurrentContract(command);
+  return true;
 }
 
-function auditCoreBinaryReportsCurrentContract(command) {
+function readAuditCoreRuntimeContract(command) {
   const result = spawnSync(command, ['runtime-contract'], {
     encoding: 'utf8',
   });
-  if (result.error || result.status !== 0) return false;
-  if ((result.stderr ?? '').trim().length > 0) return false;
+  if (result.error || result.status !== 0) return null;
+  if ((result.stderr ?? '').trim().length > 0) return null;
 
-  let contract;
   try {
-    contract = JSON.parse(result.stdout ?? '');
+    return JSON.parse(result.stdout ?? '');
   } catch {
-    return false;
+    return null;
   }
+}
+
+function auditCoreBinaryReportsCurrentContract(command) {
+  const contract = readAuditCoreRuntimeContract(command);
+  if (!contract) return false;
 
   if (contract?.schemaVersion !== AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION) return false;
   if (contract?.contractVersion !== AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION) return false;
   if (contract?.features?.resultOutput !== true) return false;
   if (contract?.features?.resultOutputSilencesStdout !== true) return false;
   if (contract?.features?.jsTsExtractNamedImportEvidence !== true) return false;
+  if (contract?.features?.jsTsExtractImportMetaGlobEvidence !== true) return false;
+  if (contract?.features?.jsTsExtractLiteralDynamicImportEvidence !== true) return false;
+  if (contract?.features?.jsTsExtractDynamicImportOpacity !== true) return false;
+  if (contract?.features?.jsTsExtractPathBackedInput !== true) return false;
+  if (contract?.features?.jsTsExtractLocalOperations !== true) return false;
+  if (contract?.features?.sourceUseAssembly !== true) return false;
+  if (contract?.features?.sourceUseAssemblyResolvedRecordTargets !== true) return false;
+  if (contract?.features?.nonSourceAssetSourceUseAssembly !== true) return false;
+  if (contract?.features?.sourceUseAssemblyConsumerSourceCounters !== true) return false;
+  if (contract?.features?.sourceUseAssemblyRootRelativeSourceFiles !== true) return false;
+  if (contract?.features?.sourceUseAssemblyRootRelativeRecordPaths !== true) return false;
+  if (contract?.features?.symbolGraphTypedFinalization !== true) return false;
+  if (contract?.features?.symbolGraphCoreTypedFinalization !== true) return false;
+  if (contract?.features?.symbolGraphTypedInputFinalization !== true) return false;
+  if (contract?.features?.symbolGraphFanInInputFinalization !== true) return false;
+  if (contract?.features?.symbolGraphDeadCandidateInputFinalization !== true) return false;
+  if (contract?.features?.generatedVirtualSourceUseAssembly !== true) return false;
+  if (contract?.features?.importMetaGlobSourceUseAssembly !== true) return false;
+  if (contract?.features?.sfcScriptSrcSourceUseAssembly !== true) return false;
+  if (contract?.features?.symbolGraphEmbeddedSourceUseFinalization !== true) return false;
+  if (contract?.features?.symbolGraphSfcStyleAssetFinalization !== true) return false;
+  if (contract?.features?.symbolGraphSfcTemplateComponentFinalization !== true) return false;
+  if (contract?.features?.symbolGraphSfcGlobalComponentFinalization !== true) return false;
+  if (contract?.features?.symbolGraphSfcGeneratedManifestFinalization !== true) return false;
+  if (contract?.features?.symbolGraphSfcFrameworkConventionFinalization !== true) return false;
 
   const supported = new Set(Array.isArray(contract.supportedSubcommands)
     ? contract.supportedSubcommands
@@ -387,6 +417,13 @@ function auditCoreBinaryReportsCurrentContract(command) {
   }
 
   return true;
+}
+
+export function auditCoreRuntimeFeatureEnabled(feature) {
+  const command = auditCoreBinary();
+  if (!existsSync(command)) return false;
+  const contract = readAuditCoreRuntimeContract(command);
+  return contract?.features?.[feature] === true;
 }
 
 function auditCoreBinarySupportsFixtureContract(command) {
@@ -444,6 +481,7 @@ function auditCoreBinaryWritesResultFiles(command) {
   const finalizeWithCompanionsInputPath = path.join(tempDir, 'finalize-audit-run-with-companions.json');
   try {
     mkdirSync(rootDir, { recursive: true });
+    mkdirSync(path.join(rootDir, 'src'), { recursive: true });
     mkdirSync(outputDir, { recursive: true });
     mkdirSync(lifecycleOutputDir, { recursive: true });
     mkdirSync(compareLeftDir, { recursive: true });
@@ -600,6 +638,7 @@ writeFileSync(latest, JSON.stringify(advisory));
     }));
     writeFileSync(auditLifecycleIntentPath, JSON.stringify({ language: 'js-ts' }));
     writeFileSync(path.join(rootDir, 'probe.ts'), 'const value: any = input as any; // TODO\n');
+    writeFileSync(path.join(rootDir, 'src', 'App.css'), '.probe { color: red; }\n');
     writeFileSync(barrelDisciplineInputPath, JSON.stringify({
       schemaVersion: 'lumin-barrel-discipline-producer-request.v1',
       root: rootDir,
@@ -734,13 +773,14 @@ writeFileSync(latest, JSON.stringify(advisory));
       filesWithParseErrors: [],
       filesWithReadErrors: [],
     }));
+    const jsTsExtractProbeSource = 'import { api, bare } from "./dep";\napi.foo();\nexport const view = bare;\nexport const routes = import.meta.glob("./pages/*.ts");\nexport async function load(target) {\n  const mod = await import("web-tree-sitter");\n  Parser = mod.Parser;\n  const lazy = await import("./lazy");\n  lazy.boot();\n  await import(`./pages/${target}.ts`);\n  return import(target);\n}\nexport function buildProbeRepository() {\n  function getProbe() { return null; }\n}\n';
+    writeFileSync(path.join(rootDir, 'src', 'consumer.mjs'), jsTsExtractProbeSource);
     writeFileSync(jsTsExtractInputPath, JSON.stringify({
       schemaVersion: 'lumin-js-ts-extract-request.v1',
       files: [
         {
           filePath: path.join(rootDir, 'src', 'consumer.mjs'),
           artifactFilePath: 'src/consumer.mjs',
-          source: 'import { api, bare } from "./dep";\napi.foo();\nexport const view = bare;\n',
         },
       ],
     }));
@@ -748,12 +788,18 @@ writeFileSync(latest, JSON.stringify(advisory));
       schemaVersion: 'lumin-symbol-graph-producer-request.v1',
       generated: '2026-07-02T00:00:00.000Z',
       root: rootDir,
-      files: [path.join(rootDir, 'src', 'a.ts'), path.join(rootDir, 'src', 'b.ts')],
+      files: [
+        path.join(rootDir, 'src', 'a.ts'),
+        path.join(rootDir, 'src', 'b.ts'),
+        path.join(rootDir, 'src', 'c.ts'),
+      ],
       defIndex: [
         {
           filePath: path.join(rootDir, 'src', 'a.ts'),
           definitions: {
             alpha: { name: 'alpha', kind: 'FunctionDeclaration', line: 1 },
+            beta: { name: 'beta', kind: 'FunctionDeclaration', line: 2 },
+            gamma: { name: 'gamma', kind: 'FunctionDeclaration', line: 3 },
           },
         },
       ],
@@ -800,26 +846,248 @@ writeFileSync(latest, JSON.stringify(advisory));
       unresolvedInternalUses: 1,
       mdxConsumerUses: 0,
       sfcScriptConsumerUses: 0,
-      sfcScriptSrcReachabilityUses: 0,
+      sfcScriptSrcReachabilityUses: 1,
       sfcStyleAssetReferenceUses: 0,
       sfcTemplateComponentRefUses: 0,
       sfcGlobalComponentRegistrationUses: 0,
       sfcGeneratedComponentManifestUses: 0,
       sfcFrameworkConventionComponentUses: 0,
       sfcStyleAssetReferences: [],
+      sfcStyleAssetReferenceInputs: [{
+        consumerFile: path.join(rootDir, 'src', 'App.vue'),
+        fromSpec: './App.css?inline',
+        source: 'sfc-style',
+        kind: 'sfc-style-asset-reference',
+        styleKind: 'css',
+        confidence: 'path-evidence',
+        importSyntax: 'style-src',
+        line: 7,
+        sfcBlockKind: 'style',
+        sfcLanguage: 'vue',
+      }, {
+        consumerFile: path.join(rootDir, 'src', 'App.vue'),
+        fromSpec: './missing.css',
+        source: 'sfc-style',
+        kind: 'sfc-style-asset-reference',
+        styleKind: 'css',
+        confidence: 'path-evidence',
+        line: 9,
+        sfcBlockKind: 'style',
+        sfcLanguage: 'vue',
+      }],
       sfcTemplateComponentRefs: [],
+      sfcTemplateComponentRefInputs: [{
+        consumerFile: path.join(rootDir, 'src', 'App.vue'),
+        tagName: 'UiButton',
+        normalizedTagName: 'ui-button',
+        bindingName: 'UiButton',
+        bindingSource: './UiButton.vue',
+        source: 'sfc-template',
+        language: 'vue',
+        templateKind: 'template',
+        confidence: 'component-binding',
+        status: 'resolved',
+        resolvedFile: path.join(rootDir, 'src', 'UiButton.vue'),
+        bindingKind: 'import',
+        importedName: 'default',
+        line: 12,
+        sfcBlockKind: 'template',
+      }, {
+        consumerFile: path.join(rootDir, 'src', 'App.vue'),
+        tagName: 'ExternalWidget',
+        normalizedTagName: 'external-widget',
+        bindingName: 'ExternalWidget',
+        bindingSource: '@pkg/widgets',
+        source: 'sfc-template',
+        language: 'vue',
+        templateKind: 'template',
+        confidence: 'component-binding',
+        status: 'external',
+        reason: 'sfc-template-component-external-binding',
+        bindingKind: 'import',
+        importedName: 'ExternalWidget',
+        line: 16,
+        sfcBlockKind: 'template',
+      }],
       sfcGlobalComponentRegistrations: [],
+      sfcGlobalComponentRegistrationInputs: [{
+        registrationFile: path.join(rootDir, 'src', 'main.ts'),
+        framework: 'vue',
+        api: 'app.component',
+        componentName: 'RegisteredSource',
+        normalizedTagNames: ['registered-source'],
+        bindingName: 'RegisteredSource',
+        bindingSource: './registered-source',
+        source: 'sfc-global-component-registration',
+        status: 'resolved',
+        resolvedFile: path.join(rootDir, 'src', 'registered-source.ts'),
+        bindingKind: 'import',
+        importedName: 'default',
+        line: 20,
+      }, {
+        registrationFile: path.join(rootDir, 'src', 'main.ts'),
+        framework: 'vue',
+        api: 'app.component',
+        componentName: 'AsyncGlobal',
+        normalizedTagNames: ['async-global'],
+        fromSpec: './AsyncGlobal.vue',
+        source: 'sfc-global-component-registration',
+        status: 'muted',
+        resolvedFile: path.join(rootDir, 'src', 'AsyncGlobal.vue'),
+        reason: 'sfc-global-component-async-factory',
+        factoryKind: 'defineAsyncComponent',
+        line: 24,
+      }],
       sfcGeneratedComponentManifests: [],
+      sfcGeneratedComponentManifestInputs: [{
+        manifestFile: path.join(rootDir, 'components.d.ts'),
+        manifestKind: 'unplugin-vue-components-dts',
+        componentName: 'ManifestSource',
+        normalizedTagNames: ['manifest-source'],
+        bindingSource: './src/ManifestSource.ts',
+        fromSpec: './src/ManifestSource.ts',
+        source: 'sfc-framework-generated-manifest',
+        confidence: 'generated-manifest-availability',
+        status: 'resolved',
+        resolvedFile: path.join(rootDir, 'src', 'ManifestSource.ts'),
+        line: 30,
+      }, {
+        manifestFile: path.join(rootDir, 'components.d.ts'),
+        manifestKind: 'unplugin-vue-components-dts',
+        componentName: 'ManifestButton',
+        normalizedTagNames: ['manifest-button'],
+        bindingSource: './components/ManifestButton.vue',
+        fromSpec: './components/ManifestButton.vue',
+        source: 'sfc-framework-generated-manifest',
+        confidence: 'generated-manifest-availability',
+        status: 'muted',
+        resolvedFile: path.join(rootDir, 'components', 'ManifestButton.vue'),
+        reason: 'sfc-framework-generated-manifest-non-source-binding',
+        line: 31,
+      }, {
+        manifestFile: path.join(rootDir, 'components.d.ts'),
+        manifestKind: 'unplugin-vue-components-dts',
+        componentName: 'DynamicManifest',
+        normalizedTagNames: ['dynamic-manifest'],
+        bindingSource: './components/DynamicManifest.vue',
+        fromSpec: './components/DynamicManifest.vue',
+        computedKeySource: "prefix + 'Manifest'",
+        source: 'sfc-framework-generated-manifest',
+        confidence: 'generated-manifest-availability',
+        status: 'skipped',
+        reason: 'sfc-framework-generated-manifest-nonliteral',
+        line: 32,
+      }],
       sfcFrameworkConventionComponents: [],
-      dead: [{ file: 'src/a.ts', symbol: 'alpha', line: 1 }],
-      trulyDead: [{ file: 'src/a.ts', symbol: 'alpha', line: 1 }],
-      deadInProd: [{ file: 'src/a.ts', symbol: 'alpha', line: 1 }],
+      sfcFrameworkConventionComponentInputs: [{
+        framework: 'nuxt',
+        conventionKind: 'components-dir',
+        consumerFile: path.join(rootDir, 'src', 'App.vue'),
+        componentName: 'ConventionCard',
+        normalizedTagNames: ['convention-card'],
+        sourceFile: path.join(rootDir, 'components', 'ConventionCard.vue'),
+        resolvedDir: path.join(rootDir, 'components'),
+        pathPrefix: true,
+        global: true,
+        resolvedFile: path.join(rootDir, 'components', 'ConventionCard.vue'),
+        bindingSource: path.join(rootDir, 'components', 'ConventionCard.vue'),
+        fromSpec: './ignored.vue',
+        source: 'sfc-framework-convention-component',
+        confidence: 'framework-convention',
+        status: 'resolved',
+        bindingKind: 'filesystem',
+        componentPathSegments: ['components', 'ConventionCard.vue'],
+        line: 33,
+      }],
+      dead: [],
+      trulyDead: [],
+      deadInProd: [],
       deadInTest: [],
-      symbolFanIn: [
-        { defFile: 'src/a.ts', symbol: 'alpha', count: 0, kind: 'FunctionDeclaration' },
-      ],
-      fanInByIdentity: { 'src/a.ts::alpha': 0 },
-      fanInByIdentitySpace: { 'src/a.ts::alpha': { value: 0, type: 0, broad: 0 } },
+      symbolFanIn: [],
+      fanInByIdentity: {},
+      fanInByIdentitySpace: {},
+      fanInInputs: {
+        consumerEntries: [{
+          defFile: path.join(rootDir, 'src', 'a.ts'),
+          symbol: 'alpha',
+          consumerFile: path.join(rootDir, 'src', 'b.ts'),
+          space: 'value',
+        }],
+        namespaceUserEntries: [],
+      },
+      deadCandidateInputs: {
+        barrelFiles: [],
+        testLikeFiles: [],
+      },
+      sourceUseAssembly: {
+        schemaVersion: 'lumin-source-use-assembly-request.v1',
+        root: rootDir,
+        sourceFiles: [],
+        namespaceReExports: [],
+        namedReExports: [],
+        records: [{
+          recordId: 'src/c.ts#0',
+          consumerFile: path.join(rootDir, 'src', 'c.ts'),
+          resolvedFile: path.join(rootDir, 'src', 'a.ts'),
+          fromSpec: '@/a',
+          name: 'gamma',
+          kind: 'import',
+          typeOnly: false,
+          resolverStage: 'resolved-internal',
+        }, {
+          recordId: 'src/c.ts#1',
+          consumerFile: path.join(rootDir, 'src', 'c.ts'),
+          fromSpec: 'react/jsx-runtime',
+          kind: 'import',
+          typeOnly: false,
+          typeOnlyPresent: true,
+          resolverStage: 'external',
+          consumerSource: 'source-import',
+        }, {
+          recordId: 'src/c.ts#2',
+          consumerFile: path.join(rootDir, 'src', 'c.ts'),
+          fromSpec: '@/assembly-missing',
+          kind: 'import',
+          typeOnly: false,
+          typeOnlyPresent: true,
+          resolverStage: 'unresolved-internal',
+          unresolvedEvidence: {
+            reason: 'tsconfig-path-target-missing',
+            resolverStage: 'tsconfig-paths',
+            matchedPattern: '@/*',
+            targetCandidates: ['src/assembly-missing.ts'],
+            hint: 'check-tsconfig-paths',
+          },
+        }, {
+          recordId: 'src/c.ts#3',
+          consumerFile: path.join(rootDir, 'src', 'c.ts'),
+          fromSpec: '@pkg/db/enums',
+          name: 'Role',
+          kind: 'import',
+          typeOnly: false,
+          typeOnlyPresent: true,
+          resolverStage: 'generated-virtual',
+          generatedVirtualSurface: {
+            id: 'generated-virtual:prisma-enums:@pkg/db:enums',
+            source: 'generated-virtual',
+            mode: 'virtual',
+            virtual: true,
+            exports: [{
+              name: 'Role',
+              kind: 'prisma-enum',
+              spaces: ['value', 'type'],
+            }],
+          },
+        }, {
+          recordId: 'sfc-script-src:0:src/App.vue:./setup',
+          consumerFile: path.join(rootDir, 'src', 'App.vue'),
+          resolvedFile: path.join(rootDir, 'src', 'setup.ts'),
+          fromSpec: './setup',
+          kind: 'sfc-script-src',
+          sfcLanguage: 'vue',
+          resolverStage: 'relative',
+        }],
+      },
       namespaceReExportDiagnostics: [],
       anyContaminationFacts: {
         helperOwnersByIdentity: {},
@@ -1064,6 +1332,7 @@ writeFileSync(latest, JSON.stringify(advisory));
       sourceFiles: [
         path.join(rootDir, 'src', 'consumer.ts'),
         path.join(rootDir, 'src', 'dep.ts'),
+        path.join(rootDir, 'src', 'setup.ts'),
       ],
       records: [
         {
@@ -1075,6 +1344,7 @@ writeFileSync(latest, JSON.stringify(advisory));
           typeOnly: false,
           line: 1,
           resolverStage: 'relative',
+          consumerSource: 'mdx-import',
         },
         {
           recordId: 'src/consumer.ts#1',
@@ -1082,6 +1352,69 @@ writeFileSync(latest, JSON.stringify(advisory));
           fromSpec: './dep',
           kind: 'namespace',
           resolverStage: 'relative',
+          consumerSource: 'sfc-script-import',
+        },
+        {
+          recordId: 'src/consumer.ts#2',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          fromSpec: '@/missing',
+          kind: 'import',
+          typeOnly: false,
+          typeOnlyPresent: true,
+          resolverStage: 'unresolved-internal',
+          unresolvedEvidence: {
+            reason: 'tsconfig-path-target-missing',
+            resolverStage: 'tsconfig-paths',
+            matchedPattern: '@/*',
+            targetCandidates: ['src/missing.ts'],
+            hint: 'check-tsconfig-paths',
+          },
+        },
+        {
+          recordId: 'src/consumer.ts#3',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          fromSpec: '@pkg/db/enums',
+          name: 'Role',
+          kind: 'import',
+          typeOnly: false,
+          typeOnlyPresent: true,
+          resolverStage: 'generated-virtual',
+          generatedVirtualSurface: {
+            id: 'generated-virtual:prisma-enums:@pkg/db:enums',
+            source: 'generated-virtual',
+            mode: 'virtual',
+            virtual: true,
+            exports: [{
+              name: 'Role',
+              kind: 'prisma-enum',
+              spaces: ['value', 'type'],
+            }],
+          },
+        },
+        {
+          recordId: 'src/consumer.ts#4:glob:src/dep.ts',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          resolvedFile: path.join(rootDir, 'src', 'dep.ts'),
+          fromSpec: './*.ts',
+          kind: 'dynamic-import-meta-glob',
+          resolverStage: 'resolved-internal',
+        },
+        {
+          recordId: 'sfc-script-src:0:src/App.vue:./setup',
+          consumerFile: path.join(rootDir, 'src', 'App.vue'),
+          resolvedFile: path.join(rootDir, 'src', 'setup.ts'),
+          fromSpec: './setup',
+          kind: 'sfc-script-src',
+          sfcLanguage: 'vue',
+          resolverStage: 'relative',
+          consumerSource: 'sfc-script-src',
+        },
+        {
+          recordId: 'src/consumer.ts#6',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          fromSpec: './style.css',
+          kind: 'import-side-effect',
+          resolverStage: 'non-source-asset',
         },
       ],
     }));
@@ -1560,17 +1893,118 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.tool === 'build-symbol-graph.mjs' &&
       json.meta.schemaVersion === 3 &&
       json.meta.supports?.identityFanIn === true &&
-      json.files === 2 &&
-      json.totalDefs === 1 &&
-      json.uses?.unresolvedInternalRatio === 0.5 &&
+      json.files === 3 &&
+      json.totalDefs === 3 &&
+      json.totalUsesResolved === 4 &&
+      json.unresolvedUses === 3 &&
+      json.uses?.resolvedInternal === 4 &&
+      json.uses?.resolvedGeneratedVirtual === 1 &&
+      json.uses?.external === 1 &&
+      json.uses?.unresolvedInternal === 2 &&
+      json.uses?.sfcScriptSrcReachability === 1 &&
+      json.uses?.sfcStyleAssetReferences === 1 &&
+      json.uses?.sfcTemplateComponentRefs === 2 &&
+      json.uses?.sfcGlobalComponentRegistrations === 2 &&
+      json.uses?.sfcGeneratedComponentManifests === 3 &&
+      json.uses?.sfcFrameworkConventionComponents === 1 &&
+      json.uses?.unresolvedInternalRatio === 0.3333 &&
+      json.dependencyImportConsumers?.[0]?.depRoot === 'react' &&
+      json.dependencyImportConsumers?.[0]?.fromSpec === 'react/jsx-runtime' &&
+      json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
+      json.generatedVirtualImportConsumers?.[0]?.surfaceId === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/App.vue' &&
+        edge?.to === 'src/setup.ts' &&
+        edge?.kind === 'sfc-script-src' &&
+        edge?.sfcLanguage === 'vue'
+      ) &&
+      json.sfcStyleAssetReferences?.some((reference) =>
+        reference?.consumerFile === 'src/App.vue' &&
+        reference?.fromSpec === './App.css?inline' &&
+        reference?.resolvedFile === 'src/App.css' &&
+        reference?.status === 'resolved' &&
+        reference?.sfcLanguage === 'vue'
+      ) &&
+      json.sfcStyleAssetReferences?.some((reference) =>
+        reference?.consumerFile === 'src/App.vue' &&
+        reference?.fromSpec === './missing.css' &&
+        reference?.status === 'unresolved' &&
+        reference?.reason === 'sfc-style-asset-unresolved'
+      ) &&
+      json.sfcTemplateComponentRefs?.some((reference) =>
+        reference?.consumerFile === 'src/App.vue' &&
+        reference?.bindingName === 'UiButton' &&
+        reference?.resolvedFile === 'src/UiButton.vue' &&
+        reference?.status === 'resolved' &&
+        reference?.eligibleForSafeFix === false
+      ) &&
+      json.sfcTemplateComponentRefs?.some((reference) =>
+        reference?.consumerFile === 'src/App.vue' &&
+        reference?.bindingName === 'ExternalWidget' &&
+        reference?.status === 'external' &&
+        reference?.reason === 'sfc-template-component-external-binding'
+      ) &&
+      json.sfcGlobalComponentRegistrations?.some((registration) =>
+        registration?.registrationFile === 'src/main.ts' &&
+        registration?.componentName === 'RegisteredSource' &&
+        registration?.resolvedFile === 'src/registered-source.ts' &&
+        registration?.fromSpec === './registered-source' &&
+        registration?.confidence === 'registration-review'
+      ) &&
+      json.sfcGlobalComponentRegistrations?.some((registration) =>
+        registration?.registrationFile === 'src/main.ts' &&
+        registration?.componentName === 'AsyncGlobal' &&
+        registration?.resolvedFile === 'src/AsyncGlobal.vue' &&
+        registration?.fromSpec === './AsyncGlobal.vue' &&
+        registration?.confidence === 'muted-review' &&
+        registration?.reason === 'sfc-global-component-async-factory'
+      ) &&
+      json.sfcGeneratedComponentManifests?.some((manifest) =>
+        manifest?.manifestFile === 'components.d.ts' &&
+        manifest?.componentName === 'ManifestSource' &&
+        manifest?.resolvedFile === 'src/ManifestSource.ts' &&
+        manifest?.status === 'resolved'
+      ) &&
+      json.sfcGeneratedComponentManifests?.some((manifest) =>
+        manifest?.manifestFile === 'components.d.ts' &&
+        manifest?.componentName === 'ManifestButton' &&
+        manifest?.resolvedFile === 'components/ManifestButton.vue' &&
+        manifest?.reason === 'sfc-framework-generated-manifest-non-source-binding'
+      ) &&
+      json.sfcGeneratedComponentManifests?.some((manifest) =>
+        manifest?.manifestFile === 'components.d.ts' &&
+        manifest?.componentName === 'DynamicManifest' &&
+        manifest?.computedKeySource === "prefix + 'Manifest'" &&
+        manifest?.status === 'skipped'
+      ) &&
+      json.sfcFrameworkConventionComponents?.some((component) =>
+        component?.framework === 'nuxt' &&
+        component?.conventionKind === 'components-dir' &&
+        component?.consumerFile === 'src/App.vue' &&
+        component?.componentName === 'ConventionCard' &&
+        component?.sourceFile === 'components/ConventionCard.vue' &&
+        component?.resolvedFile === 'components/ConventionCard.vue' &&
+        component?.bindingSource === 'components/ConventionCard.vue' &&
+        component?.fromSpec === './ignored.vue' &&
+        component?.pathPrefix === true &&
+        component?.global === true &&
+        component?.eligibleForFanIn === false &&
+        component?.eligibleForSafeFix === false
+      ) &&
       json.defIndex?.['src/a.ts']?.alpha?.name === 'alpha' &&
-      json.fanInByIdentity?.['src/a.ts::alpha'] === 0 &&
-      json.deadProdList?.[0]?.symbol === 'alpha' &&
-      json.unresolvedInternalSummaryByReason?.['alias-miss']?.count === 1;
+      json.fanInByIdentity?.['src/a.ts::alpha'] === 1 &&
+      json.fanInByIdentity?.['src/a.ts::beta'] === 0 &&
+      json.fanInByIdentity?.['src/a.ts::gamma'] === 1 &&
+      json.fanInByIdentitySpace?.['src/a.ts::alpha']?.value === 1 &&
+      json.fanInByIdentitySpace?.['src/a.ts::gamma']?.value === 1 &&
+      json.deadProdList?.[0]?.symbol === 'beta' &&
+      json.unresolvedInternalSummaryByReason?.['alias-miss']?.count === 1 &&
+      json.unresolvedInternalSummaryByReason?.['tsconfig-path-target-missing']?.count === 1;
   }
   if (probe.subcommand === 'js-ts-extract-artifact') {
     const file = json.files?.[0];
     const uses = Array.isArray(file?.uses) ? file.uses : [];
+    const localOperations = Array.isArray(file?.localOperations) ? file.localOperations : [];
     return json.schemaVersion === 'lumin-js-ts-extract-response.v1' &&
       isObject(file) &&
       file.filePath.endsWith(path.join('src', 'consumer.mjs')) &&
@@ -1589,8 +2023,46 @@ function resultPayloadMatchesProbe(json, probe) {
         use?.localName === 'bare' &&
         use?.degraded === true
       ) &&
+      uses.some((use) =>
+        use?.fromSpec === './pages/*.ts' &&
+        use?.name === '*' &&
+        use?.kind === 'import-meta-glob' &&
+        use?.degraded === true &&
+        use?.resolverStage === 'import-meta-glob'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === 'web-tree-sitter' &&
+        use?.name === '*' &&
+        use?.kind === 'dynamic' &&
+        use?.localName === 'mod' &&
+        use?.degraded === true
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './lazy' &&
+        use?.name === 'boot' &&
+        use?.kind === 'dynamic-member' &&
+        use?.localName === 'lazy' &&
+        use?.degraded === false
+      ) &&
+      file.dynamicImportOpacity?.some((entry) =>
+        entry?.kind === 'nonliteral' &&
+        entry?.line === 11
+      ) &&
+      file.dynamicImportOpacity?.some((entry) =>
+        entry?.kind === 'template-prefix' &&
+        entry?.line === 10 &&
+        entry?.prefix === './pages/'
+      ) &&
       file.defs?.[0]?.name === 'view' &&
-      file.defs?.[0]?.kind === 'const-var';
+      file.defs?.[0]?.kind === 'const-var' &&
+      localOperations.some((operation) =>
+        operation?.identity === 'src/consumer.mjs::buildProbeRepository#getProbe' &&
+        operation?.containerName === 'buildProbeRepository' &&
+        operation?.name === 'getProbe' &&
+        operation?.operationFamily === 'read-query' &&
+        Array.isArray(operation?.domainTokens) &&
+        operation.domainTokens.includes('probe')
+      );
   }
   if (probe.subcommand === 'checklist-facts-artifact') {
     return isObject(json.meta) &&
@@ -1709,19 +2181,55 @@ function resultPayloadMatchesProbe(json, probe) {
   }
   if (probe.subcommand === 'source-use-assembly-artifact') {
     return json.schemaVersion === 'lumin-source-use-assembly-response.v1' &&
-      json.summary?.recordCount === 2 &&
-      json.summary?.handledCount === 2 &&
-      json.counters?.totalUses === 2 &&
-      json.counters?.resolvedInternalUses === 2 &&
-      json.counters?.rustResolvedRelativeUses === 2 &&
-      json.branchCounts?.resolvedInternal === 2 &&
+      json.summary?.recordCount === 7 &&
+      json.summary?.handledCount === 7 &&
+      json.counters?.totalUses === 5 &&
+      json.counters?.resolvedInternalUses === 5 &&
+      json.counters?.rustResolvedRelativeUses === 3 &&
+      json.counters?.nonSourceAssetUses === 1 &&
+      json.counters?.mdxConsumerUses === 1 &&
+      json.counters?.sfcScriptConsumerUses === 1 &&
+      json.counters?.sfcScriptSrcReachabilityUses === 1 &&
+      json.counters?.resolvedGeneratedVirtualUses === 1 &&
+      json.counters?.unresolvedUses === 1 &&
+      json.counters?.unresolvedInternalUses === 1 &&
+      json.branchCounts?.resolvedInternal === 4 &&
+      json.branchCounts?.unresolved === 1 &&
+      json.branchCounts?.generatedVirtual === 1 &&
+      json.branchCounts?.asset === 1 &&
+      json.branchCounts?.sfcScriptSrcReachability === 1 &&
       json.branchCounts?.directConsumer === 1 &&
-      json.branchCounts?.broadNamespace === 1 &&
+      json.branchCounts?.broadNamespace === 2 &&
+      json.resolvedRecordTargets?.filter((entry) =>
+        entry?.recordId === 'src/consumer.ts#0' &&
+        entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/dep.ts')
+      ).length === 1 &&
+      json.resolvedRecordTargets?.filter((entry) =>
+        entry?.recordId === 'sfc-script-src:0:src/App.vue:./setup' &&
+        entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/setup.ts')
+      ).length === 1 &&
       json.resolvedInternalEdges?.[0]?.from === 'src/consumer.ts' &&
       json.resolvedInternalEdges?.[0]?.to === 'src/dep.ts' &&
       json.resolvedInternalEdges?.[0]?.kind === 'import-named' &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/consumer.ts' &&
+        edge?.to === 'src/dep.ts' &&
+        edge?.kind === 'dynamic-import-meta-glob'
+      ) &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/App.vue' &&
+        edge?.to === 'src/setup.ts' &&
+        edge?.kind === 'sfc-script-src' &&
+        edge?.sfcLanguage === 'vue'
+      ) &&
+      json.unresolvedInternalSpecifierRecords?.[0]?.reason === 'tsconfig-path-target-missing' &&
+      json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
+      json.generatedVirtualImportConsumers?.[0]?.surfaceId === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
       json.directConsumers?.[0]?.symbol === 'value' &&
-      json.namespaceUsers?.[0]?.defFile === 'src/dep.ts';
+      json.namespaceUsers?.filter((entry) =>
+        entry?.defFile === 'src/dep.ts' &&
+        entry?.consumerFile === 'src/consumer.ts'
+      ).length === 1;
   }
   if (probe.subcommand === 'staleness-artifact') {
     return isObject(json.meta) &&

@@ -3,7 +3,7 @@
 > **Role:** canonical owner map for Rust audit orchestration and manifest evidence migration.
 > **Owner:** this file.
 > **Status:** staged Rust manifest projection migration.
-> **Last updated:** 2026-07-05
+> **Last updated:** 2026-07-08
 
 ## Scope
 
@@ -46,7 +46,8 @@ review-only `unused-deps.json` dependency hygiene artifact construction,
 file/package/content inputs,
 `call-graph.json` artifact construction from JS-produced call graph facts,
 `function-clones.json` artifact construction from JS-produced function facts,
-`symbols.json` artifact construction from JS-produced symbol graph facts,
+`symbols.json` artifact construction and staged graph finalization from
+JS-produced raw symbol facts plus Rust-owned source-use assembly facts,
 `block-clones.json` artifact construction from JS-tokenized normalized token
 streams,
 `entry-surface.json` artifact projection from JS-discovered entry-surface facts,
@@ -107,7 +108,14 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/block_clones.rs` | `block-clones.json` artifact construction from JS-tokenized normalized token streams: request schema validation, threshold normalization, suffix-array/LCP repeated-region grouping, contained-group pruning, noise classification, cap/status projection, summary/noise-policy projection, and incremental metadata placement | source walking, incremental snapshot/cache ownership, JS/TS parsing, block-clone tokenization/normalization, generated/bundled file detection, producer phase timing |
 | `experiments/rust-main/lumin-audit-core/src/call_graph.rs` | `call-graph.json` artifact construction from JS-produced call graph facts: request schema validation, parse-warning/meta/support projection, fan-in map projection, `topCallees` projection, bounded member-call counters, module-call aggregation, prototype-owner aggregation, semi-dead list placement, and deterministic summary projection | source walking, OXC parsing, import/export/member-call extraction, resolver behavior, exported object/member matching, semi-dead import classification, prototype-call detection, producer phase timing |
 | `experiments/rust-main/lumin-audit-core/src/function_clones.rs` | `function-clones.json` artifact construction from JS-produced function facts: request schema validation, fact stamping/sorting, exact-body/structure/signature group projection, near-function candidate scoring/projection, threshold policy metadata projection, diagnostic sorting, incremental metadata placement, and deterministic summary/support projection | source walking, incremental snapshot/cache ownership, JS/TS parsing, function extraction, function body normalization/hashing, function signature hashing, generated-file detection, call-token extraction, producer phase timing |
-| `experiments/rust-main/lumin-audit-core/src/symbol_graph.rs` | `symbols.json` artifact construction from JS-produced symbol graph facts: request schema validation, meta/support projection, unresolved-specifier summaries, parse-error visibility, dead/fan-in/index field placement, SFC/generated/CJS evidence sorting, pre-write local operation projection, and deterministic artifact writing through `symbol-graph-artifact` | source walking, incremental snapshot/cache ownership, JS/TS/Python/Go parsing, alias-map/repo-mode discovery, module resolution, out-of-band MDX/SFC/generated consumer discovery, dead-export candidate graph construction, fan-in calculation, any-contamination extraction, and producer phase timing |
+| `experiments/rust-main/lumin-audit-core/src/source_use_assembly.rs` | Typed source-use assembly from JS-supplied raw source-use candidates and scanned source-file inventories: request schema validation, optional path-table compaction normalization for repeated record paths, optional enum-table compaction normalization for repeated record `kind`/`resolverStage`/`consumerSource` values, optional specifier-table compaction normalization for repeated record `fromSpec` values, relative source-target matching against supplied resolved facts/source sets, pre-resolved internal source-use graph assembly for JS-owned resolver outputs, external dependency consumer row assembly from JS-owned external resolver outcomes, unresolved internal/relative specifier projection from JS-owned resolver explanations, generated virtual import consumer projection from JS-owned generated virtual surfaces, `import.meta.glob` literal pattern expansion only against JS-supplied source-file inventories plus caller-supplied cap metadata, expanded-target edge projection, and broad-consumer projection, SFC `<script src>` reachability edge projection from JS-owned SFC discovery records when the target is a scanned JS/TS source file, namespace re-export miss materialization, dynamic/imported namespace evidence preservation, deterministic handled/unhandled partitioning, standalone result-file projection through `source-use-assembly-artifact`, and embedded response construction for `symbol-graph-artifact` | source walking, incremental snapshot/cache ownership, JS/TS parsing, extractor fallback selection, SFC/MDX/generated fact discovery, alias-map/repo-mode discovery, package interpretation beyond package-root string normalization, generated virtual surface discovery, `import.meta.glob` discovery in source text, source-file inventory construction, glob cap selection policy outside request fields, SFC asset/non-source classification, unresolved resolver explanation policy, arbitrary filesystem probing outside supplied inventories, and producer phase timing |
+| `experiments/rust-main/lumin-audit-core/src/symbol_graph.rs` | `symbols.json` artifact construction and staged graph finalization from JS-produced raw symbol facts plus Rust-owned source-use assembly facts: request schema validation, optional path-table compaction normalization for core file identities, meta/support projection, embedded source-use application into typed graph state for JS-supplied resolved source-use records from ordinary JS/TS uses plus MDX/SFC out-of-band import consumers, namespace/re-export consumer integration from supplied facts, unresolved-specifier summaries, parse-error visibility, fan-in map calculation, dead-export candidate graph projection from checked JS policy inputs, index field placement, SFC/generated/CJS evidence sorting, pre-write local operation projection, compact `artifactSummary` projection for post-write producer counters, and deterministic artifact writing through `symbol-graph-artifact` | source walking, incremental snapshot/cache ownership, JS/TS/Python/Go parsing, extractor fallback selection, alias-map/repo-mode discovery, module resolution policy beyond supplied resolved facts/source inventories, out-of-band MDX/SFC/generated consumer discovery, package/repo-mode public-surface discovery, any-contamination extraction, and producer phase timing |
+
+`source_use_assembly.rs` may expand an `import.meta.glob` record only after the
+JS/TS extractor has already discovered a literal glob expression and supplied
+the scan inventory plus cap metadata in the request. Rust does not scan source
+text for glob calls, choose the cap policy, or construct the source-file
+inventory for this lane.
 | `experiments/rust-main/lumin-audit-core/src/dead_classify.rs` | `dead-classify.json` artifact construction from JS-produced dead-export candidate facts: request schema validation, occurrence-count C/A/B classification, aliased export-specifier bucket projection, excluded/unprocessed candidate materialization, provenance field forwarding, summary/performance placement, and deterministic artifact writing through `dead-classify-artifact` | JS/TS source walking, OXC AST reference counting, regex fallback counting, package/repo-mode discovery, public-surface and framework policy fact collection, resolver/provenance fact computation, file-cache management, and classify producer timing |
 | `experiments/rust-main/lumin-audit-core/src/blind_zones.rs` | Typed `manifest.json.blindZones` projection from JS-owned producer artifacts, exposed through fixture/case parity mode and output-dir manifest wiring mode | JS/TS producer behavior, console summary rendering, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/canon_draft_lifecycle.rs` | `manifest.canonDraft` raw lifecycle block execution for `--canon-draft`: source selection, unknown-source failure, `generate-canon-draft.mjs` child spawning, per-source exit projection, fallback draft path projection, and advisory exit code result | canon draft source-specific content generation, markdown proposal rendering, check-canon drift reading, pre/post-write lifecycle execution, final manifest file writing |
@@ -189,6 +197,14 @@ or orchestration ownership before migration.
   compatibility/debug surface, not the JS wrapper contract.
 - JS/TS producer lanes remain JS-owned until a lane-specific Rust parity proof
   exists.
+- For `build-symbol-graph` migration, JS may continue to own file collection,
+  extractor fallback, raw JS/TS/SFC/MDX fact production, and compatibility
+  wrapper calls. Once a graph finalization step is Rust-owned, JS must not keep
+  a second implementation of that step. Staged Rust graph finalization must
+  preserve the checked `build-symbol-graph.mjs` artifact shape, ordering,
+  counters, source-use handling, fan-in maps, dead-candidate projection, and
+  artifact-visible degraded/omitted evidence before the JS mutation path is
+  removed.
 - Do not add elapsed-time caps, repository-size caps, or timeout logic.
 - Unknown JSON fields in consumed artifacts must be ignored.
 - Missing or malformed migrated inputs must become explicit status, not silent

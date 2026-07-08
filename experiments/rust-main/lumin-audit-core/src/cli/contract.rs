@@ -5,7 +5,7 @@ use super::io_support::write_stdout_json;
 use super::usage::USAGE;
 
 const RUNTIME_CONTRACT_SCHEMA_VERSION: &str = "lumin-audit-core-runtime-contract.v1";
-const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v1";
+const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v21";
 
 const SUPPORTED_SUBCOMMANDS: &[&str] = &[
     "artifact-registry",
@@ -135,7 +135,35 @@ pub(super) fn run_runtime_contract(args: Vec<String>) -> Result<()> {
             "resultOutput": true,
             "resultOutputSilencesStdout": true,
             "jsTsExtractNamedImportEvidence": true,
-            "sourceUseAssembly": true
+            "jsTsExtractImportMetaGlobEvidence": true,
+            "jsTsExtractLiteralDynamicImportEvidence": true,
+            "jsTsExtractDynamicImportOpacity": true,
+            "jsTsExtractPathBackedInput": true,
+            "jsTsExtractLocalOperations": true,
+            "sourceUseAssembly": true,
+            "sourceUseAssemblyResolvedRecordTargets": true,
+            "nonSourceAssetSourceUseAssembly": true,
+            "sourceUseAssemblyConsumerSourceCounters": true,
+            "sourceUseAssemblyRootRelativeSourceFiles": true,
+            "sourceUseAssemblyRootRelativeRecordPaths": true,
+            "sourceUseAssemblyPathTable": true,
+            "sourceUseAssemblyEnumTable": true,
+            "sourceUseAssemblySpecifierTable": true,
+            "symbolGraphTypedFinalization": true,
+            "symbolGraphCoreTypedFinalization": true,
+            "symbolGraphTypedInputFinalization": true,
+            "symbolGraphPathTable": true,
+            "symbolGraphFanInInputFinalization": true,
+            "symbolGraphDeadCandidateInputFinalization": true,
+            "generatedVirtualSourceUseAssembly": true,
+            "importMetaGlobSourceUseAssembly": true,
+            "sfcScriptSrcSourceUseAssembly": true,
+            "symbolGraphEmbeddedSourceUseFinalization": true,
+            "symbolGraphSfcStyleAssetFinalization": true,
+            "symbolGraphSfcTemplateComponentFinalization": true,
+            "symbolGraphSfcGlobalComponentFinalization": true,
+            "symbolGraphSfcGeneratedManifestFinalization": true,
+            "symbolGraphSfcFrameworkConventionFinalization": true
         },
         "supportedSubcommands": SUPPORTED_SUBCOMMANDS,
         "resultOutputSubcommands": RESULT_OUTPUT_SUBCOMMANDS

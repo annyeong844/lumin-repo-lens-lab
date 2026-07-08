@@ -183,7 +183,7 @@ where
     let summary = summarize_check_canon(&run.per_source, &parsed.requested_sources);
     let entries = run.per_source.values().collect::<Vec<_>>();
     let ran = !entries.is_empty() && entries.iter().any(|entry| entry.ran);
-    let exit_code = strict_exit_code(request.strict, summary.sources_checked, summary.drift_count);
+    let exit_code = strict_exit_code(request.strict, &summary, run.fallback_strict_exit_code);
     Ok(CheckCanonLifecycleResult {
         schema_version: CHECK_CANON_LIFECYCLE_RESULT_SCHEMA_VERSION,
         block: CheckCanonBlock {
@@ -284,6 +284,7 @@ struct CheckCanonChildrenRun {
     drift_counts: BTreeMap<String, u64>,
     execution_mode: &'static str,
     child_invocations: usize,
+    fallback_strict_exit_code: Option<i32>,
 }
 
 fn run_check_canon_children<F>(
@@ -324,9 +325,11 @@ where
             drift_counts,
             execution_mode: "single-invocation-all",
             child_invocations: 1,
+            fallback_strict_exit_code: nonzero_exit_code(result.exit_code),
         };
     }
 
+    let mut fallback_strict_exit_code = None;
     for source_name in requested_sources {
         let invocation = ChildInvocation {
             source_name: source_name.clone(),
@@ -338,6 +341,10 @@ where
         }
 
         let fallback_exit_code = result.exit_code.unwrap_or(1);
+        fallback_strict_exit_code = merge_fallback_exit(
+            fallback_strict_exit_code,
+            nonzero_exit_code(result.exit_code),
+        );
         let canon_drift = read_canon_drift(&request.output);
         let child_entry = canon_drift
             .as_ref()
@@ -357,6 +364,7 @@ where
             "per-source"
         },
         child_invocations: requested_sources.len(),
+        fallback_strict_exit_code,
     }
 }
 
@@ -506,17 +514,42 @@ fn summarize_check_canon(
     }
 }
 
-fn strict_exit_code(strict: bool, checked_count: usize, drift_count: u64) -> i32 {
+fn strict_exit_code(
+    strict: bool,
+    summary: &CheckCanonSummary,
+    fallback_strict_exit_code: Option<i32>,
+) -> i32 {
     if !strict {
         return 0;
     }
-    if drift_count > 0 {
+    if summary.drift_count > 0 {
         return 1;
     }
-    if checked_count == 0 {
+    let structured_status_count =
+        summary.sources_checked + summary.sources_skipped + summary.sources_failed;
+    if structured_status_count == 0 {
+        if let Some(exit_code) = fallback_strict_exit_code {
+            return exit_code;
+        }
+    }
+    if summary.sources_checked == 0 {
         return 2;
     }
     0
+}
+
+fn nonzero_exit_code(exit_code: Option<i32>) -> Option<i32> {
+    exit_code.filter(|exit_code| *exit_code != 0)
+}
+
+fn merge_fallback_exit(current: Option<i32>, next: Option<i32>) -> Option<i32> {
+    match (current, next) {
+        (Some(1), _) | (_, Some(1)) => Some(1),
+        (Some(current), None) => Some(current),
+        (None, Some(next)) => Some(next),
+        (Some(current), Some(next)) => Some(current.max(next)),
+        (None, None) => None,
+    }
 }
 
 fn path_string(path: &Path) -> String {

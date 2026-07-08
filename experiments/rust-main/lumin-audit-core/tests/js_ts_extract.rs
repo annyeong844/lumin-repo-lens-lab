@@ -199,6 +199,58 @@ fn cli_js_ts_extract_preserves_namespace_import_consumers() -> Result<()> {
 }
 
 #[test]
+fn cli_js_ts_extract_reads_source_from_file_path_when_source_is_omitted() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("repo");
+    let source_dir = root.join("src");
+    let source_file = source_dir.join("consumer.ts");
+    fs::create_dir_all(&source_dir)?;
+    fs::write(
+        &source_file,
+        "import { api } from \"./dep\";\napi.run();\nexport const value = 1;\n",
+    )?;
+    let input = temp.path().join("request.json");
+    let result = temp.path().join("result.json");
+    fs::write(
+        &input,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-js-ts-extract-request.v1",
+            "files": [{
+                "filePath": source_file.to_string_lossy(),
+                "artifactFilePath": "src/consumer.ts"
+            }]
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("js-ts-extract-artifact")
+        .arg("--input")
+        .arg(&input)
+        .arg("--result-output")
+        .arg(&result)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let artifact: Value = serde_json::from_slice(&fs::read(&result)?)?;
+    let file = &artifact["files"][0];
+    assert!(file.get("error").is_none());
+    assert_eq!(file["loc"], 4);
+    assert_eq!(file["defs"][0]["name"], "value");
+    assert!(file["uses"].as_array().is_some_and(|uses| {
+        uses.iter().any(|use_record| {
+            use_record["fromSpec"] == "./dep"
+                && use_record["kind"] == "imported-namespace-member"
+                && use_record["memberName"] == "run"
+        })
+    }));
+    Ok(())
+}
+
+#[test]
 fn cli_js_ts_extract_preserves_named_import_member_precision() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let input = temp.path().join("request.json");
@@ -211,10 +263,11 @@ fn cli_js_ts_extract_preserves_named_import_member_precision() -> Result<()> {
                 "filePath": "C:/repo/src/consumer.ts",
                 "artifactFilePath": "src/consumer.ts",
                 "source": concat!(
-                    "import { api, api as escaped, safe, shadowed } from \"./barrel\";\n",
+                    "import { api, api as escaped, safe, shadowed, fallback } from \"./barrel\";\n",
                     "api.foo();\n",
                     "consume(escaped);\n",
                     "if (safe) {}\n",
+                    "const { value = fallback } = options;\n",
                     "function inner(shadowed) { shadowed.foo(); }\n"
                 )
             }]
@@ -270,6 +323,13 @@ fn cli_js_ts_extract_preserves_named_import_member_precision() -> Result<()> {
             },
             {
                 "fromSpec": "./barrel",
+                "name": "fallback",
+                "kind": "import",
+                "typeOnly": false,
+                "line": 1
+            },
+            {
+                "fromSpec": "./barrel",
                 "name": "api",
                 "memberName": "foo",
                 "kind": "imported-namespace-member",
@@ -285,6 +345,94 @@ fn cli_js_ts_extract_preserves_named_import_member_precision() -> Result<()> {
                 "line": 1,
                 "localName": "escaped",
                 "degraded": true
+            }
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+fn cli_js_ts_extract_emits_pre_write_local_operations() -> Result<()> {
+    let artifact = run_js_ts_extract_for_source(
+        "src/repository.ts",
+        concat!(
+            "function buildAccountRepository() {\n",
+            "  function getAccount() { return null; }\n",
+            "  const findAccountById = () => null;\n",
+            "  const updateAccount = () => null;\n",
+            "}\n",
+            "export { buildAccountRepository };\n",
+            "export const createUserService = () => {\n",
+            "  const searchUsers = function() { return []; };\n",
+            "};\n",
+            "export default function makeOrderService() {\n",
+            "  const lookupOrder = () => null;\n",
+            "}\n",
+        ),
+    )?;
+
+    assert_eq!(
+        artifact["localOperations"],
+        json!([
+            {
+                "identity": "src/repository.ts::buildAccountRepository#findAccountById",
+                "name": "findAccountById",
+                "ownerFile": "src/repository.ts",
+                "containerName": "buildAccountRepository",
+                "containerKind": "function-declaration",
+                "scopeKind": "nested-function",
+                "matchedField": "preWriteLocalOperationIndex",
+                "line": 3,
+                "operationFamily": "read-query",
+                "domainTokens": ["account", "by", "id"],
+                "visibility": "local-only",
+                "eligibleForDeadExportRanking": false,
+                "eligibleForSafeFix": false
+            },
+            {
+                "identity": "src/repository.ts::buildAccountRepository#getAccount",
+                "name": "getAccount",
+                "ownerFile": "src/repository.ts",
+                "containerName": "buildAccountRepository",
+                "containerKind": "function-declaration",
+                "scopeKind": "nested-function",
+                "matchedField": "preWriteLocalOperationIndex",
+                "line": 2,
+                "operationFamily": "read-query",
+                "domainTokens": ["account"],
+                "visibility": "local-only",
+                "eligibleForDeadExportRanking": false,
+                "eligibleForSafeFix": false
+            },
+            {
+                "identity": "src/repository.ts::createUserService#searchUsers",
+                "name": "searchUsers",
+                "ownerFile": "src/repository.ts",
+                "containerName": "createUserService",
+                "containerKind": "const-arrow-function",
+                "scopeKind": "nested-function",
+                "matchedField": "preWriteLocalOperationIndex",
+                "line": 8,
+                "operationFamily": "read-query",
+                "domainTokens": ["users"],
+                "visibility": "local-only",
+                "eligibleForDeadExportRanking": false,
+                "eligibleForSafeFix": false
+            },
+            {
+                "identity": "src/repository.ts::makeOrderService#lookupOrder",
+                "name": "lookupOrder",
+                "ownerFile": "src/repository.ts",
+                "containerName": "makeOrderService",
+                "containerKind": "function-declaration",
+                "scopeKind": "nested-function",
+                "matchedField": "preWriteLocalOperationIndex",
+                "line": 11,
+                "operationFamily": "read-query",
+                "domainTokens": ["order"],
+                "visibility": "local-only",
+                "eligibleForDeadExportRanking": false,
+                "eligibleForSafeFix": false
             }
         ])
     );
@@ -421,6 +569,42 @@ fn cli_js_ts_extract_annotates_known_relative_source_targets() -> Result<()> {
 }
 
 #[test]
+fn cli_js_ts_extract_emits_import_meta_glob_uses() -> Result<()> {
+    let artifact = run_js_ts_extract_for_source(
+        "src/routes.ts",
+        concat!(
+            "export const routes = import.meta.glob('./pages/*.ts');\n",
+            "export const dynamic = import.meta.glob(pattern);\n",
+        ),
+    )?;
+
+    assert_eq!(
+        artifact["uses"],
+        json!([
+            {
+                "fromSpec": "./pages/*.ts",
+                "name": "*",
+                "kind": "import-meta-glob",
+                "typeOnly": false,
+                "line": 1,
+                "degraded": true,
+                "resolverStage": "import-meta-glob"
+            },
+            {
+                "fromSpec": "import.meta.glob(<nonliteral>)",
+                "name": "*",
+                "kind": "import-meta-glob",
+                "typeOnly": false,
+                "line": 2,
+                "degraded": true,
+                "resolverStage": "import-meta-glob"
+            }
+        ])
+    );
+    Ok(())
+}
+
+#[test]
 fn cli_js_ts_extract_emits_type_escape_facts() -> Result<()> {
     let source = concat!(
         "type A = any;\n",
@@ -430,6 +614,8 @@ fn cli_js_ts_extract_emits_type_escape_facts() -> Result<()> {
         "function e(...args: any[]) {}\n",
         "type F = { [k: string]: any };\n",
         "type G<T = any> = T;\n",
+        "// @ts-ignore reason\nconst h = 1;\n",
+        "// @ts-expect-error upstream type bug\nconst i = 1;\n",
         "// eslint-disable-next-line no-explicit-any\nconst j = 1;\n",
         "/** @type {any} */\nconst k = readValue();\n",
     );
@@ -450,6 +636,8 @@ fn cli_js_ts_extract_emits_type_escape_facts() -> Result<()> {
             "rest-any-args",
             "index-sig-any",
             "generic-default-any",
+            "ts-ignore",
+            "ts-expect-error",
             "no-explicit-any-disable",
             "jsdoc-any",
         ]

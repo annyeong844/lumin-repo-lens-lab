@@ -128,6 +128,33 @@ fn check_canon_all_sources_without_primary_artifacts_falls_back_to_per_source() 
 }
 
 #[test]
+fn strict_all_sources_preserves_child_drift_exit_when_canon_drift_is_unavailable() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let out = temp.path().join("out");
+    fs::create_dir_all(&out)?;
+    fs::write(out.join("symbols.json"), "{}")?;
+    fs::write(out.join("topology.json"), "{}")?;
+    let log = temp.path().join("child.log");
+    let fake_node = write_fake_child(temp.path(), 1, &log)?;
+    let mut value = request(temp.path(), &out, &fake_node);
+    value["strict"] = json!(true);
+
+    let result = execute_check_canon_lifecycle(parse_request(value)?)?;
+
+    assert_eq!(result.block.execution_mode, Some("single-invocation-all"));
+    assert_eq!(result.block.child_invocations, Some(1));
+    assert_eq!(result.exit_code, 1);
+    let summary = result
+        .block
+        .summary
+        .ok_or_else(|| anyhow!("summary should be present"))?;
+    assert_eq!(summary.sources_checked, 0);
+    assert_eq!(summary.sources_skipped, 0);
+    assert_eq!(summary.sources_failed, 0);
+    Ok(())
+}
+
+#[test]
 fn check_canon_unknown_source_is_a_hard_contract_failure_without_spawning() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let out = temp.path().join("out");
@@ -229,9 +256,7 @@ fn write_fake_child(dir: &Path, exit_code: i32, log: &Path) -> Result<PathBuf> {
 
 #[cfg(not(windows))]
 fn write_fake_child(dir: &Path, exit_code: i32, log: &Path) -> Result<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let path = dir.join(format!("fake-check-canon-{exit_code}"));
+    let path = dir.join("check-canon.mjs");
     fs::write(
         &path,
         format!(
@@ -239,10 +264,7 @@ fn write_fake_child(dir: &Path, exit_code: i32, log: &Path) -> Result<PathBuf> {
             path_string(log)
         ),
     )?;
-    let mut permissions = fs::metadata(&path)?.permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions)?;
-    Ok(path)
+    Ok(PathBuf::from("/bin/sh"))
 }
 
 fn path_string(path: &Path) -> String {
