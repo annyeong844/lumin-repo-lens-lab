@@ -17,6 +17,7 @@ use oxc_ast_visit::{walk, Visit};
 use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType, Span};
 use oxc_syntax::operator::UnaryOperator;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::Cell;
@@ -219,7 +220,7 @@ pub fn build_js_ts_extract_response(request: JsTsExtractRequest) -> Result<JsTsE
     let relative_resolver = RelativeSourceResolver::new(request.source_files);
     let files = request
         .files
-        .into_iter()
+        .into_par_iter()
         .map(|input| extract_file_or_error(input, &relative_resolver))
         .collect();
     Ok(JsTsExtractResponse {
