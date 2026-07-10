@@ -62,6 +62,15 @@ Claude Code에서는 compact intent를 assistant가 내부에서 추론해요. i
 > 💡 처음 한 번은 의존성을 자동으로 깔아요 (≈30초). 그다음부터는 빠름.
 > 이미 fresh baseline이 있으면 작은 후속 확인은 `/lumin-repo-lens-lab` quick path로 충분합니다.
 
+> **WSL에서는 WSL을 Linux로 설치해야 합니다.** WSL 안에서 Node
+> `^20.19.0 || >=22.12.0`을 사용하고, skill checkout과 `node_modules`를
+> WSL 파일시스템에 둔 뒤
+> `npm ci --omit=dev --ignore-scripts --no-audit --fund=false`를 실행하세요.
+> `/mnt/c`의 Windows `node_modules`를 재사용하면 안 됩니다. OXC 네이티브
+> 바인딩은 플랫폼별 파일입니다. 패키지의 `linux-x64` audit-core는 Cargo
+> 없이 실행되어야 하며, `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1`로 이를 강제할
+> 수 있습니다.
+
 아주 큰 저장소에서는 full profile을 매 edit마다 자동으로 돌리지 마세요. `:full`은
 브랜치당 1회, 첫 점검, 또는 큰 리팩토링 리뷰에 쓰고, agent loop 중에는
 pre-write/post-write와 quick 후속 확인을 쓰는 흐름이 맞습니다.

@@ -219,7 +219,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v30';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v31';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -485,11 +485,22 @@ function auditCoreBinarySupportsFixtureContract(command) {
     const result = spawnSync(command, args, {
       encoding: 'utf8',
     });
-    if (result.error) return false;
+    if (result.error) return auditCoreContractProbeFailure(
+      `${args[0]} failed to start: ${result.error.message}`
+    );
     const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-    if (!output.includes(expected)) return false;
+    if (!output.includes(expected)) return auditCoreContractProbeFailure(
+      `${args[0]} did not emit the expected missing-input contract`
+    );
   }
   return auditCoreBinaryWritesResultFiles(command);
+}
+
+function auditCoreContractProbeFailure(message) {
+  if (process.env.LUMIN_AUDIT_CORE_CONTRACT_DEBUG === '1') {
+    console.error(`[audit-core contract] ${message}`);
+  }
+  return false;
 }
 
 function auditCoreBinaryWritesResultFiles(command) {
@@ -921,7 +932,7 @@ writeFileSync(latest, JSON.stringify(advisory));
       unresolvedInternalUses: 1,
       mdxConsumerUses: 0,
       sfcScriptConsumerUses: 0,
-      sfcScriptSrcReachabilityUses: 1,
+      sfcScriptSrcReachabilityUses: 0,
       sfcStyleAssetReferenceUses: 0,
       sfcTemplateComponentRefUses: 0,
       sfcGlobalComponentRegistrationUses: 0,
@@ -1948,16 +1959,33 @@ writeFileSync(latest, JSON.stringify(advisory));
       const result = spawnSync(command, [...probe.args, '--result-output', resultPath], {
         encoding: 'utf8',
       });
-      if (result.error || result.status !== 0) return false;
-      if ((result.stdout ?? '').trim().length > 0) return false;
-      if (!existsSync(resultPath)) return false;
+      if (result.error || result.status !== 0) return auditCoreContractProbeFailure(
+        `${probe.subcommand} failed with status ${result.status ?? 'spawn-error'}: ${result.error?.message ?? result.stderr ?? ''}`
+      );
+      if ((result.stdout ?? '').trim().length > 0) return auditCoreContractProbeFailure(
+        `${probe.subcommand} wrote JSON to stdout while using --result-output`
+      );
+      if (!existsSync(resultPath)) return auditCoreContractProbeFailure(
+        `${probe.subcommand} did not create ${resultPath}`
+      );
       const json = JSON.parse(readFileSync(resultPath, 'utf8'));
-      if (!resultPayloadMatchesProbe(json, probe)) return false;
-      if (probe.requiresArtifactReads !== false && !Array.isArray(json.artifactReads?.reads)) return false;
+      if (!resultPayloadMatchesProbe(json, probe)) {
+        if (process.env.LUMIN_AUDIT_CORE_CONTRACT_DEBUG === '1') {
+          console.error(`[audit-core contract] ${probe.subcommand} payload: ${JSON.stringify(json)}`);
+        }
+        return auditCoreContractProbeFailure(
+          `${probe.subcommand} returned an incompatible result payload`
+        );
+      }
+      if (probe.requiresArtifactReads !== false && !Array.isArray(json.artifactReads?.reads)) {
+        return auditCoreContractProbeFailure(
+          `${probe.subcommand} omitted artifactReads.reads`
+        );
+      }
     }
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return auditCoreContractProbeFailure(`fixture setup failed: ${error.message}`);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

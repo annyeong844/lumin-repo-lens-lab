@@ -41,7 +41,8 @@
   },
   "buildPolicy": {
     "currentPlatformBinary": "rebuilt-before-copy",
-    "contractValidation": "required-cli-commands-before-copy"
+    "contractValidation": "required-cli-commands-before-copy",
+    "crossPlatformValidation": "binary-format-contract-markers-and-linux-glibc-floor"
   },
   "overrideEnv": {
     "platformSpecific": "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",

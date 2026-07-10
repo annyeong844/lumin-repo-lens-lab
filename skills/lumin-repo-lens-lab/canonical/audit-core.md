@@ -107,14 +107,15 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/block_clones.rs` | `block-clones.json` artifact construction from JS-tokenized normalized token streams: request schema validation, threshold normalization, suffix-array/LCP repeated-region grouping, contained-group pruning, noise classification, cap/status projection, summary/noise-policy projection, and incremental metadata placement | source walking, incremental snapshot/cache ownership, JS/TS parsing, block-clone tokenization/normalization, generated/bundled file detection, producer phase timing |
 | `experiments/rust-main/lumin-audit-core/src/call_graph.rs` | `call-graph.json` artifact construction from JS-produced call graph facts: request schema validation, parse-warning/meta/support projection, fan-in map projection, `topCallees` projection, bounded member-call counters, module-call aggregation, prototype-owner aggregation, semi-dead list placement, and deterministic summary projection | source walking, OXC parsing, import/export/member-call extraction, resolver behavior, exported object/member matching, semi-dead import classification, prototype-call detection, producer phase timing |
 | `experiments/rust-main/lumin-audit-core/src/function_clones.rs` | `function-clones.json` artifact construction from JS-produced function facts: request schema validation, fact stamping/sorting, exact-body/structure/signature group projection, near-function candidate scoring/projection, threshold policy metadata projection, diagnostic sorting, incremental metadata placement, and deterministic summary/support projection | source walking, incremental snapshot/cache ownership, JS/TS parsing, function extraction, function body normalization/hashing, function signature hashing, generated-file detection, call-token extraction, producer phase timing |
-| `experiments/rust-main/lumin-audit-core/src/source_use_assembly.rs` | Typed source-use assembly from JS-supplied raw source-use candidates and scanned source-file inventories: request schema validation, optional path-table compaction normalization for repeated record paths and source-file inventories, optional index-stable synthetic `recordId` normalization for compact embedded source-use requests, optional enum-table compaction normalization for repeated record `kind`/`resolverStage`/`consumerSource` values, optional specifier-table compaction normalization for repeated record `fromSpec` values, optional name-table compaction normalization for repeated record `name`/`memberName` values, optional compact type-only state normalization for row transport, optional compact row normalization for embedded source-use record transport, relative source-target matching against supplied resolved facts/source sets, pre-resolved internal source-use graph assembly for JS-owned resolver outputs, projection-only target lookup for SFC component finalization records, external dependency consumer row assembly from JS-owned external resolver outcomes, unresolved internal/relative specifier projection from JS-owned resolver explanations, generated virtual import consumer projection from JS-owned generated virtual surfaces, `import.meta.glob` literal pattern expansion only against JS-supplied source-file inventories plus caller-supplied cap metadata, expanded-target edge projection, and broad-consumer projection, SFC `<script src>` reachability edge projection from JS-owned SFC discovery records when the target is a scanned JS/TS source file, namespace re-export miss materialization, dynamic/imported namespace evidence preservation, deterministic handled/unhandled partitioning, standalone result-file projection through `source-use-assembly-artifact`, and embedded response construction for `symbol-graph-artifact` | source walking, incremental snapshot/cache ownership, JS/TS parsing, extractor fallback selection, SFC/MDX/generated fact discovery, alias-map/repo-mode discovery, package interpretation beyond package-root string normalization, generated virtual surface discovery, `import.meta.glob` discovery in source text, source-file inventory construction, glob cap selection policy outside request fields, SFC asset/non-source classification, unresolved resolver explanation policy, arbitrary filesystem probing outside supplied inventories, and producer phase timing |
-| `experiments/rust-main/lumin-audit-core/src/symbol_graph.rs` | `symbols.json` artifact construction and staged graph finalization from JS-produced raw symbol facts plus Rust-owned source-use assembly facts: request schema validation, optional path-table compaction normalization for core file identities and embedded source-use records sharing the parent path table, embedded compact source-use records with index-stable synthetic record IDs, meta/support projection, embedded source-use application into typed graph state for JS-supplied resolved source-use records from ordinary JS/TS uses plus MDX/SFC out-of-band import consumers, SFC component projection from embedded source-use record targets, namespace/re-export consumer integration from supplied facts, unresolved-specifier summaries, parse-error visibility, fan-in map calculation, dead-export candidate graph projection from checked JS policy inputs, identity-level any-contamination owner-map projection from JS-produced `typeEscapes` occurrence facts, index field placement, SFC/generated/CJS evidence sorting, pre-write local operation projection, compact `artifactSummary` projection for post-write producer counters, and deterministic artifact writing through `symbol-graph-artifact` | source walking, incremental snapshot/cache ownership, JS/TS/Python/Go parsing, extractor fallback selection, alias-map/repo-mode discovery, module resolution policy beyond supplied resolved facts/source inventories, out-of-band MDX/SFC/generated consumer discovery, package/repo-mode public-surface discovery, any-contamination occurrence extraction, and producer phase timing |
+| `experiments/rust-main/lumin-audit-core/src/source_use_assembly.rs` | Typed source-use assembly from JS-supplied raw source-use candidates and scanned source-file inventories: request schema validation, optional path-table compaction normalization for repeated record paths and source-file inventories, optional index-stable synthetic `recordId` normalization for compact embedded source-use requests, optional enum-table compaction normalization for repeated record `kind`/`resolverStage`/`consumerSource` values, optional specifier-table compaction normalization for repeated record `fromSpec` values, optional name-table compaction normalization for repeated record `name`/`memberName` values, optional compact type-only state normalization for row transport, optional compact row normalization for embedded source-use record transport, relative source-target matching against supplied resolved facts/source sets, pre-resolved internal source-use graph assembly for JS-owned resolver outputs, projection-only target lookup for SFC component finalization records, projection-only and standalone external record handling for checked source-use assembly callers, unresolved internal/relative specifier projection from JS-owned resolver explanations, generated virtual import consumer projection from JS-owned generated virtual surfaces, `import.meta.glob` literal pattern expansion only against JS-supplied source-file inventories plus caller-supplied cap metadata, expanded-target edge projection, and broad-consumer projection, SFC `<script src>` reachability edge projection from JS-owned SFC discovery records when the target is a scanned JS/TS source file, namespace re-export miss materialization, dynamic/imported namespace evidence preservation, deterministic handled/unhandled partitioning, standalone result-file projection through `source-use-assembly-artifact`, and embedded response construction for `symbol-graph-artifact` | source walking, incremental snapshot/cache ownership, JS/TS parsing, extractor fallback selection, SFC/MDX/generated fact discovery, alias-map/repo-mode discovery, package interpretation beyond package-root string normalization, generated virtual surface discovery, `import.meta.glob` discovery in source text, source-file inventory construction, glob cap selection policy outside request fields, SFC asset/non-source classification, unresolved resolver explanation policy, arbitrary filesystem probing outside supplied inventories, and producer phase timing |
+| `experiments/rust-main/lumin-audit-core/src/symbol_graph.rs` | `symbols.json` artifact construction and staged graph finalization from JS-produced raw symbol facts plus Rust-owned source-use assembly facts: request schema validation, optional path-table compaction normalization for core file identities and embedded source-use records sharing the parent path table, embedded compact source-use records with index-stable synthetic record IDs, meta/support projection, typed external dependency import finalization from JS-owned external resolver outcomes, embedded source-use application into typed graph state for JS-supplied resolved source-use records from ordinary JS/TS uses plus MDX/SFC out-of-band import consumers, SFC component projection from embedded source-use record targets, namespace/re-export consumer integration from supplied facts, unresolved-specifier summaries, parse-error visibility, fan-in map calculation, dead-export candidate graph projection from checked JS policy inputs, identity-level any-contamination owner-map projection from JS-produced `typeEscapes` occurrence facts, index field placement, SFC/generated/CJS evidence sorting, pre-write local operation projection, compact `artifactSummary` projection for post-write producer counters, and deterministic artifact writing through `symbol-graph-artifact` | source walking, incremental snapshot/cache ownership, JS/TS/Python/Go parsing, extractor fallback selection, alias-map/repo-mode discovery, module resolution policy beyond supplied resolved facts/source inventories, out-of-band MDX/SFC/generated consumer discovery, package/repo-mode public-surface discovery, any-contamination occurrence extraction, producer phase timing, or mutation of cached artifact bytes |
 
 `source_use_assembly.rs` may expand an `import.meta.glob` record only after the
 JS/TS extractor has already discovered a literal glob expression and supplied
 the scan inventory plus cap metadata in the request. Rust does not scan source
 text for glob calls, choose the cap policy, or construct the source-file
 inventory for this lane.
+
 | `experiments/rust-main/lumin-audit-core/src/dead_classify.rs` | `dead-classify.json` artifact construction from JS-produced dead-export candidate facts: request schema validation, occurrence-count C/A/B classification, aliased export-specifier bucket projection, excluded/unprocessed candidate materialization, provenance field forwarding, summary/performance placement, and deterministic artifact writing through `dead-classify-artifact` | JS/TS source walking, OXC AST reference counting, regex fallback counting, package/repo-mode discovery, public-surface and framework policy fact collection, resolver/provenance fact computation, file-cache management, and classify producer timing |
 | `experiments/rust-main/lumin-audit-core/src/blind_zones.rs` | Typed `manifest.json.blindZones` projection from JS-owned producer artifacts, exposed through fixture/case parity mode and output-dir manifest wiring mode | JS/TS producer behavior, console summary rendering, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/canon_draft_lifecycle.rs` | `manifest.canonDraft` raw lifecycle block execution for `--canon-draft`: source selection, unknown-source failure, `generate-canon-draft.mjs` child spawning, per-source exit projection, fallback draft path projection, and advisory exit code result | canon draft source-specific content generation, markdown proposal rendering, check-canon drift reading, pre/post-write lifecycle execution, final manifest file writing |
@@ -166,6 +167,63 @@ inventory for this lane.
 | `experiments/rust-main/lumin-audit-core/src/cli/orchestration.rs` | CLI runners for orchestration plan/result, base-plan execution, producer-performance artifacts, and living-audit summary | product projection logic beyond delegating to owned audit-core modules |
 | `experiments/rust-main/lumin-audit-core/src/cli/usage.rs` | CLI usage text for audit-core commands | command implementation or product projection logic |
 | `experiments/rust-main/lumin-audit-core/src/lib.rs` | public library exports for audit manifest wrappers | ad hoc JSON shape construction outside owned modules |
+
+### Packaged Runtime Contract
+
+The JS bridge accepts an audit-core helper only when its reported bridge
+contract version and required feature set match the bridge source. Adding a
+required feature is a contract change even when the CLI schema remains
+backward-compatible. That change must bump the bridge contract version in the
+JS resolver, Rust runtime contract, package builder, and contract tests.
+
+Every checked-in platform binary advertised by
+`_engine/bin/audit-core-platforms.json` must be rebuilt from that same contract
+before the generated skill is committed. A stale binary must not retain the
+new contract version or rely on Cargo auto-build to hide the mismatch. The
+packaged binary is the normal installed runtime; the Cargo workspace is a
+fallback for unsupported or missing platforms.
+
+Linux release binaries must be built in a controlled compatibility-baseline
+environment, not directly against the maintainer's current WSL glibc. The
+packaging verification must inspect the maximum required GLIBC symbol version;
+the current `linux-x64` GNU baseline is GLIBC 2.31 or older.
+
+Native Node dependencies are runtime-platform artifacts too. A WSL install
+must install the skill dependencies from a supported Node/npm toolchain inside
+WSL and must not reuse a Windows `node_modules` tree. Missing native bindings
+are an unavailable runtime dependency, not clean parser evidence.
+
+### Symbol Finalizer Artifact Cache
+
+The symbol producer may reuse a previously Rust-produced `symbols.json` only as
+an opaque byte artifact at the existing JS-owned incremental cache boundary.
+Cache selection is storage policy, not a second symbol-graph projector: JS must
+not parse, patch, summarize, or otherwise reinterpret cached artifact bytes.
+
+A strict cache identity covers the complete compact `symbol-graph-artifact`
+request except the run timestamp in `generated`. It also covers the symbol
+producer/fact/parser versions and the expected audit-core runtime bridge
+contract version. It also includes filesystem signatures for every current
+audit-core binary candidate, without starting a helper, so replacing a binary
+invalidates the cache even when its bridge contract string is unchanged. The
+`incremental` request block remains part of the identity, so a cold result
+cannot satisfy an unchanged warm request. The cached artifact manifest records
+the request identity, byte length, and SHA-256 of the exact Rust-produced file.
+
+Artifact and manifest filenames are request-identity-scoped. This prevents two
+concurrent audits from pairing one request identity with another run's bytes.
+After a complete entry is published, stale identity-scoped entries may be
+removed; a cleanup race may cause a later miss, never a false hit.
+
+On a hit, the producer verifies the manifest and artifact hash and atomically
+copies the bytes without starting the Rust finalizer. The cached
+`meta.generated` remains the honest time at which those artifact bytes were
+created. Current-run cache hit/miss status belongs in producer phase telemetry,
+not in a patched `symbols.json` field. Missing, malformed, incompatible, or
+hash-mismatched cache entries are visible misses and trigger the normal Rust
+finalizer; they do not create absence evidence or hard-stop the audit. Cache
+reuse is disabled with `--no-incremental`, and `--clear-incremental-cache`
+removes this artifact cache together with per-file facts.
 
 ## Rules
 

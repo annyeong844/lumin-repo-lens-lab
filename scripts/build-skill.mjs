@@ -26,7 +26,60 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v30';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v31';
+const AUDIT_CORE_REQUIRED_FEATURES = [
+  'resultOutput',
+  'resultOutputSilencesStdout',
+  'jsTsExtractNamedImportEvidence',
+  'jsTsExtractImportMetaGlobEvidence',
+  'jsTsExtractCjsRequireEvidence',
+  'jsTsExtractCjsExportSurfaceEvidence',
+  'jsTsExtractLiteralDynamicImportEvidence',
+  'jsTsExtractDynamicImportOpacity',
+  'jsTsExtractPathBackedInput',
+  'jsTsExtractLocalOperations',
+  'sourceUseAssembly',
+  'sourceUseAssemblyResolvedRecordTargets',
+  'sourceUseAssemblyExternalRecordIds',
+  'nonSourceAssetSourceUseAssembly',
+  'sourceUseAssemblyConsumerSourceCounters',
+  'sourceUseAssemblyProjectionOnlyNonSourceAssets',
+  'sourceUseAssemblyRootRelativeSourceFiles',
+  'sourceUseAssemblySourceFileIds',
+  'sourceUseAssemblyRootRelativeRecordPaths',
+  'sourceUseAssemblySyntheticRecordIds',
+  'sourceUseAssemblyPathTable',
+  'sourceUseAssemblyEnumTable',
+  'sourceUseAssemblySpecifierTable',
+  'sourceUseAssemblyRecordRows',
+  'sourceUseAssemblyNameTable',
+  'sourceUseAssemblyTypeOnlyState',
+  'symbolGraphTypedFinalization',
+  'symbolGraphCoreTypedFinalization',
+  'symbolGraphTypedInputFinalization',
+  'symbolGraphPathTable',
+  'symbolGraphExternalDependencyInputFinalization',
+  'symbolGraphExternalSourceUseAssemblyFinalization',
+  'symbolGraphFanInInputFinalization',
+  'symbolGraphDeadCandidateInputFinalization',
+  'generatedVirtualSourceUseAssembly',
+  'importMetaGlobSourceUseAssembly',
+  'sfcScriptSrcSourceUseAssembly',
+  'symbolGraphEmbeddedSourceUseFinalization',
+  'symbolGraphEmbeddedRelativeMissingEvidence',
+  'symbolGraphEmbeddedSourceUseParentPathTable',
+  'symbolGraphSfcStyleAssetFinalization',
+  'symbolGraphSfcTemplateComponentFinalization',
+  'symbolGraphSfcGlobalComponentFinalization',
+  'symbolGraphSfcGeneratedManifestFinalization',
+  'symbolGraphSfcGeneratedManifestExternalCountOnly',
+  'symbolGraphSfcFrameworkConventionFinalization',
+  'symbolGraphSfcComponentSourceUseRecordFinalization',
+  'symbolGraphSfcExternalSourceUseRecordProjection',
+  'symbolGraphGeneratedConsumerBlindZoneFinalization',
+  'symbolGraphAnyContaminationInputFinalization',
+];
+const MAX_PACKAGED_LINUX_GLIBC = { major: 2, minor: 31 };
 
 const PUBLIC_COMMANDS = [
   'audit-repo.mjs',
@@ -450,68 +503,71 @@ function validateAuditCoreRuntimeContract(binaryPath) {
   } catch (error) {
     throw new Error(`built lumin-audit-core at ${binaryPath} emitted invalid runtime-contract JSON: ${error.message}`);
   }
-  const requiredFeatures = [
-    'resultOutput',
-    'resultOutputSilencesStdout',
-    'jsTsExtractNamedImportEvidence',
-    'jsTsExtractImportMetaGlobEvidence',
-    'jsTsExtractCjsRequireEvidence',
-    'jsTsExtractCjsExportSurfaceEvidence',
-    'jsTsExtractLiteralDynamicImportEvidence',
-    'jsTsExtractDynamicImportOpacity',
-    'jsTsExtractPathBackedInput',
-    'jsTsExtractLocalOperations',
-    'sourceUseAssembly',
-    'sourceUseAssemblyResolvedRecordTargets',
-    'sourceUseAssemblyExternalRecordIds',
-    'nonSourceAssetSourceUseAssembly',
-    'sourceUseAssemblyConsumerSourceCounters',
-    'sourceUseAssemblyProjectionOnlyNonSourceAssets',
-    'sourceUseAssemblyRootRelativeSourceFiles',
-    'sourceUseAssemblySourceFileIds',
-    'sourceUseAssemblyRootRelativeRecordPaths',
-    'sourceUseAssemblySyntheticRecordIds',
-    'sourceUseAssemblyPathTable',
-    'sourceUseAssemblyEnumTable',
-    'sourceUseAssemblySpecifierTable',
-    'sourceUseAssemblyRecordRows',
-    'sourceUseAssemblyNameTable',
-    'sourceUseAssemblyTypeOnlyState',
-    'symbolGraphTypedFinalization',
-    'symbolGraphCoreTypedFinalization',
-    'symbolGraphTypedInputFinalization',
-    'symbolGraphPathTable',
-    'symbolGraphExternalDependencyInputFinalization',
-    'symbolGraphExternalSourceUseAssemblyFinalization',
-    'symbolGraphFanInInputFinalization',
-    'symbolGraphDeadCandidateInputFinalization',
-    'generatedVirtualSourceUseAssembly',
-    'importMetaGlobSourceUseAssembly',
-    'sfcScriptSrcSourceUseAssembly',
-    'symbolGraphEmbeddedSourceUseFinalization',
-    'symbolGraphEmbeddedRelativeMissingEvidence',
-    'symbolGraphEmbeddedSourceUseParentPathTable',
-    'symbolGraphSfcStyleAssetFinalization',
-    'symbolGraphSfcTemplateComponentFinalization',
-    'symbolGraphSfcGlobalComponentFinalization',
-    'symbolGraphSfcGeneratedManifestFinalization',
-    'symbolGraphSfcGeneratedManifestExternalCountOnly',
-    'symbolGraphSfcFrameworkConventionFinalization',
-    'symbolGraphSfcComponentSourceUseRecordFinalization',
-    'symbolGraphSfcExternalSourceUseRecordProjection',
-    'symbolGraphGeneratedConsumerBlindZoneFinalization',
-    'symbolGraphAnyContaminationInputFinalization',
-  ];
   if (
     contract?.schemaVersion !== AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION ||
     contract?.contractVersion !== AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION
   ) {
     throw new Error(`built lumin-audit-core at ${binaryPath} reports stale runtime contract`);
   }
-  for (const feature of requiredFeatures) {
+  for (const feature of AUDIT_CORE_REQUIRED_FEATURES) {
     if (contract?.features?.[feature] !== true) {
       throw new Error(`built lumin-audit-core at ${binaryPath} is missing runtime contract feature ${feature}`);
     }
+  }
+}
+
+function validatePackagedAuditCoreBinaryMetadata(source) {
+  const binary = readFileSync(source.path);
+  const key = auditCorePlatformKey(source.platform, source.arch);
+  if (source.platform === 'linux') {
+    if (binary.length < 20 || !binary.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+      throw new Error(`configured ${key} audit-core is not an ELF binary`);
+    }
+    const expectedMachine = source.arch === 'x64' ? 62 : source.arch === 'arm64' ? 183 : null;
+    if (expectedMachine !== null && binary.readUInt16LE(18) !== expectedMachine) {
+      throw new Error(`configured ${key} audit-core has the wrong ELF architecture`);
+    }
+  } else if (source.platform === 'win32') {
+    if (binary.length < 2 || binary.subarray(0, 2).toString('ascii') !== 'MZ') {
+      throw new Error(`configured ${key} audit-core is not a PE binary`);
+    }
+  }
+
+  for (const marker of [
+    AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION,
+    ...AUDIT_CORE_REQUIRED_FEATURES,
+  ]) {
+    if (!binary.includes(Buffer.from(marker))) {
+      throw new Error(`configured ${key} audit-core is missing embedded contract marker ${marker}`);
+    }
+  }
+
+  if (source.platform !== 'linux') return;
+  const text = binary.toString('latin1');
+  let maxGlibc = null;
+  for (const match of text.matchAll(/GLIBC_(\d+)\.(\d+)/g)) {
+    const version = { major: Number(match[1]), minor: Number(match[2]) };
+    if (
+      maxGlibc === null ||
+      version.major > maxGlibc.major ||
+      (version.major === maxGlibc.major && version.minor > maxGlibc.minor)
+    ) {
+      maxGlibc = version;
+    }
+  }
+  if (
+    maxGlibc !== null &&
+    (
+      maxGlibc.major > MAX_PACKAGED_LINUX_GLIBC.major ||
+      (
+        maxGlibc.major === MAX_PACKAGED_LINUX_GLIBC.major &&
+        maxGlibc.minor > MAX_PACKAGED_LINUX_GLIBC.minor
+      )
+    )
+  ) {
+    throw new Error(
+      `configured ${key} audit-core requires GLIBC_${maxGlibc.major}.${maxGlibc.minor}; maximum packaged baseline is GLIBC_${MAX_PACKAGED_LINUX_GLIBC.major}.${MAX_PACKAGED_LINUX_GLIBC.minor}`
+    );
   }
 }
 
@@ -3086,6 +3142,7 @@ function copyAuditCoreBinaries(outDir) {
     if (!existsSync(source.path)) {
       throw new Error(`configured lumin-audit-core binary does not exist: ${source.path}`);
     }
+    validatePackagedAuditCoreBinaryMetadata(source);
     if (auditCorePlatformKey(source.platform, source.arch) === currentKey) {
       validateRunnableAuditCoreBinary(source.path);
     }
@@ -3145,6 +3202,7 @@ function writeAuditCorePlatformManifest(outDir, sources) {
     buildPolicy: {
       currentPlatformBinary: 'rebuilt-before-copy',
       contractValidation: 'required-cli-commands-before-copy',
+      crossPlatformValidation: 'binary-format-contract-markers-and-linux-glibc-floor',
     },
     overrideEnv: {
       platformSpecific: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',

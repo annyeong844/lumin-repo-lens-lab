@@ -21,6 +21,7 @@ Typical lab surfaces:
 
 Current lab notes:
 
+- [WSL packaged runtime verification - 2026-07-10](wsl-packaged-runtime-verification-2026-07-10.md)
 - [Self-audit health note - 2026-04-26](self-audit-health-2026-04-26.md)
 - [Suyeon dead export dogfood note - 2026-04-26](suyeon-dead-export-dogfood-2026-04-26.md)
 - [WT-18 artifact read measurement - 2026-05-10](wt18-artifact-read-measurement-2026-05-10.md)

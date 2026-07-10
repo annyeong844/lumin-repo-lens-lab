@@ -170,6 +170,31 @@ inventory for this lane.
 | `experiments/rust-main/lumin-audit-core/src/cli/usage.rs` | CLI usage text for audit-core commands | command implementation or product projection logic |
 | `experiments/rust-main/lumin-audit-core/src/lib.rs` | public library exports for audit manifest wrappers | ad hoc JSON shape construction outside owned modules |
 
+### Packaged Runtime Contract
+
+The JS bridge accepts an audit-core helper only when its reported bridge
+contract version and required feature set match the bridge source. Adding a
+required feature is a contract change even when the CLI schema remains
+backward-compatible. That change must bump the bridge contract version in the
+JS resolver, Rust runtime contract, package builder, and contract tests.
+
+Every checked-in platform binary advertised by
+`_engine/bin/audit-core-platforms.json` must be rebuilt from that same contract
+before the generated skill is committed. A stale binary must not retain the
+new contract version or rely on Cargo auto-build to hide the mismatch. The
+packaged binary is the normal installed runtime; the Cargo workspace is a
+fallback for unsupported or missing platforms.
+
+Linux release binaries must be built in a controlled compatibility-baseline
+environment, not directly against the maintainer's current WSL glibc. The
+packaging verification must inspect the maximum required GLIBC symbol version;
+the current `linux-x64` GNU baseline is GLIBC 2.31 or older.
+
+Native Node dependencies are runtime-platform artifacts too. A WSL install
+must install the skill dependencies from a supported Node/npm toolchain inside
+WSL and must not reuse a Windows `node_modules` tree. Missing native bindings
+are an unavailable runtime dependency, not clean parser evidence.
+
 ### Symbol Finalizer Artifact Cache
 
 The symbol producer may reuse a previously Rust-produced `symbols.json` only as

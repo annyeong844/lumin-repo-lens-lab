@@ -72,6 +72,13 @@ the intent JSON by hand.
 > `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` if you want missing helper binaries to
 > fail instead of invoking Cargo.
 
+> **WSL:** treat WSL as Linux. Use Node `^20.19.0 || >=22.12.0` inside WSL,
+> keep the skill checkout and `node_modules` in the WSL filesystem, and run
+> `npm ci --omit=dev --ignore-scripts --no-audit --fund=false` there. Do not
+> reuse a Windows `node_modules` tree under `/mnt/c`; native OXC bindings are
+> platform-specific. The packaged `linux-x64` audit-core should run without
+> Cargo. `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` makes that guarantee explicit.
+
 For very large repos, do not auto-trigger full profile on every edit. Run
 `:full` once per branch, first checkup, or major refactor review, then use
 pre-write/post-write and quick follow-ups during the agent loop.
