@@ -162,3 +162,46 @@ Conclusion: the Rust-owned source-use resolver hot loop is closed for the
 current corpus. Remaining JS resolver calls are visible through lane/language
 counters and correspond to JS-owned package, tsconfig, alias, or framework
 interpretation boundaries.
+
+## Snapshot Walk Follow-up - 2026-07-10
+
+After the symbol-finalizer cache landed, a repeated unchanged run reduced the
+Rust finalizer command from about 1.8 seconds to zero and restored byte-identical
+`symbols.json` output. Peak combined Node plus audit-core working set was about
+133 MiB on the cache hit. The remaining warm phase leader was `snapshot` at
+2.6 seconds.
+
+A focused breakdown showed that hashing was not the bottleneck:
+
+| Operation | Local range |
+|---|---:|
+| `collectFiles` only | 2,087-2,377 ms |
+| stat-only snapshot | 2,177-2,601 ms |
+| content-hash snapshot | 2,218-2,681 ms |
+
+The walker was descending into nested Cargo `target/` trees under
+`experiments/` and the offline Rust basepack. Excluding those generated trees
+reduced the same file collection from 2,121 ms to 500 ms while preserving the
+exact 729-file result set. The checked fix therefore extends the existing
+root-level `target` prune policy to nested directories. A new Rust hash-batch
+boundary was rejected because it would optimize the small remainder instead of
+the measured directory-walk cost.
+
+Post-change producer dogfood preserved all 729 scanned files and produced the
+following single-run comparison:
+
+| Measurement | Before | After |
+|---|---:|---:|
+| cold snapshot | 2,612 ms | 876 ms |
+| cold process wall | 25,139 ms | 9,878 ms |
+| unchanged warm snapshot | 2,616 ms | 868 ms |
+| unchanged warm process wall | 6,394 ms | 4,321 ms |
+| unchanged warm combined peak working set | 132.6 MiB | 133.3 MiB |
+| warm finalizer command | 0 ms | 0 ms |
+
+The unchanged warm run retained `symbolGraphFinalizerCacheHit = 1`, emitted no
+finalizer request bytes, made zero JS resolver calls, and had zero unhandled
+source-use records. Before/after `symbols.json` structural comparison found
+only the expected generated timestamp, temporary cache-root path, and line/byte
+identity shifts caused by the two added source comments. No graph, count, tier,
+or source-file inventory difference was observed.

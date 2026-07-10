@@ -28,7 +28,9 @@ const ROOT_PRUNE_NAMES = new Set([
   'out', 'target', '.venv', 'venv', '__pycache__',
 ]);
 const ROOT_PRUNE_PREFIXES = ['dist', 'build', '.'];
-const WALK_PRUNE_NAMES = new Set(['node_modules', '.git', 'coverage']);
+// Cargo workspaces commonly place generated target trees below a package or
+// experiments directory, so the root-only target guard is not sufficient.
+const WALK_PRUNE_NAMES = new Set(['node_modules', '.git', 'coverage', 'target']);
 const WALK_PRUNE_PREFIXES = ['dist', 'build'];
 
 function normalizeCollectOptions(opts) {
