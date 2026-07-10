@@ -13,10 +13,10 @@
 //   - Scan-range mismatch preserves planned matching; baseline-derived labels
 //     degrade to observed-unbaselined; removed is not computed (§4.4).
 //   - requiredAcknowledgements(delta) returns EXACTLY silent-new entries.
-//   - normalizeCodeShape is re-imported from extract-ts-escapes.mjs to keep
-//     planned-codeShape matching byte-equal with occurrence emission (§3.3).
+//   - normalizeCodeShape comes from a parser-free owner so post-write does not
+//     load OXC merely to compare already-produced code shapes (§3.3).
 
-import { normalizeCodeShape } from './extract-ts-escapes.mjs';
+import { normalizeCodeShape } from './code-shape-normalize.mjs';
 import { DELTA_LABELS } from './vocab.mjs';
 
 // ── Canonical enumeration ──────────────────────────────────

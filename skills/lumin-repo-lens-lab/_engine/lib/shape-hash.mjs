@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 
 import { parseOxcOrThrow } from './parse-oxc.mjs';
 import { computeLineStarts, lineOf } from './line-offset.mjs';
-import { normalizeCodeShape } from './extract-ts-escapes.mjs';
+import { normalizeCodeShape } from './code-shape-normalize.mjs';
 
 export const SHAPE_HASH_NORMALIZED_VERSION = 'shape-hash.normalized.v1';
 

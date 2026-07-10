@@ -117,6 +117,14 @@ shape so post-write can reuse the checked invocation, scan-range,
 file-inventory, and planned-file delta contract. Post-write must receive the
 standard advisory path, not the native Rust artifact path.
 
+The wrapper is fail-closed at this boundary. Before invoking the analyzer it
+removes stale current-run native/advisory targets. A successful child is not
+enough: the native artifact must declare `rust-pre-write.v1`,
+`prewrite-token-policy-v1`, producer `lumin-rust-analyzer`, complete typed
+intent-lane coverage, and every required evidence array. Missing, malformed,
+or contract-mismatched output produces a non-zero lifecycle block and no
+replacement advisory or native `latest` file.
+
 The JS/TS pre-write owner remains the execution surface for JS/TS source
 intents. The Rust command replaces the corresponding lanes only for Rust source
 input:

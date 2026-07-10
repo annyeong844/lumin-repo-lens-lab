@@ -168,11 +168,12 @@ const fileDelta = computeFileDelta({
 
 const delta = {
   ...computeDelta({
-  preWriteAdvisory,
-  beforeInventory,
-  afterInventory,
-  deltaInvocationId,
+    preWriteAdvisory,
+    beforeInventory,
+    afterInventory,
+    deltaInvocationId,
   }),
+  schemaVersion: 'lumin-post-write-delta.v1',
   fileDelta,
 };
 

@@ -14,87 +14,15 @@
 import { createHash } from 'node:crypto';
 import { parseOxcOrThrow } from './parse-oxc.mjs';
 import { computeLineStarts, lineOf } from './line-offset.mjs';
+import { normalizeCodeShape } from './code-shape-normalize.mjs';
+
+export { normalizeCodeShape } from './code-shape-normalize.mjs';
 
 // ── Utilities ──────────────────────────────────────────────
 
 function sourceSlice(src, node) {
   if (!node || typeof node.start !== 'number' || typeof node.end !== 'number') return '';
   return src.slice(node.start, node.end);
-}
-
-// Token-aware normalization: collapse whitespace runs outside string /
-// template / comment ranges. Preserves whitespace INSIDE string literals.
-// Drops trailing `;`. Does NOT attempt a full tokenizer — for the short
-// source slices used as `codeShape`, a minimal state machine suffices.
-export function normalizeCodeShape(raw) {
-  if (!raw) return '';
-  const out = [];
-  let state = 'code';
-  let prevSpace = false;
-  let i = 0;
-  while (i < raw.length) {
-    const c = raw[i];
-    const next = raw[i + 1];
-
-    if (state === 'single') {
-      out.push(c);
-      if (c === '\\' && i + 1 < raw.length) { out.push(next); i += 2; continue; }
-      if (c === "'") state = 'code';
-      i++;
-      continue;
-    }
-    if (state === 'double') {
-      out.push(c);
-      if (c === '\\' && i + 1 < raw.length) { out.push(next); i += 2; continue; }
-      if (c === '"') state = 'code';
-      i++;
-      continue;
-    }
-    if (state === 'template') {
-      out.push(c);
-      if (c === '\\' && i + 1 < raw.length) { out.push(next); i += 2; continue; }
-      if (c === '`') state = 'code';
-      i++;
-      continue;
-    }
-    if (state === 'line-comment') {
-      out.push(c);
-      if (c === '\n') state = 'code';
-      i++;
-      continue;
-    }
-    if (state === 'block-comment') {
-      out.push(c);
-      if (c === '*' && next === '/') { out.push(next); state = 'code'; i += 2; continue; }
-      i++;
-      continue;
-    }
-
-    // state === 'code'
-    if (c === "'") { state = 'single'; out.push(c); prevSpace = false; i++; continue; }
-    if (c === '"') { state = 'double'; out.push(c); prevSpace = false; i++; continue; }
-    if (c === '`') { state = 'template'; out.push(c); prevSpace = false; i++; continue; }
-    if (c === '/' && next === '/') { state = 'line-comment'; out.push(c, next); prevSpace = false; i += 2; continue; }
-    if (c === '/' && next === '*') { state = 'block-comment'; out.push(c, next); prevSpace = false; i += 2; continue; }
-
-    // Whitespace collapse in code state.
-    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
-      if (!prevSpace) {
-        out.push(' ');
-        prevSpace = true;
-      }
-      i++;
-      continue;
-    }
-
-    out.push(c);
-    prevSpace = false;
-    i++;
-  }
-
-  let normalized = out.join('').trim();
-  if (normalized.endsWith(';')) normalized = normalized.slice(0, -1).trimEnd();
-  return normalized;
 }
 
 function occurrenceKey(file, escapeKind, normalizedCodeShape, insideExportedIdentity) {

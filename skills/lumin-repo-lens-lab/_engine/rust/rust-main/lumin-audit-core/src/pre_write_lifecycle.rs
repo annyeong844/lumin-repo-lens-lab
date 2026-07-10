@@ -14,6 +14,9 @@ pub const PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
 pub const JS_PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
     "lumin-js-pre-write-lifecycle-request.v1";
 pub const PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION: &str = "lumin-pre-write-lifecycle-result.v1";
+const RUST_PRE_WRITE_ARTIFACT_SCHEMA_VERSION: &str = "rust-pre-write.v1";
+const RUST_PRE_WRITE_POLICY_VERSION: &str = "prewrite-token-policy-v1";
+const RUST_PRE_WRITE_PRODUCER: &str = "lumin-rust-analyzer";
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -111,7 +114,21 @@ pub struct PreWriteBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub analyzer_invocation: Option<AnalyzerInvocationBlock>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<PreWriteFailureKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub child_exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PreWriteFailureKind {
+    OutputCleanupFailed,
+    OutputWriteFailed,
+    ChildFailed,
+    NativeArtifactInvalid,
+    AdvisoryArtifactInvalid,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -125,40 +142,36 @@ pub struct AnalyzerInvocationBlock {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RustPreWriteArtifact {
-    #[serde(default)]
-    intent: Option<Value>,
-    #[serde(default)]
+    schema_version: String,
+    policy_version: String,
+    meta: RustPreWriteMeta,
+    intent: Value,
     intent_warnings: Vec<Value>,
-    #[serde(default)]
     lookups: Vec<Value>,
-    #[serde(default)]
     shape_lookups: Vec<Value>,
-    #[serde(default)]
     file_lookups: Vec<Value>,
-    #[serde(default)]
     dependency_lookups: Vec<Value>,
-    #[serde(default)]
     inline_pattern_lookups: Vec<Value>,
-    #[serde(default)]
     cue_cards: Vec<Value>,
-    #[serde(default)]
     suppressed_cues: Vec<Value>,
-    #[serde(default)]
     unavailable_evidence: Vec<Value>,
-    #[serde(default)]
-    schema_version: Option<Value>,
-    #[serde(default)]
-    policy_version: Option<Value>,
-    #[serde(default)]
-    meta: Option<RustPreWriteMeta>,
-    #[serde(default)]
-    coverage: Option<Value>,
+    coverage: RustPreWriteCoverage,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct RustPreWriteMeta {
-    #[serde(default)]
-    producer: Option<String>,
+    producer: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RustPreWriteCoverage {
+    names: String,
+    shapes: String,
+    files: String,
+    dependencies: String,
+    inline_patterns: String,
+    planned_type_escapes: String,
 }
 
 pub fn execute_pre_write_lifecycle(
@@ -202,31 +215,113 @@ fn execute_js_pre_write_lifecycle_with_stdio(
     child_stdio: ChildStdio,
 ) -> Result<PreWriteLifecycleResult> {
     validate_js_request(&request)?;
+    let latest_advisory_path = advisory_latest_path(&request.output);
+    if let Err(error) = remove_file_if_present(&latest_advisory_path) {
+        return Ok(js_failure_result(
+            &request,
+            PreWriteFailureKind::OutputCleanupFailed,
+            format!(
+                "execute-js-pre-write: failed to clear stale {}: {error}",
+                latest_advisory_path.display()
+            ),
+            1,
+            None,
+            None,
+            None,
+        ));
+    }
     let child = run_js_pre_write_child(&request, child_stdio);
     if !child.status_success {
-        return Ok(PreWriteLifecycleResult {
-            schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
-            block: js_failure_block(
-                &request,
-                format!("pre-write.mjs exited non-zero: {}", child.reason),
-            ),
-            exit_code: child.exit_code.unwrap_or(1),
-            stdout: nonempty(child.stdout),
-            stderr: nonempty(child.stderr),
-        });
+        let reason = js_advisory_failure_reason(
+            &latest_advisory_path,
+            None,
+            format!("pre-write.mjs exited non-zero: {}", child.reason),
+        );
+        return Ok(js_failure_result(
+            &request,
+            PreWriteFailureKind::ChildFailed,
+            reason,
+            child.exit_code.unwrap_or(1),
+            child.exit_code,
+            nonempty(child.stdout),
+            nonempty(child.stderr),
+        ));
     }
 
-    let latest_advisory_path = advisory_latest_path(&request.output);
-    let advisory = read_js_pre_write_advisory(&latest_advisory_path)?;
-    let advisory_invocation_id = advisory
-        .get("invocationId")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let advisory_path = js_advisory_path(&request.output, &advisory);
-    let evidence_availability = advisory
+    let advisory = match read_js_pre_write_advisory(&latest_advisory_path) {
+        Ok(advisory) => advisory,
+        Err(error) => {
+            let reason = js_advisory_failure_reason(&latest_advisory_path, None, error.to_string());
+            return Ok(js_failure_result(
+                &request,
+                PreWriteFailureKind::AdvisoryArtifactInvalid,
+                reason,
+                1,
+                child.exit_code,
+                nonempty(child.stdout),
+                nonempty(child.stderr),
+            ));
+        }
+    };
+    let advisory_invocation_id = match required_invocation_id(&advisory, "js pre-write advisory") {
+        Ok(invocation_id) => invocation_id.to_string(),
+        Err(error) => {
+            let reason = js_advisory_failure_reason(&latest_advisory_path, None, error.to_string());
+            return Ok(js_failure_result(
+                &request,
+                PreWriteFailureKind::AdvisoryArtifactInvalid,
+                reason,
+                1,
+                child.exit_code,
+                nonempty(child.stdout),
+                nonempty(child.stderr),
+            ));
+        }
+    };
+    let advisory_path = advisory_specific_path(&request.output, &advisory_invocation_id);
+    if let Err(error) = validate_matching_json_artifacts(
+        &latest_advisory_path,
+        &advisory_path,
+        "js pre-write advisory",
+    ) {
+        let reason = js_advisory_failure_reason(
+            &latest_advisory_path,
+            Some(&advisory_path),
+            error.to_string(),
+        );
+        return Ok(js_failure_result(
+            &request,
+            PreWriteFailureKind::AdvisoryArtifactInvalid,
+            reason,
+            1,
+            child.exit_code,
+            nonempty(child.stdout),
+            nonempty(child.stderr),
+        ));
+    }
+    let evidence_availability = match advisory
         .get("evidenceAvailability")
+        .filter(|value| value.is_object())
         .cloned()
-        .unwrap_or(Value::Null);
+    {
+        Some(evidence_availability) => evidence_availability,
+        None => {
+            let reason = js_advisory_failure_reason(
+                &latest_advisory_path,
+                Some(&advisory_path),
+                "js pre-write advisory.evidenceAvailability must be an object".to_string(),
+            );
+            return Ok(js_failure_result(
+                &request,
+                PreWriteFailureKind::AdvisoryArtifactInvalid,
+                reason,
+                1,
+                child.exit_code,
+                nonempty(child.stdout),
+                nonempty(child.stderr),
+            ));
+        }
+    };
 
     Ok(PreWriteLifecycleResult {
         schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
@@ -240,12 +335,14 @@ fn execute_js_pre_write_lifecycle_with_stdio(
             engine_selection: request.engine_selection,
             advisory_path: Some(path_string(&advisory_path)),
             latest_advisory_path: Some(path_string(&latest_advisory_path)),
-            advisory_invocation_id,
+            advisory_invocation_id: Some(advisory_invocation_id),
             evidence_availability: Some(evidence_availability),
             rust_native_artifact_path: None,
             rust_native_latest_path: None,
             source_commit: None,
             analyzer_invocation: None,
+            failure_kind: None,
+            child_exit_code: None,
             reason: None,
         },
         exit_code: 0,
@@ -260,39 +357,90 @@ fn execute_pre_write_lifecycle_with_stdio(
 ) -> Result<PreWriteLifecycleResult> {
     validate_request(&request)?;
     let source_commit = effective_source_commit(&request);
+    if let Err(error) = clear_rust_pre_write_outputs(&request) {
+        return Ok(rust_failure_result(
+            &request,
+            PreWriteFailureKind::OutputCleanupFailed,
+            error.to_string(),
+            1,
+            None,
+            None,
+            None,
+        ));
+    }
     let child = run_rust_pre_write_child(&request, &source_commit, child_stdio);
     if !child.status_success {
-        return Ok(PreWriteLifecycleResult {
-            schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
-            block: failure_block(
-                &request,
-                format!(
-                    "lumin-rust-analyzer pre-write exited non-zero: {}",
-                    child.reason
-                ),
+        return Ok(rust_failure_result(
+            &request,
+            PreWriteFailureKind::ChildFailed,
+            format!(
+                "lumin-rust-analyzer pre-write exited non-zero: {}",
+                child.reason
             ),
-            exit_code: child.exit_code.unwrap_or(1),
-            stdout: nonempty(child.stdout),
-            stderr: nonempty(child.stderr),
-        });
+            child.exit_code.unwrap_or(1),
+            child.exit_code,
+            nonempty(child.stdout),
+            nonempty(child.stderr),
+        ));
     }
 
     let rust_artifact = match read_rust_pre_write_artifact(&request.rust_native_artifact_path) {
         Ok(artifact) => artifact,
         Err(error) => {
-            return Ok(PreWriteLifecycleResult {
-                schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
-                block: failure_block(&request, error.to_string()),
-                exit_code: 1,
-                stdout: nonempty(child.stdout),
-                stderr: nonempty(child.stderr),
-            });
+            return Ok(rust_failure_result(
+                &request,
+                PreWriteFailureKind::NativeArtifactInvalid,
+                error.to_string(),
+                1,
+                child.exit_code,
+                nonempty(child.stdout),
+                nonempty(child.stderr),
+            ));
         }
     };
 
-    copy_rust_native_latest(&request)?;
-    let advisory = build_rust_pre_write_advisory(&request, &rust_artifact, &source_commit);
-    let written = write_advisory(&request.output, &advisory)?;
+    let advisory = match build_rust_pre_write_advisory(&request, &rust_artifact, &source_commit) {
+        Ok(advisory) => advisory,
+        Err(error) => {
+            let reason = rust_output_failure_reason(&request, error.to_string());
+            return Ok(rust_failure_result(
+                &request,
+                PreWriteFailureKind::OutputWriteFailed,
+                reason,
+                1,
+                child.exit_code,
+                nonempty(child.stdout),
+                nonempty(child.stderr),
+            ));
+        }
+    };
+    if let Err(error) = copy_rust_native_latest(&request) {
+        let reason = rust_output_failure_reason(&request, error.to_string());
+        return Ok(rust_failure_result(
+            &request,
+            PreWriteFailureKind::OutputWriteFailed,
+            reason,
+            1,
+            child.exit_code,
+            nonempty(child.stdout),
+            nonempty(child.stderr),
+        ));
+    }
+    let written = match write_advisory(&request.output, &advisory) {
+        Ok(written) => written,
+        Err(error) => {
+            let reason = rust_output_failure_reason(&request, error.to_string());
+            return Ok(rust_failure_result(
+                &request,
+                PreWriteFailureKind::OutputWriteFailed,
+                reason,
+                1,
+                child.exit_code,
+                nonempty(child.stdout),
+                nonempty(child.stderr),
+            ));
+        }
+    };
 
     Ok(PreWriteLifecycleResult {
         schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
@@ -312,6 +460,8 @@ fn execute_pre_write_lifecycle_with_stdio(
             rust_native_latest_path: Some(path_string(&request.rust_native_latest_path)),
             source_commit: Some(source_commit),
             analyzer_invocation: Some(analyzer_invocation_block(&request)),
+            failure_kind: None,
+            child_exit_code: None,
             reason: None,
         },
         exit_code: 0,
@@ -570,42 +720,14 @@ fn read_js_pre_write_advisory(path: &Path) -> Result<Value> {
             path.display()
         )
     })?;
-    serde_json::from_str::<Value>(&text).with_context(|| {
+    let advisory = serde_json::from_str::<Value>(&text).with_context(|| {
         format!(
             "js pre-write advisory parse failed: invalid JSON in {}",
             path.display()
         )
-    })
-}
-
-fn js_advisory_path(output: &Path, advisory: &Value) -> PathBuf {
-    if let Some(path) = advisory
-        .get("artifactPaths")
-        .and_then(|paths| paths.get("invocationSpecific"))
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-    {
-        return resolve_process_relative_path(path);
-    }
-    if let Some(invocation_id) = advisory
-        .get("invocationId")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-    {
-        return advisory_specific_path(output, invocation_id);
-    }
-    advisory_latest_path(output)
-}
-
-fn resolve_process_relative_path(path: &str) -> PathBuf {
-    let path = PathBuf::from(path);
-    if path.is_absolute() {
-        path
-    } else {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(path)
-    }
+    })?;
+    required_invocation_id(&advisory, "js pre-write advisory")?;
+    Ok(advisory)
 }
 
 fn read_rust_pre_write_artifact(path: &Path) -> Result<RustPreWriteArtifact> {
@@ -615,9 +737,153 @@ fn read_rust_pre_write_artifact(path: &Path) -> Result<RustPreWriteArtifact> {
             path.display()
         )
     })?;
-    serde_json::from_str::<RustPreWriteArtifact>(&text).with_context(|| {
+    let artifact = serde_json::from_str::<RustPreWriteArtifact>(&text).with_context(|| {
         format!(
-            "rust pre-write artifact parse failed: invalid JSON in {}",
+            "rust pre-write artifact parse failed: invalid shape or JSON in {}",
+            path.display()
+        )
+    })?;
+    artifact.validate_contract()?;
+    Ok(artifact)
+}
+
+impl RustPreWriteArtifact {
+    fn validate_contract(&self) -> Result<()> {
+        if self.schema_version != RUST_PRE_WRITE_ARTIFACT_SCHEMA_VERSION {
+            bail!(
+                "rust pre-write artifact contract failed: unsupported schemaVersion '{}'",
+                self.schema_version
+            );
+        }
+        if self.policy_version != RUST_PRE_WRITE_POLICY_VERSION {
+            bail!(
+                "rust pre-write artifact contract failed: unsupported policyVersion '{}'",
+                self.policy_version
+            );
+        }
+        if self.meta.producer != RUST_PRE_WRITE_PRODUCER {
+            bail!(
+                "rust pre-write artifact contract failed: unexpected producer '{}'",
+                self.meta.producer
+            );
+        }
+
+        let intent = self
+            .intent
+            .as_object()
+            .context("rust pre-write artifact contract failed: intent must be an object")?;
+        let shapes_requested = required_intent_array(intent, "shapes")? > 0;
+        let files_requested = required_intent_array(intent, "files")? > 0;
+        let dependencies_requested = required_intent_array(intent, "dependencies")? > 0;
+        let inline_patterns_requested = intent
+            .get("refactorSources")
+            .map(|value| {
+                value.as_array().map(|values| !values.is_empty()).context(
+                    "rust pre-write artifact contract failed: intent.refactorSources must be an array",
+                )
+            })
+            .transpose()?
+            .unwrap_or(false);
+        required_intent_array(intent, "names")?;
+        required_intent_array(intent, "plannedTypeEscapes")?;
+
+        self.coverage.validate(
+            shapes_requested,
+            files_requested,
+            dependencies_requested,
+            inline_patterns_requested,
+        )
+    }
+}
+
+impl RustPreWriteCoverage {
+    fn validate(
+        &self,
+        shapes_requested: bool,
+        files_requested: bool,
+        dependencies_requested: bool,
+        inline_patterns_requested: bool,
+    ) -> Result<()> {
+        validate_coverage_lane("names", &self.names, true)?;
+        validate_coverage_lane("shapes", &self.shapes, shapes_requested)?;
+        validate_coverage_lane("files", &self.files, files_requested)?;
+        validate_coverage_lane("dependencies", &self.dependencies, dependencies_requested)?;
+        validate_coverage_lane(
+            "inlinePatterns",
+            &self.inline_patterns,
+            inline_patterns_requested,
+        )?;
+        validate_coverage_lane("plannedTypeEscapes", &self.planned_type_escapes, true)
+    }
+}
+
+fn required_intent_array(intent: &Map<String, Value>, field: &str) -> Result<usize> {
+    intent
+        .get(field)
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .with_context(|| {
+            format!("rust pre-write artifact contract failed: intent.{field} must be an array")
+        })
+}
+
+fn validate_coverage_lane(field: &str, actual: &str, requested: bool) -> Result<()> {
+    let expected = if requested { "ran" } else { "not-requested" };
+    if actual != expected {
+        bail!(
+            "rust pre-write artifact contract failed: coverage.{field} must be '{expected}', got '{actual}'"
+        );
+    }
+    Ok(())
+}
+
+fn required_invocation_id<'a>(artifact: &'a Value, label: &str) -> Result<&'a str> {
+    let invocation_id = artifact
+        .as_object()
+        .with_context(|| format!("{label} must be an object"))?
+        .get("invocationId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .with_context(|| format!("{label}.invocationId must be a non-empty string"))?;
+    Ok(invocation_id)
+}
+
+fn validate_matching_json_artifacts(latest: &Path, specific: &Path, label: &str) -> Result<()> {
+    let latest_json = read_json_artifact(latest, label)?;
+    let specific_json = read_json_artifact(specific, label)?;
+    if latest_json != specific_json {
+        bail!(
+            "{label} contract failed: latest and invocation-specific artifacts differ ({} != {})",
+            latest.display(),
+            specific.display()
+        );
+    }
+    Ok(())
+}
+
+fn js_advisory_failure_reason(latest: &Path, specific: Option<&Path>, reason: String) -> String {
+    let mut cleanup_errors = Vec::new();
+    for path in std::iter::once(latest).chain(specific) {
+        if let Err(error) = remove_file_if_present(path) {
+            cleanup_errors.push(format!("{}: {error}", path.display()));
+        }
+    }
+    if cleanup_errors.is_empty() {
+        reason
+    } else {
+        format!(
+            "{reason}; invalid advisory cleanup failed: {}",
+            cleanup_errors.join(", ")
+        )
+    }
+}
+
+fn read_json_artifact(path: &Path, label: &str) -> Result<Value> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("{label} contract failed: failed to read {}", path.display()))?;
+    serde_json::from_slice(&bytes).with_context(|| {
+        format!(
+            "{label} contract failed: invalid JSON in {}",
             path.display()
         )
     })
@@ -638,20 +904,70 @@ fn copy_rust_native_latest(request: &PreWriteLifecycleRequest) -> Result<()> {
     })
 }
 
+fn clear_rust_pre_write_outputs(request: &PreWriteLifecycleRequest) -> Result<()> {
+    let latest_advisory = advisory_latest_path(&request.output);
+    let specific_advisory =
+        advisory_specific_path(&request.output, &request.advisory_invocation_id);
+    for path in [
+        request.rust_native_artifact_path.as_path(),
+        request.rust_native_latest_path.as_path(),
+        latest_advisory.as_path(),
+        specific_advisory.as_path(),
+    ] {
+        remove_file_if_present(path).with_context(|| {
+            format!(
+                "execute-pre-write: failed to clear stale output {}",
+                path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn clear_rust_projected_outputs(request: &PreWriteLifecycleRequest) -> Result<()> {
+    let latest_advisory = advisory_latest_path(&request.output);
+    let specific_advisory =
+        advisory_specific_path(&request.output, &request.advisory_invocation_id);
+    for path in [
+        request.rust_native_latest_path.as_path(),
+        latest_advisory.as_path(),
+        specific_advisory.as_path(),
+    ] {
+        remove_file_if_present(path).with_context(|| {
+            format!(
+                "execute-pre-write: failed to remove invalid projected output {}",
+                path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn rust_output_failure_reason(request: &PreWriteLifecycleRequest, reason: String) -> String {
+    match clear_rust_projected_outputs(request) {
+        Ok(()) => reason,
+        Err(cleanup_error) => format!("{reason}; projected output cleanup failed: {cleanup_error}"),
+    }
+}
+
+fn remove_file_if_present(path: &Path) -> std::io::Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 fn build_rust_pre_write_advisory(
     request: &PreWriteLifecycleRequest,
     rust_artifact: &RustPreWriteArtifact,
     source_commit: &str,
-) -> Value {
-    let intent = rust_intent(rust_artifact.intent.as_ref());
-    let producer = rust_artifact
-        .meta
-        .as_ref()
-        .and_then(|meta| meta.producer.clone())
-        .unwrap_or_else(|| "lumin-rust-analyzer".to_string());
-    serde_json::json!({
+) -> Result<Value> {
+    let intent = rust_intent(&rust_artifact.intent)?;
+    let intent_hash = hash_intent(&intent)?;
+    Ok(serde_json::json!({
         "invocationId": request.advisory_invocation_id,
-        "intentHash": hash_intent(&intent),
+        "intentHash": intent_hash,
         "artifactPaths": {
             "invocationSpecific": path_string(&advisory_specific_path(&request.output, &request.advisory_invocation_id)),
             "latest": path_string(&advisory_latest_path(&request.output)),
@@ -690,7 +1006,7 @@ fn build_rust_pre_write_advisory(
         "rustPreWrite": {
             "schemaVersion": rust_artifact.schema_version.clone(),
             "policyVersion": rust_artifact.policy_version.clone(),
-            "producer": producer,
+            "producer": rust_artifact.meta.producer.clone(),
             "coverage": rust_artifact.coverage.clone(),
         },
         "capabilities": {
@@ -699,26 +1015,27 @@ fn build_rust_pre_write_advisory(
             "postWriteTypeEscapes": "not-applicable",
         },
         "failures": request.failures.clone(),
-    })
+    }))
 }
 
-fn rust_intent(intent: Option<&Value>) -> Value {
+fn rust_intent(intent: &Value) -> Result<Value> {
     let mut object = intent
-        .and_then(Value::as_object)
+        .as_object()
         .cloned()
-        .unwrap_or_else(Map::new);
+        .context("execute-pre-write: validated native intent must be an object")?;
     object.insert("language".to_string(), Value::String("rust".to_string()));
-    Value::Object(object)
+    Ok(Value::Object(object))
 }
 
-fn hash_intent(intent: &Value) -> String {
+fn hash_intent(intent: &Value) -> Result<String> {
     let normalized = sorted_json_value(intent);
-    let text = serde_json::to_string(&normalized).unwrap_or_else(|_| "{}".to_string());
+    let text = serde_json::to_string(&normalized)
+        .context("execute-pre-write: failed to serialize normalized intent")?;
     let digest = sha256_text(&text);
-    digest
+    Ok(digest
         .strip_prefix("sha256:")
         .unwrap_or(digest.as_str())
-        .to_string()
+        .to_string())
 }
 
 fn sorted_json_value(value: &Value) -> Value {
@@ -768,45 +1085,89 @@ fn advisory_specific_path(output: &Path, invocation_id: &str) -> PathBuf {
     output.join(format!("pre-write-advisory.{invocation_id}.json"))
 }
 
-fn failure_block(request: &PreWriteLifecycleRequest, reason: String) -> PreWriteBlock {
-    PreWriteBlock {
-        requested: true,
-        ran: false,
-        execution_owner: "lumin-audit-core",
-        engine: "rust",
-        language: "rust",
-        producer: "lumin-rust-analyzer",
-        engine_selection: request.engine_selection.clone(),
-        advisory_path: None,
-        latest_advisory_path: None,
-        advisory_invocation_id: None,
-        evidence_availability: None,
-        rust_native_artifact_path: None,
-        rust_native_latest_path: None,
-        source_commit: None,
-        analyzer_invocation: None,
-        reason: Some(reason),
+fn rust_failure_result(
+    request: &PreWriteLifecycleRequest,
+    failure_kind: PreWriteFailureKind,
+    reason: String,
+    exit_code: i32,
+    child_exit_code: Option<i32>,
+    stdout: Option<String>,
+    stderr: Option<String>,
+) -> PreWriteLifecycleResult {
+    let evidence_availability = serde_json::json!({
+        "status": "unavailable",
+        "producer": RUST_PRE_WRITE_PRODUCER,
+        "failureKind": failure_kind,
+        "reason": reason,
+        "rustNativeArtifactPath": path_string(&request.rust_native_artifact_path),
+    });
+    PreWriteLifecycleResult {
+        schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
+        block: PreWriteBlock {
+            requested: true,
+            ran: false,
+            execution_owner: "lumin-audit-core",
+            engine: "rust",
+            language: "rust",
+            producer: RUST_PRE_WRITE_PRODUCER,
+            engine_selection: request.engine_selection.clone(),
+            advisory_path: None,
+            latest_advisory_path: None,
+            advisory_invocation_id: Some(request.advisory_invocation_id.clone()),
+            evidence_availability: Some(evidence_availability),
+            rust_native_artifact_path: Some(path_string(&request.rust_native_artifact_path)),
+            rust_native_latest_path: None,
+            source_commit: request.source_commit.clone(),
+            analyzer_invocation: Some(analyzer_invocation_block(request)),
+            failure_kind: Some(failure_kind),
+            child_exit_code,
+            reason: Some(reason),
+        },
+        exit_code,
+        stdout,
+        stderr,
     }
 }
 
-fn js_failure_block(request: &JsPreWriteLifecycleRequest, reason: String) -> PreWriteBlock {
-    PreWriteBlock {
-        requested: true,
-        ran: false,
-        execution_owner: "lumin-audit-core",
-        engine: "js",
-        language: "js-ts",
-        producer: "pre-write.mjs",
-        engine_selection: request.engine_selection.clone(),
-        advisory_path: None,
-        latest_advisory_path: None,
-        advisory_invocation_id: None,
-        evidence_availability: None,
-        rust_native_artifact_path: None,
-        rust_native_latest_path: None,
-        source_commit: None,
-        analyzer_invocation: None,
-        reason: Some(reason),
+fn js_failure_result(
+    request: &JsPreWriteLifecycleRequest,
+    failure_kind: PreWriteFailureKind,
+    reason: String,
+    exit_code: i32,
+    child_exit_code: Option<i32>,
+    stdout: Option<String>,
+    stderr: Option<String>,
+) -> PreWriteLifecycleResult {
+    PreWriteLifecycleResult {
+        schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
+        block: PreWriteBlock {
+            requested: true,
+            ran: false,
+            execution_owner: "lumin-audit-core",
+            engine: "js",
+            language: "js-ts",
+            producer: "pre-write.mjs",
+            engine_selection: request.engine_selection.clone(),
+            advisory_path: None,
+            latest_advisory_path: None,
+            advisory_invocation_id: None,
+            evidence_availability: Some(serde_json::json!({
+                "status": "unavailable",
+                "producer": "pre-write.mjs",
+                "failureKind": failure_kind,
+                "reason": reason,
+            })),
+            rust_native_artifact_path: None,
+            rust_native_latest_path: None,
+            source_commit: None,
+            analyzer_invocation: None,
+            failure_kind: Some(failure_kind),
+            child_exit_code,
+            reason: Some(reason),
+        },
+        exit_code,
+        stdout,
+        stderr,
     }
 }
 

@@ -218,12 +218,53 @@ fn rust_pre_write_child_failure_records_raw_block_without_advisory() -> Result<(
 
     assert_eq!(result.exit_code, 7, "result={result:#?}");
     assert!(!result.block.ran);
+    assert_eq!(result.block.child_exit_code, Some(7));
+    assert_eq!(
+        serde_json::to_value(&result.block)?["failureKind"],
+        "child-failed"
+    );
     assert!(result
         .block
         .reason
         .as_deref()
         .ok_or_else(|| anyhow!("reason should be present"))?
         .starts_with("lumin-rust-analyzer pre-write exited non-zero:"));
+    assert!(!out.join("pre-write-advisory.latest.json").exists());
+    Ok(())
+}
+
+#[test]
+fn rust_pre_write_rejects_malformed_native_artifact_without_reusing_stale_outputs() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let out = temp.path().join("out");
+    fs::create_dir_all(&out)?;
+    let fake = write_fake_analyzer(temp.path(), 0)?;
+    fs::write(temp.path().join("rust-native-template.json"), "{}\n")?;
+    for stale in [
+        out.join("rust-pre-write-artifact.INV-1.json"),
+        out.join("rust-pre-write-artifact.latest.json"),
+        out.join("pre-write-advisory.INV-1.json"),
+        out.join("pre-write-advisory.latest.json"),
+    ] {
+        fs::write(stale, "{\"stale\":true}\n")?;
+    }
+
+    let result =
+        execute_rust_pre_write_lifecycle(parse_request(request(temp.path(), &out, &fake))?)?;
+
+    assert_eq!(result.exit_code, 1, "result={result:#?}");
+    assert!(!result.block.ran);
+    assert_eq!(
+        serde_json::to_value(&result.block)?["failureKind"],
+        "native-artifact-invalid"
+    );
+    assert!(result
+        .block
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("invalid shape or JSON")));
+    assert!(!out.join("rust-pre-write-artifact.latest.json").exists());
+    assert!(!out.join("pre-write-advisory.INV-1.json").exists());
     assert!(!out.join("pre-write-advisory.latest.json").exists());
     Ok(())
 }
@@ -522,12 +563,32 @@ fn write_native_template(path: &Path) -> Result<()> {
         path,
         serde_json::to_string_pretty(&json!({
             "schemaVersion": "rust-pre-write.v1",
-            "policyVersion": "rust-pre-write-policy.v1",
-            "intent": { "names": ["Thing"] },
+            "policyVersion": "prewrite-token-policy-v1",
+            "intent": {
+                "names": ["Thing"],
+                "shapes": [],
+                "files": [],
+                "dependencies": [],
+                "plannedTypeEscapes": []
+            },
+            "intentWarnings": [],
             "meta": { "producer": "lumin-rust-analyzer" },
-            "coverage": { "names": "ran" },
+            "coverage": {
+                "names": "ran",
+                "shapes": "not-requested",
+                "files": "not-requested",
+                "dependencies": "not-requested",
+                "inlinePatterns": "not-requested",
+                "plannedTypeEscapes": "ran"
+            },
             "lookups": [],
-            "cueCards": []
+            "shapeLookups": [],
+            "fileLookups": [],
+            "dependencyLookups": [],
+            "inlinePatternLookups": [],
+            "cueCards": [],
+            "suppressedCues": [],
+            "unavailableEvidence": []
         }))?,
     )?;
     Ok(())
