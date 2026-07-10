@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::relative_source_resolver::{
+    dirname_text, join_relative_spec, normalize_path_text, RelativeSourceResolver,
+};
+
 pub const SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION: &str = "lumin-source-use-assembly-request.v1";
 pub const SOURCE_USE_ASSEMBLY_RESPONSE_SCHEMA_VERSION: &str =
     "lumin-source-use-assembly-response.v1";
@@ -657,7 +661,7 @@ fn build_source_use_assembly_response_with_options(
         request.source_files,
         request.source_file_ids,
     )?;
-    let resolver = RelativeSourceResolver::new(&root, source_files);
+    let resolver = RelativeSourceResolver::from_rooted_paths(&root, source_files);
     let namespace_resolver =
         NamespaceReExportResolver::new(request.namespace_re_exports, request.named_re_exports);
     let mut namespace_users_seen = BTreeSet::new();
@@ -1641,24 +1645,6 @@ fn root_relative(root: &str, path: &str) -> String {
     normalized
 }
 
-const RESOLVE_FILE_EXTS: &[&str] = &[
-    "", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".d.ts", ".d.mts", ".d.cts",
-];
-
-const RESOLVE_INDEX_EXTS: &[&str] = &[
-    "/index.ts",
-    "/index.tsx",
-    "/index.js",
-    "/index.jsx",
-    "/index.mjs",
-    "/index.cjs",
-    "/index.mts",
-    "/index.cts",
-    "/index.d.ts",
-    "/index.d.mts",
-    "/index.d.cts",
-];
-
 #[derive(Clone, Debug)]
 struct ReExportTarget {
     target_file: String,
@@ -1783,148 +1769,6 @@ fn re_export_map(
     out
 }
 
-#[derive(Debug)]
-struct RelativeSourceResolver {
-    source_files: BTreeMap<String, String>,
-    listed_source_files: Vec<String>,
-}
-
-impl RelativeSourceResolver {
-    fn new(root: &str, source_files: Vec<String>) -> Self {
-        let mut out = BTreeMap::new();
-        let mut listed = BTreeSet::new();
-        let root = normalize_path_text(root);
-        for source_file in source_files {
-            let normalized = normalize_path_text(&source_file);
-            let resolved = if is_absolute_path_text(&normalized) {
-                normalized.clone()
-            } else {
-                normalize_path_text(&format!("{}/{}", root.trim_end_matches('/'), normalized))
-            };
-            out.entry(normalized).or_insert(resolved.clone());
-            out.entry(resolved.clone()).or_insert(resolved.clone());
-            out.entry(root_relative(&root, &resolved))
-                .or_insert(resolved.clone());
-            listed.insert(resolved);
-        }
-        Self {
-            source_files: out,
-            listed_source_files: listed.into_iter().collect(),
-        }
-    }
-
-    fn resolve(&self, from_file: &str, spec: &str) -> Option<String> {
-        if !is_relative_spec(spec) {
-            return None;
-        }
-        let base = join_relative_spec(dirname_text(from_file), spec);
-        for ext in RESOLVE_FILE_EXTS {
-            if let Some(resolved) = self.source_file(&format!("{base}{ext}")) {
-                return Some(resolved);
-            }
-        }
-        for ext in RESOLVE_INDEX_EXTS {
-            if let Some(resolved) = self.source_file(&format!("{base}{ext}")) {
-                return Some(resolved);
-            }
-        }
-        if js_output_extension(spec) {
-            for alt in js_output_source_extensions(spec) {
-                if let Some(swapped) = replace_js_output_extension(spec, alt) {
-                    let candidate = join_relative_spec(dirname_text(from_file), &swapped);
-                    if let Some(resolved) = self.source_file(&candidate) {
-                        return Some(resolved);
-                    }
-                }
-            }
-        }
-        if js_output_extension(spec) {
-            if let Some(stripped) = strip_js_output_extension(&base) {
-                for ext in RESOLVE_INDEX_EXTS {
-                    if let Some(resolved) = self.source_file(&format!("{stripped}{ext}")) {
-                        return Some(resolved);
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn source_file(&self, candidate: &str) -> Option<String> {
-        self.source_files
-            .get(&normalize_path_text(candidate))
-            .cloned()
-    }
-
-    fn source_files(&self) -> impl Iterator<Item = &str> {
-        self.listed_source_files.iter().map(String::as_str)
-    }
-}
-
-fn dirname_text(path: &str) -> &str {
-    let normalized = path.rfind(['/', '\\']);
-    normalized.map_or("", |index| &path[..index])
-}
-
-fn join_relative_spec(base: &str, spec: &str) -> String {
-    let joined = if base.is_empty() {
-        spec.to_string()
-    } else {
-        format!("{base}/{spec}")
-    };
-    normalize_path_text(&joined)
-}
-
-fn normalize_path_text(path: &str) -> String {
-    let normalized = path.replace('\\', "/");
-    let (prefix, rest) = split_path_prefix(&normalized);
-    let absolute = rest.starts_with('/');
-    let mut parts = Vec::new();
-    for part in rest.split('/') {
-        if part.is_empty() || part == "." {
-            continue;
-        }
-        if part == ".." {
-            if let Some(last) = parts.last() {
-                if last != &".." {
-                    parts.pop();
-                    continue;
-                }
-            }
-            if !absolute {
-                parts.push(part);
-            }
-            continue;
-        }
-        parts.push(part);
-    }
-
-    let body = parts.join("/");
-    match (prefix.is_empty(), absolute, body.is_empty()) {
-        (false, _, false) => format!("{prefix}/{body}"),
-        (false, _, true) => prefix.to_string(),
-        (true, true, false) => format!("/{body}"),
-        (true, true, true) => "/".to_string(),
-        (true, false, false) => body,
-        (true, false, true) => ".".to_string(),
-    }
-}
-
-fn split_path_prefix(path: &str) -> (&str, &str) {
-    let bytes = path.as_bytes();
-    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
-        let prefix = &path[..2];
-        let rest = path.get(2..).unwrap_or_default();
-        return (prefix, rest);
-    }
-    ("", path)
-}
-
-fn is_absolute_path_text(path: &str) -> bool {
-    let (prefix, rest) = split_path_prefix(path);
-    !prefix.is_empty() || rest.starts_with('/')
-}
-
 fn basename_text(path: &str) -> Option<String> {
     normalize_path_text(path)
         .rsplit('/')
@@ -1951,44 +1795,6 @@ fn relative_scope(root: &str, path: &str) -> String {
             .map(ToString::to_string)
             .unwrap_or(path)
     }
-}
-
-fn js_output_extension(spec: &str) -> bool {
-    [".mjs", ".cjs", ".js", ".jsx"]
-        .iter()
-        .any(|ext| spec.ends_with(ext))
-}
-
-fn js_output_source_extensions(spec: &str) -> &'static [&'static str] {
-    if spec.ends_with(".jsx") {
-        &[".tsx", ".ts"]
-    } else {
-        &[".ts", ".tsx", ".mts", ".cts"]
-    }
-}
-
-fn replace_js_output_extension(spec: &str, alt: &str) -> Option<String> {
-    for ext in [".mjs", ".cjs", ".js", ".jsx"] {
-        if let Some(replaced) = replace_suffix(spec, ext, alt) {
-            return Some(replaced);
-        }
-    }
-    None
-}
-
-fn replace_suffix(value: &str, suffix: &str, replacement: &str) -> Option<String> {
-    value
-        .strip_suffix(suffix)
-        .map(|prefix| format!("{prefix}{replacement}"))
-}
-
-fn strip_js_output_extension(spec: &str) -> Option<&str> {
-    for ext in [".mjs", ".cjs", ".js", ".jsx"] {
-        if let Some(prefix) = spec.strip_suffix(ext) {
-            return Some(prefix);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

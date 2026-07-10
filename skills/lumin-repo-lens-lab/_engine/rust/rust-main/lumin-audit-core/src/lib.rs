@@ -40,6 +40,7 @@ pub mod pre_write_lifecycle;
 pub mod pre_write_routing;
 pub mod producer_performance;
 pub mod rank_fixes;
+mod relative_source_resolver;
 pub mod resolver_diagnostics;
 pub mod resolver_diagnostics_artifacts;
 pub mod runtime_evidence;

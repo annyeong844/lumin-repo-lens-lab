@@ -42,9 +42,11 @@ binary. With auto-build enabled and Cargo available, the wrapper silently built
 the packaged Rust source fallback, adding about 56 seconds to a tiny quick
 audit. A Cargo-less installed package would stop instead.
 
-The repair is to bump the bridge contract to v31 and rebuild every advertised
-platform binary from the same source. Cargo remains a fallback and must not be
-required for the advertised Linux package path.
+The initial repair bumped the bridge contract to v31 and rebuilt every
+advertised platform binary from the same source. The source-use correctness
+follow-up moved the current contract to v32 and again rebuilt both binaries.
+Cargo remains a fallback and must not be required for the advertised Linux
+package path.
 
 An initial rebuild on the maintainer's Ubuntu 24.04 WSL host required
 `GLIBC_2.39`, as did the previously checked-in Linux binary. That is too narrow
@@ -54,7 +56,7 @@ Debian Bullseye Rust container and verified with `readelf` before packaging.
 ## Acceptance
 
 - a supported WSL Node/npm install loads `oxc-parser` from a WSL-local package;
-- Linux and Windows binaries report bridge contract v31 and the complete
+- Linux and Windows binaries report bridge contract v32 and the complete
   required feature set;
 - a clean WSL quick audit completes with
   `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` and Cargo absent from `PATH`;
@@ -81,7 +83,7 @@ completed without compiling Rust sources and wrote:
 | audit-core auto-build allowed | no |
 | packaged Linux maximum GLIBC requirement | 2.30 |
 
-Both packaged binaries report `audit-core-js-runtime-bridge.v31` with all 50
+Both packaged binaries now report `audit-core-js-runtime-bridge.v32` with all 50
 required features. The Windows and Linux packaged wrappers also pass the full
 synthetic result-file contract probe. That probe exposed one stale fixture: it
 supplied one SFC script-src use both as a legacy count and as a Rust assembly
@@ -89,9 +91,9 @@ record. The fixture now matches the production request boundary by sending a
 zero legacy count and allowing Rust assembly to produce the single use.
 
 The package builder now performs non-executing validation for binaries supplied
-for another platform. It checks binary format and architecture, embedded v31
-and required-feature markers, and the Linux GLIBC floor. Verification proved
-both hard-stop branches: the previous v30 Linux binary was rejected for the
-missing v31 marker, and a v31 host build requiring GLIBC 2.39 was rejected for
-exceeding the 2.31 baseline. The final GLIBC 2.30 binary also executed its
+for another platform. It checks binary format and architecture, embedded current
+contract and required-feature markers, and the Linux GLIBC floor. Windows PE
+validation reads the `PE\0\0` header and `Machine` field rather than accepting
+the `MZ` prefix alone. Verification proved the architecture hard-stop and the
+Linux compatibility floor; the final GLIBC 2.30 binary also executed its v32
 runtime contract successfully inside a Debian Bullseye container.

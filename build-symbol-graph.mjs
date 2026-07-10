@@ -1784,6 +1784,7 @@ function sourceUseAssemblyRecord(recordId, consumerFile, use) {
     memberName: use.memberName,
     kind: sourceUseAssemblyKind(use.kind),
     typeOnly: sourceUseAssemblyTypeOnly(use.typeOnly),
+    typeOnlyPresent: typeof use.typeOnly === "boolean",
     line: Number.isFinite(use.line) ? use.line : undefined,
     sfcLanguage: use.sfcLanguage,
     unresolvedEvidence: use.unresolvedEvidence,
@@ -2010,28 +2011,21 @@ function buildSourceUseAssemblyCandidates() {
         recordId ??= sourceUseRecordId(consumerFile, index);
         return recordId;
       };
+      if (consumerFile.endsWith(".py") || consumerFile.endsWith(".go")) {
+        unhandled.push({
+          consumerFile,
+          useIndex: index,
+          use,
+          reason: "language-resolver-owned",
+        });
+        continue;
+      }
       if (canFastPathExternalSourceUse(consumerFile, use)) {
         const record = externalSourceUseAssemblyRecord(
           getRecordId(),
           consumerFile,
           use,
           "source-import",
-        );
-        if (record) {
-          records.push(record);
-          continue;
-        }
-      }
-      if (
-        (consumerFile.endsWith(".py") || consumerFile.endsWith(".go")) &&
-        typeof use?.fromSpec === "string" &&
-        use.fromSpec.length > 0
-      ) {
-        const record = unresolvedSourceUseAssemblyRecord(
-          getRecordId(),
-          consumerFile,
-          use,
-          "unresolved-internal",
         );
         if (record) {
           records.push(record);
@@ -2202,9 +2196,6 @@ function buildSfcComponentSourceUseAssemblyCandidateRecords(
       continue;
     }
     if (extensionlessRelativeRawTargetExists(consumerFile, fromSpec)) {
-      continue;
-    }
-    if (outOfBandSourceUseRecordIdFor(consumerFile, fromSpec)) {
       continue;
     }
     if (
@@ -2544,8 +2535,8 @@ function sourceUseAssemblyRecordRowFields({
 
 function sourceUseAssemblyRecordRowValue(record, field) {
   if (field === "typeOnlyState") {
-    if (record.typeOnlyPresent !== true) return null;
-    return record.typeOnly === true ? 2 : 1;
+    if (record.typeOnly === true) return 2;
+    return record.typeOnlyPresent === true ? 1 : null;
   }
   const value = record[field];
   if (value === undefined || value === null) return null;
@@ -3704,11 +3695,7 @@ function processSfcTemplateComponentRefs(consumers, candidateRecordIds) {
       continue;
     }
 
-    const linkedSourceUseRecordId = outOfBandSourceUseRecordIdFor(
-      use.consumerFile,
-      use.bindingSource,
-    );
-    const sourceUseRecordId = linkedSourceUseRecordId ?? sfcComponentSourceUseRecordId(
+    const sourceUseRecordId = sfcComponentSourceUseRecordId(
       candidateRecordIds,
       "sfc-template-component-ref",
       index,
@@ -3862,11 +3849,7 @@ function processSfcGlobalComponentRegistrations(consumers, candidateRecordIds) {
       continue;
     }
 
-    const linkedSourceUseRecordId = outOfBandSourceUseRecordIdFor(
-      use.registrationFile,
-      use.bindingSource,
-    );
-    const sourceUseRecordId = linkedSourceUseRecordId ?? sfcComponentSourceUseRecordId(
+    const sourceUseRecordId = sfcComponentSourceUseRecordId(
       candidateRecordIds,
       "sfc-global-component-registration",
       index,

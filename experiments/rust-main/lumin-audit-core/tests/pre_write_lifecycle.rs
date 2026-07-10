@@ -441,29 +441,32 @@ fn write_fake_analyzer(dir: &Path, exit_code: i32) -> Result<FakeAnalyzer> {
     fs::write(
         &script,
         format!(
-            "@echo off\r\n\
-setlocal EnableExtensions\r\n\
-set \"OUT=\"\r\n\
-:loop\r\n\
-if \"%~1\"==\"\" goto done\r\n\
-echo %~1>>\"{args_log}\"\r\n\
-if \"%~1\"==\"--output\" (\r\n\
-  set \"OUT=%~2\"\r\n\
-  echo %~2>>\"{args_log}\"\r\n\
-)\r\n\
-shift\r\n\
-goto loop\r\n\
-:done\r\n\
-more > \"{stdin_log}\"\r\n\
-if {exit_code} EQU 0 (\r\n\
-  copy /Y \"{template}\" \"%OUT%\" >NUL\r\n\
-  echo ## rust pre-write\r\n\
-  echo [rust-pre-write] diagnostic 1>&2\r\n\
-)\r\n\
-exit /b {exit_code}\r\n",
+            concat!(
+                "@echo off\r\n",
+                "setlocal EnableExtensions\r\n",
+                "set \"OUT=\"\r\n",
+                ":loop\r\n",
+                "if \"%~1\"==\"\" goto done\r\n",
+                "echo %~1>>\"{args_log}\"\r\n",
+                "if \"%~1\"==\"--output\" (\r\n",
+                "  set \"OUT=%~2\"\r\n",
+                "  echo %~2>>\"{args_log}\"\r\n",
+                ")\r\n",
+                "shift\r\n",
+                "goto loop\r\n",
+                ":done\r\n",
+                "more > \"{stdin_log}\"\r\n",
+                "if {exit_code} EQU 0 (\r\n",
+                "  copy /Y \"{template}\" \"%OUT%\" >NUL\r\n",
+                "  echo ## rust pre-write\r\n",
+                "  echo [rust-pre-write] diagnostic 1>&2\r\n",
+                ")\r\n",
+                "exit /b {exit_code}\r\n"
+            ),
             args_log = path_string(&dir.join("args.log")),
             stdin_log = path_string(&dir.join("intent.stdin")),
             template = path_string(&template),
+            exit_code = exit_code,
         ),
     )?;
     Ok(FakeAnalyzer {
@@ -541,30 +544,33 @@ fn write_fake_js_pre_write(dir: &Path, out: &Path, exit_code: i32) -> Result<Fak
     fs::write(
         &script,
         format!(
-            "@echo off\r\n\
-setlocal EnableExtensions\r\n\
-set \"OUT=\"\r\n\
-:loop\r\n\
-if \"%~1\"==\"\" goto done\r\n\
-echo %~1>>\"{args_log}\"\r\n\
-if \"%~1\"==\"--output\" (\r\n\
-  set \"OUT=%~2\"\r\n\
-  echo %~2>>\"{args_log}\"\r\n\
-)\r\n\
-shift\r\n\
-goto loop\r\n\
-:done\r\n\
-more > \"{stdin_log}\"\r\n\
-if {exit_code} EQU 0 (\r\n\
-  copy /Y \"{template}\" \"%OUT%\\pre-write-advisory.latest.json\" >NUL\r\n\
-  copy /Y \"{template}\" \"%OUT%\\pre-write-advisory.JS-1.json\" >NUL\r\n\
-  echo ## js pre-write\r\n\
-  echo [js-pre-write] diagnostic 1>&2\r\n\
-)\r\n\
-exit /b {exit_code}\r\n",
+            concat!(
+                "@echo off\r\n",
+                "setlocal EnableExtensions\r\n",
+                "set \"OUT=\"\r\n",
+                ":loop\r\n",
+                "if \"%~1\"==\"\" goto done\r\n",
+                "echo %~1>>\"{args_log}\"\r\n",
+                "if \"%~1\"==\"--output\" (\r\n",
+                "  set \"OUT=%~2\"\r\n",
+                "  echo %~2>>\"{args_log}\"\r\n",
+                ")\r\n",
+                "shift\r\n",
+                "goto loop\r\n",
+                ":done\r\n",
+                "more > \"{stdin_log}\"\r\n",
+                "if {exit_code} EQU 0 (\r\n",
+                "  copy /Y \"{template}\" \"%OUT%\\pre-write-advisory.latest.json\" >NUL\r\n",
+                "  copy /Y \"{template}\" \"%OUT%\\pre-write-advisory.JS-1.json\" >NUL\r\n",
+                "  echo ## js pre-write\r\n",
+                "  echo [js-pre-write] diagnostic 1>&2\r\n",
+                ")\r\n",
+                "exit /b {exit_code}\r\n"
+            ),
             args_log = path_string(&dir.join("js-args.log")),
             stdin_log = path_string(&dir.join("js-intent.stdin")),
             template = path_string(&template),
+            exit_code = exit_code,
         ),
     )?;
     Ok(FakeJsPreWrite {

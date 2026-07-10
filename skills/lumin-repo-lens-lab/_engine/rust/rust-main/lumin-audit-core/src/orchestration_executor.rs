@@ -1043,6 +1043,8 @@ fn windows_working_set_bytes() -> Option<i64> {
         pagefile_usage: 0,
         peak_pagefile_usage: 0,
     };
+    // SAFETY: `counters` is fully initialized, `cb` is its exact ABI size, and
+    // the current-process pseudo handle remains valid for the duration of the call.
     let ok = unsafe { GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) };
     (ok != 0).then_some(counters.working_set_size as i64)
 }

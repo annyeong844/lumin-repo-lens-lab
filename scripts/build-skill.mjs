@@ -26,7 +26,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v31';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v32';
 const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -211,6 +211,7 @@ rust = {}
 [workspace.lints.clippy]
 await_holding_invalid_type = "deny"
 await_holding_lock = "deny"
+undocumented_unsafe_blocks = "deny"
 identity_op = "deny"
 manual_clamp = "deny"
 manual_filter = "deny"
@@ -528,8 +529,26 @@ function validatePackagedAuditCoreBinaryMetadata(source) {
       throw new Error(`configured ${key} audit-core has the wrong ELF architecture`);
     }
   } else if (source.platform === 'win32') {
-    if (binary.length < 2 || binary.subarray(0, 2).toString('ascii') !== 'MZ') {
+    if (binary.length < 0x40 || binary.subarray(0, 2).toString('ascii') !== 'MZ') {
       throw new Error(`configured ${key} audit-core is not a PE binary`);
+    }
+    const peOffset = binary.readUInt32LE(0x3c);
+    if (
+      peOffset > binary.length - 6 ||
+      !binary.subarray(peOffset, peOffset + 4).equals(Buffer.from([0x50, 0x45, 0, 0]))
+    ) {
+      throw new Error(`configured ${key} audit-core has an invalid PE header`);
+    }
+    const expectedMachine = {
+      ia32: 0x014c,
+      x64: 0x8664,
+      arm64: 0xaa64,
+    }[source.arch];
+    if (expectedMachine === undefined) {
+      throw new Error(`configured ${key} audit-core uses an unsupported Windows architecture`);
+    }
+    if (binary.readUInt16LE(peOffset + 4) !== expectedMachine) {
+      throw new Error(`configured ${key} audit-core has the wrong PE architecture`);
     }
   }
 
@@ -3202,7 +3221,7 @@ function writeAuditCorePlatformManifest(outDir, sources) {
     buildPolicy: {
       currentPlatformBinary: 'rebuilt-before-copy',
       contractValidation: 'required-cli-commands-before-copy',
-      crossPlatformValidation: 'binary-format-contract-markers-and-linux-glibc-floor',
+      crossPlatformValidation: 'binary-format-architecture-contract-markers-and-linux-glibc-floor',
     },
     overrideEnv: {
       platformSpecific: 'LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>',

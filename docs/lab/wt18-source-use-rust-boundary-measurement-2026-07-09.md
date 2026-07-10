@@ -183,7 +183,9 @@ The walker was descending into nested Cargo `target/` trees under
 `experiments/` and the offline Rust basepack. Excluding those generated trees
 reduced the same file collection from 2,121 ms to 500 ms while preserving the
 exact 729-file result set. The checked fix therefore extends the existing
-root-level `target` prune policy to nested directories. A new Rust hash-batch
+root-level `target` prune policy to nested directories whose parent owns a
+`Cargo.toml`; authored directories that merely happen to be named `target`
+remain in scope. A new Rust hash-batch
 boundary was rejected because it would optimize the small remainder instead of
 the measured directory-walk cost.
 

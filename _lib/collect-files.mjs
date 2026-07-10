@@ -11,7 +11,7 @@
 // `src/`, `lib/`, ...) was discarded after it blinded the audit on
 // unconventional layouts — 98.5% miss on Claude Code src (FP-17).
 
-import { readdirSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { isTestLikePath } from './test-paths.mjs';
 import { JS_FAMILY_LANGS } from './lang.mjs';
@@ -28,9 +28,7 @@ const ROOT_PRUNE_NAMES = new Set([
   'out', 'target', '.venv', 'venv', '__pycache__',
 ]);
 const ROOT_PRUNE_PREFIXES = ['dist', 'build', '.'];
-// Cargo workspaces commonly place generated target trees below a package or
-// experiments directory, so the root-only target guard is not sufficient.
-const WALK_PRUNE_NAMES = new Set(['node_modules', '.git', 'coverage', 'target']);
+const WALK_PRUNE_NAMES = new Set(['node_modules', '.git']);
 const WALK_PRUNE_PREFIXES = ['dist', 'build'];
 
 function normalizeCollectOptions(opts) {
@@ -52,14 +50,8 @@ function normalizeCollectOptions(opts) {
   };
 }
 
-function readDirOrNull(dir) {
-  try {
-    return readdirSync(dir, { withFileTypes: true });
-  } catch {
-    // Directory may vanish mid-scan or become unreadable; callers treat
-    // null as "skip this branch" so one race does not kill the audit.
-    return null;
-  }
+function readDir(dir) {
+  return readdirSync(dir, { withFileTypes: true });
 }
 
 function shouldPruneRootDir(name) {
@@ -70,8 +62,17 @@ function shouldPruneRootDir(name) {
       : name === pre || name.startsWith(pre + '-'));
 }
 
-function shouldPruneWalkDir(name) {
+function isCargoTargetDir(name, full) {
+  if (name !== 'target') return false;
+  const manifest = statSync(path.join(path.dirname(full), 'Cargo.toml'), {
+    throwIfNoEntry: false,
+  });
+  return manifest?.isFile() === true;
+}
+
+function shouldPruneWalkDir(name, full) {
   if (WALK_PRUNE_NAMES.has(name)) return true;
+  if (isCargoTargetDir(name, full)) return true;
   for (const pre of WALK_PRUNE_PREFIXES) {
     if (name === pre || name.startsWith(pre + '-')) return true;
   }
@@ -80,10 +81,7 @@ function shouldPruneWalkDir(name) {
 
 function collectSearchDirs(root, excludeRules) {
   const searchDirs = [];
-  const entries = readDirOrNull(root);
-  if (!entries) {
-    return searchDirs;
-  }
+  const entries = readDir(root);
 
   for (const e of entries) {
     if (!e.isDirectory()) continue;
@@ -103,10 +101,7 @@ function collectRootEntries(root, extSet, excludeRules) {
   // v0.6.8 fix: filters by caller-provided `extSet` so Python / Go scans
   // don't leak root-level .mjs into the result (and vice versa).
   const rootEntries = [];
-  const entries = readDirOrNull(root);
-  if (!entries) {
-    return rootEntries;
-  }
+  const entries = readDir(root);
 
   for (const e of entries) {
     if (!e.isFile()) continue;
@@ -120,14 +115,13 @@ function collectRootEntries(root, extSet, excludeRules) {
 }
 
 function walkSourceFiles(scanRoot, dir, extSet, excludeRules, out) {
-  const entries = readDirOrNull(dir);
-  if (!entries) return;
+  const entries = readDir(dir);
 
   for (const e of entries) {
     const full = path.join(dir, e.name);
     if (e.isSymbolicLink()) continue;
     if (e.isDirectory()) {
-      if (shouldPruneWalkDir(e.name)) continue;
+      if (shouldPruneWalkDir(e.name, full)) continue;
       if (isExcludedPath(scanRoot, full, excludeRules, { directory: true })) continue;
       walkSourceFiles(scanRoot, full, extSet, excludeRules, out);
     } else if (e.isFile()) {
@@ -192,8 +186,10 @@ export function scanScopeStatusForPath(root, full, opts = {}) {
     return { included: false, reason: 'root-pruned' };
   }
   const walkSegments = directory ? segments.slice(1) : segments.slice(1, -1);
+  let walkCursor = path.join(resolvedRoot, rootSegment);
   for (const segment of walkSegments) {
-    if (shouldPruneWalkDir(segment)) {
+    walkCursor = path.join(walkCursor, segment);
+    if (shouldPruneWalkDir(segment, walkCursor)) {
       return { included: false, reason: 'walk-pruned' };
     }
   }

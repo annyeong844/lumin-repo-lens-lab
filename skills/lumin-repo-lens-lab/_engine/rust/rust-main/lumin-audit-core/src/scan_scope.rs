@@ -35,7 +35,7 @@ const ROOT_PRUNE_NAMES: &[&str] = &[
     "venv",
     "__pycache__",
 ];
-const WALK_PRUNE_NAMES: &[&str] = &["node_modules", ".git", "coverage"];
+const WALK_PRUNE_NAMES: &[&str] = &["node_modules", ".git"];
 const WALK_PRUNE_PREFIXES: &[&str] = &["dist", "build"];
 
 #[derive(Debug, Clone)]
@@ -107,8 +107,10 @@ pub fn scan_scope_status_for_path(
     } else {
         segments.len().saturating_sub(1)
     };
+    let mut walk_cursor = root.join(segments.first().copied().unwrap_or_default());
     for segment in segments.iter().take(walk_end).skip(1) {
-        if should_prune_walk_dir(segment) {
+        walk_cursor.push(segment);
+        if should_prune_walk_dir(segment, &walk_cursor) {
             return excluded("walk-pruned");
         }
     }
@@ -208,13 +210,77 @@ fn should_prune_root_dir(name: &str) -> bool {
         || (name.starts_with('.') && !CANONICAL_MARKERS.contains(&name))
 }
 
-fn should_prune_walk_dir(name: &str) -> bool {
+fn should_prune_walk_dir(name: &str, full: &Path) -> bool {
     if WALK_PRUNE_NAMES.contains(&name) {
+        return true;
+    }
+    if name == "target"
+        && full
+            .parent()
+            .is_some_and(|parent| parent.join("Cargo.toml").is_file())
+    {
         return true;
     }
     WALK_PRUNE_PREFIXES
         .iter()
         .any(|prefix| name == *prefix || name.starts_with(&format!("{prefix}-")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prunes_only_target_directories_owned_by_cargo() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let cargo_root = root.join("packages/cargo-app");
+        let cargo_target_dir = cargo_root.join("target");
+        let authored_target_dir = root.join("src/target");
+        let cargo_target_file = cargo_target_dir.join("generated.ts");
+        let authored_target_file = authored_target_dir.join("index.ts");
+        std::fs::create_dir_all(&cargo_target_dir)?;
+        std::fs::create_dir_all(&authored_target_dir)?;
+        std::fs::write(
+            cargo_root.join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\n",
+        )?;
+        std::fs::write(&cargo_target_file, "export const generated = true;\n")?;
+        std::fs::write(&authored_target_file, "export const authored = true;\n")?;
+
+        let options = ScanScopeOptions::default();
+        assert_eq!(
+            scan_scope_status_for_path(root, &cargo_target_file, &options),
+            excluded("walk-pruned")
+        );
+        assert_eq!(
+            scan_scope_status_for_path(root, &authored_target_file, &options),
+            included()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn preserves_authored_nested_coverage_modules() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let authored = root.join("src/coverage/absence.rs");
+        let parent = authored
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("fixture path has no parent"))?;
+        std::fs::create_dir_all(parent)?;
+        std::fs::write(&authored, "pub const COVERED: bool = true;\n")?;
+
+        let options = ScanScopeOptions {
+            languages: vec!["rs".to_string()],
+            ..ScanScopeOptions::default()
+        };
+        assert_eq!(
+            scan_scope_status_for_path(root, &authored, &options),
+            included()
+        );
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

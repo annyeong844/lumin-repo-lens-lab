@@ -79,8 +79,11 @@ pub fn apply_lifecycle_exit_policy(
             .filter(|block| post_write_confidence_limited(block))
         {
             stderr.push_str(&format!(
-                "[audit-repo] --strict-post-write-confidence: post-write delta confidence limited \
-(baseline={}, scanRange={}, typeEscapeDelta={}, afterComplete={}); escalating to exit 2\n",
+                concat!(
+                    "[audit-repo] --strict-post-write-confidence: post-write delta confidence ",
+                    "limited (baseline={}, scanRange={}, typeEscapeDelta={}, afterComplete={}); ",
+                    "escalating to exit 2\n"
+                ),
                 block.baseline_status.as_deref().unwrap_or("unknown"),
                 block.scan_range_parity.as_deref().unwrap_or("unknown"),
                 block
