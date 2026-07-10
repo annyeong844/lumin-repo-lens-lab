@@ -16,6 +16,7 @@ import path from 'node:path';
 import { isTestLikePath } from './test-paths.mjs';
 import { JS_FAMILY_LANGS } from './lang.mjs';
 import { buildExcludeRules, isExcludedPath } from './scan-excludes.mjs';
+import { activeSourceInventory, loadSourceInventory } from './source-inventory.mjs';
 
 const CANONICAL_MARKERS = new Set([
   'src', 'lib', 'bin', 'types', 'apps', 'packages',
@@ -45,6 +46,7 @@ function normalizeCollectOptions(opts) {
 
   return {
     includeTests,
+    languages,
     extSet: new Set(languages.map((e) => '.' + e)),
     excludeRules: buildExcludeRules(exclude),
   };
@@ -116,11 +118,13 @@ function collectRootEntries(root, extSet, excludeRules) {
 
 function walkSourceFiles(scanRoot, dir, extSet, excludeRules, out) {
   const entries = readDir(dir);
+  const walkingRoot = dir === scanRoot;
 
   for (const e of entries) {
     const full = path.join(dir, e.name);
     if (e.isSymbolicLink()) continue;
     if (e.isDirectory()) {
+      if (walkingRoot && shouldPruneRootDir(e.name)) continue;
       if (shouldPruneWalkDir(e.name, full)) continue;
       if (isExcludedPath(scanRoot, full, excludeRules, { directory: true })) continue;
       walkSourceFiles(scanRoot, full, extSet, excludeRules, out);
@@ -144,7 +148,24 @@ function dedupeSorted(files) {
 
 export function collectFiles(root, opts = {}) {
   const resolvedRoot = path.resolve(root);
-  const { includeTests, extSet, excludeRules } = normalizeCollectOptions(opts);
+  const { includeTests, languages, extSet, excludeRules } = normalizeCollectOptions(opts);
+  const inventoryConfig = activeSourceInventory();
+  if (inventoryConfig) {
+    const inventory = loadSourceInventory(inventoryConfig.path, resolvedRoot, inventoryConfig);
+    const inventoryLanguages = new Set(inventory.artifact.walkScope.languages);
+    const unsupported = languages.filter((language) => !inventoryLanguages.has(language));
+    if (unsupported.length > 0) {
+      throw new Error(
+        `source inventory does not cover requested languages: ${unsupported.join(', ')}`,
+      );
+    }
+    const files = inventory.absoluteFiles.filter((file) => {
+      if (!extSet.has(path.extname(file))) return false;
+      if (!includeTests && isTestLikePath(file)) return false;
+      return !isExcludedPath(resolvedRoot, file, excludeRules);
+    });
+    return dedupeSorted(files);
+  }
   const searchDirs = collectSearchDirs(resolvedRoot, excludeRules);
   const rootEntries = collectRootEntries(resolvedRoot, extSet, excludeRules);
   const out = [];

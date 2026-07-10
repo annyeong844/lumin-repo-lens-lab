@@ -159,6 +159,7 @@ inventory for this lane.
 | `experiments/rust-main/lumin-audit-core/src/orchestration_plan.rs` | Typed audit profile command graph, lifecycle request plan, profile/SARIF/base-pipeline skip semantics, base-step `executionOwner` metadata consumed by `orchestration_executor.rs`, and lifecycle `executionOwner` metadata consumed by the JS wrapper | child process execution, filesystem precondition evaluation, command telemetry, producer-performance measurement |
 | `experiments/rust-main/lumin-audit-core/src/orchestration_result.rs` | `manifest.json.orchestration` projection from the typed `producer-performance.json` source shape, including execution status counts, required/optional failure counts, skipped counts, and capped examples | child process execution, live telemetry collection, raw `commandsRun`/`skipped` value production, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/producer_performance.rs` | `manifest.json.performance` projection from already-produced `producer-performance.json` | producer execution, memory measurement, artifact read measurement, producer-performance artifact writing |
+| `experiments/rust-main/lumin-audit-core/src/source_inventory.rs` | Typed validation of the current-run `source-inventory.json` produced by `triage-repo.mjs`, including run binding, schema/root/walk/analysis-scope/path safety checks, and language counts used by orchestration | repository walking, source parsing, file-content hashing, producer-specific filtering, or reuse across audit invocations |
 | `experiments/rust-main/lumin-audit-core/src/scan_scope.rs` | Audit manifest scan-scope path inclusion policy used by migrated manifest summaries, matching the JS `scanScopeStatusForPath` contract. Root `coverage` output remains pruned, while nested authored `coverage` source modules remain in scope; nested `target` is pruned only when its parent owns `Cargo.toml`. | source walking, parsing, producer orchestration |
 | `experiments/rust-main/lumin-audit-core/src/unused_deps.rs` | `unused-deps.json` artifact construction from JS-supplied package records and already-produced `symbols.json`: package identity normalization, package-script tool evidence, package-scope consumer matching, review-only dependency classification, deterministic summary projection | JS/TS symbol graph production, repo-mode/package discovery, package manager execution, manifest summary rendering |
 | `experiments/rust-main/lumin-audit-core/src/cli/mod.rs` | CLI command dispatch for audit-core commands | producer orchestration, manifest file writing |
@@ -195,6 +196,48 @@ Native Node dependencies are runtime-platform artifacts too. A WSL install
 must install the skill dependencies from a supported Node/npm toolchain inside
 WSL and must not reuse a Windows `node_modules` tree. Missing native bindings
 are an unavailable runtime dependency, not clean parser evidence.
+
+### Shared Source Inventory
+
+The base audit pipeline has one current-run source inventory owner.
+`triage-repo.mjs` performs the repository walk and writes
+`source-inventory.json` beside `triage.json`. The inventory is immutable for
+that audit invocation and records its executor-supplied `runId`, normalized
+repository root, walk scope, analysis scope, supported language set, per-language
+counts, and sorted repo-relative paths.
+
+The single walk always includes test-like source paths. `analysisScope` records
+whether the requested audit includes tests, while consumers narrow the complete
+walk in memory. This distinction is required because production dead-export
+classification still reads test files for contract-pin evidence; production
+scope must not erase those files from the run inventory.
+
+Before triage, `orchestration_executor.rs` removes any fixed-name inventory from
+an earlier run. After successful triage it loads the replacement through
+`source_inventory.rs` and requires the exact executor `runId`. A missing,
+malformed, stale-run, root-mismatched, scope-mismatched, unsafe, duplicate, or
+miscounted path is a required pipeline contract failure. It must not be
+converted to an empty inventory or trigger a second repository walk. Every
+later JS/MJS base producer receives the validated path and run binding through
+explicit `--source-inventory <path>` and `--source-inventory-run-id <id>`
+arguments. A post-triage producer or Rust analyzer cannot run before this
+validation succeeds. Standalone producer invocations without those arguments
+retain their own source discovery contract; the orchestrated base pipeline does
+not use that compatibility path.
+
+Consumers may narrow the inventory by language, test policy, nested root, or
+additional excludes in memory. They must not broaden it beyond the current-run
+scope. File contents, mtimes, and hashes remain producer-owned and are read only
+for the filtered paths. Repository mutations after triage belong to the next
+audit invocation rather than silently changing the file set halfway through a
+run.
+
+When the validated inventory contains one or more Rust files and zero files in
+every other supported source language, the executor records the remaining
+JS/MJS base producers as skipped with a Rust-only inventory reason. Requested
+Rust analysis still runs. This short circuit does not apply to empty or
+non-Rust resource-only repositories, and it must remain visible in orchestration
+events rather than fabricating empty JS artifacts.
 
 ### Symbol Finalizer Artifact Cache
 

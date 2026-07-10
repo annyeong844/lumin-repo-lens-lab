@@ -3,7 +3,8 @@
 //
 // Usage: node triage-repo.mjs --root <repo> [--output <dir>]
 
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { parseCliArgs } from './_lib/cli.mjs';
 import { detectRepoMode } from './_lib/repo-mode.mjs';
@@ -12,9 +13,15 @@ import { isTestLikePath } from './_lib/test-paths.mjs';
 import { relPath } from './_lib/paths.mjs';
 import { readJsonFile, producerMetaBase } from './_lib/artifacts.mjs';
 import { JS_FAMILY_LANGS, SFC_FAMILY_LANGS } from './_lib/lang.mjs';
+import { atomicWrite } from './_lib/atomic-write.mjs';
+import { buildSourceInventoryArtifact } from './_lib/source-inventory.mjs';
 
 const cli = parseCliArgs();
 const { root, output, verbose, includeTests } = cli;
+if (cli.sourceInventory) {
+  throw new Error('triage-repo.mjs owns source inventory production and cannot consume one');
+}
+const sourceInventoryRunId = cli.sourceInventoryRunId ?? randomUUID();
 
 if (verbose) console.error(`[triage] root: ${root}`);
 
@@ -33,8 +40,22 @@ const repoMode = detectRepoMode(root);
 const TS_LANGS = ['ts', 'tsx', 'mts', 'cts'];
 const JS_LANGS = JS_FAMILY_LANGS.filter((lang) => !TS_LANGS.includes(lang));
 const RUST_LANGS = ['rs'];
-const TRIAGE_LANGS = [...TS_LANGS, ...JS_LANGS, 'py', 'go', ...RUST_LANGS, ...SFC_FAMILY_LANGS];
-const allFiles = collectFiles(root, { languages: TRIAGE_LANGS, includeTests, exclude: cli.exclude });
+const MDX_LANGS = ['mdx'];
+const TRIAGE_LANGS = [
+  ...TS_LANGS,
+  ...JS_LANGS,
+  'py',
+  'go',
+  ...RUST_LANGS,
+  ...SFC_FAMILY_LANGS,
+  ...MDX_LANGS,
+];
+const walkedFiles = collectFiles(root, {
+  languages: TRIAGE_LANGS,
+  includeTests: true,
+  exclude: cli.exclude,
+});
+const allFiles = includeTests ? walkedFiles : walkedFiles.filter((file) => !isTestLikePath(file));
 
 function filesForLanguages(files, languages) {
   const extSet = new Set(languages.map((lang) => '.' + lang));
@@ -56,11 +77,14 @@ const pyFiles = filesForLanguages(allFiles, ['py']);
 const goFiles = filesForLanguages(allFiles, ['go']);
 const rustFiles = filesForLanguages(allFiles, RUST_LANGS);
 const sfcFiles = filesForLanguages(allFiles, SFC_FAMILY_LANGS);
+const mdxFiles = filesForLanguages(allFiles, MDX_LANGS);
 const byLanguage = countByLanguage(allFiles, TRIAGE_LANGS);
 const fileCollectionPerformance = {
   strategy: 'single-pass-language-split',
   collectFilesCalls: 1,
   languages: TRIAGE_LANGS,
+  walkIncludeTests: true,
+  totalFilesWalked: walkedFiles.length,
   totalFilesCollected: allFiles.length,
   languageFiles: {
     ts: tsFiles.length,
@@ -69,10 +93,11 @@ const fileCollectionPerformance = {
     go: goFiles.length,
     rust: rustFiles.length,
     sfc: sfcFiles.length,
+    mdx: mdxFiles.length,
   },
 };
 
-const sourceFiles = [...tsFiles, ...jsFiles, ...pyFiles, ...goFiles, ...rustFiles, ...sfcFiles];
+const sourceFiles = allFiles;
 const totalFiles = sourceFiles.length;
 let totalLoc = 0;
 const loc = (f) => {
@@ -218,6 +243,7 @@ const artifact = {
     goFiles: goFiles.length,
     rustFiles: rustFiles.length,
     sfcFiles: sfcFiles.length,
+    mdxFiles: mdxFiles.length,
     testFiles: testFiles.length,
     meanLocPerFile: Math.round(totalLoc / Math.max(totalFiles, 1)),
   },
@@ -234,10 +260,21 @@ const artifact = {
 };
 
 const outPath = path.join(output, 'triage.json');
-writeFileSync(outPath, JSON.stringify(artifact, null, 2));
+const inventoryPath = path.join(output, 'source-inventory.json');
+const sourceInventory = buildSourceInventoryArtifact({
+  runId: sourceInventoryRunId,
+  root,
+  analysisIncludeTests: includeTests,
+  exclude: cli.exclude,
+  languages: TRIAGE_LANGS,
+  files: walkedFiles,
+});
+atomicWrite(inventoryPath, `${JSON.stringify(sourceInventory, null, 2)}\n`);
+atomicWrite(outPath, `${JSON.stringify(artifact, null, 2)}\n`);
 
 console.log(`[triage] ${totalFiles} files, ${totalLoc.toLocaleString()} LOC`);
 console.log(`[triage] mode: ${repoMode.mode}, build: ${buildSystem.type}, eslint: ${configs.eslintConfig.length > 0 ? 'yes' : 'NO'}`);
 console.log(`[triage] hypotheses: ${hypotheses.length}`);
 for (const h of hypotheses) console.log(`  - ${h.claim}`);
 console.log(`[triage] saved → ${outPath}`);
+console.log(`[triage] source inventory → ${inventoryPath}`);

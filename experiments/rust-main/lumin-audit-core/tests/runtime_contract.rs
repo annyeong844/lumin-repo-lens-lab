@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v32"
+        "audit-core-js-runtime-bridge.v34"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -132,6 +132,8 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         contract["features"]["symbolGraphAnyContaminationInputFinalization"],
         true
     );
+    assert_eq!(contract["features"]["sharedSourceInventory"], true);
+    assert_eq!(contract["features"]["sourceInventoryRunBinding"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyRecordRows"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyNameTable"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyTypeOnlyState"], true);

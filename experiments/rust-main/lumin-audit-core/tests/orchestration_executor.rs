@@ -12,7 +12,8 @@ use lumin_audit_core::orchestration_plan::{build_orchestration_plan, Orchestrati
 
 fn base_request() -> Value {
     json!({
-        "schemaVersion": "lumin-audit-executor-request.v1",
+        "schemaVersion": "lumin-audit-executor-request.v2",
+        "runId": "test-run",
         "plan": build_orchestration_plan(OrchestrationPlanOptions::default()),
         "root": "C:/repo",
         "output": "C:/repo/.audit",
@@ -168,12 +169,22 @@ fn cli_execute_base_runtime_hard_stops_on_malformed_request() -> Result<()> {
 fn js_step_argv_preserves_scan_incremental_and_generated_args() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let fake_node = write_fake_node(temp.path())?;
+    write_source_inventory_template(
+        temp.path(),
+        temp.path(),
+        false,
+        &["dist", "vendor"],
+        &["src/lib.rs", "src/main.ts"],
+    )?;
     let mut value = base_request();
     value["root"] = json!(path_string(temp.path()));
     value["output"] = json!(path_string(&temp.path().join("out")));
     value["scriptsDir"] = json!(path_string(temp.path()));
     value["nodeExecutable"] = json!(path_string(&fake_node));
-    value["plan"]["steps"] = json!([fixture_step("build-symbol-graph.mjs", true)]);
+    value["plan"]["steps"] = json!([
+        fixture_step("triage-repo.mjs", true),
+        fixture_step("build-symbol-graph.mjs", true)
+    ]);
     value["plan"]["skipped"] = json!([]);
     value["scanRange"]["includeTests"] = json!(false);
     value["scanRange"]["excludes"] = json!(["dist", "vendor"]);
@@ -182,8 +193,8 @@ fn js_step_argv_preserves_scan_incremental_and_generated_args() -> Result<()> {
     value["generatedArtifacts"]["mode"] = json!("prepared");
 
     let result = execute_base_plan(request(value)?)?;
-    assert_eq!(result.commands_run.len(), 1);
-    assert_eq!(result.commands_run[0].status, "ok");
+    assert_eq!(result.commands_run.len(), 2);
+    assert_eq!(result.commands_run[1].status, "ok");
 
     let argv_log = fs::read_to_string(temp.path().join("fake-node-args.txt"))?;
     assert!(argv_log.contains("--production"));
@@ -196,9 +207,138 @@ fn js_step_argv_preserves_scan_incremental_and_generated_args() -> Result<()> {
 }
 
 #[test]
+fn stale_inventory_is_replaced_and_forwarded_to_later_steps() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("repo");
+    let output = temp.path().join("out");
+    fs::create_dir_all(&root)?;
+    fs::create_dir_all(&output)?;
+    let fake_node = write_fake_node(temp.path())?;
+    write_source_inventory_template(temp.path(), &root, true, &[], &["src/stale.rs"])?;
+    fs::rename(
+        temp.path().join("source-inventory.template.json"),
+        output.join("source-inventory.json"),
+    )?;
+    write_source_inventory_template(
+        temp.path(),
+        &root,
+        true,
+        &[],
+        &["src/lib.rs", "src/main.ts"],
+    )?;
+
+    let mut value = base_request();
+    value["root"] = json!(path_string(&root));
+    value["output"] = json!(path_string(&output));
+    value["scriptsDir"] = json!(path_string(temp.path()));
+    value["nodeExecutable"] = json!(path_string(&fake_node));
+    value["plan"]["steps"] = json!([
+        fixture_step("triage-repo.mjs", true),
+        fixture_step("build-symbol-graph.mjs", true)
+    ]);
+    value["plan"]["skipped"] = json!([]);
+
+    let result = execute_base_plan(request(value)?)?;
+    assert_eq!(result.commands_run.len(), 2);
+    assert!(result.commands_run.iter().all(|run| run.status == "ok"));
+
+    let lines = fs::read_to_string(temp.path().join("fake-node-args.txt"))?
+        .lines()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2);
+    assert!(!lines[0].contains("--source-inventory "));
+    assert!(lines[0].contains("--source-inventory-run-id test-run"));
+    assert!(lines[1].contains("--source-inventory"));
+    assert!(lines[1].contains("--source-inventory-run-id test-run"));
+    assert!(lines[1].contains("source-inventory.json"));
+    Ok(())
+}
+
+#[test]
+fn successful_triage_without_inventory_hard_stops() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path().join("repo");
+    let output = temp.path().join("out");
+    fs::create_dir_all(&root)?;
+    fs::create_dir_all(&output)?;
+    let fake_node = write_fake_node(temp.path())?;
+
+    let mut value = base_request();
+    value["root"] = json!(path_string(&root));
+    value["output"] = json!(path_string(&output));
+    value["scriptsDir"] = json!(path_string(temp.path()));
+    value["nodeExecutable"] = json!(path_string(&fake_node));
+    value["plan"]["steps"] = json!([fixture_step("triage-repo.mjs", true)]);
+    value["plan"]["skipped"] = json!([]);
+
+    let error = execute_base_plan(request(value)?)
+        .err()
+        .ok_or_else(|| anyhow!("successful triage without inventory must fail closed"))?;
+    assert!(error.to_string().contains("did not produce a valid"));
+    Ok(())
+}
+
+#[test]
+fn producer_without_current_run_inventory_hard_stops() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let fake_node = write_fake_node(temp.path())?;
+    let mut value = request_with_fake_node(temp.path(), &fake_node);
+    value["plan"]["steps"] = json!([fixture_step("build-symbol-graph.mjs", true)]);
+    value["plan"]["skipped"] = json!([]);
+
+    let error = execute_base_plan(request(value)?).err().ok_or_else(|| {
+        anyhow!("orchestrated producers must not fall back to their own repository walk")
+    })?;
+    assert!(error
+        .to_string()
+        .contains("cannot run before current-run source inventory"));
+    assert!(!temp.path().join("fake-node-args.txt").exists());
+    Ok(())
+}
+
+#[test]
+fn rust_only_inventory_skips_non_rust_base_producers() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let fake_node = write_fake_node(temp.path())?;
+    write_source_inventory_template(temp.path(), temp.path(), true, &[], &["src/lib.rs"])?;
+    let mut value = request_with_fake_node(temp.path(), &fake_node);
+    value["plan"]["steps"] = json!([
+        fixture_step("triage-repo.mjs", true),
+        fixture_step("build-framework-resource-surfaces.mjs", true),
+        fixture_step("build-symbol-graph.mjs", true),
+        fixture_step("classify-dead-exports.mjs", true)
+    ]);
+    value["plan"]["skipped"] = json!([]);
+
+    let result = execute_base_plan(request(value)?)?;
+    assert_eq!(result.commands_run.len(), 1);
+    assert_eq!(result.commands_run[0].step, "triage-repo.mjs");
+    assert_eq!(result.skipped.len(), 3);
+    assert!(result.skipped.iter().all(|skip| {
+        skip.reason
+            == "current-run source inventory contains Rust files and no supported non-Rust source files"
+    }));
+    assert_eq!(
+        fs::read_to_string(temp.path().join("fake-node-args.txt"))?
+            .lines()
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
 fn base_step_removes_stale_phase_sidecar_before_running() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let fake_node = write_fake_node(temp.path())?;
+    write_source_inventory_template(
+        temp.path(),
+        temp.path(),
+        true,
+        &[],
+        &["src/lib.rs", "src/main.ts"],
+    )?;
     let output = temp.path().join("out");
     let phase_dir = output.join(".producer-phases");
     fs::create_dir_all(&phase_dir)?;
@@ -209,11 +349,14 @@ fn base_step_removes_stale_phase_sidecar_before_running() -> Result<()> {
     )?;
 
     let mut value = request_with_fake_node(temp.path(), &fake_node);
-    value["plan"]["steps"] = json!([fixture_step("build-symbol-graph.mjs", true)]);
+    value["plan"]["steps"] = json!([
+        fixture_step("triage-repo.mjs", true),
+        fixture_step("build-symbol-graph.mjs", true)
+    ]);
     value["plan"]["skipped"] = json!([]);
 
     let result = execute_base_plan(request(value)?)?;
-    assert_eq!(result.commands_run[0].status, "ok");
+    assert_eq!(result.commands_run[1].status, "ok");
     assert!(!stale_phase.exists());
     Ok(())
 }
@@ -222,17 +365,25 @@ fn base_step_removes_stale_phase_sidecar_before_running() -> Result<()> {
 fn optional_failure_continues_and_emits_typed_event() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let fake_node = write_fake_node(temp.path())?;
+    write_source_inventory_template(
+        temp.path(),
+        temp.path(),
+        true,
+        &[],
+        &["src/lib.rs", "src/main.ts"],
+    )?;
     let mut value = request_with_fake_node(temp.path(), &fake_node);
     value["plan"]["steps"] = json!([
+        fixture_step("triage-repo.mjs", true),
         fixture_step("fail-optional.mjs", false),
         fixture_step("ok-after-optional.mjs", false)
     ]);
     value["plan"]["skipped"] = json!([]);
 
     let result = execute_base_plan(request(value)?)?;
-    assert_eq!(result.commands_run.len(), 2);
-    assert_eq!(result.commands_run[0].status, "failed-optional");
-    assert_eq!(result.commands_run[1].status, "ok");
+    assert_eq!(result.commands_run.len(), 3);
+    assert_eq!(result.commands_run[1].status, "failed-optional");
+    assert_eq!(result.commands_run[2].status, "ok");
     assert_eq!(result.exit_policy.recommended_exit_code, 0);
     assert!(serde_json::to_value(&result.events)?
         .as_array()
@@ -244,16 +395,24 @@ fn optional_failure_continues_and_emits_typed_event() -> Result<()> {
 fn required_failure_halts_and_recommends_nonzero_exit() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let fake_node = write_fake_node(temp.path())?;
+    write_source_inventory_template(
+        temp.path(),
+        temp.path(),
+        true,
+        &[],
+        &["src/lib.rs", "src/main.ts"],
+    )?;
     let mut value = request_with_fake_node(temp.path(), &fake_node);
     value["plan"]["steps"] = json!([
+        fixture_step("triage-repo.mjs", true),
         fixture_step("fail-required.mjs", true),
         fixture_step("must-not-run.mjs", false)
     ]);
     value["plan"]["skipped"] = json!([]);
 
     let result = execute_base_plan(request(value)?)?;
-    assert_eq!(result.commands_run.len(), 1);
-    assert_eq!(result.commands_run[0].status, "failed-required");
+    assert_eq!(result.commands_run.len(), 2);
+    assert_eq!(result.commands_run[1].status, "failed-required");
     assert!(result.exit_policy.base_pipeline_failed_required);
     assert_eq!(result.exit_policy.recommended_exit_code, 1);
     Ok(())
@@ -261,14 +420,24 @@ fn required_failure_halts_and_recommends_nonzero_exit() -> Result<()> {
 
 #[test]
 fn rust_analyzer_requested_without_rust_files_is_artifact_visible_skip() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let fake_node = write_fake_node(temp.path())?;
+    write_source_inventory_template(temp.path(), temp.path(), true, &[], &[])?;
     let mut value = base_request();
-    value["plan"]["steps"] = json!([{
-        "step": "lumin-rust-analyzer",
-        "script": "lumin-rust-analyzer",
-        "required": false,
-        "producerOwner": "rust",
-        "executionOwner": "audit-repo.mjs"
-    }]);
+    value["root"] = json!(path_string(temp.path()));
+    value["output"] = json!(path_string(&temp.path().join("out")));
+    value["scriptsDir"] = json!(path_string(temp.path()));
+    value["nodeExecutable"] = json!(path_string(&fake_node));
+    value["plan"]["steps"] = json!([
+        fixture_step("triage-repo.mjs", true),
+        {
+            "step": "lumin-rust-analyzer",
+            "script": "lumin-rust-analyzer",
+            "required": false,
+            "producerOwner": "rust",
+            "executionOwner": "audit-repo.mjs"
+        }
+    ]);
     value["plan"]["skipped"] = json!([]);
     value["rustAnalyzer"] = json!({ "requested": true, "rustFiles": 0 });
 
@@ -283,15 +452,15 @@ fn rust_analyzer_requested_without_rust_files_is_artifact_visible_skip() -> Resu
 fn rust_analyzer_success_preserves_public_invocation_shape_without_command() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let analyzer = write_fake_analyzer(temp.path(), true)?;
-    let mut value = rust_analyzer_request(temp.path(), &analyzer);
+    let mut value = rust_analyzer_request(temp.path(), &analyzer)?;
     value["rustAnalyzer"]["invocation"]["prefixArgs"] = json!(["--execution-only"]);
 
     let result = execute_base_plan(request(value)?)?;
-    assert_eq!(result.commands_run.len(), 1);
-    assert_eq!(result.commands_run[0].status, "ok");
+    assert_eq!(result.commands_run.len(), 2);
+    assert_eq!(result.commands_run[1].status, "ok");
     assert_eq!(result.rust_analysis_run.status, "complete");
 
-    let command = serde_json::to_value(&result.commands_run[0])?;
+    let command = serde_json::to_value(&result.commands_run[1])?;
     assert_eq!(command["analyzerInvocation"]["source"], "cargo-run");
     assert_eq!(
         command["analyzerInvocation"]["manifestPath"],
@@ -311,7 +480,7 @@ fn rust_analyzer_success_preserves_public_invocation_shape_without_command() -> 
 fn rust_analyzer_fills_missing_source_commit_inside_audit_core() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let analyzer = write_fake_analyzer(temp.path(), true)?;
-    let mut value = rust_analyzer_request(temp.path(), &analyzer);
+    let mut value = rust_analyzer_request(temp.path(), &analyzer)?;
     value["rustAnalyzer"]
         .as_object_mut()
         .ok_or_else(|| anyhow!("rustAnalyzer should be an object"))?
@@ -328,7 +497,7 @@ fn rust_analyzer_fills_missing_source_commit_inside_audit_core() -> Result<()> {
 }
 
 #[test]
-fn rust_analyzer_uses_current_triage_over_stale_request_count() -> Result<()> {
+fn rust_analyzer_uses_current_inventory_over_stale_request_count() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let analyzer = write_fake_analyzer(temp.path(), true)?;
     let output = temp.path().join("out");
@@ -337,13 +506,20 @@ fn rust_analyzer_uses_current_triage_over_stale_request_count() -> Result<()> {
         output.join("triage.json"),
         r#"{"byLanguage":{"rs":{"files":4}}}"#,
     )?;
-    let mut value = rust_analyzer_request(temp.path(), &analyzer);
+    let mut value = rust_analyzer_request(temp.path(), &analyzer)?;
+    write_source_inventory_template(
+        temp.path(),
+        temp.path(),
+        true,
+        &[],
+        &["a.rs", "b.rs", "c.rs", "d.rs"],
+    )?;
     value["rustAnalyzer"]["rustFiles"] = json!(99);
 
     let result = execute_base_plan(request(value)?)?;
     assert_eq!(result.rust_analysis_run.status, "complete");
     assert_eq!(result.rust_analysis_run.rust_files, 4);
-    assert_eq!(result.commands_run[0].rust_files, Some(4));
+    assert_eq!(result.commands_run[1].rust_files, Some(4));
     Ok(())
 }
 
@@ -351,13 +527,13 @@ fn rust_analyzer_uses_current_triage_over_stale_request_count() -> Result<()> {
 fn rust_analyzer_failure_records_optional_event_without_public_invocation() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let analyzer = write_fake_analyzer(temp.path(), false)?;
-    let result = execute_base_plan(request(rust_analyzer_request(temp.path(), &analyzer))?)?;
+    let result = execute_base_plan(request(rust_analyzer_request(temp.path(), &analyzer)?)?)?;
 
-    assert_eq!(result.commands_run.len(), 1);
-    assert_eq!(result.commands_run[0].status, "failed-optional");
+    assert_eq!(result.commands_run.len(), 2);
+    assert_eq!(result.commands_run[1].status, "failed-optional");
     assert_eq!(result.rust_analysis_run.status, "failed-optional");
 
-    let command = serde_json::to_value(&result.commands_run[0])?;
+    let command = serde_json::to_value(&result.commands_run[1])?;
     assert!(command.get("analyzerInvocation").is_none());
     assert!(command["stderr"]
         .as_str()
@@ -365,10 +541,16 @@ fn rust_analyzer_failure_records_optional_event_without_public_invocation() -> R
         .contains("analyzer failure"));
 
     let events = serde_json::to_value(&result.events)?;
-    let first = &events[0];
-    assert_eq!(first["kind"], "producer");
-    assert_eq!(first["status"], "failed-optional");
-    assert!(first["stderrSnippet"]
+    let failed = events
+        .as_array()
+        .and_then(|events| {
+            events
+                .iter()
+                .find(|event| event["status"] == "failed-optional")
+        })
+        .ok_or_else(|| anyhow!("failed analyzer event should be present"))?;
+    assert_eq!(failed["kind"], "producer");
+    assert!(failed["stderrSnippet"]
         .as_str()
         .unwrap_or_default()
         .contains("analyzer failure"));
@@ -379,16 +561,16 @@ fn rust_analyzer_failure_records_optional_event_without_public_invocation() -> R
 fn rust_analyzer_spawn_failure_records_optional_event() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let missing = temp.path().join("missing-analyzer");
-    let result = execute_base_plan(request(rust_analyzer_request(temp.path(), &missing))?)?;
+    let result = execute_base_plan(request(rust_analyzer_request(temp.path(), &missing)?)?)?;
 
-    assert_eq!(result.commands_run.len(), 1);
-    assert_eq!(result.commands_run[0].status, "failed-optional");
+    assert_eq!(result.commands_run.len(), 2);
+    assert_eq!(result.commands_run[1].status, "failed-optional");
     assert_eq!(result.rust_analysis_run.status, "failed-optional");
     assert_eq!(
         result.rust_analysis_run.reason.as_deref(),
         Some("lumin-rust-analyzer did not complete")
     );
-    assert!(result.commands_run[0]
+    assert!(result.commands_run[1]
         .stderr
         .as_deref()
         .unwrap_or_default()
@@ -406,7 +588,7 @@ fn rust_analyzer_failure_removes_stale_artifact_before_running() -> Result<()> {
     let stale_artifact = output.join("rust-analyzer-health.latest.json");
     fs::write(&stale_artifact, r#"{"stale":true}"#)?;
 
-    let result = execute_base_plan(request(rust_analyzer_request(temp.path(), &analyzer))?)?;
+    let result = execute_base_plan(request(rust_analyzer_request(temp.path(), &analyzer)?)?)?;
 
     assert_eq!(result.rust_analysis_run.status, "failed-optional");
     assert!(!stale_artifact.exists());
@@ -432,7 +614,8 @@ fn cli_execute_base_plan_hard_stops_on_malformed_request() -> Result<()> {
 fn runtime_request_json(root: &Path) -> Value {
     let output = root.join("out");
     json!({
-        "schemaVersion": "lumin-audit-runtime-executor-request.v1",
+        "schemaVersion": "lumin-audit-runtime-executor-request.v2",
+        "runId": "test-run",
         "profile": "quick",
         "preWrite": true,
         "root": path_string(root),
@@ -459,7 +642,8 @@ fn runtime_request_json(root: &Path) -> Value {
 fn request_with_fake_node(root: &Path, fake_node: &Path) -> Value {
     let output = root.join("out");
     json!({
-        "schemaVersion": "lumin-audit-executor-request.v1",
+        "schemaVersion": "lumin-audit-executor-request.v2",
+        "runId": "test-run",
         "plan": build_orchestration_plan(OrchestrationPlanOptions::default()),
         "root": path_string(root),
         "output": path_string(&output),
@@ -492,15 +676,55 @@ fn fixture_step(script: &str, required: bool) -> Value {
     })
 }
 
-fn rust_analyzer_request(root: &Path, analyzer: &Path) -> Value {
-    let mut value = request_with_fake_node(root, analyzer);
-    value["plan"]["steps"] = json!([{
-        "step": "lumin-rust-analyzer",
-        "script": "lumin-rust-analyzer",
-        "required": false,
-        "producerOwner": "rust",
-        "executionOwner": "audit-repo.mjs"
-    }]);
+fn write_source_inventory_template(
+    fixture_dir: &Path,
+    root: &Path,
+    include_tests: bool,
+    excludes: &[&str],
+    files: &[&str],
+) -> Result<()> {
+    let rs_files = files.iter().filter(|file| file.ends_with(".rs")).count();
+    let ts_files = files.iter().filter(|file| file.ends_with(".ts")).count();
+    fs::write(
+        fixture_dir.join("source-inventory.template.json"),
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-source-inventory.v2",
+            "producer": "triage-repo.mjs",
+            "runId": "test-run",
+            "root": root,
+            "pathMode": "repo-relative",
+            "walkScope": {
+                "includeTests": true,
+                "exclude": excludes,
+                "languages": ["rs", "ts"],
+                "policyVersion": "lumin-source-walk.v1"
+            },
+            "analysisScope": {
+                "includeTests": include_tests,
+                "exclude": excludes
+            },
+            "fileCount": files.len(),
+            "countsByLanguage": { "rs": rs_files, "ts": ts_files },
+            "files": files
+        }))?,
+    )?;
+    Ok(())
+}
+
+fn rust_analyzer_request(root: &Path, analyzer: &Path) -> Result<Value> {
+    let fake_node = write_fake_node(root)?;
+    write_source_inventory_template(root, root, true, &[], &["src/lib.rs"])?;
+    let mut value = request_with_fake_node(root, &fake_node);
+    value["plan"]["steps"] = json!([
+        fixture_step("triage-repo.mjs", true),
+        {
+            "step": "lumin-rust-analyzer",
+            "script": "lumin-rust-analyzer",
+            "required": false,
+            "producerOwner": "rust",
+            "executionOwner": "audit-repo.mjs"
+        }
+    ]);
     value["plan"]["skipped"] = json!([]);
     value["rustAnalyzer"] = json!({
         "requested": true,
@@ -514,7 +738,7 @@ fn rust_analyzer_request(root: &Path, analyzer: &Path) -> Value {
         },
         "forwardedArgs": ["--fixture-forwarded"]
     });
-    value
+    Ok(value)
 }
 
 #[cfg(windows)]
@@ -522,7 +746,7 @@ fn write_fake_node(dir: &Path) -> Result<PathBuf> {
     let path = dir.join("fake-node.cmd");
     fs::write(
         &path,
-        "@echo off\r\necho %*>>\"%~dp0fake-node-args.txt\"\r\nif \"%~nx1\"==\"fail-optional.mjs\" echo fixture failure 1>&2 & exit /b 7\r\nif \"%~nx1\"==\"fail-required.mjs\" echo fixture failure 1>&2 & exit /b 7\r\nexit /b 0\r\n",
+        "@echo off\r\necho %*>>\"%~dp0fake-node-args.txt\"\r\nif /I not \"%~nx1\"==\"triage-repo.mjs\" goto aftertriage\r\nif not exist \"%~dp0source-inventory.template.json\" goto aftertriage\r\nif not exist \"%~5\" mkdir \"%~5\"\r\ncopy /Y \"%~dp0source-inventory.template.json\" \"%~5\\source-inventory.json\" >nul\r\n:aftertriage\r\nif \"%~nx1\"==\"fail-optional.mjs\" echo fixture failure 1>&2 & exit /b 7\r\nif \"%~nx1\"==\"fail-required.mjs\" echo fixture failure 1>&2 & exit /b 7\r\nexit /b 0\r\n",
     )?;
     Ok(path)
 }
@@ -550,7 +774,7 @@ fn write_fake_node(dir: &Path) -> Result<PathBuf> {
     let path = dir.join("fake-node");
     fs::write(
         &path,
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$(dirname \"$0\")/fake-node-args.txt\"\ncase \"$(basename \"$1\")\" in\n  fail-optional.mjs|fail-required.mjs) printf 'fixture failure' 1>&2; exit 7 ;;\n  *) exit 0 ;;\nesac\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$(dirname \"$0\")/fake-node-args.txt\"\nif [ \"$(basename \"$1\")\" = \"triage-repo.mjs\" ] && [ -f \"$(dirname \"$0\")/source-inventory.template.json\" ]; then mkdir -p \"$5\"; cp \"$(dirname \"$0\")/source-inventory.template.json\" \"$5/source-inventory.json\"; fi\ncase \"$(basename \"$1\")\" in\n  fail-optional.mjs|fail-required.mjs) printf 'fixture failure' 1>&2; exit 7 ;;\n  *) exit 0 ;;\nesac\n",
     )?;
     let mut permissions = fs::metadata(&path)?.permissions();
     permissions.set_mode(0o755);

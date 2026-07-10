@@ -10,6 +10,7 @@ const MARKDOWN_SUFFIX: &str = ".md";
 
 const ARTIFACT_CANDIDATES: &[&str] = &[
     "triage.json",
+    "source-inventory.json",
     "topology.json",
     "discipline.json",
     "call-graph.json",

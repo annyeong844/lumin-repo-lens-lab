@@ -1,6 +1,5 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -16,10 +15,13 @@ use crate::orchestration_plan::{
     ORCHESTRATION_PLAN_SCHEMA_VERSION,
 };
 use crate::source_commit::git_head_commit_or_unknown;
+use crate::source_inventory::{
+    load_source_inventory, ValidatedSourceInventory, SOURCE_INVENTORY_FILE_NAME,
+};
 
-pub const EXECUTOR_REQUEST_SCHEMA_VERSION: &str = "lumin-audit-executor-request.v1";
+pub const EXECUTOR_REQUEST_SCHEMA_VERSION: &str = "lumin-audit-executor-request.v2";
 pub const EXECUTOR_RESULT_SCHEMA_VERSION: &str = "lumin-audit-executor-result.v1";
-pub const RUNTIME_EXECUTOR_REQUEST_SCHEMA_VERSION: &str = "lumin-audit-runtime-executor-request.v1";
+pub const RUNTIME_EXECUTOR_REQUEST_SCHEMA_VERSION: &str = "lumin-audit-runtime-executor-request.v2";
 pub const RUNTIME_EXECUTOR_RESULT_SCHEMA_VERSION: &str = "lumin-audit-runtime-executor-result.v1";
 
 const INCREMENTAL_PRODUCER_STEPS: &[&str] = &[
@@ -33,11 +35,15 @@ const INCREMENTAL_PRODUCER_STEPS: &[&str] = &[
 
 const RUST_ANALYZER_STEP: &str = "lumin-rust-analyzer";
 const RUST_ANALYZER_ARTIFACT: &str = "rust-analyzer-health.latest.json";
+const TRIAGE_STEP: &str = "triage-repo.mjs";
+const RUST_ONLY_SKIP_REASON: &str =
+    "current-run source inventory contains Rust files and no supported non-Rust source files";
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutorRequest {
     pub schema_version: String,
+    pub run_id: String,
     pub plan: ExecutorPlanInput,
     pub root: PathBuf,
     pub output: PathBuf,
@@ -56,6 +62,7 @@ pub struct ExecutorRequest {
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeExecutorRequest {
     pub schema_version: String,
+    pub run_id: String,
     #[serde(default = "default_profile")]
     pub profile: String,
     #[serde(default)]
@@ -272,6 +279,7 @@ pub fn validate_executor_request(request: &ExecutorRequest) -> Result<()> {
         );
     }
     AuditProfile::parse(&request.plan.profile)?;
+    validate_source_inventory_run_id("execute-base-plan", &request.run_id)?;
     validate_non_empty("nodeExecutable", &request.node_executable)?;
     validate_path("root", &request.root)?;
     validate_path("output", &request.output)?;
@@ -301,6 +309,7 @@ pub fn execute_runtime_request(request: RuntimeExecutorRequest) -> Result<Runtim
     });
     let executor_request = ExecutorRequest {
         schema_version: EXECUTOR_REQUEST_SCHEMA_VERSION.to_string(),
+        run_id: request.run_id,
         plan: executor_plan_input_from_plan(&plan),
         root: request.root,
         output: request.output,
@@ -331,6 +340,7 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
     let mut events = Vec::new();
     let mut failed_required = false;
     let mut rust_analysis_run = not_requested_rust_analysis(&request);
+    let mut source_inventory: Option<ValidatedSourceInventory> = None;
 
     if request.plan.base_pipeline.status != "planned" {
         append_planned_skips(&request, &mut skipped, &mut events);
@@ -343,13 +353,26 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
         ));
     }
 
+    let inventory_path = request.output.join(SOURCE_INVENTORY_FILE_NAME);
     for step in request.plan.steps.clone() {
         if step.step == RUST_ANALYZER_STEP {
-            let observed = execute_rust_analyzer_step(&request)?;
+            let inventory = source_inventory.as_ref().context(
+                "execute-base-plan: Rust analyzer cannot run before current-run source inventory",
+            )?;
+            let observed = execute_rust_analyzer_step(&request, inventory)?;
             rust_analysis_run = observed.rust_analysis_run;
             commands_run.extend(observed.commands_run);
             skipped.extend(observed.skipped);
             events.extend(observed.events);
+            continue;
+        }
+
+        if step.script != TRIAGE_STEP
+            && source_inventory
+                .as_ref()
+                .is_some_and(ValidatedSourceInventory::is_rust_only)
+        {
+            push_skip(&mut skipped, &mut events, &step.step, RUST_ONLY_SKIP_REASON);
             continue;
         }
 
@@ -362,10 +385,47 @@ pub fn execute_base_plan(request: ExecutorRequest) -> Result<ExecutorResult> {
             continue;
         }
 
-        let argv = argv_for_js_step(&request, &step.script);
-        clear_producer_phase_timing(&request.output, &step.step);
+        if step.script != TRIAGE_STEP && source_inventory.is_none() {
+            bail!(
+                "execute-base-plan: producer '{}' cannot run before current-run source inventory",
+                step.step
+            );
+        }
+        if step.script == TRIAGE_STEP {
+            if source_inventory.is_some() {
+                bail!("execute-base-plan: triage/source inventory step may run only once");
+            }
+            remove_file_if_present(&inventory_path)?;
+        }
+
+        let argv = argv_for_js_step(
+            &request,
+            &step.script,
+            source_inventory
+                .as_ref()
+                .map(ValidatedSourceInventory::path),
+            &request.run_id,
+        )?;
+        clear_producer_phase_timing(&request.output, &step.step)?;
         let observed = run_child(&request.node_executable, &argv, request.verbose)?;
         let status = command_status(&observed, step.required);
+        if step.script == TRIAGE_STEP && status == "ok" {
+            source_inventory = Some(
+                load_source_inventory(
+                    &inventory_path,
+                    &request.run_id,
+                    &request.root,
+                    request.scan_range.include_tests,
+                    &request.scan_range.excludes,
+                )
+                .with_context(|| {
+                    format!(
+                        "execute-base-plan: successful triage did not produce a valid {}",
+                        inventory_path.display()
+                    )
+                })?,
+            );
+        }
         if status == "failed-required" {
             failed_required = true;
         }
@@ -407,6 +467,7 @@ fn validate_runtime_executor_request(request: &RuntimeExecutorRequest) -> Result
         );
     }
     AuditProfile::parse(&request.profile)?;
+    validate_source_inventory_run_id("execute-base-runtime", &request.run_id)?;
     validate_non_empty_for(
         "execute-base-runtime",
         "nodeExecutable",
@@ -453,7 +514,12 @@ fn default_profile() -> String {
     "quick".to_string()
 }
 
-fn argv_for_js_step(request: &ExecutorRequest, script: &str) -> Vec<String> {
+fn argv_for_js_step(
+    request: &ExecutorRequest,
+    script: &str,
+    source_inventory: Option<&Path>,
+    source_inventory_run_id: &str,
+) -> Result<Vec<String>> {
     let mut argv = vec![
         request
             .scripts_dir
@@ -473,6 +539,14 @@ fn argv_for_js_step(request: &ExecutorRequest, script: &str) -> Vec<String> {
         argv.push("--exclude".to_string());
         argv.push(exclude.clone());
     }
+    argv.push("--source-inventory-run-id".to_string());
+    argv.push(source_inventory_run_id.to_string());
+    if script != TRIAGE_STEP {
+        let source_inventory = source_inventory
+            .context("execute-base-plan: non-triage argv requires validated source inventory")?;
+        argv.push("--source-inventory".to_string());
+        argv.push(source_inventory.to_string_lossy().to_string());
+    }
     if is_incremental_step(script) {
         if request.cache.no_incremental {
             argv.push("--no-incremental".to_string());
@@ -486,7 +560,7 @@ fn argv_for_js_step(request: &ExecutorRequest, script: &str) -> Vec<String> {
         argv.push("--generated-artifacts".to_string());
         argv.push(request.generated_artifacts.mode.clone());
     }
-    argv
+    Ok(argv)
 }
 
 fn validate_non_empty(field: &str, value: &str) -> Result<()> {
@@ -496,6 +570,18 @@ fn validate_non_empty(field: &str, value: &str) -> Result<()> {
 fn validate_non_empty_for(label: &str, field: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
         bail!("{label}: {field} must be a non-empty string");
+    }
+    Ok(())
+}
+
+fn validate_source_inventory_run_id(label: &str, value: &str) -> Result<()> {
+    validate_non_empty_for(label, "runId", value)?;
+    if value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        bail!("{label}: runId must contain 1-128 safe identifier characters");
     }
     Ok(())
 }
@@ -657,18 +743,19 @@ fn command_status(observed: &ChildObservation, required: bool) -> String {
     .to_string()
 }
 
-fn clear_producer_phase_timing(output: &Path, producer: &str) {
+fn clear_producer_phase_timing(output: &Path, producer: &str) -> Result<()> {
     let phase_path = output
         .join(".producer-phases")
         .join(format!("{}.json", safe_producer_file_name(producer)));
-    remove_file_if_present(&phase_path);
+    remove_file_if_present(&phase_path)
 }
 
-fn remove_file_if_present(path: &Path) {
+fn remove_file_if_present(path: &Path) -> Result<()> {
     match fs::remove_file(path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == ErrorKind::NotFound => {}
-        Err(_) => {}
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error)
+            .with_context(|| format!("failed to remove stale artifact at {}", path.display())),
     }
 }
 
@@ -757,52 +844,8 @@ fn not_requested_rust_analysis(request: &ExecutorRequest) -> RustAnalysisRunResu
     }
 }
 
-fn observed_rust_file_count(request: &ExecutorRequest) -> Result<u64> {
-    let path = request.output.join("triage.json");
-    if let Ok(text) = fs::read_to_string(path) {
-        let triage = serde_json::from_str::<Value>(&text)?;
-        let count = rust_file_count_from_triage(&triage);
-        if count > 0 {
-            return Ok(count);
-        }
-    }
-    Ok(request.rust_analyzer.rust_files)
-}
-
-fn rust_file_count_from_triage(triage: &Value) -> u64 {
-    for path in [
-        &["byLanguage"][..],
-        &["languages"][..],
-        &["summary", "byLanguage"][..],
-    ] {
-        let Some(count) = value_at(triage, path).and_then(|value| value.get("rs")) else {
-            continue;
-        };
-        if let Some(n) = count.as_u64() {
-            if n > 0 {
-                return n;
-            }
-        }
-        if let Some(n) = count.get("files").and_then(Value::as_u64) {
-            if n > 0 {
-                return n;
-            }
-        }
-    }
-    triage
-        .get("shape")
-        .and_then(|shape| {
-            shape
-                .get("rustFiles")
-                .or_else(|| shape.get("rsFiles"))
-                .and_then(Value::as_u64)
-        })
-        .unwrap_or(0)
-}
-
-fn value_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    path.iter()
-        .try_fold(value, |current, segment| current.get(*segment))
+fn observed_rust_file_count(source_inventory: &ValidatedSourceInventory) -> u64 {
+    source_inventory.file_count_for_extensions(&[".rs"]) as u64
 }
 
 fn artifact_invocation(invocation: &RustAnalyzerInvocation) -> RustAnalyzerArtifactInvocation {
@@ -812,7 +855,10 @@ fn artifact_invocation(invocation: &RustAnalyzerInvocation) -> RustAnalyzerArtif
     }
 }
 
-fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerObserved> {
+fn execute_rust_analyzer_step(
+    request: &ExecutorRequest,
+    source_inventory: &ValidatedSourceInventory,
+) -> Result<RustAnalyzerObserved> {
     if !request.rust_analyzer.requested {
         return Ok(RustAnalyzerObserved {
             commands_run: Vec::new(),
@@ -821,7 +867,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
             rust_analysis_run: not_requested_rust_analysis(request),
         });
     }
-    let rust_files = observed_rust_file_count(request)?;
+    let rust_files = observed_rust_file_count(source_inventory);
     if rust_files == 0 {
         let reason = "no Rust files counted by triage".to_string();
         return Ok(rust_analyzer_skip(request, "skipped", rust_files, reason));
@@ -854,7 +900,7 @@ fn execute_rust_analyzer_step(request: &ExecutorRequest) -> Result<RustAnalyzerO
     ]);
     args.extend(request.rust_analyzer.forwarded_args.clone());
 
-    remove_file_if_present(&artifact_path);
+    remove_file_if_present(&artifact_path)?;
     let observed = run_child(&invocation.command, &args, request.verbose)
         .unwrap_or_else(|error| failed_child_observation_from_spawn_error(&error));
     if observed.status == "ok" {

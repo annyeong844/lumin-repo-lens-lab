@@ -15,6 +15,7 @@
 import { parseArgs } from 'node:util';
 import { statSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { configureSourceInventory } from './source-inventory.mjs';
 
 const NEGATION_FLAGS = new Set([
   '--no-include-tests',
@@ -45,6 +46,8 @@ export function parseCliArgs(extraOptions = {}) {
       'include-tests': { type: 'boolean', default: true },
       production: { type: 'boolean', default: false },
       exclude: { type: 'string', multiple: true, default: [] },
+      'source-inventory': { type: 'string' },
+      'source-inventory-run-id': { type: 'string' },
       ...extraOptions,
     },
     strict: false,
@@ -61,6 +64,12 @@ export function parseCliArgs(extraOptions = {}) {
   mkdirSync(output, { recursive: true });
 
   const includeTests = normalizeIncludeTests(values, process.argv.slice(2));
+  const sourceInventoryRunId = values['source-inventory-run-id'] ?? null;
+  const sourceInventory = configureSourceInventory(
+    values['source-inventory'],
+    sourceInventoryRunId,
+    { includeTests, exclude: values.exclude ?? [] },
+  );
 
   return {
     root,
@@ -68,6 +77,8 @@ export function parseCliArgs(extraOptions = {}) {
     verbose: values.verbose,
     includeTests,
     exclude: values.exclude ?? [],
+    sourceInventory,
+    sourceInventoryRunId,
     raw: values,
   };
 }

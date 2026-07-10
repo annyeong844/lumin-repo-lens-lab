@@ -49,6 +49,7 @@ pub mod sarif;
 pub mod scan_scope;
 pub mod shape_index;
 mod source_commit;
+mod source_inventory;
 pub mod source_use_assembly;
 pub mod staleness;
 pub mod symbol_graph;
