@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::fs;
 use std::process::Command;
@@ -600,6 +600,76 @@ fn cli_js_ts_extract_emits_import_meta_glob_uses() -> Result<()> {
                 "resolverStage": "import-meta-glob"
             }
         ])
+    );
+    Ok(())
+}
+
+#[test]
+fn cli_js_ts_extract_emits_cjs_require_evidence() -> Result<()> {
+    let artifact = run_js_ts_extract_for_source(
+        "src/cjs.cjs",
+        concat!(
+            "const api = require('./api');\n",
+            "api.run();\n",
+            "const value = api.value;\n",
+            "const { exact } = require('./exact');\n",
+            "require('./side-effect');\n",
+            "const broad = require('./broad');\n",
+            "use(broad);\n",
+            "const config = require(path.join(__dirname, 'config.json'));\n",
+            "const dyn = require(target);\n",
+            "module.exports = require('./reexport');\n",
+        ),
+    )?;
+    let uses = artifact["uses"]
+        .as_array()
+        .context("uses should be an array")?;
+
+    assert!(uses.iter().any(|use_record| {
+        use_record["fromSpec"] == "./api"
+            && use_record["name"] == "run"
+            && use_record["kind"] == "cjs-namespace-member"
+            && use_record["localName"] == "api"
+            && use_record["degraded"] != true
+    }));
+    assert!(uses.iter().any(|use_record| {
+        use_record["fromSpec"] == "./api"
+            && use_record["name"] == "value"
+            && use_record["kind"] == "cjs-namespace-member"
+            && use_record["localName"] == "api"
+            && use_record["degraded"] != true
+    }));
+    assert!(uses.iter().any(|use_record| {
+        use_record["fromSpec"] == "./exact"
+            && use_record["name"] == "exact"
+            && use_record["kind"] == "cjs-require-exact"
+            && use_record["degraded"] != true
+    }));
+    assert!(uses.iter().any(|use_record| {
+        use_record["fromSpec"] == "./side-effect"
+            && use_record["name"] == "*"
+            && use_record["kind"] == "cjs-side-effect-only"
+    }));
+    assert!(uses.iter().any(|use_record| {
+        use_record["fromSpec"] == "./broad"
+            && use_record["name"] == "*"
+            && use_record["kind"] == "cjs-namespace-escape"
+            && use_record["localName"] == "broad"
+            && use_record["degraded"] == true
+    }));
+    assert!(uses.iter().any(|use_record| {
+        use_record["fromSpec"] == "./reexport"
+            && use_record["name"] == "*"
+            && use_record["kind"] == "cjs-reexport-broad"
+            && use_record["degraded"] == true
+    }));
+
+    assert_eq!(
+        artifact["cjsRequireOpacity"],
+        json!([{
+            "line": 9,
+            "kind": "dynamic-require"
+        }])
     );
     Ok(())
 }

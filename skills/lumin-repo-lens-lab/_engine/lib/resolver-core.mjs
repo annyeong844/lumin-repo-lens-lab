@@ -862,6 +862,69 @@ function resolveRootPrefix(spec, root, probeContext = DEFAULT_PROBE_CONTEXT) {
   return undefined;
 }
 
+function isExternalSpecifierShape(spec) {
+  if (!spec || typeof spec !== 'string') return false;
+  if (spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('#')) return false;
+  if (spec.includes('?')) return false;
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(spec)) return true;
+  const parts = spec.split('/');
+  if (parts[0]?.startsWith('@')) {
+    return parts.length >= 2 &&
+      /^@[A-Za-z0-9._-]+$/.test(parts[0]) &&
+      /^[A-Za-z0-9._-]+$/.test(parts[1]);
+  }
+  return /^[A-Za-z0-9._-]+$/.test(parts[0] ?? '');
+}
+
+function scopedTsconfigCouldMatch(fromFile, spec, scoped) {
+  for (const entry of scoped) {
+    if (!fileIsInsideScope(fromFile, entry.scopeDir)) continue;
+    if (matchSpec(spec, entry) !== null) return true;
+  }
+  return false;
+}
+
+function scopedBaseUrlBlocksExternalFastPath(fromFile, spec, scopedBaseUrls, probeContext = DEFAULT_PROBE_CONTEXT) {
+  for (const entry of scopedBaseUrls) {
+    if (!fileIsInsideScope(fromFile, entry.scopeDir)) continue;
+    const literal = path.resolve(entry.baseUrlDir, spec);
+    if (probeTarget(literal, probeContext)) return true;
+    const firstSegment = firstSegmentCandidate(entry.baseUrlDir, spec);
+    if (firstSegment && (probeContext.dirExists(firstSegment) || probeTarget(firstSegment, probeContext))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hashImportCouldMatch(spec, aliasMap) {
+  if (spec.startsWith('#')) return true;
+  for (const [, entry] of aliasMap) {
+    if (entry.type !== 'hash-wildcard' && entry.type !== 'hash-unsupported') continue;
+    if (hashImportEntryMatches(entry, spec)) return true;
+  }
+  return false;
+}
+
+function rootPrefixCouldMatch(spec, root, probeContext = DEFAULT_PROBE_CONTEXT) {
+  const firstSlash = spec.indexOf('/');
+  if (firstSlash <= 0) return false;
+  const firstSegment = spec.slice(0, firstSlash);
+  if (firstSegment === path.basename(root)) return true;
+  return probeContext.dirExists(path.join(root, firstSegment));
+}
+
+function canResolveAsExternalWithoutProbing(fromFile, spec, root, aliasMap, scoped, scopedBaseUrls, probeContext) {
+  if (!isExternalSpecifierShape(spec)) return false;
+  if (scopedTsconfigCouldMatch(fromFile, spec, scoped)) return false;
+  if (scopedBaseUrlBlocksExternalFastPath(fromFile, spec, scopedBaseUrls, probeContext)) return false;
+  if (aliasMap.has(spec)) return false;
+  if (bestWildcardMatch(spec, aliasMap)) return false;
+  if (hashImportCouldMatch(spec, aliasMap)) return false;
+  if (rootPrefixCouldMatch(spec, root, probeContext)) return false;
+  return true;
+}
+
 export function explainUnresolvedSpecifier(root, aliasMap, fromFile, spec) {
   if (!spec || typeof spec !== 'string') return null;
   if (spec.startsWith('.')) {
@@ -925,6 +988,26 @@ export function makeResolver(root, aliasMap, options = {}) {
   const scopedTsconfigProbeCache = new Map();
   const scopedBaseUrlProbeCache = new Map();
   const wildcardAliasProbeCache = new Map();
+  const scopedEntriesByFile = new Map();
+  const scopedBaseUrlsByFile = new Map();
+
+  function scopedEntriesForFile(fromFile) {
+    const cached = scopedEntriesByFile.get(fromFile);
+    if (cached !== undefined) return cached;
+    const entries = scoped.filter((entry) =>
+      fileIsInsideScope(fromFile, entry.scopeDir));
+    scopedEntriesByFile.set(fromFile, entries);
+    return entries;
+  }
+
+  function scopedBaseUrlsForFile(fromFile) {
+    const cached = scopedBaseUrlsByFile.get(fromFile);
+    if (cached !== undefined) return cached;
+    const entries = scopedBaseUrls.filter((entry) =>
+      fileIsInsideScope(fromFile, entry.scopeDir));
+    scopedBaseUrlsByFile.set(fromFile, entries);
+    return entries;
+  }
 
   function recordInstantStage(name) {
     const stage = stageStats[name];
@@ -959,19 +1042,44 @@ export function makeResolver(root, aliasMap, options = {}) {
         resolveRelative(fromFile, spec, relativeProbeCache, stageStats.relative, probeContext));
     }
 
+    const scopedForFile = scopedEntriesForFile(fromFile);
+    const scopedBaseUrlsForCurrentFile = scopedBaseUrlsForFile(fromFile);
+
+    if (
+      canResolveAsExternalWithoutProbing(
+        fromFile,
+        spec,
+        root,
+        aliasMap,
+        scopedForFile,
+        scopedBaseUrlsForCurrentFile,
+        probeContext,
+      )
+    ) {
+      recordInstantStage('external');
+      return 'EXTERNAL';
+    }
+
     let hit;
     hit = runResolverStage('scopedTsconfig', () =>
       resolveScopedTsconfig(
         fromFile,
         spec,
-        scoped,
+        scopedForFile,
         aliasMap,
         scopedTsconfigProbeCache,
         stageStats.scopedTsconfig,
         probeContext));
     if (hit !== undefined) return hit;
     hit = runResolverStage('scopedBaseUrl', () =>
-      resolveScopedBaseUrl(fromFile, spec, scopedBaseUrls, scopedBaseUrlProbeCache, stageStats.scopedBaseUrl, probeContext));
+      resolveScopedBaseUrl(
+        fromFile,
+        spec,
+        scopedBaseUrlsForCurrentFile,
+        scopedBaseUrlProbeCache,
+        stageStats.scopedBaseUrl,
+        probeContext,
+      ));
     if (hit !== undefined) return hit;
     hit = runResolverStage('exactAlias', () => resolveExactAlias(spec, aliasMap, probeContext));
     if (hit !== undefined) return hit;
@@ -1019,6 +1127,10 @@ export function makeResolver(root, aliasMap, options = {}) {
     memo.set(key, value);
     return value;
   }
+
+  resolve.canFastPathExternal = function canFastPathExternal(fromFile, spec) {
+    return canResolveAsExternalWithoutProbing(fromFile, spec, root, aliasMap, scoped, scopedBaseUrls, probeContext);
+  };
 
   resolve.memoStats = function memoStatsSnapshot() {
     return {

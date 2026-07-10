@@ -1,22 +1,17 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 
 import { runAuditCoreJsonResultFile } from './audit-core.mjs';
 import { relPath } from './paths.mjs';
 
-export const RUST_JS_EXTRACTOR_POLICY_VERSION = 'rust-js-extract-hybrid.v6';
+export const RUST_JS_EXTRACTOR_POLICY_VERSION = 'rust-js-extract-hybrid.v12';
 const REQUEST_SCHEMA_VERSION = 'lumin-js-ts-extract-request.v1';
 const MAX_BATCH_SOURCE_BYTES = 16 * 1024 * 1024;
 
 // These are file-level fallback guards for semantic lanes the Rust foundation
-// does not own yet. Dynamic import `.then(...)` callback member precision and
-// nonliteral opacity stay on the JS extractor until Rust reaches full parity.
-const STATIC_UNSUPPORTED_PATTERNS = [
-  ['cjs-require', /\brequire\s*\(/],
-];
-const MODULE_EXPORTS_ASSIGNMENT_PATTERN =
-  /(?:^|[^\w$.])module\s*\.\s*exports\s*(?:(?:\.\s*[$A-Z_a-z][$\w]*)|(?:\[\s*[^\]]+\s*\]))?\s*=/m;
-const EXPORTS_MEMBER_ASSIGNMENT_PATTERN =
-  /(?:^|[^\w$.])exports\s*(?:(?:\.\s*[$A-Z_a-z][$\w]*)|(?:\[\s*[^\]]+\s*\]))\s*=/m;
+// does not own yet. Dynamic `import(...)` is Rust-owned once the audit-core
+// contract reports literal dynamic import evidence and nonliteral opacity.
+const STATIC_UNSUPPORTED_PATTERNS = [];
+const NEEDS_SOURCE_ELIGIBILITY_SCAN = STATIC_UNSUPPORTED_PATTERNS.length > 0;
 
 function emptyReasonCounts() {
   return Object.create(null);
@@ -26,113 +21,9 @@ function incrementReason(counts, reason) {
   counts[reason] = (counts[reason] ?? 0) + 1;
 }
 
-function importBindingNames(source) {
-  const named = new Set();
-  const namespace = new Set();
-  const importPattern =
-    /\bimport\s+(?:type\s+)?(?:[$A-Z_a-z][$\w]*\s*,\s*)?(?:(?:\*\s+as\s+([$A-Z_a-z][$\w]*))|\{([^}]*)\})\s+from\s*["'][^"']+["']/gms;
-
-  for (const match of source.matchAll(importPattern)) {
-    if (match[1]) namespace.add(match[1]);
-    const specifierText = match[2];
-    if (!specifierText) continue;
-    for (const rawPart of specifierText.split(',')) {
-      const part = rawPart.trim().replace(/^type\s+/, '');
-      if (!part) continue;
-      const aliasMatch = part.match(/\bas\s+([$A-Z_a-z][$\w]*)$/);
-      const localName = aliasMatch?.[1] ?? part.match(/^([$A-Z_a-z][$\w]*)/)?.[1];
-      if (localName) named.add(localName);
-    }
-  }
-
-  return { named, namespace };
-}
-
-function syntaxStateAtOffset(source, offset) {
-  let state = 'code';
-  let escaped = false;
-
-  for (let i = 0; i < offset; i++) {
-    const ch = source[i];
-    const next = source[i + 1];
-
-    if (state === 'line-comment') {
-      if (ch === '\n' || ch === '\r') state = 'code';
-      continue;
-    }
-    if (state === 'block-comment') {
-      if (ch === '*' && next === '/') {
-        i++;
-        state = 'code';
-      }
-      continue;
-    }
-    if (state === 'single-string' || state === 'double-string' || state === 'template-string') {
-      const end = state === 'single-string' ? "'" : state === 'double-string' ? '"' : '`';
-      if (escaped) {
-        escaped = false;
-      } else if (ch === '\\') {
-        escaped = true;
-      } else if (ch === end) {
-        state = 'code';
-      }
-      continue;
-    }
-
-    if (ch === '/' && next === '/') {
-      i++;
-      state = 'line-comment';
-    } else if (ch === '/' && next === '*') {
-      i++;
-      state = 'block-comment';
-    } else if (ch === "'") {
-      state = 'single-string';
-    } else if (ch === '"') {
-      state = 'double-string';
-    } else if (ch === '`') {
-      state = 'template-string';
-    }
-  }
-
-  return state;
-}
-
-function hasUnsupportedDynamicImport(source) {
-  const dynamicImportPattern = /\bimport\s*\(/g;
-  for (const match of source.matchAll(dynamicImportPattern)) {
-    if (syntaxStateAtOffset(source, match.index) !== 'code') continue;
-    const rest = source.slice(match.index + match[0].length);
-    if (/^\s*(["'])(?:\\.|(?!\1)[\s\S])*\1\s*\)\s*\.then\s*\(/.test(rest)) {
-      return true;
-    }
-    if (/^\s*(["'])(?:\\.|(?!\1)[\s\S])*\1\s*\)/.test(rest)) {
-      continue;
-    }
-    return true;
-  }
-  return false;
-}
-
-function hasCjsExportSurface(source) {
-  return (
-    MODULE_EXPORTS_ASSIGNMENT_PATTERN.test(source) ||
-    EXPORTS_MEMBER_ASSIGNMENT_PATTERN.test(source)
-  );
-}
-
 export function rustJsEligibilityForSource(source) {
   for (const [reason, pattern] of STATIC_UNSUPPORTED_PATTERNS) {
     if (pattern.test(source)) return { eligible: false, reason };
-  }
-  if (hasCjsExportSurface(source)) {
-    return { eligible: false, reason: 'cjs-export-surface' };
-  }
-  if (hasUnsupportedDynamicImport(source)) {
-    return { eligible: false, reason: 'dynamic-import' };
-  }
-  const imports = importBindingNames(source);
-  if (imports.namespace.size > 0) {
-    return { eligible: false, reason: 'namespace-import' };
   }
 
   return { eligible: true, reason: null };
@@ -145,9 +36,20 @@ function pushRequestFile(batch, root, filePath) {
   });
 }
 
+function sourceByteEstimate(filePath, fileSizes) {
+  const knownSize = fileSizes?.get?.(filePath);
+  if (Number.isFinite(knownSize) && knownSize >= 0) return knownSize;
+  try {
+    return statSync(filePath).size;
+  } catch {
+    return 0;
+  }
+}
+
 export function extractRustJsHybridBatch({
   root,
   files,
+  fileSizes,
   sourceFiles = files,
   verbose = false,
 }) {
@@ -249,28 +151,31 @@ export function extractRustJsHybridBatch({
       continue;
     }
 
-    let source;
-    try {
-      source = readFileSync(filePath, 'utf8');
-    } catch (error) {
-      summary.readErrorFiles++;
-      markFallback('read-error');
-      warnings.push({
-        code: 'rust-js-extractor-read-error',
-        file: relPath(root, filePath),
-        message: error?.message ?? 'failed to read source',
-      });
-      continue;
-    }
+    let sourceBytes = sourceByteEstimate(filePath, fileSizes);
+    if (NEEDS_SOURCE_ELIGIBILITY_SCAN) {
+      let source;
+      try {
+        source = readFileSync(filePath, 'utf8');
+      } catch (error) {
+        summary.readErrorFiles++;
+        markFallback('read-error');
+        warnings.push({
+          code: 'rust-js-extractor-read-error',
+          file: relPath(root, filePath),
+          message: error?.message ?? 'failed to read source',
+        });
+        continue;
+      }
 
-    const eligibility = rustJsEligibilityForSource(source);
-    if (!eligibility.eligible) {
-      markFallback(eligibility.reason);
-      continue;
+      const eligibility = rustJsEligibilityForSource(source);
+      if (!eligibility.eligible) {
+        markFallback(eligibility.reason);
+        continue;
+      }
+      sourceBytes = Buffer.byteLength(source, 'utf8');
     }
 
     summary.eligibleFiles++;
-    const sourceBytes = Buffer.byteLength(source, 'utf8');
     if (batch.length > 0 && batchBytes + sourceBytes > MAX_BATCH_SOURCE_BYTES) {
       flushBatch();
     }

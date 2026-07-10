@@ -14,9 +14,7 @@ import {
   openSync,
   readFileSync,
   readSync,
-  rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -45,22 +43,17 @@ import {
   collectSfcStyleAssetReferences,
   collectSfcTemplateComponentRefs,
 } from "../lib/sfc-consumers.mjs";
-import { buildGeneratedConsumerBlindZones } from "../lib/generated-blind-zone-relevance.mjs";
-import { isGeneratedArtifactMissingRecord } from "../lib/generated-artifact-evidence.mjs";
 import { normalizeGeneratedArtifactsMode } from "../lib/generated-artifact-mode.mjs";
-import {
-  DEFAULT_IMPORT_META_GLOB_CAP,
-  expandImportMetaGlobPattern,
-} from "../lib/import-meta-glob-expansion.mjs";
+import { DEFAULT_IMPORT_META_GLOB_CAP } from "../lib/import-meta-glob-expansion.mjs";
 import { JS_FAMILY_LANGS, SFC_FAMILY_LANGS } from "../lib/lang.mjs";
 import { isTestLikePath } from "../lib/test-paths.mjs";
 import { fileExists, relPath } from "../lib/paths.mjs";
 import {
-  auditCoreRuntimeFeatureEnabled,
+  AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION,
+  auditCoreRuntimeCandidateSignature,
   runAuditCoreJsonResultFile,
   runAuditCoreJsonToResultFile,
 } from "../lib/audit-core.mjs";
-import { buildAnyContaminationFacts } from "../lib/any-contamination.mjs";
 import {
   buildContextFingerprint,
   buildRepoSnapshot,
@@ -69,9 +62,12 @@ import {
 import {
   clearIncrementalCache,
   getReusableFact,
+  loadProducerArtifactCache,
   loadProducerCache,
   openIncrementalCacheStore,
   putFact,
+  restoreProducerArtifactCache,
+  saveProducerArtifactCache,
   saveProducerCache,
   strictCacheKeyForEntry,
 } from "../lib/incremental-cache-store.mjs";
@@ -109,15 +105,13 @@ try {
   console.error(`[symbols] ${error.message}`);
   process.exit(2);
 }
-const SOURCE_USE_ASSEMBLY_PATH_TABLE =
-  auditCoreRuntimeFeatureEnabled("sourceUseAssemblyPathTable");
-const SOURCE_USE_ASSEMBLY_ENUM_TABLE =
-  auditCoreRuntimeFeatureEnabled("sourceUseAssemblyEnumTable");
-const SOURCE_USE_ASSEMBLY_SPECIFIER_TABLE = auditCoreRuntimeFeatureEnabled(
-  "sourceUseAssemblySpecifierTable",
-);
-const SYMBOL_GRAPH_PATH_TABLE =
-  auditCoreRuntimeFeatureEnabled("symbolGraphPathTable");
+const SOURCE_USE_ASSEMBLY_PATH_TABLE = true;
+const SOURCE_USE_ASSEMBLY_ENUM_TABLE = true;
+const SOURCE_USE_ASSEMBLY_SPECIFIER_TABLE = true;
+const SOURCE_USE_ASSEMBLY_RECORD_ROWS = true;
+const SOURCE_USE_ASSEMBLY_NAME_TABLE = true;
+const SOURCE_USE_ASSEMBLY_TYPE_ONLY_STATE = true;
+const SYMBOL_GRAPH_PATH_TABLE = true;
 const pyEnabled = isPythonAvailable();
 const tsEnabled = await isTreeSitterAvailable();
 const goModule = findGoModule(ROOT);
@@ -200,18 +194,43 @@ function readSymbolGraphArtifactSummary(outPath) {
     trulyDead: writtenSymbols.trulyDead,
     deadInProd: writtenSymbols.deadInProd,
     deadInTest: writtenSymbols.deadInTest,
+    generatedConsumerBlindZoneCount: Array.isArray(writtenSymbols.generatedConsumerBlindZones)
+      ? writtenSymbols.generatedConsumerBlindZones.length
+      : undefined,
   };
 }
 
 const repoMode = detectRepoMode(ROOT);
 const aliasMap = buildAliasMap(ROOT, repoMode, { exclude: cli.exclude });
 let _resolveRaw = null;
+let resolveSpecifierCallCount = 0;
+let resolveSpecifierRawJsCallCount = 0;
+const resolveSpecifierLanguageCounts = new Map();
+const resolveSpecifierOutcomeCounts = new Map();
+const resolveSpecifierLaneCounts = new Map();
+
+function incrementCount(map, key) {
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function resolverOutcomeBucket(target) {
+  if (target === "EXTERNAL") return "external";
+  if (target === "UNRESOLVED_INTERNAL") return "unresolved-internal";
+  if (isGeneratedVirtualResolution(target)) return "generated-virtual";
+  if (isNonSourceAssetResolution(target)) return "non-source-asset";
+  if (typeof target === "string" && target.length > 0) return "resolved";
+  return "unresolved-relative";
+}
+
 // Extension-aware resolver: Python files use the Python module resolver;
 // anything else falls through to the TS/JS alias-aware resolver. EXTERNAL
 // (stdlib / npm) is collapsed to `null` for consistent downstream handling.
-function resolveSpecifier(from, use) {
+function resolveSpecifier(from, use, lane = "source-use") {
   // `use` is the richer import record; callers that only have spec string can
   // pass { fromSpec: spec } for legacy behavior.
+  resolveSpecifierCallCount++;
+  incrementCount(resolveSpecifierLanguageCounts, sourceUseLanguageBucket(from));
+  incrementCount(resolveSpecifierLaneCounts, lane);
   const spec = typeof use === "string" ? use : use.fromSpec;
   if (from.endsWith(".py")) {
     const isFromImport = typeof use === "object" ? !!use.pyIsFromImport : false;
@@ -226,17 +245,26 @@ function resolveSpecifier(from, use) {
       names,
       level,
     );
-    return hits[0] ?? null;
+    const target = hits[0] ?? null;
+    incrementCount(resolveSpecifierOutcomeCounts, resolverOutcomeBucket(target));
+    return target;
   }
   if (from.endsWith(".go")) {
     const hits = resolveGoImport(ROOT, goModule, spec);
-    return hits[0] ?? null;
+    const target = hits[0] ?? null;
+    incrementCount(resolveSpecifierOutcomeCounts, resolverOutcomeBucket(target));
+    return target;
   }
   if (!_resolveRaw) {
     throw new Error("symbol resolver used before repo snapshot initialization");
   }
-  if (isRustResolvedRelativeUse(use)) return use.resolvedFile;
+  if (isRustResolvedRelativeUse(use)) {
+    incrementCount(resolveSpecifierOutcomeCounts, "rust-resolved-relative");
+    return use.resolvedFile;
+  }
+  resolveSpecifierRawJsCallCount++;
   const r = _resolveRaw(from, spec);
+  incrementCount(resolveSpecifierOutcomeCounts, resolverOutcomeBucket(r));
   // v1.9.7: preserve resolver sentinels so the caller can distinguish
   // external packages (react, oxc-parser) from failed local aliases
   // (@/components/X that matched a tsconfig path but the file wasn't
@@ -262,8 +290,47 @@ if (tsEnabled) langList.push("go");
 const PRODUCER_ID = "symbols";
 const PRODUCER_VERSION = 1;
 const FACT_SCHEMA_VERSION = 5;
-const PARSER_IDENTITY = "symbol-graph-extractors:v5-rust-js-relative-resolve";
+const PARSER_IDENTITY = "symbol-graph-extractors:v6-rust-js-dynamic-opacity";
+const SYMBOL_FINALIZER_ARTIFACT_CACHE_VERSION = 1;
 const incrementalEnabled = cli.raw?.["no-incremental"] !== true;
+
+function symbolFinalizerCacheIdentity(request) {
+  const stableRequest = { ...request };
+  delete stableRequest.generated;
+  const requestJson = JSON.stringify(stableRequest);
+  const contract = JSON.stringify({
+    cacheVersion: SYMBOL_FINALIZER_ARTIFACT_CACHE_VERSION,
+    producerId: PRODUCER_ID,
+    producerVersion: PRODUCER_VERSION,
+    factSchemaVersion: FACT_SCHEMA_VERSION,
+    parserIdentity: PARSER_IDENTITY,
+    auditCoreBridgeContractVersion: AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION,
+    auditCoreCandidateSignature: auditCoreRuntimeCandidateSignature(),
+  });
+  const hash = createHash("sha256");
+  hash.update(contract, "utf8");
+  hash.update("\n", "utf8");
+  hash.update(requestJson, "utf8");
+  return {
+    identity: `sha256:${hash.digest("hex")}`,
+    logicalRequestBytes: Buffer.byteLength(requestJson, "utf8"),
+  };
+}
+
+function recordSymbolFinalizerCacheMiss(reason) {
+  const counter = {
+    "missing-manifest": "symbolGraphFinalizerCacheMissMissing",
+    "missing-artifact": "symbolGraphFinalizerCacheMissMissing",
+    "malformed-manifest": "symbolGraphFinalizerCacheMissIncompatible",
+    "incompatible-manifest": "symbolGraphFinalizerCacheMissIncompatible",
+    "identity-mismatch": "symbolGraphFinalizerCacheMissIdentityMismatch",
+    "size-mismatch": "symbolGraphFinalizerCacheMissCorrupt",
+    "hash-mismatch": "symbolGraphFinalizerCacheMissCorrupt",
+    "artifact-read-failed": "symbolGraphFinalizerCacheMissCorrupt",
+    "restore-failed": "symbolGraphFinalizerCacheMissRestoreFailed",
+  }[reason];
+  if (counter) phaseTimer.setCounter(counter, 1);
+}
 
 function isJsFamilyFile(filePath) {
   return JS_FAMILY_LANGS.includes(
@@ -325,6 +392,11 @@ const snapshot = phaseTimer.runPhase("snapshot", () =>
 );
 const snapshotEntries = Object.values(snapshot.files);
 const files = snapshotEntries.map((entry) => entry.absPath);
+const snapshotFileSizesByAbsPath = new Map(
+  snapshotEntries
+    .filter((entry) => Number.isFinite(entry.size) && entry.size >= 0)
+    .map((entry) => [entry.absPath, entry.size]),
+);
 const scannedJsSourceFiles = new Set(files.filter(isJsFamilyFile));
 const jsSourceSetFingerprint = buildSourceSetFingerprint(ROOT, scannedJsSourceFiles);
 _resolveRaw = makeResolver(ROOT, aliasMap, { sourceFiles: scannedJsSourceFiles });
@@ -551,6 +623,7 @@ if (changedJs.length > 0) {
     rustJsHybrid = extractRustJsHybridBatch({
       root: ROOT,
       files: changedJs,
+      fileSizes: snapshotFileSizesByAbsPath,
       sourceFiles: scannedJsSourceFiles,
       verbose,
     });
@@ -874,6 +947,96 @@ function buildDeadCandidateInputs() {
   return { barrelFiles, testLikeFiles };
 }
 
+const SFC_PACKAGE_ROOTS = new Set([
+  "astro",
+  "nuxt",
+  "svelte",
+  "unplugin-vue-components",
+  "vue",
+]);
+
+function packageRootFromSpecifier(spec) {
+  if (
+    typeof spec !== "string" ||
+    spec.length === 0 ||
+    spec.startsWith(".") ||
+    spec.startsWith("/") ||
+    spec.startsWith("#")
+  ) {
+    return null;
+  }
+  const parts = spec.split("/");
+  if (spec.startsWith("@")) {
+    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : spec;
+  }
+  return parts[0] ?? null;
+}
+
+function isSfcPackageRoot(name) {
+  if (typeof name !== "string" || name.length === 0) return false;
+  return (
+    SFC_PACKAGE_ROOTS.has(name) ||
+    name.startsWith("@astrojs/") ||
+    name.startsWith("@nuxt/") ||
+    name.startsWith("@sveltejs/") ||
+    name.startsWith("@vitejs/plugin-vue") ||
+    name.startsWith("@vue/")
+  );
+}
+
+function packageJsonHasSfcDependency(pkgJson) {
+  const fields = [
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "optionalDependencies",
+  ];
+  return fields.some((field) =>
+    Object.keys(pkgJson?.[field] ?? {}).some(isSfcPackageRoot),
+  );
+}
+
+function readPackageJsonAtDir(dir) {
+  try {
+    return JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function repoHasSfcPackageDependency(mode) {
+  if (packageJsonHasSfcDependency(mode.rootPkgJson)) return true;
+  for (const dir of mode.workspaceDirs ?? []) {
+    if (packageJsonHasSfcDependency(readPackageJsonAtDir(dir))) return true;
+  }
+  return false;
+}
+
+function specifierHasSfcSignal(spec) {
+  if (typeof spec !== "string" || spec.length === 0) return false;
+  const withoutQuery = spec.split("?")[0] ?? spec;
+  if (/\.(?:astro|svelte|vue)$/i.test(withoutQuery)) return true;
+  return isSfcPackageRoot(packageRootFromSpecifier(spec));
+}
+
+function fileDataHasSfcImportSignal() {
+  for (const info of fileData.values()) {
+    for (const use of info.uses ?? []) {
+      if (specifierHasSfcSignal(use?.fromSpec)) return true;
+    }
+  }
+  return false;
+}
+
+const sfcFrameworkSignalDetected =
+  sfcSourceFiles.length > 0 ||
+  repoHasSfcPackageDependency(repoMode) ||
+  fileDataHasSfcImportSignal();
+phaseTimer.setCounter(
+  "sfcFrameworkSignalDetected",
+  sfcFrameworkSignalDetected ? 1 : 0,
+);
+
 let totalUses = 0;
 let unresolvedUses = 0;
 // v1.9.7 FP-36 counters: external packages vs genuine scanner
@@ -905,7 +1068,7 @@ const prefixExamples = new Map();
 // file?" rather than relying on the repo-wide unresolvedInternalRatio.
 const unresolvedInternalSpecifiers = new Set();
 const unresolvedInternalSpecifierRecords = [];
-const generatedConsumerBlindZoneUnresolvedRecords = [];
+const generatedConsumerBlindZoneInputs = [];
 const resolvedInternalEdges = [];
 const sfcStyleAssetReferenceInputs = [];
 const sfcTemplateComponentRefInputs = [];
@@ -992,6 +1155,11 @@ function existingRelativeSpecifierTarget(consumerFile, spec) {
   return fileExists(target) ? target : null;
 }
 
+function existingRelativeNonSourceAssetTarget(consumerFile, spec) {
+  if (!looksLikeNonSourceAssetSpecifier(spec)) return null;
+  return existingRelativeSpecifierTarget(consumerFile, spec);
+}
+
 function extensionlessRelativeRawTargetExists(consumerFile, spec) {
   if (typeof spec !== "string") return false;
   if (!spec.startsWith("./") && !spec.startsWith("../")) return false;
@@ -1039,15 +1207,27 @@ function recordUnresolvedInternalSpecifier(consumerFile, use) {
   unresolvedInternalSpecifierRecords.push(record);
 }
 
-function recordGeneratedConsumerBlindZoneCandidate(consumerFile, use) {
-  const record = unresolvedInternalSpecifierRecord(consumerFile, use);
-  if (record) generatedConsumerBlindZoneUnresolvedRecords.push(record);
+const unresolvedExplanationCache = new Map();
+let unresolvedExplanationCacheHits = 0;
+let unresolvedExplanationCacheMisses = 0;
+
+function cachedUnresolvedExplanation(consumerFile, spec) {
+  const key = `${consumerFile}\0${spec}`;
+  if (unresolvedExplanationCache.has(key)) {
+    unresolvedExplanationCacheHits++;
+    return unresolvedExplanationCache.get(key);
+  }
+  unresolvedExplanationCacheMisses++;
+  unresolvedExplanationCache.set(
+    key,
+    explainUnresolvedSpecifier(ROOT, aliasMap, consumerFile, spec) ?? {},
+  );
+  return unresolvedExplanationCache.get(key);
 }
 
 function unresolvedInternalEvidence(consumerFile, use) {
   const spec = typeof use === "string" ? use : use.fromSpec;
-  const explanation =
-    explainUnresolvedSpecifier(ROOT, aliasMap, consumerFile, spec) ?? {};
+  const explanation = cachedUnresolvedExplanation(consumerFile, spec);
   const diagnostic =
     typeof use === "object"
       ? {
@@ -1201,6 +1381,25 @@ function addNamespaceReExportDiagnostic(
   });
 }
 
+const sourceUseRelPathCache = new Map();
+let sourceUseRelPathCacheHits = 0;
+let sourceUseRelPathCacheMisses = 0;
+const sourceUseExternalFastPathCache = new Map();
+let sourceUseExternalFastPathCacheHits = 0;
+let sourceUseExternalFastPathCacheMisses = 0;
+
+function sourceUseRelPath(value) {
+  const cached = sourceUseRelPathCache.get(value);
+  if (cached !== undefined) {
+    sourceUseRelPathCacheHits++;
+    return cached;
+  }
+  sourceUseRelPathCacheMisses++;
+  const normalized = relPath(ROOT, value);
+  sourceUseRelPathCache.set(value, normalized);
+  return normalized;
+}
+
 function namespaceReExportSourceUseRecordId(barrelFile, useIndex, use) {
   return outOfBandSourceUseRecordId("namespace-reexport-map", useIndex, {
     consumerFile: barrelFile,
@@ -1291,6 +1490,7 @@ phaseTimer.setCounter(
   "namespaceReExportSourceUseRustAssemblySkippedCount",
   namespaceReExportSourceUseAssemblyResolution.skippedCount,
 );
+let namespaceReExportSourceUseJsFallbackCount = 0;
 if (hasNamespaceReExportMapCandidates) {
   for (const [barrelFile, info] of fileData) {
     const uses = info.uses ?? [];
@@ -1298,12 +1498,20 @@ if (hasNamespaceReExportMapCandidates) {
       const use = uses[useIndex];
       if (use?.kind !== "reExportNamespace" && use?.kind !== "reExport") continue;
       if (!use.name || use.name === "*" || use.typeOnly === true) continue;
-      const target = namespaceReExportSourceUseAssemblyTarget(
+      const rustCandidate = isNamespaceReExportMapSourceUseCandidate(
+        barrelFile,
+        use,
+      );
+      const rustTarget = namespaceReExportSourceUseAssemblyTarget(
         namespaceReExportSourceUseAssemblyResolution,
         barrelFile,
         useIndex,
         use,
-      ) ?? resolveSpecifier(barrelFile, use);
+      );
+      if (rustCandidate && !rustTarget) continue;
+      if (!rustCandidate) namespaceReExportSourceUseJsFallbackCount++;
+      const target =
+        rustTarget ?? resolveSpecifier(barrelFile, use, "namespace-reexport");
       if (!target || target === "EXTERNAL" || target === "UNRESOLVED_INTERNAL")
         continue;
       if (
@@ -1319,6 +1527,10 @@ if (hasNamespaceReExportMapCandidates) {
     }
   }
 }
+phaseTimer.setCounter(
+  "namespaceReExportSourceUseJsFallbackCount",
+  namespaceReExportSourceUseJsFallbackCount,
+);
 phaseTimer.setCounter(
   "namespaceReExportFileCount",
   namespaceReExportsByFile.size,
@@ -1338,6 +1550,9 @@ phaseTimer.recordPhase(
 );
 
 const assembleSourceUsesStarted = Date.now();
+let sourceUseCandidateBuildMs = 0;
+let sourceUseFallbackSummaryMs = 0;
+let sourceUseFallbackLoopMs = 0;
 const sourceUseTimings = {
   resolve: 0,
   external: 0,
@@ -1381,35 +1596,21 @@ function incrementSourceUseBranch(name) {
   sourceUseBranchCounts[name] = (sourceUseBranchCounts[name] ?? 0) + 1;
 }
 
-function importMetaGlobDiagnosticUse(use, expansion) {
-  const unresolvedEvidence = {
-    reason: expansion.reason ?? use.reason ?? "import-meta-glob-unsupported",
-    resolverStage: "import-meta-glob",
-    outputLevel: "unsupported",
-    unsupportedFamily: "dynamic-modules",
-    hint: use.hint ?? "dynamic-module-surface",
-    ...(typeof expansion.matchCount === "number"
-      ? { matchCount: expansion.matchCount }
-      : {}),
-    ...(typeof expansion.cap === "number" ? { cap: expansion.cap } : {}),
-    ...(expansion.scanPolicy ? { scanPolicy: expansion.scanPolicy } : {}),
-    ...(expansion.affectedPackageScope
-      ? { affectedPackageScope: expansion.affectedPackageScope }
-      : {}),
-  };
-  return {
-    ...use,
-    ...unresolvedEvidence,
-    unresolvedEvidence,
-  };
+function sourceUseRecordId(consumerFile, index) {
+  return `${sourceUseRelPath(consumerFile)}#${index}`;
 }
 
-function sourceUseRecordId(consumerFile, index) {
-  return `${relPath(ROOT, consumerFile)}#${index}`;
+function sourceUseLanguageBucket(consumerFile) {
+  if (isSfcFamilyFile(consumerFile)) return "Sfc";
+  if (isMdxFamilyFile(consumerFile)) return "Mdx";
+  if (/\.(?:[cm]?[jt]sx?)$/i.test(consumerFile)) return "JsTs";
+  if (/\.py$/i.test(consumerFile)) return "Python";
+  if (/\.go$/i.test(consumerFile)) return "Go";
+  return "Other";
 }
 
 function outOfBandSourceUseRecordId(source, index, use) {
-  const consumerFile = relPath(ROOT, use?.consumerFile ?? "");
+  const consumerFile = sourceUseRelPath(use?.consumerFile ?? "");
   const fromSpec = use?.fromSpec ?? "";
   return `${source}:${index}:${consumerFile}:${fromSpec}`;
 }
@@ -1499,8 +1700,49 @@ function isResolvableRelativeSourceUseAssemblyCandidate(use) {
   return true;
 }
 
+function sourceUseAssemblyFallbackReason(use) {
+  if (!use || typeof use !== "object") return "non-object-use";
+  if (typeof use.fromSpec !== "string" || use.fromSpec.length === 0) {
+    return "missing-specifier";
+  }
+  if (looksLikeNonSourceAssetSpecifier(use.fromSpec)) {
+    return "non-source-asset-specifier";
+  }
+  const kind = use.kind ?? "import";
+  if (
+    sourceUseAssemblyRequiresSymbolName(kind) &&
+    (typeof use.name !== "string" || use.name.length === 0)
+  ) {
+    return "missing-symbol-name";
+  }
+  if (
+    !isSourceUseAssemblyCandidate(use) &&
+    typeof use.resolvedFile !== "string"
+  ) {
+    return "non-relative-requires-js-resolver";
+  }
+  if (
+    !isRustResolvedRelativeUse(use) &&
+    use.resolverStage !== "resolved-internal"
+  ) {
+    return "missing-rust-resolved-stage";
+  }
+  return "record-build-failed";
+}
+
+function counterSuffix(value) {
+  const text = String(value ?? "unknown")
+    .replace(/[^A-Za-z0-9]+/g, " ")
+    .trim();
+  if (!text) return "Unknown";
+  return text
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+}
+
 function sourceUseAssemblyPath(value) {
-  return typeof value === "string" && value.length > 0 ? relPath(ROOT, value) : value;
+  return typeof value === "string" && value.length > 0 ? sourceUseRelPath(value) : value;
 }
 
 function sourceUseAssemblyKind(value) {
@@ -1544,6 +1786,7 @@ function sourceUseAssemblyRecord(recordId, consumerFile, use) {
     typeOnly: sourceUseAssemblyTypeOnly(use.typeOnly),
     line: Number.isFinite(use.line) ? use.line : undefined,
     sfcLanguage: use.sfcLanguage,
+    unresolvedEvidence: use.unresolvedEvidence,
     resolverStage: sourceUseAssemblyResolverStage(
       use.resolverStage,
       use.resolvedFile,
@@ -1553,11 +1796,49 @@ function sourceUseAssemblyRecord(recordId, consumerFile, use) {
 }
 
 const embeddedSourceUseAssemblyRecords = [];
+const outOfBandSourceUseRecordIdsByConsumerAndSpec = new Map();
 
-function enqueueExternalSourceUseAssemblyRecord(recordId, consumerFile, use, source) {
+function sourceUseConsumerSpecKey(consumerFile, fromSpec) {
+  if (
+    typeof consumerFile !== "string" ||
+    consumerFile.length === 0 ||
+    typeof fromSpec !== "string" ||
+    fromSpec.length === 0
+  ) {
+    return null;
+  }
+  return `${sourceUseRelPath(consumerFile)}\0${fromSpec}`;
+}
+
+function sourceUseRawConsumerSpecKey(consumerFile, fromSpec) {
+  if (
+    typeof consumerFile !== "string" ||
+    consumerFile.length === 0 ||
+    typeof fromSpec !== "string" ||
+    fromSpec.length === 0
+  ) {
+    return null;
+  }
+  return `${consumerFile}\0${fromSpec}`;
+}
+
+function rememberOutOfBandSourceUseRecordId(consumerFile, fromSpec, recordId) {
+  if (typeof recordId !== "string" || recordId.length === 0) return;
+  const key = sourceUseConsumerSpecKey(consumerFile, fromSpec);
+  if (key && !outOfBandSourceUseRecordIdsByConsumerAndSpec.has(key)) {
+    outOfBandSourceUseRecordIdsByConsumerAndSpec.set(key, recordId);
+  }
+}
+
+function outOfBandSourceUseRecordIdFor(consumerFile, fromSpec) {
+  const key = sourceUseConsumerSpecKey(consumerFile, fromSpec);
+  return key ? outOfBandSourceUseRecordIdsByConsumerAndSpec.get(key) : null;
+}
+
+function externalSourceUseAssemblyRecord(recordId, consumerFile, use, source) {
   const fromSpec = typeof use === "string" ? use : use?.fromSpec;
-  if (typeof fromSpec !== "string" || fromSpec.length === 0) return false;
-  embeddedSourceUseAssemblyRecords.push({
+  if (typeof fromSpec !== "string" || fromSpec.length === 0) return null;
+  return {
     recordId,
     consumerFile: sourceUseAssemblyPath(consumerFile),
     fromSpec,
@@ -1568,7 +1849,14 @@ function enqueueExternalSourceUseAssemblyRecord(recordId, consumerFile, use, sou
     typeOnlyPresent: typeof use === "object" && typeof use.typeOnly === "boolean",
     resolverStage: "external",
     consumerSource: sourceUseAssemblyConsumerSource(source),
-  });
+  };
+}
+
+function enqueueExternalSourceUseAssemblyRecord(recordId, consumerFile, use, source) {
+  const record = externalSourceUseAssemblyRecord(recordId, consumerFile, use, source);
+  if (!record) return false;
+  embeddedSourceUseAssemblyRecords.push(record);
+  rememberOutOfBandSourceUseRecordId(consumerFile, record.fromSpec, record.recordId);
   return true;
 }
 
@@ -1578,28 +1866,33 @@ function enqueueUnresolvedSourceUseAssemblyRecord(
   use,
   resolverStage,
 ) {
-  const fromSpec = typeof use === "string" ? use : use?.fromSpec;
-  if (typeof fromSpec !== "string" || fromSpec.length === 0) return false;
-  const unresolvedEvidence =
-    typeof use === "object" &&
-    use?.unresolvedEvidence &&
-    typeof use.unresolvedEvidence === "object"
-      ? use.unresolvedEvidence
-      : unresolvedInternalEvidence(consumerFile, use);
-  if (isGeneratedArtifactMissingRecord(unresolvedEvidence)) return false;
-  embeddedSourceUseAssemblyRecords.push({
+  const record = unresolvedSourceUseAssemblyRecord(
     recordId,
-    consumerFile: sourceUseAssemblyPath(consumerFile),
-    fromSpec,
-    kind: sourceUseAssemblyKind(typeof use === "object" ? use.kind : undefined),
-    typeOnly: sourceUseAssemblyTypeOnly(
-      typeof use === "object" ? use.typeOnly : undefined,
-    ),
-    typeOnlyPresent: typeof use === "object" && typeof use.typeOnly === "boolean",
+    consumerFile,
+    use,
     resolverStage,
-    unresolvedEvidence,
-  });
+  );
+  if (!record) return false;
+  embeddedSourceUseAssemblyRecords.push(record);
+  rememberOutOfBandSourceUseRecordId(consumerFile, record.fromSpec, record.recordId);
   return true;
+}
+
+function generatedVirtualUseCanResolve(surface, use) {
+  const kind = typeof use === "object" ? (use.kind ?? "import") : "import";
+  if (kind === "import-side-effect") return false;
+  if (kind === "namespace") return true;
+  const name = typeof use === "object" ? use.name : undefined;
+  if (typeof name !== "string" || name.length === 0 || name === "*") {
+    return false;
+  }
+  const wantedSpace = use?.typeOnly === true ? "type" : "value";
+  return (surface.exports ?? []).some(
+    (entry) =>
+      entry?.name === name &&
+      Array.isArray(entry.spaces) &&
+      entry.spaces.includes(wantedSpace),
+  );
 }
 
 function enqueueGeneratedVirtualSourceUseAssemblyRecord(
@@ -1616,7 +1909,7 @@ function enqueueGeneratedVirtualSourceUseAssemblyRecord(
   ) {
     return false;
   }
-  embeddedSourceUseAssemblyRecords.push({
+  const record = {
     recordId,
     consumerFile: sourceUseAssemblyPath(consumerFile),
     fromSpec,
@@ -1628,19 +1921,67 @@ function enqueueGeneratedVirtualSourceUseAssemblyRecord(
     typeOnlyPresent: typeof use === "object" && typeof use.typeOnly === "boolean",
     resolverStage: "generated-virtual",
     generatedVirtualSurface: surface,
-    unresolvedEvidence: unresolvedInternalEvidence(consumerFile, use),
-  });
+  };
+  if (!generatedVirtualUseCanResolve(surface, use)) {
+    record.unresolvedEvidence = unresolvedInternalEvidence(consumerFile, use);
+  }
+  embeddedSourceUseAssemblyRecords.push(record);
+  rememberOutOfBandSourceUseRecordId(consumerFile, fromSpec, recordId);
   return true;
 }
 
-function enqueueNonSourceAssetSourceUseAssemblyRecord(recordId, consumerFile, use) {
+function nonSourceAssetSourceUseAssemblyRecord(recordId, consumerFile, use) {
   const fromSpec = typeof use === "string" ? use : use?.fromSpec;
-  if (typeof fromSpec !== "string" || fromSpec.length === 0) return false;
-  embeddedSourceUseAssemblyRecords.push({
+  if (typeof fromSpec !== "string" || fromSpec.length === 0) return null;
+  return {
     recordId,
+    consumerFile: sourceUseAssemblyPath(consumerFile),
+    fromSpec,
+    kind: sourceUseAssemblyKind(typeof use === "object" ? use.kind : undefined),
+    typeOnly: sourceUseAssemblyTypeOnly(
+      typeof use === "object" ? use.typeOnly : undefined,
+    ),
+    typeOnlyPresent: typeof use === "object" && typeof use.typeOnly === "boolean",
     resolverStage: "non-source-asset",
-  });
+    consumerSource: sourceUseAssemblyConsumerSource(
+      typeof use === "object" ? use.consumerSource : undefined,
+    ),
+  };
+}
+
+function enqueueNonSourceAssetSourceUseAssemblyRecord(recordId, consumerFile, use) {
+  const record = nonSourceAssetSourceUseAssemblyRecord(
+    recordId,
+    consumerFile,
+    use,
+  );
+  if (!record) return false;
+  embeddedSourceUseAssemblyRecords.push(record);
+  rememberOutOfBandSourceUseRecordId(consumerFile, record.fromSpec, record.recordId);
   return true;
+}
+
+function unresolvedSourceUseAssemblyRecord(recordId, consumerFile, use, resolverStage) {
+  const fromSpec = typeof use === "string" ? use : use?.fromSpec;
+  if (typeof fromSpec !== "string" || fromSpec.length === 0) return null;
+  const unresolvedEvidence =
+    typeof use === "object" &&
+    use?.unresolvedEvidence &&
+    typeof use.unresolvedEvidence === "object"
+      ? use.unresolvedEvidence
+      : unresolvedInternalEvidence(consumerFile, use);
+  return {
+    recordId,
+    consumerFile: sourceUseAssemblyPath(consumerFile),
+    fromSpec,
+    kind: sourceUseAssemblyKind(typeof use === "object" ? use.kind : undefined),
+    typeOnly: sourceUseAssemblyTypeOnly(
+      typeof use === "object" ? use.typeOnly : undefined,
+    ),
+    typeOnlyPresent: typeof use === "object" && typeof use.typeOnly === "boolean",
+    resolverStage,
+    unresolvedEvidence,
+  };
 }
 
 function enqueueResolvedSourceUseAssemblyRecord(recordId, consumerFile, use, target) {
@@ -1651,50 +1992,131 @@ function enqueueResolvedSourceUseAssemblyRecord(recordId, consumerFile, use, tar
   });
   if (!record || !isInlineSourceUseAssemblyCandidate(record)) return false;
   embeddedSourceUseAssemblyRecords.push(record);
+  rememberOutOfBandSourceUseRecordId(consumerFile, record.fromSpec, record.recordId);
   return true;
 }
 
 function buildSourceUseAssemblyCandidates() {
   const records = [];
   const requiresResolution = [];
-  const preHandled = new Set();
+  const requiresResolutionFallbacks = [];
+  const unhandled = [];
+  let namespaceReExportCandidateCount = 0;
   for (const [consumerFile, info] of fileData) {
     for (let index = 0; index < info.uses.length; index++) {
       const use = info.uses[index];
-      const recordId = sourceUseRecordId(consumerFile, index);
-      if (isUnresolvableNamespaceReExportUse(use)) {
-        preHandled.add(recordId);
-        incrementSourceUseBranch("namespaceReExport");
-        incrementSourceUseBranch("namespaceReExportMiss");
-        continue;
+      let recordId = null;
+      const getRecordId = () => {
+        recordId ??= sourceUseRecordId(consumerFile, index);
+        return recordId;
+      };
+      if (canFastPathExternalSourceUse(consumerFile, use)) {
+        const record = externalSourceUseAssemblyRecord(
+          getRecordId(),
+          consumerFile,
+          use,
+          "source-import",
+        );
+        if (record) {
+          records.push(record);
+          continue;
+        }
+      }
+      if (
+        (consumerFile.endsWith(".py") || consumerFile.endsWith(".go")) &&
+        typeof use?.fromSpec === "string" &&
+        use.fromSpec.length > 0
+      ) {
+        const record = unresolvedSourceUseAssemblyRecord(
+          getRecordId(),
+          consumerFile,
+          use,
+          "unresolved-internal",
+        );
+        if (record) {
+          records.push(record);
+          continue;
+        }
       }
       if (use?.kind === "import-meta-glob") {
-        const record = sourceUseAssemblyRecord(recordId, consumerFile, {
+        const record = sourceUseAssemblyRecord(getRecordId(), consumerFile, {
           ...use,
           resolverStage: "relative",
         });
-        if (record) records.push(record);
+        if (record) {
+          records.push(record);
+          continue;
+        }
+        unhandled.push({
+          consumerFile,
+          useIndex: index,
+          use,
+          reason: "import-meta-glob-record-build-failed",
+        });
         continue;
+      }
+      if (existingRelativeNonSourceAssetTarget(consumerFile, use?.fromSpec)) {
+        const record = nonSourceAssetSourceUseAssemblyRecord(
+          getRecordId(),
+          consumerFile,
+          use,
+        );
+        if (record) {
+          records.push(record);
+          continue;
+        }
       }
       if (!isInlineSourceUseAssemblyCandidate(use)) {
         if (isResolvableRelativeSourceUseAssemblyCandidate(use)) {
-          const record = sourceUseAssemblyRecord(recordId, consumerFile, {
+          const record = sourceUseAssemblyRecord(getRecordId(), consumerFile, {
             ...use,
             resolverStage: "relative",
           });
-          if (record) requiresResolution.push(record);
+          if (record) {
+            requiresResolution.push(record);
+            requiresResolutionFallbacks.push({
+              consumerFile,
+              useIndex: index,
+              use,
+            });
+            continue;
+          }
         }
+        unhandled.push({
+          consumerFile,
+          useIndex: index,
+          use,
+          reason: sourceUseAssemblyFallbackReason(use),
+        });
         continue;
       }
       const record = sourceUseAssemblyRecord(
-        recordId,
+        getRecordId(),
         consumerFile,
         use,
       );
-      if (record) records.push(record);
+      if (record) {
+        if (isImportedNamespaceAliasUse(use)) {
+          namespaceReExportCandidateCount++;
+        }
+        records.push(record);
+        continue;
+      }
+      unhandled.push({
+        consumerFile,
+        useIndex: index,
+        use,
+        reason: "record-build-failed",
+      });
     }
   }
-  return { records, requiresResolution, preHandled };
+  return {
+    records,
+    requiresResolution,
+    requiresResolutionFallbacks,
+    unhandled,
+    namespaceReExportCandidateCount,
+  };
 }
 
 function isOutOfBandSourceUseAssemblyCandidate(use) {
@@ -1714,17 +2136,49 @@ function buildOutOfBandSourceUseAssemblyCandidateRecords(consumers, source) {
   const records = [];
   for (let index = 0; index < consumers.length; index++) {
     const use = consumers[index];
+    const recordId = outOfBandSourceUseRecordId(source, index, use);
+    if (canFastPathExternalSourceUse(use.consumerFile, use)) {
+      const record = externalSourceUseAssemblyRecord(
+        recordId,
+        use.consumerFile,
+        use,
+        source,
+      );
+      if (record) {
+        records.push(record);
+        rememberOutOfBandSourceUseRecordId(use.consumerFile, use.fromSpec, record.recordId);
+      }
+      continue;
+    }
+    if (existingRelativeNonSourceAssetTarget(use.consumerFile, use?.fromSpec)) {
+      const record = nonSourceAssetSourceUseAssemblyRecord(
+        recordId,
+        use.consumerFile,
+        use,
+      );
+      if (record) {
+        records.push(record);
+        rememberOutOfBandSourceUseRecordId(use.consumerFile, use.fromSpec, record.recordId);
+      }
+      continue;
+    }
     if (!isOutOfBandSourceUseAssemblyCandidate(use)) continue;
-    const record = sourceUseAssemblyRecord(
-      outOfBandSourceUseRecordId(source, index, use),
-      use.consumerFile,
-      {
-        ...use,
-        consumerSource: source,
-        resolverStage: "relative",
-      },
-    );
-    if (record) records.push(record);
+    const recordUse =
+      source === "sfc-script-src"
+        ? sfcScriptSrcAssemblyUse(use, {
+            unresolvedEvidence: sfcScriptSrcUnresolvedEvidence(),
+            resolverStage: "relative",
+          })
+        : {
+            ...use,
+            consumerSource: source,
+            resolverStage: "relative",
+          };
+    const record = sourceUseAssemblyRecord(recordId, use.consumerFile, recordUse);
+    if (record) {
+      records.push(record);
+      rememberOutOfBandSourceUseRecordId(use.consumerFile, use.fromSpec, record.recordId);
+    }
   }
   return records;
 }
@@ -1732,7 +2186,7 @@ function buildOutOfBandSourceUseAssemblyCandidateRecords(consumers, source) {
 function buildSfcComponentSourceUseAssemblyCandidateRecords(
   consumers,
   source,
-  { consumerFileForUse, fromSpecForUse, kind },
+  { consumerFileForUse, fromSpecForUse, kind, allowExternal = false },
 ) {
   const records = [];
   for (let index = 0; index < consumers.length; index++) {
@@ -1750,6 +2204,49 @@ function buildSfcComponentSourceUseAssemblyCandidateRecords(
     if (extensionlessRelativeRawTargetExists(consumerFile, fromSpec)) {
       continue;
     }
+    if (outOfBandSourceUseRecordIdFor(consumerFile, fromSpec)) {
+      continue;
+    }
+    if (
+      allowExternal &&
+      canFastPathExternalSourceUse(consumerFile, { fromSpec, kind, name: "*" })
+    ) {
+      const record = externalSourceUseAssemblyRecord(
+        outOfBandSourceUseRecordId(source, index, { consumerFile, fromSpec }),
+        consumerFile,
+        {
+          fromSpec,
+          kind,
+          name: "*",
+          typeOnly: false,
+          consumerSource: source,
+        },
+        source,
+      );
+      if (record) {
+        records.push(record);
+        rememberOutOfBandSourceUseRecordId(consumerFile, fromSpec, record.recordId);
+      }
+      continue;
+    }
+    if (existingRelativeNonSourceAssetTarget(consumerFile, fromSpec)) {
+      const record = nonSourceAssetSourceUseAssemblyRecord(
+        outOfBandSourceUseRecordId(source, index, { consumerFile, fromSpec }),
+        consumerFile,
+        {
+          fromSpec,
+          kind,
+          name: "*",
+          typeOnly: false,
+          consumerSource: source,
+        },
+      );
+      if (record) {
+        records.push(record);
+        rememberOutOfBandSourceUseRecordId(consumerFile, fromSpec, record.recordId);
+      }
+      continue;
+    }
     const record = sourceUseAssemblyRecord(
       outOfBandSourceUseRecordId(source, index, { consumerFile, fromSpec }),
       consumerFile,
@@ -1764,13 +2261,14 @@ function buildSfcComponentSourceUseAssemblyCandidateRecords(
     );
     if (record && isOutOfBandSourceUseAssemblyCandidate(record)) {
       records.push(record);
+      rememberOutOfBandSourceUseRecordId(consumerFile, fromSpec, record.recordId);
     }
   }
   return records;
 }
 
-function sfcComponentSourceUseAssemblyTarget(
-  resolution,
+function sfcComponentSourceUseRecordId(
+  candidateRecordIds,
   source,
   index,
   consumerFile,
@@ -1788,9 +2286,7 @@ function sfcComponentSourceUseAssemblyTarget(
     consumerFile,
     fromSpec,
   });
-  if (!resolution.handled.has(recordId)) return null;
-  const resolved = resolution.resolvedByRecordId.get(recordId);
-  return typeof resolved === "string" && resolved.length > 0 ? resolved : null;
+  return candidateRecordIds.has(recordId) ? recordId : null;
 }
 
 function resolveSourceUseAssemblyRecords(records) {
@@ -1841,17 +2337,6 @@ function resolveSourceUseAssemblyRecords(records) {
   };
 }
 
-function sourceUseAssemblyRecordsWithResolvedTargets(records, resolution) {
-  return records
-    .filter((record) => resolution.handled.has(record.recordId))
-    .map((record) => {
-      const resolvedFile = resolution.resolvedByRecordId.get(record.recordId);
-      return typeof resolvedFile === "string" && resolvedFile.length > 0
-        ? { ...record, resolvedFile: sourceUseAssemblyPath(resolvedFile) }
-        : record;
-    });
-}
-
 function sourceUseAssemblyNeedsSourceFiles(records) {
   return records.some((record) =>
     record?.resolverStage === "relative" &&
@@ -1881,20 +2366,51 @@ function compactSourceUseAssemblyRecordIds(records) {
   }));
 }
 
-function compactSourceUseAssemblyRecordPaths(records) {
+function sourceUseRecordIdRemap(records) {
+  const remap = new Map();
+  for (let index = 0; index < records.length; index++) {
+    const recordId = records[index]?.recordId;
+    if (typeof recordId === "string" && recordId.length > 0) {
+      remap.set(recordId, `r${index}`);
+    }
+  }
+  return remap;
+}
+
+function remapSourceUseRecordIdInputs(inputs, remap) {
+  if (!Array.isArray(inputs) || remap.size === 0) return inputs;
+  return inputs.map((input) => {
+    const sourceUseRecordId = input?.sourceUseRecordId;
+    if (typeof sourceUseRecordId !== "string" || sourceUseRecordId.length === 0) {
+      return input;
+    }
+    const remapped = remap.get(sourceUseRecordId);
+    return typeof remapped === "string" && remapped.length > 0
+      ? { ...input, sourceUseRecordId: remapped }
+      : input;
+  });
+}
+
+function compactSourceUseAssemblyRecordPaths(records, sourceFiles = []) {
   const pathTable = [];
   const pathIds = new Map();
   const pathId = (value) => {
     if (typeof value !== "string" || value.length === 0) return null;
-    const existing = pathIds.get(value);
+    const normalized = relPath(ROOT, value);
+    const existing = pathIds.get(normalized);
     if (existing !== undefined) return existing;
     const id = pathTable.length;
-    pathTable.push(value);
-    pathIds.set(value, id);
+    pathTable.push(normalized);
+    pathIds.set(normalized, id);
     return id;
   };
+  const sourceFileIds = sourceFiles
+    .map(pathId)
+    .filter((id) => id !== null);
   return {
     pathTable,
+    sourceFiles: sourceFileIds.length === sourceFiles.length ? [] : sourceFiles,
+    ...(sourceFileIds.length === sourceFiles.length ? { sourceFileIds } : {}),
     records: records.map((record) => {
       const { consumerFile, resolvedFile, ...rest } = record;
       const consumerFileId = pathId(consumerFile);
@@ -1976,19 +2492,110 @@ function compactSourceUseAssemblyRecordSpecifiers(records) {
   };
 }
 
+function compactSourceUseAssemblyRecordNames(records) {
+  const nameTable = [];
+  const nameIds = new Map();
+  const nameId = (value) => {
+    if (typeof value !== "string" || value.length === 0) return null;
+    const existing = nameIds.get(value);
+    if (existing !== undefined) return existing;
+    const id = nameTable.length;
+    nameTable.push(value);
+    nameIds.set(value, id);
+    return id;
+  };
+  return {
+    nameTable,
+    records: records.map((record) => {
+      const { name, memberName, ...rest } = record;
+      const compactedNameId = nameId(name);
+      const compactedMemberNameId = nameId(memberName);
+      return {
+        ...rest,
+        ...(compactedNameId !== null ? { nameId: compactedNameId } : {}),
+        ...(compactedMemberNameId !== null
+          ? { memberNameId: compactedMemberNameId }
+          : {}),
+      };
+    }),
+  };
+}
+
+function sourceUseAssemblyRecordRowFields({
+  compactNames = false,
+  compactTypeOnly = false,
+} = {}) {
+  return [
+    "consumerFileId",
+    "resolvedFileId",
+    "fromSpecId",
+    compactNames ? "nameId" : "name",
+    compactNames ? "memberNameId" : "memberName",
+    "kindId",
+    ...(compactTypeOnly ? ["typeOnlyState"] : ["typeOnly", "typeOnlyPresent"]),
+    "line",
+    "sfcLanguage",
+    "resolverStageId",
+    "consumerSourceId",
+    "unresolvedEvidence",
+    "generatedVirtualSurface",
+  ];
+}
+
+function sourceUseAssemblyRecordRowValue(record, field) {
+  if (field === "typeOnlyState") {
+    if (record.typeOnlyPresent !== true) return null;
+    return record.typeOnly === true ? 2 : 1;
+  }
+  const value = record[field];
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string" && value.length === 0) return null;
+  return value;
+}
+
+function sourceUseAssemblyRecordRows(
+  records,
+  { compactNames = false, compactTypeOnly = false } = {},
+) {
+  const candidateFields = sourceUseAssemblyRecordRowFields({
+    compactNames,
+    compactTypeOnly,
+  });
+  const candidateRows = records.map((record) =>
+    candidateFields.map((field) =>
+      sourceUseAssemblyRecordRowValue(record, field),
+    ),
+  );
+  const retainedFieldIndexes = candidateFields
+    .map((field, index) => ({ field, index }))
+    .filter(({ index }) => candidateRows.some((row) => row[index] !== null));
+  const fields = retainedFieldIndexes.map(({ field }) => field);
+  const rows = candidateRows.map((candidateRow) => {
+    const row = retainedFieldIndexes.map(({ index }) => candidateRow[index]);
+    while (row.length > 0 && row[row.length - 1] === null) row.pop();
+    return row;
+  });
+  return { fields, rows };
+}
+
 function buildSourceUseAssemblyRequest(
   records,
   {
     includeSourceFiles = true,
     compactRecordIds = false,
+    omitRecordIds = false,
     compactPaths = false,
     compactEnums = false,
     compactSpecifiers = false,
+    compactNames = false,
+    compactTypeOnly = false,
+    compactRows = false,
   } = {},
 ) {
-  const sourceFiles = includeSourceFiles
+  let sourceFiles = includeSourceFiles
     ? [...scannedJsSourceFiles].map((file) => relPath(ROOT, file))
     : [];
+  let sourceFileIds = [];
   const namespaceReExports = sourceUseAssemblyReExportEntries(namespaceReExportsByFile);
   const namedReExports = sourceUseAssemblyReExportEntries(namedReExportsByFile);
   let outputRecords = compactRecordIds
@@ -1996,9 +2603,11 @@ function buildSourceUseAssemblyRequest(
     : records;
   let pathTable = [];
   if (compactPaths) {
-    const compacted = compactSourceUseAssemblyRecordPaths(outputRecords);
+    const compacted = compactSourceUseAssemblyRecordPaths(outputRecords, sourceFiles);
     outputRecords = compacted.records;
     pathTable = compacted.pathTable;
+    sourceFiles = compacted.sourceFiles;
+    sourceFileIds = compacted.sourceFileIds ?? [];
   }
   let kindTable = [];
   let resolverStageTable = [];
@@ -2016,6 +2625,24 @@ function buildSourceUseAssemblyRequest(
     outputRecords = compacted.records;
     specifierTable = compacted.specifierTable;
   }
+  let nameTable = [];
+  if (compactNames) {
+    const compacted = compactSourceUseAssemblyRecordNames(outputRecords);
+    outputRecords = compacted.records;
+    nameTable = compacted.nameTable;
+  }
+  if (omitRecordIds) {
+    outputRecords = outputRecords.map((record) => {
+      const { recordId: _recordId, ...rest } = record;
+      return rest;
+    });
+  }
+  const compactedRows = compactRows
+    ? sourceUseAssemblyRecordRows(outputRecords, {
+        compactNames,
+        compactTypeOnly,
+      })
+    : null;
   return {
     schemaVersion: "lumin-source-use-assembly-request.v1",
     root: ROOT,
@@ -2023,6 +2650,7 @@ function buildSourceUseAssemblyRequest(
       ? { importMetaGlobCap: DEFAULT_IMPORT_META_GLOB_CAP }
       : {}),
     ...(sourceFiles.length > 0 ? { sourceFiles } : {}),
+    ...(sourceFileIds.length > 0 ? { sourceFileIds } : {}),
     ...(namespaceReExports.length > 0 ? { namespaceReExports } : {}),
     ...(namedReExports.length > 0 ? { namedReExports } : {}),
     ...(pathTable.length > 0 ? { pathTable } : {}),
@@ -2030,35 +2658,43 @@ function buildSourceUseAssemblyRequest(
     ...(resolverStageTable.length > 0 ? { resolverStageTable } : {}),
     ...(consumerSourceTable.length > 0 ? { consumerSourceTable } : {}),
     ...(specifierTable.length > 0 ? { specifierTable } : {}),
-    records: outputRecords,
+    ...(nameTable.length > 0 ? { nameTable } : {}),
+    ...(compactedRows
+      ? {
+          recordRowFields: compactedRows.fields,
+          recordRows: compactedRows.rows,
+        }
+      : { records: outputRecords }),
   };
 }
 
 function symbolArtifactFileDataRecord(filePath, info) {
-  return {
-    filePath,
-    ...((info.reExports?.length ?? 0) > 0
-      ? { reExports: info.reExports }
-      : {}),
-    ...((info.classMethods?.length ?? 0) > 0
-      ? { classMethods: info.classMethods }
-      : {}),
-    ...((info.localOperations?.length ?? 0) > 0
-      ? { localOperations: info.localOperations }
-      : {}),
-    ...((info.dynamicImportOpacity?.length ?? 0) > 0
-      ? { dynamicImportOpacity: info.dynamicImportOpacity }
-      : {}),
-    ...(info.cjsExportSurface !== undefined && info.cjsExportSurface !== null
-      ? { cjsExportSurface: info.cjsExportSurface }
-      : {}),
-    ...((info.cjsRequireOpacity?.length ?? 0) > 0
-      ? { cjsRequireOpacity: info.cjsRequireOpacity }
-      : {}),
-    ...(info.pyDunderAll !== undefined
-      ? { pyDunderAll: info.pyDunderAll }
-      : {}),
-  };
+  const record = { filePath };
+  if ((info.reExports?.length ?? 0) > 0) {
+    record.reExports = info.reExports;
+  }
+  if ((info.classMethods?.length ?? 0) > 0) {
+    record.classMethods = info.classMethods;
+  }
+  if ((info.localOperations?.length ?? 0) > 0) {
+    record.localOperations = info.localOperations;
+  }
+  if ((info.typeEscapes?.length ?? 0) > 0) {
+    record.typeEscapes = info.typeEscapes;
+  }
+  if ((info.dynamicImportOpacity?.length ?? 0) > 0) {
+    record.dynamicImportOpacity = info.dynamicImportOpacity;
+  }
+  if (info.cjsExportSurface !== undefined && info.cjsExportSurface !== null) {
+    record.cjsExportSurface = info.cjsExportSurface;
+  }
+  if ((info.cjsRequireOpacity?.length ?? 0) > 0) {
+    record.cjsRequireOpacity = info.cjsRequireOpacity;
+  }
+  if (info.pyDunderAll !== undefined) {
+    record.pyDunderAll = info.pyDunderAll;
+  }
+  return Object.keys(record).length > 1 ? record : null;
 }
 
 function symbolArtifactParseErrorCacheEntries(entries) {
@@ -2074,11 +2710,12 @@ function compactSymbolGraphArtifactPaths(request) {
   const pathIds = new Map();
   const pathId = (value) => {
     if (typeof value !== "string" || value.length === 0) return null;
-    const existing = pathIds.get(value);
+    const normalized = relPath(ROOT, value);
+    const existing = pathIds.get(normalized);
     if (existing !== undefined) return existing;
     const id = pathTable.length;
-    pathTable.push(value);
-    pathIds.set(value, id);
+    pathTable.push(normalized);
+    pathIds.set(normalized, id);
     return id;
   };
   const fileIds = request.files
@@ -2098,6 +2735,14 @@ function compactSymbolGraphArtifactPaths(request) {
       ...(filePathId !== null ? { filePathId } : { filePath }),
     };
   });
+  const sourceUseAssembly = compactEmbeddedSourceUseAssemblyPaths(
+    request.sourceUseAssembly,
+    pathId,
+  );
+  const fanInInputs = compactSymbolGraphFanInInputPaths(request.fanInInputs);
+  const deadCandidateInputs = compactSymbolGraphDeadCandidateInputPaths(
+    request.deadCandidateInputs,
+  );
   return {
     ...request,
     ...(pathTable.length > 0 ? { pathTable } : {}),
@@ -2105,25 +2750,120 @@ function compactSymbolGraphArtifactPaths(request) {
     ...(fileIds.length === request.files.length ? { fileIds } : {}),
     defIndex,
     fileData,
+    ...(fanInInputs ? { fanInInputs } : {}),
+    ...(deadCandidateInputs ? { deadCandidateInputs } : {}),
+    ...(sourceUseAssembly ? { sourceUseAssembly } : {}),
+  };
+}
+
+function compactSymbolGraphFanInInputPaths(fanInInputs) {
+  if (!fanInInputs || typeof fanInInputs !== "object") return fanInInputs;
+  return {
+    ...fanInInputs,
+    consumerEntries: Array.isArray(fanInInputs.consumerEntries)
+      ? fanInInputs.consumerEntries.map((entry) => ({
+          ...entry,
+          defFile: relPath(ROOT, entry.defFile),
+          consumerFile: relPath(ROOT, entry.consumerFile),
+        }))
+      : fanInInputs.consumerEntries,
+    namespaceUserEntries: Array.isArray(fanInInputs.namespaceUserEntries)
+      ? fanInInputs.namespaceUserEntries.map((entry) => ({
+          ...entry,
+          defFile: relPath(ROOT, entry.defFile),
+          consumerFile: relPath(ROOT, entry.consumerFile),
+        }))
+      : fanInInputs.namespaceUserEntries,
+  };
+}
+
+function compactSymbolGraphDeadCandidateInputPaths(deadCandidateInputs) {
+  if (!deadCandidateInputs || typeof deadCandidateInputs !== "object") {
+    return deadCandidateInputs;
+  }
+  return {
+    ...deadCandidateInputs,
+    barrelFiles: Array.isArray(deadCandidateInputs.barrelFiles)
+      ? deadCandidateInputs.barrelFiles.map((file) => relPath(ROOT, file))
+      : deadCandidateInputs.barrelFiles,
+    testLikeFiles: Array.isArray(deadCandidateInputs.testLikeFiles)
+      ? deadCandidateInputs.testLikeFiles.map((file) => relPath(ROOT, file))
+      : deadCandidateInputs.testLikeFiles,
+  };
+}
+
+function compactEmbeddedSourceUseAssemblyPaths(sourceUseAssembly, pathId) {
+  if (!sourceUseAssembly || !Array.isArray(sourceUseAssembly.pathTable)) {
+    return sourceUseAssembly;
+  }
+  const pathIdRemap = sourceUseAssembly.pathTable.map(pathId);
+  const remapPathId = (id) =>
+    Number.isInteger(id) && pathIdRemap[id] !== null && pathIdRemap[id] !== undefined
+      ? pathIdRemap[id]
+      : id;
+  const remapRecordRows = (fields, rows) => {
+    if (!Array.isArray(fields) || !Array.isArray(rows)) return rows;
+    const consumerFileIdIndex = fields.indexOf("consumerFileId");
+    const resolvedFileIdIndex = fields.indexOf("resolvedFileId");
+    if (consumerFileIdIndex < 0 && resolvedFileIdIndex < 0) return rows;
+    return rows.map((row) => {
+      if (!Array.isArray(row)) return row;
+      const next = [...row];
+      if (consumerFileIdIndex >= 0 && Number.isInteger(next[consumerFileIdIndex])) {
+        next[consumerFileIdIndex] = remapPathId(next[consumerFileIdIndex]);
+      }
+      if (resolvedFileIdIndex >= 0 && Number.isInteger(next[resolvedFileIdIndex])) {
+        next[resolvedFileIdIndex] = remapPathId(next[resolvedFileIdIndex]);
+      }
+      return next;
+    });
+  };
+  const { pathTable: _pathTable, ...rest } = sourceUseAssembly;
+  return {
+    ...rest,
+    ...(Array.isArray(sourceUseAssembly.sourceFileIds)
+      ? { sourceFileIds: sourceUseAssembly.sourceFileIds.map(remapPathId) }
+      : {}),
+    records: Array.isArray(sourceUseAssembly.records)
+      ? sourceUseAssembly.records.map((record) => ({
+          ...record,
+          ...(Number.isInteger(record.consumerFileId)
+            ? { consumerFileId: remapPathId(record.consumerFileId) }
+            : {}),
+          ...(Number.isInteger(record.resolvedFileId)
+            ? { resolvedFileId: remapPathId(record.resolvedFileId) }
+            : {}),
+        }))
+      : sourceUseAssembly.records,
+    ...(Array.isArray(sourceUseAssembly.recordRows)
+      ? {
+          recordRows: remapRecordRows(
+            sourceUseAssembly.recordRowFields,
+            sourceUseAssembly.recordRows,
+          ),
+        }
+      : {}),
   };
 }
 
 function runSourceUseAssembly() {
+  const candidateBuildStarted = performance.now();
   const candidates = buildSourceUseAssemblyCandidates();
-  const resolvedCandidates =
-    resolveSourceUseAssemblyRecords(candidates.requiresResolution);
-  const resolvedRecords = sourceUseAssemblyRecordsWithResolvedTargets(
-    candidates.requiresResolution,
-    resolvedCandidates,
-  );
+  sourceUseCandidateBuildMs += performance.now() - candidateBuildStarted;
   embeddedSourceUseAssemblyRecords.push(...candidates.records);
-  embeddedSourceUseAssemblyRecords.push(...resolvedRecords);
-  generatedConsumerBlindZoneUnresolvedRecords.push(
-    ...resolvedCandidates.unresolvedInternalSpecifierRecords,
-  );
+  embeddedSourceUseAssemblyRecords.push(...candidates.requiresResolution);
   phaseTimer.setCounter(
     "sourceUsePreHandledNamespaceReExportMissCount",
-    candidates.preHandled.size,
+    0,
+  );
+  phaseTimer.setCounter(
+    "sourceUseRustAssemblyNamespaceReExportCandidateCount",
+    candidates.namespaceReExportCandidateCount,
+  );
+  phaseTimer.setCounter(
+    "sourceUsePreHandledExternalCount",
+    candidates.records.filter((record) => record.resolverStage === "external")
+      .length,
   );
   phaseTimer.setCounter(
     "sourceUseRustAssemblyResolvableRelativeCandidateCount",
@@ -2131,7 +2871,11 @@ function runSourceUseAssembly() {
   );
   phaseTimer.setCounter(
     "sourceUseRustAssemblyResolvableRelativeSkippedCount",
-    resolvedCandidates.skippedCount,
+    0,
+  );
+  phaseTimer.setCounter(
+    "sourceUseRustAssemblyResolvableRelativeDeferredCount",
+    candidates.requiresResolution.length,
   );
   phaseTimer.setCounter(
     "sourceUseRustAssemblyCandidateCount",
@@ -2139,89 +2883,86 @@ function runSourceUseAssembly() {
   );
   phaseTimer.setCounter(
     "sourceUseRustAssemblyEmbeddedCount",
-    candidates.records.length + resolvedRecords.length,
+    candidates.records.length + candidates.requiresResolution.length,
   );
+  phaseTimer.setCounter(
+    "sourceUseRustAssemblyUnhandledCount",
+    candidates.unhandled.length,
+  );
+  const fallbackLanguageCounts = {
+    JsTs: 0,
+    Python: 0,
+    Go: 0,
+    Other: 0,
+  };
+  const fallbackKindCounts = new Map();
+  const fallbackReasonCounts = new Map();
+  const fallbackSummaryStarted = performance.now();
+  for (const entry of candidates.unhandled) {
+    fallbackLanguageCounts[sourceUseLanguageBucket(entry.consumerFile)]++;
+    const kind = entry.use?.kind ?? "import";
+    fallbackKindCounts.set(kind, (fallbackKindCounts.get(kind) ?? 0) + 1);
+    const reason = entry.reason ?? sourceUseAssemblyFallbackReason(entry.use);
+    fallbackReasonCounts.set(reason, (fallbackReasonCounts.get(reason) ?? 0) + 1);
+  }
+  for (const [language, count] of Object.entries(fallbackLanguageCounts)) {
+    phaseTimer.setCounter(
+      `sourceUseRecordsFallback${language}Processed`,
+      count,
+    );
+  }
+  for (const [kind, count] of fallbackKindCounts) {
+    phaseTimer.setCounter(
+      `sourceUseRecordsFallbackKind${counterSuffix(kind)}Processed`,
+      count,
+    );
+  }
+  for (const [reason, count] of fallbackReasonCounts) {
+    phaseTimer.setCounter(
+      `sourceUseRecordsFallbackReason${counterSuffix(reason)}Processed`,
+      count,
+    );
+  }
+  sourceUseFallbackSummaryMs += performance.now() - fallbackSummaryStarted;
   return {
-    handled: new Set([
-      ...candidates.preHandled,
-      ...candidates.records.map((record) => record.recordId),
-      ...resolvedRecords.map((record) => record.recordId),
-    ]),
+    unhandled: candidates.unhandled,
   };
 }
 
-function isUnresolvableNamespaceReExportUse(use) {
-  return (
-    isSourceUseAssemblyCandidate(use) &&
-    namespaceReExportsByFile.size === 0 &&
-    (use?.kind === "imported-namespace-member" ||
-      use?.kind === "imported-namespace-escape")
-  );
+function canFastPathExternalSourceUse(consumerFile, use) {
+  if (typeof use?.fromSpec !== "string" || use.fromSpec.length === 0) {
+    return false;
+  }
+  if (consumerFile.endsWith(".py") || consumerFile.endsWith(".go")) return false;
+  if (isRustResolvedRelativeUse(use)) return false;
+  if (use?.kind === "import-meta-glob") return false;
+  if (
+    use.fromSpec.startsWith(".") ||
+    use.fromSpec.startsWith("/") ||
+    use.fromSpec.startsWith("#") ||
+    use.fromSpec.includes("?")
+  ) {
+    return false;
+  }
+  if (looksLikeNonSourceAssetSpecifier(use.fromSpec)) return false;
+  if (typeof _resolveRaw?.canFastPathExternal !== "function") return false;
+  const cacheKey = sourceUseRawConsumerSpecKey(consumerFile, use.fromSpec);
+  if (cacheKey && sourceUseExternalFastPathCache.has(cacheKey)) {
+    sourceUseExternalFastPathCacheHits++;
+    return sourceUseExternalFastPathCache.get(cacheKey);
+  }
+  sourceUseExternalFastPathCacheMisses++;
+  const result = _resolveRaw.canFastPathExternal(consumerFile, use.fromSpec);
+  if (cacheKey) sourceUseExternalFastPathCache.set(cacheKey, result);
+  return result;
 }
 
 const rustSourceUseAssembly = runSourceUseAssembly();
 
-for (const [consumerFile, info] of fileData) {
-  for (let useIndex = 0; useIndex < info.uses.length; useIndex++) {
-    const u = info.uses[useIndex];
-    if (rustSourceUseAssembly.handled.has(sourceUseRecordId(consumerFile, useIndex))) {
-      continue;
-    }
-    if (u?.kind === "import-meta-glob") {
-      const branchStarted = performance.now();
-      const expansion = expandImportMetaGlobPattern({
-        root: ROOT,
-        consumerFile,
-        pattern: u.fromSpec,
-        scannedSourceFileSet: scannedJsSourceFiles,
-        cap: DEFAULT_IMPORT_META_GLOB_CAP,
-      });
-
-      if (expansion.ok) {
-        incrementSourceUseBranch("importMetaGlobResolved");
-        for (const targetFile of expansion.targets) {
-          enqueueResolvedSourceUseAssemblyRecord(
-            `${sourceUseRecordId(consumerFile, useIndex)}:glob:${relPath(ROOT, targetFile)}`,
-            consumerFile,
-            {
-              ...u,
-              kind: "dynamic-import-meta-glob",
-              outputLevel: "resolved",
-            },
-            targetFile,
-          );
-        }
-        addSourceUseTiming("resolvedInternal", branchStarted);
-      } else {
-        incrementSourceUseBranch("importMetaGlobUnsupported");
-        if (
-          enqueueUnresolvedSourceUseAssemblyRecord(
-            sourceUseRecordId(consumerFile, useIndex),
-            consumerFile,
-            importMetaGlobDiagnosticUse(u, expansion),
-            "unresolved-relative",
-          )
-        ) {
-          recordGeneratedConsumerBlindZoneCandidate(
-            consumerFile,
-            importMetaGlobDiagnosticUse(u, expansion),
-          );
-          addSourceUseTiming("unresolved", branchStarted);
-          continue;
-        }
-        unresolvedInternalUses++;
-        unresolvedUses++;
-        recordUnresolvedInternalSpecifier(
-          consumerFile,
-          importMetaGlobDiagnosticUse(u, expansion),
-        );
-        addSourceUseTiming("unresolved", branchStarted);
-      }
-      continue;
-    }
-
+const sourceUseFallbackLoopStarted = performance.now();
+for (const { consumerFile, useIndex, use: u } of rustSourceUseAssembly.unhandled) {
     const resolveStarted = performance.now();
-    const target = resolveSpecifier(consumerFile, u);
+    const target = resolveSpecifier(consumerFile, u, "source-use-fallback");
     addSourceUseTiming("resolve", resolveStarted);
     if (isRustResolvedRelativeUse(u)) rustResolvedRelativeUses++;
     if (target === "EXTERNAL") {
@@ -2278,7 +3019,6 @@ for (const [consumerFile, info] of fileData) {
           "unresolved-internal",
         )
       ) {
-        recordGeneratedConsumerBlindZoneCandidate(consumerFile, u);
         addSourceUseTiming("unresolved", branchStarted);
         continue;
       }
@@ -2321,7 +3061,6 @@ for (const [consumerFile, info] of fileData) {
           "unresolved-relative",
         )
       ) {
-        recordGeneratedConsumerBlindZoneCandidate(consumerFile, u);
         addSourceUseTiming("unresolved", branchStarted);
         continue;
       }
@@ -2407,8 +3146,8 @@ for (const [consumerFile, info] of fileData) {
       addConsumer(target, u.name, consumerFile, u);
     }
     addSourceUseTiming("resolvedInternal", branchStarted);
-  }
 }
+sourceUseFallbackLoopMs += performance.now() - sourceUseFallbackLoopStarted;
 const sourceUseResolverStatsAfter =
   typeof _resolveRaw.memoStats === "function" ? _resolveRaw.memoStats() : null;
 const sourceUseResolverStageStatsAfter =
@@ -2436,6 +3175,48 @@ phaseTimer.recordPhase(
 phaseTimer.recordPhase(
   "assemble-source-use-resolved-internal",
   sourceUseTimings.resolvedInternal,
+);
+phaseTimer.recordPhase(
+  "assemble-source-use-candidate-build",
+  sourceUseCandidateBuildMs,
+);
+phaseTimer.recordPhase(
+  "assemble-source-use-fallback-summary",
+  sourceUseFallbackSummaryMs,
+);
+phaseTimer.recordPhase(
+  "assemble-source-use-fallback-loop",
+  sourceUseFallbackLoopMs,
+);
+const sourceUseMeasuredBranchMs =
+  sourceUseTimings.resolve +
+  sourceUseTimings.external +
+  sourceUseTimings.asset +
+  sourceUseTimings.unresolved +
+  sourceUseTimings.generatedVirtual +
+  sourceUseTimings.namespaceReExport +
+  sourceUseTimings.resolvedInternal;
+phaseTimer.setCounter(
+  "sourceUseFallbackLoopOverheadMs",
+  Math.max(0, sourceUseFallbackLoopMs - sourceUseMeasuredBranchMs),
+);
+phaseTimer.setCounter("sourceUseCandidateBuildMs", sourceUseCandidateBuildMs);
+phaseTimer.setCounter("sourceUseFallbackSummaryMs", sourceUseFallbackSummaryMs);
+phaseTimer.setCounter("sourceUseFallbackLoopMs", sourceUseFallbackLoopMs);
+phaseTimer.setCounter("sourceUseRelPathCacheHits", sourceUseRelPathCacheHits);
+phaseTimer.setCounter("sourceUseRelPathCacheMisses", sourceUseRelPathCacheMisses);
+phaseTimer.setCounter("sourceUseRelPathCacheSize", sourceUseRelPathCache.size);
+phaseTimer.setCounter(
+  "sourceUseExternalFastPathCacheHits",
+  sourceUseExternalFastPathCacheHits,
+);
+phaseTimer.setCounter(
+  "sourceUseExternalFastPathCacheMisses",
+  sourceUseExternalFastPathCacheMisses,
+);
+phaseTimer.setCounter(
+  "sourceUseExternalFastPathCacheSize",
+  sourceUseExternalFastPathCache.size,
 );
 phaseTimer.setCounter("sourceUseResolveMs", sourceUseTimings.resolve);
 phaseTimer.setCounter("sourceUseRustResolvedRelativeCount", rustResolvedRelativeUses);
@@ -2533,6 +3314,41 @@ if (sourceUseResolverStageStatsBefore && sourceUseResolverStageStatsAfter) {
 }
 phaseTimer.setCounter("sourceUseFilesProcessed", fileData.size);
 phaseTimer.setCounter("sourceUseRecordsProcessed", useCount);
+phaseTimer.setCounter(
+  "sourceUseRecordsFallbackProcessed",
+  rustSourceUseAssembly.unhandled.length,
+);
+const sourceUseResolverCallCountAfterMainAssembly = resolveSpecifierCallCount;
+const sourceUseResolverRawJsCallCountAfterMainAssembly = resolveSpecifierRawJsCallCount;
+phaseTimer.setCounter(
+  "sourceUseResolverCallCount",
+  sourceUseResolverCallCountAfterMainAssembly,
+);
+phaseTimer.setCounter(
+  "sourceUseResolverRawJsCallCount",
+  sourceUseResolverRawJsCallCountAfterMainAssembly,
+);
+phaseTimer.setCounter("sourceUseUnresolvedExplanationCacheHits", unresolvedExplanationCacheHits);
+phaseTimer.setCounter("sourceUseUnresolvedExplanationCacheMisses", unresolvedExplanationCacheMisses);
+phaseTimer.setCounter("sourceUseUnresolvedExplanationCacheSize", unresolvedExplanationCache.size);
+for (const [language, count] of resolveSpecifierLanguageCounts) {
+  phaseTimer.setCounter(
+    `sourceUseResolverLanguage${counterSuffix(language)}CallCount`,
+    count,
+  );
+}
+for (const [outcome, count] of resolveSpecifierOutcomeCounts) {
+  phaseTimer.setCounter(
+    `sourceUseResolverOutcome${counterSuffix(outcome)}Count`,
+    count,
+  );
+}
+for (const [lane, count] of resolveSpecifierLaneCounts) {
+  phaseTimer.setCounter(
+    `sourceUseResolverLane${counterSuffix(lane)}CallCount`,
+    count,
+  );
+}
 phaseTimer.recordPhase(
   "assemble-source-uses",
   Date.now() - assembleSourceUsesStarted,
@@ -2545,7 +3361,11 @@ function processOutOfBandImportConsumers(consumers, source, handledRecords = new
     if (handledRecords.has(outOfBandSourceUseRecordId(source, index, u))) {
       continue;
     }
-    const target = resolveSpecifier(u.consumerFile, u);
+    const target = resolveSpecifier(
+      u.consumerFile,
+      u,
+      "out-of-band-import-consumer",
+    );
     if (target === "EXTERNAL") {
       if (
         enqueueExternalSourceUseAssemblyRecord(
@@ -2583,7 +3403,6 @@ function processOutOfBandImportConsumers(consumers, source, handledRecords = new
           "unresolved-internal",
         )
       ) {
-        recordGeneratedConsumerBlindZoneCandidate(u.consumerFile, u);
         continue;
       }
       unresolvedInternalUses++;
@@ -2615,7 +3434,6 @@ function processOutOfBandImportConsumers(consumers, source, handledRecords = new
           "unresolved-relative",
         )
       ) {
-        recordGeneratedConsumerBlindZoneCandidate(u.consumerFile, u);
         continue;
       }
       unresolvedInternalUses++;
@@ -2697,28 +3515,71 @@ function resolveSfcScriptScannedSourceFallback(consumerFile, fromSpec) {
   return null;
 }
 
+function sfcScriptSrcAssemblyUse(use, overrides = {}) {
+  return {
+    ...use,
+    kind: "sfc-script-src",
+    typeOnly: false,
+    consumerSource: "sfc-script-src",
+    ...overrides,
+  };
+}
+
+function sfcScriptSrcUnresolvedEvidence() {
+  return {
+    reason: "sfc-script-src-unresolved",
+    resolverStage: "sfc-script-src",
+    outputLevel: "unsupported",
+    unsupportedFamily: "sfc-script-src",
+    hint: "sfc-script-src-reachability",
+  };
+}
+
 function processSfcScriptSourceReachability(consumers, handled = new Set()) {
   let resolvedReachabilityUses = 0;
   for (let index = 0; index < consumers.length; index++) {
     const u = consumers[index];
-    if (handled.has(outOfBandSourceUseRecordId("sfc-script-src", index, u))) {
+    const recordId = outOfBandSourceUseRecordId("sfc-script-src", index, u);
+    const rustCandidate = handled.has(recordId);
+    if (rustCandidate) {
       continue;
     }
-    let target = resolveSpecifier(u.consumerFile, u);
+    let target = resolveSpecifier(u.consumerFile, u, "sfc-script-src");
     if (target === "EXTERNAL") continue;
     if (isNonSourceAssetResolution(target)) {
+      if (
+        enqueueNonSourceAssetSourceUseAssemblyRecord(
+          recordId,
+          u.consumerFile,
+          sfcScriptSrcAssemblyUse(u),
+        )
+      ) {
+        continue;
+      }
       nonSourceAssetUses++;
       continue;
     }
     if (target === "UNRESOLVED_INTERNAL" || !target) {
       const diagnosticUse = {
-        ...u,
+        ...sfcScriptSrcAssemblyUse(u),
         reason: "sfc-script-src-unresolved",
         resolverStage: "sfc-script-src",
         outputLevel: "unsupported",
         unsupportedFamily: "sfc-script-src",
         hint: "sfc-script-src-reachability",
       };
+      if (
+        enqueueUnresolvedSourceUseAssemblyRecord(
+          recordId,
+          u.consumerFile,
+          diagnosticUse,
+          target === "UNRESOLVED_INTERNAL"
+            ? "unresolved-internal"
+            : "unresolved-relative",
+        )
+      ) {
+        continue;
+      }
       unresolvedInternalUses++;
       unresolvedUses++;
       const p = prefixOf(u.fromSpec);
@@ -2742,17 +3603,36 @@ function processSfcScriptSourceReachability(consumers, handled = new Set()) {
       if (sourceTarget) {
         target = sourceTarget;
       } else if (typeof target === "string" && fileExists(target)) {
+        if (
+          enqueueNonSourceAssetSourceUseAssemblyRecord(
+            recordId,
+            u.consumerFile,
+            sfcScriptSrcAssemblyUse(u),
+          )
+        ) {
+          continue;
+        }
         nonSourceAssetUses++;
         continue;
       } else {
         const diagnosticUse = {
-          ...u,
+          ...sfcScriptSrcAssemblyUse(u),
           reason: "sfc-script-src-unscanned-target",
           resolverStage: "sfc-script-src",
           outputLevel: "unsupported",
           unsupportedFamily: "sfc-script-src",
           hint: "sfc-script-src-source-target",
         };
+        if (
+          enqueueUnresolvedSourceUseAssemblyRecord(
+            recordId,
+            u.consumerFile,
+            diagnosticUse,
+            "unresolved-internal",
+          )
+        ) {
+          continue;
+        }
         unresolvedInternalUses++;
         unresolvedUses++;
         recordUnresolvedInternalSpecifier(u.consumerFile, diagnosticUse);
@@ -2760,6 +3640,16 @@ function processSfcScriptSourceReachability(consumers, handled = new Set()) {
       }
     }
 
+    if (
+      enqueueResolvedSourceUseAssemblyRecord(
+        recordId,
+        u.consumerFile,
+        sfcScriptSrcAssemblyUse(u),
+        target,
+      )
+    ) {
+      continue;
+    }
     totalUses++;
     resolvedInternalUses++;
     resolvedReachabilityUses++;
@@ -2786,7 +3676,7 @@ function processSfcStyleAssetReferences(consumers) {
   return 0;
 }
 
-function processSfcTemplateComponentRefs(consumers, sourceUseResolution) {
+function processSfcTemplateComponentRefs(consumers, candidateRecordIds) {
   let recordedRefs = 0;
   for (let index = 0; index < consumers.length; index++) {
     const use = consumers[index];
@@ -2814,27 +3704,43 @@ function processSfcTemplateComponentRefs(consumers, sourceUseResolution) {
       continue;
     }
 
-    const assemblyTarget = sfcComponentSourceUseAssemblyTarget(
-      sourceUseResolution,
+    const linkedSourceUseRecordId = outOfBandSourceUseRecordIdFor(
+      use.consumerFile,
+      use.bindingSource,
+    );
+    const sourceUseRecordId = linkedSourceUseRecordId ?? sfcComponentSourceUseRecordId(
+      candidateRecordIds,
       "sfc-template-component-ref",
       index,
       use.consumerFile,
       use.bindingSource,
     );
-    if (assemblyTarget) {
-      input.status = "resolved";
-      input.resolvedFile = assemblyTarget;
+    if (sourceUseRecordId) {
+      const nonSourceAssetTarget = existingRelativeNonSourceAssetTarget(
+        use.consumerFile,
+        use.bindingSource,
+      );
+      if (nonSourceAssetTarget) {
+        input.status = "muted";
+        input.resolvedFile = nonSourceAssetTarget;
+        input.reason = "sfc-template-component-non-source-binding";
+      }
+      input.sourceUseRecordId = sourceUseRecordId;
       sfcTemplateComponentRefInputs.push(input);
       continue;
     }
 
-    const target = resolveSpecifier(use.consumerFile, {
-      ...use,
-      fromSpec: use.bindingSource,
-      kind: "sfc-template-component-ref",
-      name: "*",
-      typeOnly: false,
-    });
+    const target = resolveSpecifier(
+      use.consumerFile,
+      {
+        ...use,
+        fromSpec: use.bindingSource,
+        kind: "sfc-template-component-ref",
+        name: "*",
+        typeOnly: false,
+      },
+      "sfc-template-component-ref",
+    );
     if (target === "EXTERNAL") {
       input.status = "external";
       input.reason = "sfc-template-component-external-binding";
@@ -2878,7 +3784,7 @@ function sfcGlobalComponentResolutionSpec(use) {
   return null;
 }
 
-function processSfcGlobalComponentRegistrations(consumers, sourceUseResolution) {
+function processSfcGlobalComponentRegistrations(consumers, candidateRecordIds) {
   let recordedRegistrations = 0;
   for (let index = 0; index < consumers.length; index++) {
     const use = consumers[index];
@@ -2904,20 +3810,38 @@ function processSfcGlobalComponentRegistrations(consumers, sourceUseResolution) 
     if (use.status === "muted") {
       const mutedSpec = sfcGlobalComponentResolutionSpec(use);
       if (mutedSpec) {
-        const assemblyTarget = sfcComponentSourceUseAssemblyTarget(
-          sourceUseResolution,
+        const sourceUseRecordId = sfcComponentSourceUseRecordId(
+          candidateRecordIds,
           "sfc-global-component-registration",
           index,
           use.registrationFile,
           mutedSpec,
         );
-        const target = assemblyTarget ?? resolveSpecifier(use.registrationFile, {
-          ...use,
-          fromSpec: mutedSpec,
-          kind: "sfc-global-component-registration",
-          name: "*",
-          typeOnly: false,
-        });
+        if (sourceUseRecordId) {
+          input.status = "muted";
+          input.reason = use.reason ?? "sfc-global-component-muted";
+          const nonSourceAssetTarget = existingRelativeNonSourceAssetTarget(
+            use.registrationFile,
+            mutedSpec,
+          );
+          if (nonSourceAssetTarget) {
+            input.resolvedFile = nonSourceAssetTarget;
+          }
+          input.sourceUseRecordId = sourceUseRecordId;
+          sfcGlobalComponentRegistrationInputs.push(input);
+          continue;
+        }
+        const target = resolveSpecifier(
+          use.registrationFile,
+          {
+            ...use,
+            fromSpec: mutedSpec,
+            kind: "sfc-global-component-registration",
+            name: "*",
+            typeOnly: false,
+          },
+          "sfc-global-component-muted",
+        );
         input.status = "muted";
         input.resolvedFile =
           isNonSourceAssetResolution(target)
@@ -2938,27 +3862,43 @@ function processSfcGlobalComponentRegistrations(consumers, sourceUseResolution) 
       continue;
     }
 
-    const assemblyTarget = sfcComponentSourceUseAssemblyTarget(
-      sourceUseResolution,
+    const linkedSourceUseRecordId = outOfBandSourceUseRecordIdFor(
+      use.registrationFile,
+      use.bindingSource,
+    );
+    const sourceUseRecordId = linkedSourceUseRecordId ?? sfcComponentSourceUseRecordId(
+      candidateRecordIds,
       "sfc-global-component-registration",
       index,
       use.registrationFile,
       use.bindingSource,
     );
-    if (assemblyTarget) {
-      input.status = "resolved";
-      input.resolvedFile = assemblyTarget;
+    if (sourceUseRecordId) {
+      const nonSourceAssetTarget = existingRelativeNonSourceAssetTarget(
+        use.registrationFile,
+        use.bindingSource,
+      );
+      if (nonSourceAssetTarget) {
+        input.status = "muted";
+        input.resolvedFile = nonSourceAssetTarget;
+        input.reason = "sfc-global-component-non-source-binding";
+      }
+      input.sourceUseRecordId = sourceUseRecordId;
       sfcGlobalComponentRegistrationInputs.push(input);
       continue;
     }
 
-    const target = resolveSpecifier(use.registrationFile, {
-      ...use,
-      fromSpec: use.bindingSource,
-      kind: "sfc-global-component-registration",
-      name: "*",
-      typeOnly: false,
-    });
+    const target = resolveSpecifier(
+      use.registrationFile,
+      {
+        ...use,
+        fromSpec: use.bindingSource,
+        kind: "sfc-global-component-registration",
+        name: "*",
+        typeOnly: false,
+      },
+      "sfc-global-component-registration",
+    );
     if (target === "EXTERNAL") {
       input.status = "external";
       input.reason = "sfc-global-component-external-binding";
@@ -2994,7 +3934,7 @@ function processSfcGlobalComponentRegistrations(consumers, sourceUseResolution) 
   return recordedRegistrations;
 }
 
-function processSfcGeneratedComponentManifests(consumers, sourceUseResolution) {
+function processSfcGeneratedComponentManifests(consumers, candidateRecordIds) {
   let recordedManifests = 0;
   for (let index = 0; index < consumers.length; index++) {
     const use = consumers[index];
@@ -3020,27 +3960,39 @@ function processSfcGeneratedComponentManifests(consumers, sourceUseResolution) {
       continue;
     }
 
-    const assemblyTarget = sfcComponentSourceUseAssemblyTarget(
-      sourceUseResolution,
+    const sourceUseRecordId = sfcComponentSourceUseRecordId(
+      candidateRecordIds,
       "sfc-generated-component-manifest",
       index,
       use.manifestFile,
       use.bindingSource,
     );
-    if (assemblyTarget) {
-      input.status = "resolved";
-      input.resolvedFile = assemblyTarget;
+    if (sourceUseRecordId) {
+      const nonSourceAssetTarget = existingRelativeNonSourceAssetTarget(
+        use.manifestFile,
+        use.bindingSource,
+      );
+      if (nonSourceAssetTarget) {
+        input.status = "muted";
+        input.resolvedFile = nonSourceAssetTarget;
+        input.reason = "sfc-framework-generated-manifest-non-source-binding";
+      }
+      input.sourceUseRecordId = sourceUseRecordId;
       sfcGeneratedComponentManifestInputs.push(input);
       continue;
     }
 
-    const target = resolveSpecifier(use.manifestFile, {
-      ...use,
-      fromSpec: use.bindingSource,
-      kind: "sfc-generated-component-manifest",
-      name: "*",
-      typeOnly: false,
-    });
+    const target = resolveSpecifier(
+      use.manifestFile,
+      {
+        ...use,
+        fromSpec: use.bindingSource,
+        kind: "sfc-generated-component-manifest",
+        name: "*",
+        typeOnly: false,
+      },
+      "sfc-generated-component-manifest",
+    );
 
     if (target === "EXTERNAL") {
       continue;
@@ -3100,12 +4052,15 @@ function processSfcGeneratedComponentManifests(consumers, sourceUseResolution) {
 }
 
 const assembleMdxUsesStarted = Date.now();
-const mdxImportConsumers = collectMdxImportConsumers({
-  root: ROOT,
-  includeTests: cli.includeTests,
-  exclude: cli.exclude,
-  files: mdxSourceFiles,
-});
+const mdxImportConsumers =
+  mdxSourceFiles.length > 0
+    ? collectMdxImportConsumers({
+      root: ROOT,
+      includeTests: cli.includeTests,
+      exclude: cli.exclude,
+      files: mdxSourceFiles,
+    })
+    : [];
 phaseTimer.setCounter(
   "mdxImportConsumerCandidateCount",
   mdxImportConsumers.length,
@@ -3116,12 +4071,15 @@ const mdxSourceUseAssemblyRecords = buildOutOfBandSourceUseAssemblyCandidateReco
 );
 
 const assembleSfcScriptUsesStarted = Date.now();
-const sfcImportConsumers = collectSfcImportConsumers({
-  root: ROOT,
-  includeTests: cli.includeTests,
-  exclude: cli.exclude,
-  files: sfcSourceFiles,
-});
+const sfcImportConsumers =
+  sfcSourceFiles.length > 0
+    ? collectSfcImportConsumers({
+      root: ROOT,
+      includeTests: cli.includeTests,
+      exclude: cli.exclude,
+      files: sfcSourceFiles,
+    })
+    : [];
 phaseTimer.setCounter(
   "sfcScriptImportConsumerCandidateCount",
   sfcImportConsumers.length,
@@ -3132,12 +4090,15 @@ const sfcScriptSourceUseAssemblyRecords = buildOutOfBandSourceUseAssemblyCandida
 );
 
 const assembleSfcScriptSrcStarted = Date.now();
-const sfcScriptSources = collectSfcScriptSources({
-  root: ROOT,
-  includeTests: cli.includeTests,
-  exclude: cli.exclude,
-  files: sfcSourceFiles,
-});
+const sfcScriptSources =
+  sfcSourceFiles.length > 0
+    ? collectSfcScriptSources({
+      root: ROOT,
+      includeTests: cli.includeTests,
+      exclude: cli.exclude,
+      files: sfcSourceFiles,
+    })
+    : [];
 phaseTimer.setCounter("sfcScriptSrcCandidateCount", sfcScriptSources.length);
 const sfcScriptSrcSourceUseAssemblyRecords =
   buildOutOfBandSourceUseAssemblyCandidateRecords(
@@ -3146,30 +4107,23 @@ const sfcScriptSrcSourceUseAssemblyRecords =
   );
 
 const outOfBandSourceUseAssemblyResolutionStarted = Date.now();
-const outOfBandSourceUseAssemblyResolution = resolveSourceUseAssemblyRecords([
+const outOfBandSourceUseAssemblyRecords = [
   ...mdxSourceUseAssemblyRecords,
   ...sfcScriptSourceUseAssemblyRecords,
   ...sfcScriptSrcSourceUseAssemblyRecords,
-]);
-generatedConsumerBlindZoneUnresolvedRecords.push(
-  ...outOfBandSourceUseAssemblyResolution.unresolvedInternalSpecifierRecords,
-);
+];
+embeddedSourceUseAssemblyRecords.push(...outOfBandSourceUseAssemblyRecords);
 phaseTimer.recordPhase(
   "source-use-out-of-band-rust-assembly",
   Date.now() - outOfBandSourceUseAssemblyResolutionStarted,
 );
 phaseTimer.setCounter(
   "outOfBandSourceUseRustAssemblySkippedCount",
-  outOfBandSourceUseAssemblyResolution.skippedCount,
+  0,
 );
 
-const mdxSourceUseAssemblyHandledRecords = sourceUseAssemblyRecordsWithResolvedTargets(
-  mdxSourceUseAssemblyRecords,
-  outOfBandSourceUseAssemblyResolution,
-);
-embeddedSourceUseAssemblyRecords.push(...mdxSourceUseAssemblyHandledRecords);
 const mdxSourceUseAssemblyHandled = new Set(
-  mdxSourceUseAssemblyHandledRecords.map((record) => record.recordId),
+  mdxSourceUseAssemblyRecords.map((record) => record.recordId),
 );
 phaseTimer.setCounter(
   "mdxSourceUseRustAssemblyCandidateCount",
@@ -3177,7 +4131,7 @@ phaseTimer.setCounter(
 );
 phaseTimer.setCounter(
   "mdxSourceUseRustAssemblyEmbeddedCount",
-  mdxSourceUseAssemblyHandledRecords.length,
+  mdxSourceUseAssemblyRecords.length,
 );
 mdxConsumerUses = processOutOfBandImportConsumers(
   mdxImportConsumers,
@@ -3189,14 +4143,8 @@ phaseTimer.recordPhase(
   Date.now() - assembleMdxUsesStarted,
 );
 
-const sfcScriptSourceUseAssemblyHandledRecords =
-  sourceUseAssemblyRecordsWithResolvedTargets(
-    sfcScriptSourceUseAssemblyRecords,
-    outOfBandSourceUseAssemblyResolution,
-  );
-embeddedSourceUseAssemblyRecords.push(...sfcScriptSourceUseAssemblyHandledRecords);
 const sfcScriptSourceUseAssemblyHandled = new Set(
-  sfcScriptSourceUseAssemblyHandledRecords.map((record) => record.recordId),
+  sfcScriptSourceUseAssemblyRecords.map((record) => record.recordId),
 );
 phaseTimer.setCounter(
   "sfcScriptSourceUseRustAssemblyCandidateCount",
@@ -3204,7 +4152,7 @@ phaseTimer.setCounter(
 );
 phaseTimer.setCounter(
   "sfcScriptSourceUseRustAssemblyEmbeddedCount",
-  sfcScriptSourceUseAssemblyHandledRecords.length,
+  sfcScriptSourceUseAssemblyRecords.length,
 );
 sfcScriptConsumerUses = processOutOfBandImportConsumers(
   sfcImportConsumers,
@@ -3216,14 +4164,8 @@ phaseTimer.recordPhase(
   Date.now() - assembleSfcScriptUsesStarted,
 );
 
-const sfcScriptSrcSourceUseAssemblyHandledRecords =
-  sourceUseAssemblyRecordsWithResolvedTargets(
-    sfcScriptSrcSourceUseAssemblyRecords,
-    outOfBandSourceUseAssemblyResolution,
-  );
-embeddedSourceUseAssemblyRecords.push(...sfcScriptSrcSourceUseAssemblyHandledRecords);
 const sfcScriptSrcSourceUseAssemblyHandled = new Set(
-  sfcScriptSrcSourceUseAssemblyHandledRecords.map((record) => record.recordId),
+  sfcScriptSrcSourceUseAssemblyRecords.map((record) => record.recordId),
 );
 phaseTimer.setCounter(
   "sfcScriptSrcSourceUseRustAssemblyCandidateCount",
@@ -3231,7 +4173,7 @@ phaseTimer.setCounter(
 );
 phaseTimer.setCounter(
   "sfcScriptSrcSourceUseRustAssemblyEmbeddedCount",
-  sfcScriptSrcSourceUseAssemblyHandledRecords.length,
+  sfcScriptSrcSourceUseAssemblyRecords.length,
 );
 sfcScriptSrcReachabilityUses =
   processSfcScriptSourceReachability(
@@ -3244,12 +4186,15 @@ phaseTimer.recordPhase(
 );
 
 const assembleSfcStyleAssetsStarted = Date.now();
-const sfcStyleAssets = collectSfcStyleAssetReferences({
-  root: ROOT,
-  includeTests: cli.includeTests,
-  exclude: cli.exclude,
-  files: sfcSourceFiles,
-});
+const sfcStyleAssets =
+  sfcSourceFiles.length > 0
+    ? collectSfcStyleAssetReferences({
+      root: ROOT,
+      includeTests: cli.includeTests,
+      exclude: cli.exclude,
+      files: sfcSourceFiles,
+    })
+    : [];
 phaseTimer.setCounter("sfcStyleAssetCandidateCount", sfcStyleAssets.length);
 sfcStyleAssetReferenceUses = processSfcStyleAssetReferences(sfcStyleAssets);
 phaseTimer.recordPhase(
@@ -3257,31 +4202,48 @@ phaseTimer.recordPhase(
   Date.now() - assembleSfcStyleAssetsStarted,
 );
 
-const assembleSfcTemplateRefsStarted = Date.now();
-const sfcTemplateRefs = collectSfcTemplateComponentRefs({
-  root: ROOT,
-  includeTests: cli.includeTests,
-  exclude: cli.exclude,
-  files: sfcSourceFiles,
-});
+const collectSfcTemplateRefsStarted = Date.now();
+const sfcTemplateRefs =
+  sfcSourceFiles.length > 0
+    ? collectSfcTemplateComponentRefs({
+        root: ROOT,
+        includeTests: cli.includeTests,
+        exclude: cli.exclude,
+        files: sfcSourceFiles,
+      })
+    : [];
 phaseTimer.setCounter(
   "sfcTemplateComponentRefCandidateCount",
   sfcTemplateRefs.length,
 );
+phaseTimer.recordPhase(
+  "collect-sfc-template-component-refs",
+  Date.now() - collectSfcTemplateRefsStarted,
+);
 
-const assembleSfcGlobalRegistrationsStarted = Date.now();
-const sfcGlobalRegistrations = collectSfcGlobalComponentRegistrations({
-  root: ROOT,
-  includeTests: cli.includeTests,
-  exclude: cli.exclude,
-  files,
-});
+const collectSfcGlobalRegistrationsStarted = Date.now();
+const sfcGlobalRegistrations = sfcFrameworkSignalDetected
+  ? collectSfcGlobalComponentRegistrations({
+      root: ROOT,
+      includeTests: cli.includeTests,
+      exclude: cli.exclude,
+      files,
+    })
+  : [];
 phaseTimer.setCounter(
   "sfcGlobalComponentRegistrationCandidateCount",
   sfcGlobalRegistrations.length,
 );
+phaseTimer.setCounter(
+  "sfcGlobalComponentRegistrationScanSkipped",
+  sfcFrameworkSignalDetected ? 0 : 1,
+);
+phaseTimer.recordPhase(
+  "collect-sfc-global-component-registrations",
+  Date.now() - collectSfcGlobalRegistrationsStarted,
+);
 
-const assembleSfcGeneratedManifestsStarted = Date.now();
+const collectSfcGeneratedManifestsStarted = Date.now();
 const sfcGeneratedManifests = collectSfcGeneratedComponentManifests({
   root: ROOT,
 });
@@ -3290,6 +4252,10 @@ phaseTimer.setCounter(
   sfcGeneratedManifests.length,
 );
 sfcGeneratedComponentManifestUses = 0;
+phaseTimer.recordPhase(
+  "collect-sfc-generated-component-manifests",
+  Date.now() - collectSfcGeneratedManifestsStarted,
+);
 
 const sfcTemplateComponentSourceUseAssemblyRecords =
   buildSfcComponentSourceUseAssemblyCandidateRecords(
@@ -3299,6 +4265,7 @@ const sfcTemplateComponentSourceUseAssemblyRecords =
       consumerFileForUse: (use) => use.consumerFile,
       fromSpecForUse: (use) => use.bindingSource,
       kind: "sfc-template-component-ref",
+      allowExternal: true,
     },
   );
 const sfcGlobalComponentSourceUseAssemblyRecords =
@@ -3309,6 +4276,7 @@ const sfcGlobalComponentSourceUseAssemblyRecords =
       consumerFileForUse: (use) => use.registrationFile,
       fromSpecForUse: sfcGlobalComponentResolutionSpec,
       kind: "sfc-global-component-registration",
+      allowExternal: true,
     },
   );
 const sfcGeneratedManifestSourceUseAssemblyRecords =
@@ -3319,16 +4287,24 @@ const sfcGeneratedManifestSourceUseAssemblyRecords =
       consumerFileForUse: (use) => use.manifestFile,
       fromSpecForUse: (use) => use.bindingSource,
       kind: "sfc-generated-component-manifest",
+      allowExternal: true,
     },
   );
 const sfcComponentSourceUseAssemblyStarted = Date.now();
-const sfcComponentSourceUseAssemblyResolution = resolveSourceUseAssemblyRecords([
+const sfcComponentSourceUseAssemblyRecords = [
   ...sfcTemplateComponentSourceUseAssemblyRecords,
   ...sfcGlobalComponentSourceUseAssemblyRecords,
   ...sfcGeneratedManifestSourceUseAssemblyRecords,
-]);
-generatedConsumerBlindZoneUnresolvedRecords.push(
-  ...sfcComponentSourceUseAssemblyResolution.unresolvedInternalSpecifierRecords,
+];
+embeddedSourceUseAssemblyRecords.push(...sfcComponentSourceUseAssemblyRecords);
+const sfcTemplateComponentSourceUseAssemblyRecordIds = new Set(
+  sfcTemplateComponentSourceUseAssemblyRecords.map((record) => record.recordId),
+);
+const sfcGlobalComponentSourceUseAssemblyRecordIds = new Set(
+  sfcGlobalComponentSourceUseAssemblyRecords.map((record) => record.recordId),
+);
+const sfcGeneratedManifestSourceUseAssemblyRecordIds = new Set(
+  sfcGeneratedManifestSourceUseAssemblyRecords.map((record) => record.recordId),
 );
 phaseTimer.recordPhase(
   "sfc-component-source-use-rust-assembly",
@@ -3336,40 +4312,41 @@ phaseTimer.recordPhase(
 );
 phaseTimer.setCounter(
   "sfcComponentSourceUseRustAssemblyCandidateCount",
-  sfcTemplateComponentSourceUseAssemblyRecords.length +
-    sfcGlobalComponentSourceUseAssemblyRecords.length +
-    sfcGeneratedManifestSourceUseAssemblyRecords.length,
+  sfcComponentSourceUseAssemblyRecords.length,
 );
 phaseTimer.setCounter(
-  "sfcComponentSourceUseRustAssemblyResolvedCount",
-  sfcComponentSourceUseAssemblyResolution.handled.size,
+  "sfcComponentSourceUseRustAssemblyEmbeddedCount",
+  sfcComponentSourceUseAssemblyRecords.length,
 );
 phaseTimer.setCounter(
   "sfcComponentSourceUseRustAssemblySkippedCount",
-  sfcComponentSourceUseAssemblyResolution.skippedCount,
+  0,
 );
 
+const assembleSfcTemplateRefsStarted = Date.now();
 sfcTemplateComponentRefUses = processSfcTemplateComponentRefs(
   sfcTemplateRefs,
-  sfcComponentSourceUseAssemblyResolution,
+  sfcTemplateComponentSourceUseAssemblyRecordIds,
 );
 phaseTimer.recordPhase(
   "assemble-sfc-template-component-refs",
   Date.now() - assembleSfcTemplateRefsStarted,
 );
 
+const assembleSfcGlobalRegistrationsStarted = Date.now();
 sfcGlobalComponentRegistrationUses = processSfcGlobalComponentRegistrations(
   sfcGlobalRegistrations,
-  sfcComponentSourceUseAssemblyResolution,
+  sfcGlobalComponentSourceUseAssemblyRecordIds,
 );
 phaseTimer.recordPhase(
   "assemble-sfc-global-component-registrations",
   Date.now() - assembleSfcGlobalRegistrationsStarted,
 );
 
+const assembleSfcGeneratedManifestsStarted = Date.now();
 sfcGeneratedComponentManifestUses = processSfcGeneratedComponentManifests(
   sfcGeneratedManifests,
-  sfcComponentSourceUseAssemblyResolution,
+  sfcGeneratedManifestSourceUseAssemblyRecordIds,
 );
 phaseTimer.recordPhase(
   "assemble-sfc-generated-component-manifests",
@@ -3395,6 +4372,44 @@ phaseTimer.recordPhase(
   "assemble-sfc-framework-convention-components",
   Date.now() - assembleSfcFrameworkConventionsStarted,
 );
+
+phaseTimer.setCounter("sourceUseResolverCallCountFinal", resolveSpecifierCallCount);
+phaseTimer.setCounter(
+  "sourceUseResolverRawJsCallCountFinal",
+  resolveSpecifierRawJsCallCount,
+);
+phaseTimer.setCounter(
+  "sourceUseResolverPostSourceUseCallCount",
+  Math.max(
+    0,
+    resolveSpecifierCallCount - sourceUseResolverCallCountAfterMainAssembly,
+  ),
+);
+phaseTimer.setCounter(
+  "sourceUseResolverPostSourceUseRawJsCallCount",
+  Math.max(
+    0,
+    resolveSpecifierRawJsCallCount - sourceUseResolverRawJsCallCountAfterMainAssembly,
+  ),
+);
+for (const [language, count] of resolveSpecifierLanguageCounts) {
+  phaseTimer.setCounter(
+    `sourceUseResolverLanguage${counterSuffix(language)}CallCount`,
+    count,
+  );
+}
+for (const [outcome, count] of resolveSpecifierOutcomeCounts) {
+  phaseTimer.setCounter(
+    `sourceUseResolverOutcome${counterSuffix(outcome)}Count`,
+    count,
+  );
+}
+for (const [lane, count] of resolveSpecifierLaneCounts) {
+  phaseTimer.setCounter(
+    `sourceUseResolverLane${counterSuffix(lane)}CallCount`,
+    count,
+  );
+}
 
 console.log(`[uses:js-pre-rust] total ${totalUses}, unresolved ${unresolvedUses}`);
 console.log(
@@ -3461,6 +4476,10 @@ phaseTimer.setCounter(
   dependencyImportConsumers.length,
 );
 phaseTimer.setCounter(
+  "externalDependencyImportInputCount",
+  0,
+);
+phaseTimer.setCounter(
   "resolvedInternalEdgeCount",
   resolvedInternalEdges.length,
 );
@@ -3481,25 +4500,7 @@ phaseTimer.setCounter(
   generatedVirtualImportConsumers.length,
 );
 
-const assembleGeneratedBlindZonesStarted = Date.now();
-const generatedConsumerBlindZones = buildGeneratedConsumerBlindZones(
-  {
-    unresolvedInternalSpecifierRecords: [
-      ...unresolvedInternalSpecifierRecords,
-      ...generatedConsumerBlindZoneUnresolvedRecords,
-    ],
-  },
-  {
-    root: ROOT,
-    includeTests: cli.includeTests,
-    exclude: cli.exclude,
-    mode: GENERATED_ARTIFACTS_MODE,
-  },
-);
-phaseTimer.recordPhase(
-  "assemble-generated-blind-zones",
-  Date.now() - assembleGeneratedBlindZonesStarted,
-);
+phaseTimer.recordPhase("assemble-generated-blind-zones", 0);
 
 // ─── Dead export raw inputs ───────────────────────────────
 const assembleDeadCandidatesStarted = Date.now();
@@ -3515,17 +4516,6 @@ const assembleFanInStarted = Date.now();
 const fanInInputs = buildFanInInputs();
 phaseTimer.recordPhase("assemble-fan-in", Date.now() - assembleFanInStarted);
 
-const assembleAnyContaminationStarted = Date.now();
-const anyContaminationFacts = buildAnyContaminationFacts({
-  root: ROOT,
-  defIndex,
-  fileData,
-});
-phaseTimer.recordPhase(
-  "assemble-any-contamination",
-  Date.now() - assembleAnyContaminationStarted,
-);
-
 // ─── 리포트 ───────────────────────────────────────────────
 console.log(`\n\n════════ 1. Top 25 심볼 fan-in ════════`);
 console.log(`  Rust-owned fan-in projection is written to symbols.json`);
@@ -3536,16 +4526,24 @@ console.log(`  Rust-owned dead candidate projection is written to symbols.json`)
 phaseTimer.setCounter("symbolFanInCount", fanInInputs.consumerSymbolCount);
 phaseTimer.setCounter("fanInIdentityCount", fanInInputs.identityCount);
 phaseTimer.setCounter("fanInIdentitySpaceCount", fanInInputs.identityCount);
+const compactEmbeddedSourceUseRecordIds = true;
+const embeddedSourceUseRecordIdRemap = compactEmbeddedSourceUseRecordIds
+  ? sourceUseRecordIdRemap(embeddedSourceUseAssemblyRecords)
+  : new Map();
 const embeddedSourceUseAssemblyRequest = buildSourceUseAssemblyRequest(
   embeddedSourceUseAssemblyRecords,
   {
     includeSourceFiles: sourceUseAssemblyNeedsSourceFiles(
       embeddedSourceUseAssemblyRecords,
     ),
-    compactRecordIds: true,
+    compactRecordIds: compactEmbeddedSourceUseRecordIds,
+    omitRecordIds: compactEmbeddedSourceUseRecordIds,
     compactPaths: SOURCE_USE_ASSEMBLY_PATH_TABLE,
     compactEnums: SOURCE_USE_ASSEMBLY_ENUM_TABLE,
     compactSpecifiers: SOURCE_USE_ASSEMBLY_SPECIFIER_TABLE,
+    compactNames: SOURCE_USE_ASSEMBLY_NAME_TABLE,
+    compactTypeOnly: SOURCE_USE_ASSEMBLY_TYPE_ONLY_STATE,
+    compactRows: SOURCE_USE_ASSEMBLY_RECORD_ROWS,
   },
 );
 phaseTimer.setCounter(
@@ -3554,7 +4552,9 @@ phaseTimer.setCounter(
 );
 phaseTimer.setCounter(
   "sourceUseRustAssemblyCompactedRecordIdCount",
-  embeddedSourceUseAssemblyRequest.records.length,
+  embeddedSourceUseAssemblyRequest.records?.length ??
+    embeddedSourceUseAssemblyRequest.recordRows?.length ??
+    0,
 );
 phaseTimer.setCounter(
   "sourceUseRustAssemblySourceFileCount",
@@ -3593,6 +4593,30 @@ phaseTimer.setCounter(
   embeddedSourceUseAssemblyRequest.specifierTable?.length ?? 0,
 );
 phaseTimer.setCounter(
+  "sourceUseRustAssemblyNameTableEnabled",
+  SOURCE_USE_ASSEMBLY_NAME_TABLE ? 1 : 0,
+);
+phaseTimer.setCounter(
+  "sourceUseRustAssemblyNameTableCount",
+  embeddedSourceUseAssemblyRequest.nameTable?.length ?? 0,
+);
+phaseTimer.setCounter(
+  "sourceUseRustAssemblyTypeOnlyStateEnabled",
+  SOURCE_USE_ASSEMBLY_TYPE_ONLY_STATE ? 1 : 0,
+);
+phaseTimer.setCounter(
+  "sourceUseRustAssemblyRecordRowsEnabled",
+  SOURCE_USE_ASSEMBLY_RECORD_ROWS ? 1 : 0,
+);
+phaseTimer.setCounter(
+  "sourceUseRustAssemblyRecordRowFieldCount",
+  embeddedSourceUseAssemblyRequest.recordRowFields?.length ?? 0,
+);
+phaseTimer.setCounter(
+  "sourceUseRustAssemblyRecordRowCount",
+  embeddedSourceUseAssemblyRequest.recordRows?.length ?? 0,
+);
+phaseTimer.setCounter(
   "sourceUseRustAssemblyNamespaceReExportEntryCount",
   embeddedSourceUseAssemblyRequest.namespaceReExports?.length ?? 0,
 );
@@ -3609,8 +4633,8 @@ phaseTimer.setCounter(
   namespaceReExportDiagnostics.length,
 );
 phaseTimer.setCounter(
-  "generatedConsumerBlindZoneCount",
-  generatedConsumerBlindZones.length,
+  "generatedConsumerBlindZoneInputCount",
+  generatedConsumerBlindZoneInputs.length,
 );
 phaseTimer.recordPhase(
   "assemble-symbol-graph",
@@ -3619,7 +4643,6 @@ phaseTimer.recordPhase(
 
 // ─── 저장 ─────────────────────────────────────────────────
 const outPath = path.join(output, "symbols.json");
-const requestPath = path.join(output, ".symbols-artifact-request.tmp.json");
 const generated = new Date().toISOString();
 const buildArtifactRequestStarted = Date.now();
 const artifactParseErrorCacheEntries = symbolArtifactParseErrorCacheEntries(
@@ -3629,14 +4652,17 @@ let artifactRequest = {
   schemaVersion: "lumin-symbol-graph-producer-request.v1",
   generated,
   root: ROOT,
+  includeTests: cli.includeTests,
+  exclude: cli.exclude,
+  generatedArtifactsMode: GENERATED_ARTIFACTS_MODE,
   files,
   defIndex: [...defIndex.entries()].map(([filePath, definitions]) => ({
     filePath,
     definitions: Object.fromEntries(definitions),
   })),
-  fileData: [...fileData.entries()].map(([filePath, info]) => ({
-    ...symbolArtifactFileDataRecord(filePath, info),
-  })),
+  fileData: [...fileData.entries()]
+    .map(([filePath, info]) => symbolArtifactFileDataRecord(filePath, info))
+    .filter((record) => record !== null),
   parseErrors,
   warnings,
   // Rust only uses this legacy field to project filesWithParseErrors. Keep the
@@ -3648,6 +4674,7 @@ let artifactRequest = {
   prefixExamples: Object.fromEntries(prefixExamples),
   unresolvedInternalSpecifiers: [...unresolvedInternalSpecifiers],
   unresolvedInternalSpecifierRecords,
+  generatedConsumerBlindZoneInputs,
   languageSupport,
   totalUses,
   unresolvedUses,
@@ -3657,7 +4684,7 @@ let artifactRequest = {
   externalUses,
   dependencyImportConsumers,
   resolvedInternalEdges,
-  generatedConsumerBlindZones,
+  generatedConsumerBlindZones: [],
   generatedVirtualSurfaces: [...generatedVirtualSurfaces.values()],
   generatedVirtualImportConsumers,
   unresolvedInternalUses,
@@ -3676,11 +4703,20 @@ let artifactRequest = {
   sfcStyleAssetReferences: [],
   sfcStyleAssetReferenceInputs,
   sfcTemplateComponentRefs: [],
-  sfcTemplateComponentRefInputs,
+  sfcTemplateComponentRefInputs: remapSourceUseRecordIdInputs(
+    sfcTemplateComponentRefInputs,
+    embeddedSourceUseRecordIdRemap,
+  ),
   sfcGlobalComponentRegistrations: [],
-  sfcGlobalComponentRegistrationInputs,
+  sfcGlobalComponentRegistrationInputs: remapSourceUseRecordIdInputs(
+    sfcGlobalComponentRegistrationInputs,
+    embeddedSourceUseRecordIdRemap,
+  ),
   sfcGeneratedComponentManifests: [],
-  sfcGeneratedComponentManifestInputs,
+  sfcGeneratedComponentManifestInputs: remapSourceUseRecordIdInputs(
+    sfcGeneratedComponentManifestInputs,
+    embeddedSourceUseRecordIdRemap,
+  ),
   sfcFrameworkConventionComponents: [],
   sfcFrameworkConventionComponentInputs,
   dead: [],
@@ -3694,7 +4730,6 @@ let artifactRequest = {
     namespaceUserEntries: fanInInputs.namespaceUserEntries,
   },
   namespaceReExportDiagnostics,
-  anyContaminationFacts,
   incremental: {
     enabled: incrementalEnabled,
     identityMode: incrementalEnabled ? STRICT_IDENTITY_MODE : null,
@@ -3744,7 +4779,67 @@ phaseTimer.setCounter(
   Object.keys(artifactParseErrorCacheEntries).length,
 );
 const writeArtifactStarted = Date.now();
-try {
+const cacheIdentityStarted = Date.now();
+const finalizerCacheIdentity = incrementalEnabled
+  ? symbolFinalizerCacheIdentity(artifactRequest)
+  : null;
+phaseTimer.recordPhase(
+  "symbol-graph-finalizer-cache-identity",
+  Date.now() - cacheIdentityStarted,
+);
+phaseTimer.setCounter(
+  "symbolGraphArtifactLogicalRequestBytes",
+  finalizerCacheIdentity?.logicalRequestBytes ?? 0,
+);
+phaseTimer.setCounter(
+  "symbolGraphFinalizerCacheEnabled",
+  incrementalEnabled ? 1 : 0,
+);
+
+let finalizerCacheLookup = { status: "miss", reason: "disabled" };
+let finalizerCacheRestored = false;
+const cacheLookupStarted = Date.now();
+if (incrementalEnabled) {
+  finalizerCacheLookup = loadProducerArtifactCache(
+    cacheStore,
+    PRODUCER_ID,
+    finalizerCacheIdentity.identity,
+  );
+  if (finalizerCacheLookup.status === "hit") {
+    try {
+      restoreProducerArtifactCache(finalizerCacheLookup, outPath);
+      finalizerCacheRestored = true;
+    } catch {
+      finalizerCacheLookup = { status: "miss", reason: "restore-failed" };
+    }
+  }
+}
+phaseTimer.recordPhase(
+  "symbol-graph-finalizer-cache-lookup",
+  Date.now() - cacheLookupStarted,
+);
+phaseTimer.setCounter(
+  "symbolGraphFinalizerCacheHit",
+  finalizerCacheRestored ? 1 : 0,
+);
+phaseTimer.setCounter(
+  "symbolGraphFinalizerCacheMiss",
+  incrementalEnabled && !finalizerCacheRestored ? 1 : 0,
+);
+if (incrementalEnabled && !finalizerCacheRestored) {
+  recordSymbolFinalizerCacheMiss(finalizerCacheLookup.reason);
+}
+
+if (finalizerCacheRestored) {
+  phaseTimer.setCounter(
+    "symbolGraphFinalizerCacheRestoredBytes",
+    finalizerCacheLookup.artifactBytes,
+  );
+  phaseTimer.setCounter("symbolGraphArtifactRequestBytes", 0);
+  phaseTimer.recordPhase("symbol-graph-artifact-request-json", 0);
+  phaseTimer.recordPhase("symbol-graph-artifact-request-write", 0);
+  phaseTimer.recordPhase("symbol-graph-artifact-command", 0);
+} else {
   const requestJsonStarted = Date.now();
   const artifactRequestJson = JSON.stringify(artifactRequest);
   phaseTimer.recordPhase(
@@ -3755,18 +4850,14 @@ try {
     "symbolGraphArtifactRequestBytes",
     Buffer.byteLength(artifactRequestJson, "utf8"),
   );
-  const requestWriteStarted = Date.now();
-  writeFileSync(requestPath, artifactRequestJson);
-  phaseTimer.recordPhase(
-    "symbol-graph-artifact-request-write",
-    Date.now() - requestWriteStarted,
-  );
+  phaseTimer.recordPhase("symbol-graph-artifact-request-write", 0);
   const commandStarted = Date.now();
   try {
     runAuditCoreJsonToResultFile(
-      ["symbol-graph-artifact", "--input", requestPath],
+      ["symbol-graph-artifact", "--input", "-"],
       "symbol-graph-artifact",
       outPath,
+      { input: artifactRequestJson },
     );
   } finally {
     phaseTimer.recordPhase(
@@ -3774,8 +4865,35 @@ try {
       Date.now() - commandStarted,
     );
   }
-} finally {
-  rmSync(requestPath, { force: true });
+
+  if (incrementalEnabled) {
+    const cacheStoreStarted = Date.now();
+    try {
+      const stored = saveProducerArtifactCache(cacheStore, PRODUCER_ID, {
+        requestIdentity: finalizerCacheIdentity.identity,
+        artifactPath: outPath,
+      });
+      phaseTimer.setCounter("symbolGraphFinalizerCacheStored", 1);
+      phaseTimer.setCounter(
+        "symbolGraphFinalizerCacheStoredBytes",
+        stored.artifactBytes,
+      );
+      phaseTimer.setCounter(
+        "symbolGraphFinalizerCacheCleanupFailed",
+        stored.cleanupFailures,
+      );
+    } catch (error) {
+      phaseTimer.setCounter("symbolGraphFinalizerCacheStoreFailed", 1);
+      console.error(
+        `[symbols-incremental] finalizer artifact cache store failed: ${error.message}`,
+      );
+    } finally {
+      phaseTimer.recordPhase(
+        "symbol-graph-finalizer-cache-store",
+        Date.now() - cacheStoreStarted,
+      );
+    }
+  }
 }
 phaseTimer.setCounter("symbolsJsonBytes", statSync(outPath).size);
 const writtenSymbolSummary = readSymbolGraphArtifactSummary(outPath);
@@ -3784,12 +4902,29 @@ phaseTimer.setCounter(
   writtenSymbolSummary.totalUsesResolved ?? totalUses,
 );
 phaseTimer.setCounter(
+  "unresolvedUses",
+  writtenSymbolSummary.unresolvedUses ?? unresolvedUses,
+);
+phaseTimer.setCounter(
   "resolvedInternalUses",
   writtenSymbolSummary.uses?.resolvedInternal ?? resolvedInternalUses,
 );
 phaseTimer.setCounter(
+  "externalUses",
+  writtenSymbolSummary.uses?.external ?? externalUses,
+);
+phaseTimer.setCounter(
+  "unresolvedInternalUses",
+  writtenSymbolSummary.uses?.unresolvedInternal ?? unresolvedInternalUses,
+);
+phaseTimer.setCounter(
   "resolvedInternalEdgeCount",
   writtenSymbolSummary.resolvedInternalEdgeCount ?? resolvedInternalEdges.length,
+);
+phaseTimer.setCounter(
+  "unresolvedInternalSpecifierRecordCount",
+  writtenSymbolSummary.uses?.unresolvedInternal ??
+    unresolvedInternalSpecifierRecords.length,
 );
 phaseTimer.setCounter("deadCandidateCount", writtenSymbolSummary.deadTotal ?? 0);
 phaseTimer.setCounter("trulyDeadCount", writtenSymbolSummary.trulyDead ?? 0);
@@ -3800,6 +4935,10 @@ phaseTimer.setCounter(
 );
 phaseTimer.setCounter("deadProductionCount", writtenSymbolSummary.deadInProd ?? 0);
 phaseTimer.setCounter("deadTestCount", writtenSymbolSummary.deadInTest ?? 0);
+phaseTimer.setCounter(
+  "generatedConsumerBlindZoneCount",
+  writtenSymbolSummary.generatedConsumerBlindZoneCount ?? 0,
+);
 phaseTimer.recordPhase("write-artifact", Date.now() - writeArtifactStarted);
 phaseTimer.write();
 console.log(

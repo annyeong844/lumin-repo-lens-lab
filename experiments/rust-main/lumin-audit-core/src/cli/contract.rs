@@ -1,11 +1,11 @@
 use anyhow::{bail, Result};
-use serde_json::json;
+use serde_json::{json, Map, Value};
 
 use super::io_support::write_stdout_json;
 use super::usage::USAGE;
 
 const RUNTIME_CONTRACT_SCHEMA_VERSION: &str = "lumin-audit-core-runtime-contract.v1";
-const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v21";
+const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v30";
 
 const SUPPORTED_SUBCOMMANDS: &[&str] = &[
     "artifact-registry",
@@ -122,6 +122,59 @@ const RESULT_OUTPUT_SUBCOMMANDS: &[&str] = &[
     "unused-deps-artifact",
 ];
 
+const RUNTIME_FEATURES: &[&str] = &[
+    "resultOutput",
+    "resultOutputSilencesStdout",
+    "jsTsExtractNamedImportEvidence",
+    "jsTsExtractImportMetaGlobEvidence",
+    "jsTsExtractCjsRequireEvidence",
+    "jsTsExtractCjsExportSurfaceEvidence",
+    "jsTsExtractLiteralDynamicImportEvidence",
+    "jsTsExtractDynamicImportOpacity",
+    "jsTsExtractPathBackedInput",
+    "jsTsExtractLocalOperations",
+    "sourceUseAssembly",
+    "sourceUseAssemblyResolvedRecordTargets",
+    "sourceUseAssemblyExternalRecordIds",
+    "nonSourceAssetSourceUseAssembly",
+    "sourceUseAssemblyConsumerSourceCounters",
+    "sourceUseAssemblyProjectionOnlyNonSourceAssets",
+    "sourceUseAssemblyRootRelativeSourceFiles",
+    "sourceUseAssemblySourceFileIds",
+    "sourceUseAssemblyRootRelativeRecordPaths",
+    "sourceUseAssemblySyntheticRecordIds",
+    "sourceUseAssemblyPathTable",
+    "sourceUseAssemblyEnumTable",
+    "sourceUseAssemblySpecifierTable",
+    "sourceUseAssemblyRecordRows",
+    "sourceUseAssemblyNameTable",
+    "sourceUseAssemblyTypeOnlyState",
+    "symbolGraphTypedFinalization",
+    "symbolGraphCoreTypedFinalization",
+    "symbolGraphTypedInputFinalization",
+    "symbolGraphPathTable",
+    "symbolGraphExternalDependencyInputFinalization",
+    "symbolGraphExternalSourceUseAssemblyFinalization",
+    "symbolGraphFanInInputFinalization",
+    "symbolGraphDeadCandidateInputFinalization",
+    "generatedVirtualSourceUseAssembly",
+    "importMetaGlobSourceUseAssembly",
+    "sfcScriptSrcSourceUseAssembly",
+    "symbolGraphEmbeddedSourceUseFinalization",
+    "symbolGraphEmbeddedRelativeMissingEvidence",
+    "symbolGraphEmbeddedSourceUseParentPathTable",
+    "symbolGraphSfcStyleAssetFinalization",
+    "symbolGraphSfcTemplateComponentFinalization",
+    "symbolGraphSfcGlobalComponentFinalization",
+    "symbolGraphSfcGeneratedManifestFinalization",
+    "symbolGraphSfcGeneratedManifestExternalCountOnly",
+    "symbolGraphSfcFrameworkConventionFinalization",
+    "symbolGraphSfcComponentSourceUseRecordFinalization",
+    "symbolGraphSfcExternalSourceUseRecordProjection",
+    "symbolGraphGeneratedConsumerBlindZoneFinalization",
+    "symbolGraphAnyContaminationInputFinalization",
+];
+
 pub(super) fn run_runtime_contract(args: Vec<String>) -> Result<()> {
     if let Some(arg) = args.first() {
         bail!("runtime-contract: unknown argument '{arg}'\n{USAGE}");
@@ -131,41 +184,16 @@ pub(super) fn run_runtime_contract(args: Vec<String>) -> Result<()> {
         "schemaVersion": RUNTIME_CONTRACT_SCHEMA_VERSION,
         "contractVersion": JS_RUNTIME_BRIDGE_CONTRACT_VERSION,
         "binary": "lumin-audit-core",
-        "features": {
-            "resultOutput": true,
-            "resultOutputSilencesStdout": true,
-            "jsTsExtractNamedImportEvidence": true,
-            "jsTsExtractImportMetaGlobEvidence": true,
-            "jsTsExtractLiteralDynamicImportEvidence": true,
-            "jsTsExtractDynamicImportOpacity": true,
-            "jsTsExtractPathBackedInput": true,
-            "jsTsExtractLocalOperations": true,
-            "sourceUseAssembly": true,
-            "sourceUseAssemblyResolvedRecordTargets": true,
-            "nonSourceAssetSourceUseAssembly": true,
-            "sourceUseAssemblyConsumerSourceCounters": true,
-            "sourceUseAssemblyRootRelativeSourceFiles": true,
-            "sourceUseAssemblyRootRelativeRecordPaths": true,
-            "sourceUseAssemblyPathTable": true,
-            "sourceUseAssemblyEnumTable": true,
-            "sourceUseAssemblySpecifierTable": true,
-            "symbolGraphTypedFinalization": true,
-            "symbolGraphCoreTypedFinalization": true,
-            "symbolGraphTypedInputFinalization": true,
-            "symbolGraphPathTable": true,
-            "symbolGraphFanInInputFinalization": true,
-            "symbolGraphDeadCandidateInputFinalization": true,
-            "generatedVirtualSourceUseAssembly": true,
-            "importMetaGlobSourceUseAssembly": true,
-            "sfcScriptSrcSourceUseAssembly": true,
-            "symbolGraphEmbeddedSourceUseFinalization": true,
-            "symbolGraphSfcStyleAssetFinalization": true,
-            "symbolGraphSfcTemplateComponentFinalization": true,
-            "symbolGraphSfcGlobalComponentFinalization": true,
-            "symbolGraphSfcGeneratedManifestFinalization": true,
-            "symbolGraphSfcFrameworkConventionFinalization": true
-        },
+        "features": runtime_features(),
         "supportedSubcommands": SUPPORTED_SUBCOMMANDS,
         "resultOutputSubcommands": RESULT_OUTPUT_SUBCOMMANDS
     }))
+}
+
+fn runtime_features() -> Value {
+    let mut features = Map::new();
+    for feature in RUNTIME_FEATURES {
+        features.insert((*feature).to_string(), Value::Bool(true));
+    }
+    Value::Object(features)
 }

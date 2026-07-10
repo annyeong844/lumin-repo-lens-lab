@@ -26,7 +26,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v21';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v30';
 
 const PUBLIC_COMMANDS = [
   'audit-repo.mjs',
@@ -146,6 +146,7 @@ oxc_ast_visit = "0.139.0"
 oxc_parser = "0.139.0"
 oxc_span = "0.139.0"
 oxc_syntax = "0.139.0"
+rayon = "1"
 serde = "1"
 serde_json = "1"
 sha2 = "0.10"
@@ -454,30 +455,52 @@ function validateAuditCoreRuntimeContract(binaryPath) {
     'resultOutputSilencesStdout',
     'jsTsExtractNamedImportEvidence',
     'jsTsExtractImportMetaGlobEvidence',
+    'jsTsExtractCjsRequireEvidence',
+    'jsTsExtractCjsExportSurfaceEvidence',
     'jsTsExtractLiteralDynamicImportEvidence',
     'jsTsExtractDynamicImportOpacity',
     'jsTsExtractPathBackedInput',
     'jsTsExtractLocalOperations',
     'sourceUseAssembly',
     'sourceUseAssemblyResolvedRecordTargets',
+    'sourceUseAssemblyExternalRecordIds',
     'nonSourceAssetSourceUseAssembly',
     'sourceUseAssemblyConsumerSourceCounters',
+    'sourceUseAssemblyProjectionOnlyNonSourceAssets',
     'sourceUseAssemblyRootRelativeSourceFiles',
+    'sourceUseAssemblySourceFileIds',
     'sourceUseAssemblyRootRelativeRecordPaths',
+    'sourceUseAssemblySyntheticRecordIds',
+    'sourceUseAssemblyPathTable',
+    'sourceUseAssemblyEnumTable',
+    'sourceUseAssemblySpecifierTable',
+    'sourceUseAssemblyRecordRows',
+    'sourceUseAssemblyNameTable',
+    'sourceUseAssemblyTypeOnlyState',
     'symbolGraphTypedFinalization',
     'symbolGraphCoreTypedFinalization',
     'symbolGraphTypedInputFinalization',
+    'symbolGraphPathTable',
+    'symbolGraphExternalDependencyInputFinalization',
+    'symbolGraphExternalSourceUseAssemblyFinalization',
     'symbolGraphFanInInputFinalization',
     'symbolGraphDeadCandidateInputFinalization',
     'generatedVirtualSourceUseAssembly',
     'importMetaGlobSourceUseAssembly',
     'sfcScriptSrcSourceUseAssembly',
     'symbolGraphEmbeddedSourceUseFinalization',
+    'symbolGraphEmbeddedRelativeMissingEvidence',
+    'symbolGraphEmbeddedSourceUseParentPathTable',
     'symbolGraphSfcStyleAssetFinalization',
     'symbolGraphSfcTemplateComponentFinalization',
     'symbolGraphSfcGlobalComponentFinalization',
     'symbolGraphSfcGeneratedManifestFinalization',
+    'symbolGraphSfcGeneratedManifestExternalCountOnly',
     'symbolGraphSfcFrameworkConventionFinalization',
+    'symbolGraphSfcComponentSourceUseRecordFinalization',
+    'symbolGraphSfcExternalSourceUseRecordProjection',
+    'symbolGraphGeneratedConsumerBlindZoneFinalization',
+    'symbolGraphAnyContaminationInputFinalization',
   ];
   if (
     contract?.schemaVersion !== AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION ||
@@ -515,6 +538,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const entrySurfaceInputPath = path.join(tempDir, 'entry-surface-artifact.json');
   const exportActionSafetyInputPath = path.join(tempDir, 'export-action-safety-artifact.json');
   const functionClonesInputPath = path.join(tempDir, 'function-clones-artifact.json');
+  const jsTsExtractInputPath = path.join(tempDir, 'js-ts-extract-artifact.json');
   const moduleReachabilityInputPath = path.join(tempDir, 'module-reachability-artifact.json');
   const rankFixesInputPath = path.join(tempDir, 'rank-fixes-artifact.json');
   const resolverDiagnosticsInputPath = path.join(tempDir, 'resolver-diagnostics-artifacts.json');
@@ -534,6 +558,7 @@ function auditCoreBinaryWritesResultFiles(binaryPath) {
   const finalizeWithCompanionsInputPath = path.join(tempDir, 'finalize-audit-run-with-companions.json');
   try {
     mkdirSync(rootDir, { recursive: true });
+    mkdirSync(path.join(rootDir, 'src'), { recursive: true });
     mkdirSync(outputDir, { recursive: true });
     mkdirSync(lifecycleOutputDir, { recursive: true });
     mkdirSync(compareLeftDir, { recursive: true });
@@ -824,22 +849,34 @@ writeFileSync(latest, JSON.stringify(advisory));
       filesWithParseErrors: [],
       filesWithReadErrors: [],
     }));
+    const jsTsExtractProbeSource = 'import { api, bare } from "./dep";\napi.foo();\nconst cjsApi = require("./cjs-api");\ncjsApi.run();\nconst { cjsExact } = require("./cjs-exact");\nrequire("./cjs-side-effect");\nrequire(target);\nexport const view = bare;\nexport const routes = import.meta.glob("./pages/*.ts");\nexport async function load(target) {\n  const mod = await import("web-tree-sitter");\n  Parser = mod.Parser;\n  const lazy = await import("./lazy");\n  lazy.boot();\n  await import(`./pages/${target}.ts`);\n  return import(target);\n}\nexport function buildProbeRepository() {\n  function getProbe() { return null; }\n}\nexports.probe = 1;\nmodule.exports.namedProbe = 2;\nexports[dynamicName] = 3;\nmodule.exports = { objectProbe: 4 };\nmodule.exports = makeExports();\n';
+    writeFileSync(path.join(rootDir, 'src', 'consumer.mjs'), jsTsExtractProbeSource);
+    writeFileSync(jsTsExtractInputPath, JSON.stringify({
+      schemaVersion: 'lumin-js-ts-extract-request.v1',
+      root: rootDir,
+      files: [{
+        filePath: path.join(rootDir, 'src', 'consumer.mjs'),
+        artifactFilePath: 'src/consumer.mjs',
+        source: jsTsExtractProbeSource,
+      }],
+    }));
     writeFileSync(symbolGraphInputPath, JSON.stringify({
       schemaVersion: 'lumin-symbol-graph-producer-request.v1',
       generated: '2026-07-02T00:00:00.000Z',
       root: rootDir,
-      files: [path.join(rootDir, 'src', 'a.ts'), path.join(rootDir, 'src', 'b.ts')],
+      pathTable: ['src/App.vue'],
+      files: [
+        path.join(rootDir, 'src', 'a.ts'),
+        path.join(rootDir, 'src', 'b.ts'),
+        path.join(rootDir, 'src', 'c.ts'),
+      ],
       defIndex: [
         {
           filePath: path.join(rootDir, 'src', 'a.ts'),
           definitions: {
             alpha: { name: 'alpha', kind: 'FunctionDeclaration', line: 1 },
-          },
-        },
-        {
-          filePath: path.join(rootDir, 'src', 'b.ts'),
-          definitions: {
             beta: { name: 'beta', kind: 'FunctionDeclaration', line: 2 },
+            gamma: { name: 'gamma', kind: 'FunctionDeclaration', line: 3 },
           },
         },
       ],
@@ -849,6 +886,12 @@ writeFileSync(latest, JSON.stringify(advisory));
           reExports: [{ source: './b', line: 2 }],
           classMethods: [],
           localOperations: [],
+          typeEscapes: [{
+            file: 'src/a.ts',
+            line: 1,
+            escapeKind: 'explicit-any',
+            insideExportedIdentity: 'src/a.ts::alpha',
+          }],
           dynamicImportOpacity: [],
           cjsExportSurface: null,
           cjsRequireOpacity: [],
@@ -881,6 +924,20 @@ writeFileSync(latest, JSON.stringify(advisory));
         { from: 'src/b.ts', to: 'src/a.ts', kind: 'import', source: './a', typeOnly: false },
       ],
       generatedConsumerBlindZones: [],
+      generatedConsumerBlindZoneInputs: [{
+        specifier: '@scope/generated-client',
+        consumerFile: 'src/c.ts',
+        kind: 'import',
+        reason: 'workspace-generated-artifact-missing',
+        targetCandidates: ['packages/api/generated/client.ts'],
+        generatedArtifact: {
+          matchedPackage: '@scope/api',
+          targetSubpath: 'packages/api/generated/client.ts',
+          generatorFamily: 'path-segment',
+          confidence: 'supporting',
+          packageRoot: 'packages/api',
+        },
+      }],
       generatedVirtualSurfaces: [],
       generatedVirtualImportConsumers: [],
       unresolvedInternalUses: 1,
@@ -922,13 +979,12 @@ writeFileSync(latest, JSON.stringify(advisory));
         tagName: 'UiButton',
         normalizedTagName: 'ui-button',
         bindingName: 'UiButton',
-        bindingSource: './UiButton.vue',
+        bindingSource: './UiButton',
         source: 'sfc-template',
         language: 'vue',
         templateKind: 'template',
         confidence: 'component-binding',
-        status: 'resolved',
-        resolvedFile: path.join(rootDir, 'src', 'UiButton.vue'),
+        sourceUseRecordId: 'r0',
         bindingKind: 'import',
         importedName: 'default',
         line: 12,
@@ -960,8 +1016,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         bindingName: 'RegisteredSource',
         bindingSource: './registered-source',
         source: 'sfc-global-component-registration',
-        status: 'resolved',
-        resolvedFile: path.join(rootDir, 'src', 'registered-source.ts'),
+        sourceUseRecordId: 'r1',
         bindingKind: 'import',
         importedName: 'default',
         line: 20,
@@ -989,8 +1044,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         fromSpec: './src/ManifestSource.ts',
         source: 'sfc-framework-generated-manifest',
         confidence: 'generated-manifest-availability',
-        status: 'resolved',
-        resolvedFile: path.join(rootDir, 'src', 'ManifestSource.ts'),
+        sourceUseRecordId: 'r2',
         line: 30,
       }, {
         manifestFile: path.join(rootDir, 'components.d.ts'),
@@ -1018,6 +1072,17 @@ writeFileSync(latest, JSON.stringify(advisory));
         status: 'skipped',
         reason: 'sfc-framework-generated-manifest-nonliteral',
         line: 32,
+      }, {
+        manifestFile: path.join(rootDir, 'components.d.ts'),
+        manifestKind: 'unplugin-vue-components-dts',
+        componentName: 'ExternalManifest',
+        normalizedTagNames: ['external-manifest'],
+        bindingSource: '@scope/external-components',
+        fromSpec: '@scope/external-components',
+        source: 'sfc-framework-generated-manifest',
+        confidence: 'generated-manifest-availability',
+        sourceUseRecordId: 'generated-manifest-external#0',
+        line: 34,
       }],
       sfcFrameworkConventionComponents: [],
       sfcFrameworkConventionComponentInputs: [{
@@ -1063,10 +1128,43 @@ writeFileSync(latest, JSON.stringify(advisory));
       sourceUseAssembly: {
         schemaVersion: 'lumin-source-use-assembly-request.v1',
         root: rootDir,
-        sourceFiles: [],
+        sourceFiles: [
+          'src/UiButton.ts',
+          'src/registered-source.ts',
+          'src/ManifestSource.ts',
+        ],
         namespaceReExports: [],
         namedReExports: [],
         records: [{
+          consumerFileId: 0,
+          fromSpec: './UiButton',
+          name: '*',
+          kind: 'sfc-template-component-ref',
+          consumerSource: 'sfc-template-component-ref',
+          resolverStage: 'relative',
+        }, {
+          consumerFile: path.join(rootDir, 'src', 'main.ts'),
+          fromSpec: './registered-source',
+          name: '*',
+          kind: 'sfc-global-component-registration',
+          consumerSource: 'sfc-global-component-registration',
+          resolverStage: 'relative',
+        }, {
+          consumerFile: path.join(rootDir, 'components.d.ts'),
+          fromSpec: './src/ManifestSource.ts',
+          name: '*',
+          kind: 'sfc-generated-component-manifest',
+          consumerSource: 'sfc-generated-component-manifest',
+          resolverStage: 'relative',
+        }, {
+          recordId: 'generated-manifest-external#0',
+          consumerFile: path.join(rootDir, 'components.d.ts'),
+          fromSpec: '@scope/external-components',
+          name: '*',
+          kind: 'sfc-generated-component-manifest',
+          consumerSource: 'sfc-generated-component-manifest',
+          resolverStage: 'external',
+        }, {
           recordId: 'src/c.ts#0',
           consumerFile: path.join(rootDir, 'src', 'c.ts'),
           resolvedFile: path.join(rootDir, 'src', 'a.ts'),
@@ -1127,13 +1225,10 @@ writeFileSync(latest, JSON.stringify(advisory));
           kind: 'sfc-script-src',
           sfcLanguage: 'vue',
           resolverStage: 'relative',
+          consumerSource: 'sfc-script-src',
         }],
       },
       namespaceReExportDiagnostics: [],
-      anyContaminationFacts: {
-        helperOwnersByIdentity: {},
-        typeOwnersByIdentity: {},
-      },
     }));
     writeFileSync(checklistFactsInputPath, JSON.stringify({
       schemaVersion: 'lumin-checklist-facts-producer-request.v1',
@@ -1370,22 +1465,36 @@ writeFileSync(latest, JSON.stringify(advisory));
     writeFileSync(sourceUseAssemblyInputPath, JSON.stringify({
       schemaVersion: 'lumin-source-use-assembly-request.v1',
       root: rootDir,
-      sourceFiles: [
+      pathTable: [
         path.join(rootDir, 'src', 'consumer.ts'),
         path.join(rootDir, 'src', 'dep.ts'),
+        path.join(rootDir, 'src', 'setup.ts'),
       ],
+      sourceFileIds: [0, 1, 2],
+      nameTable: ['value'],
+      recordRowFields: [
+        'recordId',
+        'consumerFileId',
+        'fromSpec',
+        'nameId',
+        'kind',
+        'typeOnlyState',
+        'line',
+        'resolverStage',
+        'consumerSource',
+      ],
+      recordRows: [[
+        'src/consumer.ts#0',
+        0,
+        './dep',
+        0,
+        'import',
+        1,
+        1,
+        'relative',
+        'mdx-import',
+      ]],
       records: [
-        {
-          recordId: 'src/consumer.ts#0',
-          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
-          fromSpec: './dep',
-          name: 'value',
-          kind: 'import',
-          typeOnly: false,
-          line: 1,
-          resolverStage: 'relative',
-          consumerSource: 'mdx-import',
-        },
         {
           recordId: 'src/consumer.ts#1',
           consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
@@ -1396,6 +1505,61 @@ writeFileSync(latest, JSON.stringify(advisory));
         },
         {
           recordId: 'src/consumer.ts#2',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          fromSpec: '@/missing',
+          kind: 'import',
+          typeOnly: false,
+          typeOnlyPresent: true,
+          resolverStage: 'unresolved-internal',
+          unresolvedEvidence: {
+            reason: 'tsconfig-path-target-missing',
+            resolverStage: 'tsconfig-paths',
+            matchedPattern: '@/*',
+            targetCandidates: ['src/missing.ts'],
+            hint: 'check-tsconfig-paths',
+          },
+        },
+        {
+          recordId: 'src/consumer.ts#3',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          fromSpec: '@pkg/db/enums',
+          name: 'Role',
+          kind: 'import',
+          typeOnly: false,
+          typeOnlyPresent: true,
+          resolverStage: 'generated-virtual',
+          generatedVirtualSurface: {
+            id: 'generated-virtual:prisma-enums:@pkg/db:enums',
+            source: 'generated-virtual',
+            mode: 'virtual',
+            virtual: true,
+            exports: [{
+              name: 'Role',
+              kind: 'prisma-enum',
+              spaces: ['value', 'type'],
+            }],
+          },
+        },
+        {
+          recordId: 'src/consumer.ts#4:glob:src/dep.ts',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          resolvedFile: path.join(rootDir, 'src', 'dep.ts'),
+          fromSpec: './*.ts',
+          kind: 'dynamic-import-meta-glob',
+          resolverStage: 'resolved-internal',
+        },
+        {
+          recordId: 'sfc-script-src:0:src/App.vue:./setup',
+          consumerFile: path.join(rootDir, 'src', 'App.vue'),
+          resolvedFile: path.join(rootDir, 'src', 'setup.ts'),
+          fromSpec: './setup',
+          kind: 'sfc-script-src',
+          sfcLanguage: 'vue',
+          resolverStage: 'relative',
+          consumerSource: 'sfc-script-src',
+        },
+        {
+          recordId: 'src/consumer.ts#6',
           consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
           fromSpec: './style.css',
           kind: 'import-side-effect',
@@ -1692,6 +1856,11 @@ writeFileSync(latest, JSON.stringify(advisory));
         requiresArtifactReads: false,
       },
       {
+        subcommand: 'js-ts-extract-artifact',
+        args: ['js-ts-extract-artifact', '--input', jsTsExtractInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'symbol-graph-artifact',
         args: ['symbol-graph-artifact', '--input', symbolGraphInputPath],
         requiresArtifactReads: false,
@@ -1803,15 +1972,37 @@ writeFileSync(latest, JSON.stringify(advisory));
         cwd: ROOT,
         encoding: 'utf8',
       });
-      if (result.error || result.status !== 0) return false;
-      if ((result.stdout ?? '').trim().length > 0) return false;
-      if (!existsSync(resultPath)) return false;
+      if (result.error || result.status !== 0) {
+        throw new Error(`${probe.subcommand} failed (exit ${result.status ?? 'unknown'}): ${result.error?.message ?? result.stderr ?? ''}`);
+      }
+      if ((result.stdout ?? '').trim().length > 0) {
+        throw new Error(`${probe.subcommand} wrote stdout while using --result-output`);
+      }
+      if (!existsSync(resultPath)) {
+        throw new Error(`${probe.subcommand} did not write ${resultPath}`);
+      }
       const json = JSON.parse(readFileSync(resultPath, 'utf8'));
-      if (!resultPayloadMatchesProbe(json, probe)) return false;
-      if (probe.requiresArtifactReads !== false && !Array.isArray(json.artifactReads?.reads)) return false;
+      if (!resultPayloadMatchesProbe(json, probe)) {
+        throw new Error(`${probe.subcommand} wrote an unexpected result shape: ${JSON.stringify({
+          files: json.files,
+          totalDefs: json.totalDefs,
+          totalUsesResolved: json.totalUsesResolved,
+          unresolvedUses: json.unresolvedUses,
+          uses: json.uses,
+          artifactSummary: json.artifactSummary,
+          fanInByIdentity: json.fanInByIdentity,
+          deadProdList: json.deadProdList,
+          unresolvedInternalSummaryByReason: json.unresolvedInternalSummaryByReason,
+          generatedConsumerBlindZones: json.generatedConsumerBlindZones,
+        })}`);
+      }
+      if (probe.requiresArtifactReads !== false && !Array.isArray(json.artifactReads?.reads)) {
+        throw new Error(`${probe.subcommand} did not report artifact reads`);
+      }
     }
     return true;
-  } catch {
+  } catch (error) {
+    console.error(`[build-skill] audit-core result probe failed: ${error.message}`);
     return false;
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
@@ -1874,13 +2065,33 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.tool === 'build-symbol-graph.mjs' &&
       json.meta.schemaVersion === 3 &&
       json.meta.supports?.identityFanIn === true &&
-      json.files === 2 &&
-      json.totalDefs === 2 &&
+      json.files === 3 &&
+      json.totalDefs === 3 &&
+      json.totalUsesResolved === 4 &&
+      json.unresolvedUses === 3 &&
+      json.uses?.resolvedInternal === 4 &&
+      json.uses?.resolvedGeneratedVirtual === 1 &&
+      json.uses?.external === 1 &&
+      json.uses?.unresolvedInternal === 2 &&
+      json.uses?.sfcScriptSrcReachability === 1 &&
       json.uses?.sfcStyleAssetReferences === 1 &&
       json.uses?.sfcTemplateComponentRefs === 2 &&
       json.uses?.sfcGlobalComponentRegistrations === 2 &&
-      json.uses?.sfcGeneratedComponentManifests === 3 &&
+      json.uses?.sfcGeneratedComponentManifests === 4 &&
       json.uses?.sfcFrameworkConventionComponents === 1 &&
+      json.uses?.unresolvedInternalRatio === 0.3333 &&
+      json.dependencyImportConsumers?.some((consumer) =>
+        consumer?.depRoot === 'react' &&
+        consumer?.fromSpec === 'react/jsx-runtime'
+      ) &&
+      json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
+      json.generatedVirtualImportConsumers?.[0]?.surfaceId === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/App.vue' &&
+        edge?.to === 'src/setup.ts' &&
+        edge?.kind === 'sfc-script-src' &&
+        edge?.sfcLanguage === 'vue'
+      ) &&
       json.sfcStyleAssetReferences?.some((reference) =>
         reference?.consumerFile === 'src/App.vue' &&
         reference?.fromSpec === './App.css?inline' &&
@@ -1897,7 +2108,7 @@ function resultPayloadMatchesProbe(json, probe) {
       json.sfcTemplateComponentRefs?.some((reference) =>
         reference?.consumerFile === 'src/App.vue' &&
         reference?.bindingName === 'UiButton' &&
-        reference?.resolvedFile === 'src/UiButton.vue' &&
+        reference?.resolvedFile === 'src/UiButton.ts' &&
         reference?.status === 'resolved' &&
         reference?.eligibleForSafeFix === false
       ) &&
@@ -1940,6 +2151,9 @@ function resultPayloadMatchesProbe(json, probe) {
         manifest?.computedKeySource === "prefix + 'Manifest'" &&
         manifest?.status === 'skipped'
       ) &&
+      !json.sfcGeneratedComponentManifests?.some((manifest) =>
+        manifest?.componentName === 'ExternalManifest'
+      ) &&
       json.sfcFrameworkConventionComponents?.some((component) =>
         component?.framework === 'nuxt' &&
         component?.conventionKind === 'components-dir' &&
@@ -1954,19 +2168,127 @@ function resultPayloadMatchesProbe(json, probe) {
         component?.eligibleForFanIn === false &&
         component?.eligibleForSafeFix === false
       ) &&
-      json.resolvedInternalEdges?.some((edge) =>
-        edge?.from === 'src/c.ts' &&
-        edge?.to === 'src/a.ts' &&
-        edge?.kind === 'import-named' &&
-        edge?.source === '@/a'
+      json.generatedConsumerBlindZones?.some((zone) =>
+        zone?.reason === 'generated-consumer-blind-zone' &&
+        zone?.sourceReason === 'workspace-generated-artifact-missing' &&
+        zone?.specifier === '@scope/generated-client' &&
+        zone?.consumerFile === 'src/c.ts' &&
+        zone?.candidatePath === 'packages/api/generated/client.ts' &&
+        zone?.scopePackageRoot === 'packages/api' &&
+        zone?.mode === 'default'
       ) &&
-      json.generatedVirtualImportConsumers?.[0]?.surfaceId === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
-      json.uses?.unresolvedInternalRatio === 0.5 &&
+      json.artifactSummary?.generatedConsumerBlindZoneCount === 1 &&
       json.defIndex?.['src/a.ts']?.alpha?.name === 'alpha' &&
+      json.defIndex?.['src/a.ts']?.alpha?.anyContamination?.label === 'any-contaminated' &&
+      json.helperOwnersByIdentity?.['src/a.ts::alpha']?.anyContamination?.measurements?.explicitAnyCount === 1 &&
       json.fanInByIdentity?.['src/a.ts::alpha'] === 1 &&
+      json.fanInByIdentity?.['src/a.ts::beta'] === 0 &&
+      json.fanInByIdentity?.['src/a.ts::gamma'] === 1 &&
+      json.fanInByIdentitySpace?.['src/a.ts::alpha']?.value === 1 &&
+      json.fanInByIdentitySpace?.['src/a.ts::gamma']?.value === 1 &&
       json.deadProdList?.[0]?.symbol === 'beta' &&
       json.unresolvedInternalSummaryByReason?.['alias-miss']?.count === 1 &&
       json.unresolvedInternalSummaryByReason?.['tsconfig-path-target-missing']?.count === 1;
+  }
+  if (probe.subcommand === 'js-ts-extract-artifact') {
+    const file = json.files?.[0];
+    const uses = Array.isArray(file?.uses) ? file.uses : [];
+    const localOperations = Array.isArray(file?.localOperations) ? file.localOperations : [];
+    return json.schemaVersion === 'lumin-js-ts-extract-response.v1' &&
+      isObject(file) &&
+      file.filePath.endsWith(path.join('src', 'consumer.mjs')) &&
+      file.error === undefined &&
+      uses.some((use) =>
+        use?.fromSpec === './dep' &&
+        use?.name === 'api' &&
+        use?.kind === 'imported-namespace-member' &&
+        use?.memberName === 'foo' &&
+        use?.localName === 'api'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './dep' &&
+        use?.name === 'bare' &&
+        use?.kind === 'imported-namespace-escape' &&
+        use?.localName === 'bare' &&
+        use?.degraded === true
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './pages/*.ts' &&
+        use?.name === '*' &&
+        use?.kind === 'import-meta-glob' &&
+        use?.degraded === true &&
+        use?.resolverStage === 'import-meta-glob'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './cjs-api' &&
+        use?.name === 'run' &&
+        use?.kind === 'cjs-namespace-member' &&
+        use?.localName === 'cjsApi'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './cjs-exact' &&
+        use?.name === 'cjsExact' &&
+        use?.kind === 'cjs-require-exact'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './cjs-side-effect' &&
+        use?.name === '*' &&
+        use?.kind === 'cjs-side-effect-only'
+      ) &&
+      file.cjsRequireOpacity?.some((entry) =>
+        entry?.kind === 'dynamic-require'
+      ) &&
+      file.cjsExportSurface?.exact?.some((entry) =>
+        entry?.name === 'probe' &&
+        entry?.kind === 'exports-member'
+      ) &&
+      file.cjsExportSurface?.exact?.some((entry) =>
+        entry?.name === 'namedProbe' &&
+        entry?.kind === 'module-exports-member'
+      ) &&
+      file.cjsExportSurface?.exact?.some((entry) =>
+        entry?.name === 'objectProbe' &&
+        entry?.kind === 'module-exports-object'
+      ) &&
+      file.cjsExportSurface?.opaque?.some((entry) =>
+        entry?.kind === 'computed-export-name'
+      ) &&
+      file.cjsExportSurface?.opaque?.some((entry) =>
+        entry?.kind === 'module-exports-assignment'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === 'web-tree-sitter' &&
+        use?.name === '*' &&
+        use?.kind === 'dynamic' &&
+        use?.localName === 'mod' &&
+        use?.degraded === true
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './lazy' &&
+        use?.name === 'boot' &&
+        use?.kind === 'dynamic-member' &&
+        use?.localName === 'lazy' &&
+        use?.degraded !== true
+      ) &&
+      file.dynamicImportOpacity?.some((entry) =>
+        entry?.kind === 'nonliteral' &&
+        entry?.line === 16
+      ) &&
+      file.dynamicImportOpacity?.some((entry) =>
+        entry?.kind === 'template-prefix' &&
+        entry?.line === 15 &&
+        entry?.prefix === './pages/'
+      ) &&
+      file.defs?.[0]?.name === 'view' &&
+      file.defs?.[0]?.kind === 'const-var' &&
+      localOperations.some((operation) =>
+        operation?.identity === 'src/consumer.mjs::buildProbeRepository#getProbe' &&
+        operation?.containerName === 'buildProbeRepository' &&
+        operation?.name === 'getProbe' &&
+        operation?.operationFamily === 'read-query' &&
+        Array.isArray(operation?.domainTokens) &&
+        operation.domainTokens.includes('probe')
+      );
   }
   if (probe.subcommand === 'checklist-facts-artifact') {
     return isObject(json.meta) &&
@@ -2085,27 +2407,57 @@ function resultPayloadMatchesProbe(json, probe) {
   }
   if (probe.subcommand === 'source-use-assembly-artifact') {
     return json.schemaVersion === 'lumin-source-use-assembly-response.v1' &&
-      json.summary?.recordCount === 3 &&
-      json.summary?.handledCount === 3 &&
-      json.counters?.totalUses === 2 &&
-      json.counters?.resolvedInternalUses === 2 &&
-      json.counters?.rustResolvedRelativeUses === 2 &&
+      json.summary?.recordCount === 7 &&
+      json.summary?.handledCount === 7 &&
+      json.counters?.totalUses === 5 &&
+      json.counters?.resolvedInternalUses === 5 &&
+      json.counters?.rustResolvedRelativeUses === 3 &&
       json.counters?.nonSourceAssetUses === 1 &&
       json.counters?.mdxConsumerUses === 1 &&
       json.counters?.sfcScriptConsumerUses === 1 &&
-      json.branchCounts?.resolvedInternal === 2 &&
+      json.counters?.sfcScriptSrcReachabilityUses === 1 &&
+      json.counters?.resolvedGeneratedVirtualUses === 1 &&
+      json.counters?.unresolvedUses === 1 &&
+      json.counters?.unresolvedInternalUses === 1 &&
+      json.branchCounts?.resolvedInternal === 4 &&
+      json.branchCounts?.unresolved === 1 &&
+      json.branchCounts?.generatedVirtual === 1 &&
       json.branchCounts?.asset === 1 &&
+      json.branchCounts?.sfcScriptSrcReachability === 1 &&
       json.branchCounts?.directConsumer === 1 &&
-      json.branchCounts?.broadNamespace === 1 &&
+      json.branchCounts?.broadNamespace === 2 &&
       json.resolvedRecordTargets?.filter((entry) =>
         entry?.recordId === 'src/consumer.ts#0' &&
         entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/dep.ts')
       ).length === 1 &&
-      json.resolvedInternalEdges?.[0]?.from === 'src/consumer.ts' &&
-      json.resolvedInternalEdges?.[0]?.to === 'src/dep.ts' &&
-      json.resolvedInternalEdges?.[0]?.kind === 'import-named' &&
-      json.directConsumers?.[0]?.symbol === 'value' &&
-      json.namespaceUsers?.[0]?.defFile === 'src/dep.ts';
+      json.resolvedRecordTargets?.filter((entry) =>
+        entry?.recordId === 'sfc-script-src:0:src/App.vue:./setup' &&
+        entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/setup.ts')
+      ).length === 1 &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/consumer.ts' &&
+        edge?.to === 'src/dep.ts' &&
+        edge?.kind === 'import-named'
+      ) &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/consumer.ts' &&
+        edge?.to === 'src/dep.ts' &&
+        edge?.kind === 'dynamic-import-meta-glob'
+      ) &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/App.vue' &&
+        edge?.to === 'src/setup.ts' &&
+        edge?.kind === 'sfc-script-src' &&
+        edge?.sfcLanguage === 'vue'
+      ) &&
+      json.unresolvedInternalSpecifierRecords?.[0]?.reason === 'tsconfig-path-target-missing' &&
+      json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
+      json.generatedVirtualImportConsumers?.[0]?.surfaceId === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
+      json.directConsumers?.some((entry) => entry?.symbol === 'value') &&
+      json.namespaceUsers?.filter((entry) =>
+        entry?.defFile === 'src/dep.ts' &&
+        entry?.consumerFile === 'src/consumer.ts'
+      ).length === 1;
   }
   if (probe.subcommand === 'staleness-artifact') {
     return isObject(json.meta) &&

@@ -9,7 +9,7 @@
 // writer silently skipping Windows rename retry behavior while the other
 // doesn't.
 
-import { writeFileSync, renameSync, rmSync } from 'node:fs';
+import { copyFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 
 const RETRYABLE_RENAME_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
@@ -38,6 +38,17 @@ function renameWithRetry(tmpPath, targetPath, { attempts = 8, delayMs = 25 } = {
 export function atomicWrite(targetPath, content) {
   const tmpPath = `${targetPath}.tmp.${randomBytes(3).toString('hex')}`;
   writeFileSync(tmpPath, content);
+  try {
+    renameWithRetry(tmpPath, targetPath);
+  } catch (e) {
+    rmSync(tmpPath, { force: true });
+    throw e;
+  }
+}
+
+export function atomicCopy(sourcePath, targetPath) {
+  const tmpPath = `${targetPath}.tmp.${randomBytes(3).toString('hex')}`;
+  copyFileSync(sourcePath, tmpPath);
   try {
     renameWithRetry(tmpPath, targetPath);
   } catch (e) {

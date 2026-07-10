@@ -7,6 +7,22 @@ pub const SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION: &str = "lumin-source-use-a
 pub const SOURCE_USE_ASSEMBLY_RESPONSE_SCHEMA_VERSION: &str =
     "lumin-source-use-assembly-response.v1";
 
+#[derive(Clone, Copy)]
+struct SourceUseAssemblyBuildOptions {
+    emit_standalone_transport: bool,
+    relative_target_missing_is_unresolved: bool,
+}
+
+const STANDALONE_BUILD_OPTIONS: SourceUseAssemblyBuildOptions = SourceUseAssemblyBuildOptions {
+    emit_standalone_transport: true,
+    relative_target_missing_is_unresolved: false,
+};
+
+const EMBEDDED_BUILD_OPTIONS: SourceUseAssemblyBuildOptions = SourceUseAssemblyBuildOptions {
+    emit_standalone_transport: false,
+    relative_target_missing_is_unresolved: true,
+};
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceUseAssemblyRequest {
@@ -16,6 +32,8 @@ pub struct SourceUseAssemblyRequest {
     pub import_meta_glob_cap: usize,
     #[serde(default)]
     pub source_files: Vec<String>,
+    #[serde(default)]
+    pub source_file_ids: Vec<usize>,
     #[serde(default)]
     pub namespace_re_exports: Vec<SourceUseAssemblyReExport>,
     #[serde(default)]
@@ -30,6 +48,12 @@ pub struct SourceUseAssemblyRequest {
     pub consumer_source_table: Vec<String>,
     #[serde(default)]
     pub specifier_table: Vec<String>,
+    #[serde(default)]
+    pub name_table: Vec<String>,
+    #[serde(default)]
+    pub record_row_fields: Vec<String>,
+    #[serde(default)]
+    pub record_rows: Vec<Vec<Value>>,
     #[serde(default)]
     pub records: Vec<SourceUseAssemblyRecordInput>,
 }
@@ -47,7 +71,8 @@ pub struct SourceUseAssemblyReExport {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceUseAssemblyRecordInput {
-    pub record_id: String,
+    #[serde(default)]
+    pub record_id: Option<String>,
     #[serde(default)]
     pub consumer_file: Option<String>,
     #[serde(default)]
@@ -63,7 +88,11 @@ pub struct SourceUseAssemblyRecordInput {
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
+    pub name_id: Option<usize>,
+    #[serde(default)]
     pub member_name: Option<String>,
+    #[serde(default)]
+    pub member_name_id: Option<usize>,
     #[serde(default)]
     pub kind: Option<String>,
     #[serde(default)]
@@ -90,6 +119,63 @@ pub struct SourceUseAssemblyRecordInput {
     pub generated_virtual_surface: Option<Value>,
 }
 
+#[derive(Debug, Default)]
+struct SourceUseAssemblyRecordInputBuilder {
+    record_id: Option<String>,
+    consumer_file: Option<String>,
+    consumer_file_id: Option<usize>,
+    resolved_file: Option<String>,
+    resolved_file_id: Option<usize>,
+    from_spec: Option<String>,
+    from_spec_id: Option<usize>,
+    name: Option<String>,
+    name_id: Option<usize>,
+    member_name: Option<String>,
+    member_name_id: Option<usize>,
+    kind: Option<String>,
+    kind_id: Option<usize>,
+    type_only: bool,
+    type_only_present: bool,
+    line: Option<u64>,
+    sfc_language: Option<String>,
+    resolver_stage: Option<String>,
+    resolver_stage_id: Option<usize>,
+    consumer_source: Option<String>,
+    consumer_source_id: Option<usize>,
+    unresolved_evidence: Option<Value>,
+    generated_virtual_surface: Option<Value>,
+}
+
+impl SourceUseAssemblyRecordInputBuilder {
+    fn build(self) -> SourceUseAssemblyRecordInput {
+        SourceUseAssemblyRecordInput {
+            record_id: self.record_id,
+            consumer_file: self.consumer_file,
+            consumer_file_id: self.consumer_file_id,
+            resolved_file: self.resolved_file,
+            resolved_file_id: self.resolved_file_id,
+            from_spec: self.from_spec,
+            from_spec_id: self.from_spec_id,
+            name: self.name,
+            name_id: self.name_id,
+            member_name: self.member_name,
+            member_name_id: self.member_name_id,
+            kind: self.kind,
+            kind_id: self.kind_id,
+            type_only: self.type_only,
+            type_only_present: self.type_only_present,
+            line: self.line,
+            sfc_language: self.sfc_language,
+            resolver_stage: self.resolver_stage,
+            resolver_stage_id: self.resolver_stage_id,
+            consumer_source: self.consumer_source,
+            consumer_source_id: self.consumer_source_id,
+            unresolved_evidence: self.unresolved_evidence,
+            generated_virtual_surface: self.generated_virtual_surface,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SourceUseAssemblyRecord {
     pub record_id: String,
@@ -109,6 +195,15 @@ pub struct SourceUseAssemblyRecord {
     pub generated_virtual_surface: Option<Value>,
 }
 
+struct SourceUseAssemblyTables<'a> {
+    path_table: &'a [String],
+    kind_table: &'a [String],
+    resolver_stage_table: &'a [String],
+    consumer_source_table: &'a [String],
+    specifier_table: &'a [String],
+    name_table: &'a [String],
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceUseAssemblyResponse {
@@ -117,6 +212,7 @@ pub struct SourceUseAssemblyResponse {
     pub summary: SourceUseAssemblySummary,
     pub handled_record_ids: Vec<String>,
     pub resolved_record_targets: Vec<ResolvedRecordTarget>,
+    pub external_record_ids: Vec<String>,
     pub skipped_records: Vec<SkippedSourceUseRecord>,
     pub counters: SourceUseAssemblyCounters,
     pub branch_counts: BTreeMap<String, usize>,
@@ -261,26 +357,162 @@ fn source_use_string_from_table(table: &[String], id: usize, field: &str) -> Res
         .ok_or_else(|| anyhow::anyhow!("source-use-assembly-artifact: invalid {field} {id}"))
 }
 
+fn source_files_from_request(
+    path_table: &[String],
+    source_files: Vec<String>,
+    source_file_ids: Vec<usize>,
+) -> Result<Vec<String>> {
+    let mut files = source_files;
+    for id in source_file_ids {
+        files.push(source_use_path_from_table(path_table, id, "sourceFileIds")?);
+    }
+    Ok(files)
+}
+
+fn row_string(value: &Value, field: &str) -> Result<Option<String>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    value
+        .as_str()
+        .map(|text| (!text.is_empty()).then(|| text.to_string()))
+        .ok_or_else(|| anyhow::anyhow!("source-use-assembly-artifact: invalid recordRows {field}"))
+}
+
+fn row_usize(value: &Value, field: &str) -> Result<Option<usize>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    value
+        .as_u64()
+        .map(|number| Some(number as usize))
+        .ok_or_else(|| anyhow::anyhow!("source-use-assembly-artifact: invalid recordRows {field}"))
+}
+
+fn row_u64(value: &Value, field: &str) -> Result<Option<u64>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    value
+        .as_u64()
+        .map(Some)
+        .ok_or_else(|| anyhow::anyhow!("source-use-assembly-artifact: invalid recordRows {field}"))
+}
+
+fn row_bool(value: &Value, field: &str) -> Result<Option<bool>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    value
+        .as_bool()
+        .map(Some)
+        .ok_or_else(|| anyhow::anyhow!("source-use-assembly-artifact: invalid recordRows {field}"))
+}
+
+fn source_use_record_from_row(
+    fields: &[String],
+    row: Vec<Value>,
+) -> Result<SourceUseAssemblyRecordInput> {
+    let mut builder = SourceUseAssemblyRecordInputBuilder::default();
+    for (index, value) in row.iter().enumerate() {
+        if value.is_null() {
+            continue;
+        }
+        let field = fields.get(index).ok_or_else(|| {
+            anyhow::anyhow!("source-use-assembly-artifact: recordRows has too many columns")
+        })?;
+        match field.as_str() {
+            "recordId" => builder.record_id = row_string(value, field)?,
+            "consumerFile" => builder.consumer_file = row_string(value, field)?,
+            "consumerFileId" => builder.consumer_file_id = row_usize(value, field)?,
+            "resolvedFile" => builder.resolved_file = row_string(value, field)?,
+            "resolvedFileId" => builder.resolved_file_id = row_usize(value, field)?,
+            "fromSpec" => builder.from_spec = row_string(value, field)?,
+            "fromSpecId" => builder.from_spec_id = row_usize(value, field)?,
+            "name" => builder.name = row_string(value, field)?,
+            "nameId" => builder.name_id = row_usize(value, field)?,
+            "memberName" => builder.member_name = row_string(value, field)?,
+            "memberNameId" => builder.member_name_id = row_usize(value, field)?,
+            "kind" => builder.kind = row_string(value, field)?,
+            "kindId" => builder.kind_id = row_usize(value, field)?,
+            "typeOnly" => {
+                if let Some(type_only) = row_bool(value, field)? {
+                    builder.type_only = type_only;
+                }
+            }
+            "typeOnlyPresent" => {
+                if let Some(type_only_present) = row_bool(value, field)? {
+                    builder.type_only_present = type_only_present;
+                }
+            }
+            "typeOnlyState" => match row_usize(value, field)? {
+                Some(1) => {
+                    builder.type_only = false;
+                    builder.type_only_present = true;
+                }
+                Some(2) => {
+                    builder.type_only = true;
+                    builder.type_only_present = true;
+                }
+                Some(0) | None => {
+                    builder.type_only = false;
+                    builder.type_only_present = false;
+                }
+                Some(_) => bail!("source-use-assembly-artifact: invalid recordRows {field}"),
+            },
+            "line" => builder.line = row_u64(value, field)?,
+            "sfcLanguage" => builder.sfc_language = row_string(value, field)?,
+            "resolverStage" => builder.resolver_stage = row_string(value, field)?,
+            "resolverStageId" => builder.resolver_stage_id = row_usize(value, field)?,
+            "consumerSource" => builder.consumer_source = row_string(value, field)?,
+            "consumerSourceId" => builder.consumer_source_id = row_usize(value, field)?,
+            "unresolvedEvidence" => builder.unresolved_evidence = Some(value.clone()),
+            "generatedVirtualSurface" => builder.generated_virtual_surface = Some(value.clone()),
+            _ => bail!("source-use-assembly-artifact: unsupported recordRows field '{field}'"),
+        }
+    }
+    Ok(builder.build())
+}
+
+fn source_use_record_inputs_from_request(
+    records: Vec<SourceUseAssemblyRecordInput>,
+    record_row_fields: Vec<String>,
+    record_rows: Vec<Vec<Value>>,
+) -> Result<Vec<SourceUseAssemblyRecordInput>> {
+    if record_rows.is_empty() {
+        return Ok(records);
+    }
+    if record_row_fields.is_empty() {
+        bail!("source-use-assembly-artifact: recordRows requires recordRowFields");
+    }
+    let mut inputs = records;
+    for row in record_rows {
+        inputs.push(source_use_record_from_row(&record_row_fields, row)?);
+    }
+    Ok(inputs)
+}
+
 fn normalize_source_use_record(
     input: SourceUseAssemblyRecordInput,
-    path_table: &[String],
-    kind_table: &[String],
-    resolver_stage_table: &[String],
-    consumer_source_table: &[String],
-    specifier_table: &[String],
+    index: usize,
+    tables: SourceUseAssemblyTables<'_>,
 ) -> Result<SourceUseAssemblyRecord> {
     let consumer_file = match (input.consumer_file, input.consumer_file_id) {
         (Some(path), _) if !path.is_empty() => path,
-        (_, Some(id)) => source_use_path_from_table(path_table, id, "consumerFileId")?,
+        (_, Some(id)) => source_use_path_from_table(tables.path_table, id, "consumerFileId")?,
         _ => bail!(
             "source-use-assembly-artifact: record '{}' missing consumerFile",
-            input.record_id
+            input
+                .record_id
+                .as_deref()
+                .filter(|record_id| !record_id.is_empty())
+                .unwrap_or("<synthetic>")
         ),
     };
     let resolved_file = match (input.resolved_file, input.resolved_file_id) {
         (Some(path), _) if !path.is_empty() => Some(path),
         (_, Some(id)) => Some(source_use_path_from_table(
-            path_table,
+            tables.path_table,
             id,
             "resolvedFileId",
         )?),
@@ -288,13 +520,17 @@ fn normalize_source_use_record(
     };
     let kind = match (input.kind, input.kind_id) {
         (Some(kind), _) if !kind.is_empty() => Some(kind),
-        (_, Some(id)) => Some(source_use_string_from_table(kind_table, id, "kindId")?),
+        (_, Some(id)) => Some(source_use_string_from_table(
+            tables.kind_table,
+            id,
+            "kindId",
+        )?),
         _ => None,
     };
     let resolver_stage = match (input.resolver_stage, input.resolver_stage_id) {
         (Some(stage), _) if !stage.is_empty() => Some(stage),
         (_, Some(id)) => Some(source_use_string_from_table(
-            resolver_stage_table,
+            tables.resolver_stage_table,
             id,
             "resolverStageId",
         )?),
@@ -303,7 +539,7 @@ fn normalize_source_use_record(
     let consumer_source = match (input.consumer_source, input.consumer_source_id) {
         (Some(source), _) if !source.is_empty() => Some(source),
         (_, Some(id)) => Some(source_use_string_from_table(
-            consumer_source_table,
+            tables.consumer_source_table,
             id,
             "consumerSourceId",
         )?),
@@ -312,20 +548,41 @@ fn normalize_source_use_record(
     let from_spec = match (input.from_spec, input.from_spec_id) {
         (Some(spec), _) if !spec.is_empty() => Some(spec),
         (_, Some(id)) => Some(source_use_string_from_table(
-            specifier_table,
+            tables.specifier_table,
             id,
             "fromSpecId",
         )?),
         _ => None,
     };
+    let name = match (input.name, input.name_id) {
+        (Some(name), _) if !name.is_empty() => Some(name),
+        (_, Some(id)) => Some(source_use_string_from_table(
+            tables.name_table,
+            id,
+            "nameId",
+        )?),
+        _ => None,
+    };
+    let member_name = match (input.member_name, input.member_name_id) {
+        (Some(name), _) if !name.is_empty() => Some(name),
+        (_, Some(id)) => Some(source_use_string_from_table(
+            tables.name_table,
+            id,
+            "memberNameId",
+        )?),
+        _ => None,
+    };
 
     Ok(SourceUseAssemblyRecord {
-        record_id: input.record_id,
+        record_id: input
+            .record_id
+            .filter(|record_id| !record_id.is_empty())
+            .unwrap_or_else(|| format!("r{index}")),
         consumer_file,
         resolved_file,
         from_spec,
-        name: input.name,
-        member_name: input.member_name,
+        name,
+        member_name,
         kind,
         type_only: input.type_only,
         type_only_present: input.type_only_present,
@@ -341,22 +598,42 @@ fn normalize_source_use_record(
 pub fn build_source_use_assembly_response(
     request: SourceUseAssemblyRequest,
 ) -> Result<SourceUseAssemblyResponse> {
+    build_source_use_assembly_response_with_options(request, STANDALONE_BUILD_OPTIONS)
+}
+
+pub fn build_embedded_source_use_assembly_response(
+    request: SourceUseAssemblyRequest,
+) -> Result<SourceUseAssemblyResponse> {
+    build_source_use_assembly_response_with_options(request, EMBEDDED_BUILD_OPTIONS)
+}
+
+fn build_source_use_assembly_response_with_options(
+    request: SourceUseAssemblyRequest,
+    options: SourceUseAssemblyBuildOptions,
+) -> Result<SourceUseAssemblyResponse> {
     if request.schema_version != SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION {
         bail!(
             "source-use-assembly-artifact: unsupported schemaVersion '{}'",
             request.schema_version
         );
     }
+    let records = source_use_record_inputs_from_request(
+        request.records,
+        request.record_row_fields,
+        request.record_rows,
+    )?;
+    let record_count = records.len();
 
     let mut response = SourceUseAssemblyResponse {
         schema_version: SOURCE_USE_ASSEMBLY_RESPONSE_SCHEMA_VERSION,
         root: request.root.clone(),
         summary: SourceUseAssemblySummary {
-            record_count: request.records.len(),
+            record_count,
             ..SourceUseAssemblySummary::default()
         },
         handled_record_ids: Vec::new(),
         resolved_record_targets: Vec::new(),
+        external_record_ids: Vec::new(),
         skipped_records: Vec::new(),
         counters: SourceUseAssemblyCounters::default(),
         branch_counts: BTreeMap::new(),
@@ -375,19 +652,28 @@ pub fn build_source_use_assembly_response(
 
     let root = normalize_path_text(&request.root);
     let import_meta_glob_cap = request.import_meta_glob_cap;
-    let resolver = RelativeSourceResolver::new(&root, request.source_files);
+    let source_files = source_files_from_request(
+        &request.path_table,
+        request.source_files,
+        request.source_file_ids,
+    )?;
+    let resolver = RelativeSourceResolver::new(&root, source_files);
     let namespace_resolver =
         NamespaceReExportResolver::new(request.namespace_re_exports, request.named_re_exports);
     let mut namespace_users_seen = BTreeSet::new();
 
-    for record in request.records {
+    for (index, record) in records.into_iter().enumerate() {
         let record = normalize_source_use_record(
             record,
-            &request.path_table,
-            &request.kind_table,
-            &request.resolver_stage_table,
-            &request.consumer_source_table,
-            &request.specifier_table,
+            index,
+            SourceUseAssemblyTables {
+                path_table: &request.path_table,
+                kind_table: &request.kind_table,
+                resolver_stage_table: &request.resolver_stage_table,
+                consumer_source_table: &request.consumer_source_table,
+                specifier_table: &request.specifier_table,
+                name_table: &request.name_table,
+            },
         )?;
         let resolver_stage = record.resolver_stage.as_deref();
         let has_pre_resolved_file = record
@@ -395,15 +681,15 @@ pub fn build_source_use_assembly_response(
             .as_deref()
             .is_some_and(|path| !path.is_empty());
         if resolver_stage == Some("external") {
-            handle_external_record(&mut response, &root, record);
+            handle_external_record(&mut response, &root, record, options);
             continue;
         }
         if resolver_stage == Some("generated-virtual") {
-            handle_generated_virtual_record(&mut response, &root, record);
+            handle_generated_virtual_record(&mut response, &root, record, options);
             continue;
         }
         if resolver_stage == Some("non-source-asset") {
-            handle_non_source_asset_record(&mut response, record);
+            handle_non_source_asset_record(&mut response, record, options);
             continue;
         }
         let track_unresolved_prefix = resolver_stage == Some("unresolved-internal");
@@ -411,7 +697,13 @@ pub fn build_source_use_assembly_response(
             resolver_stage,
             Some("unresolved-internal" | "unresolved-relative")
         ) {
-            handle_unresolved_record(&mut response, &root, record, track_unresolved_prefix);
+            handle_unresolved_record(
+                &mut response,
+                &root,
+                record,
+                track_unresolved_prefix,
+                options,
+            );
             continue;
         }
         let kind = record.kind.as_deref().unwrap_or("import");
@@ -425,6 +717,7 @@ pub fn build_source_use_assembly_response(
         if !supported_stage {
             skip(
                 &mut response,
+                options,
                 record.record_id,
                 "non-relative-resolver-stage",
             );
@@ -439,16 +732,33 @@ pub fn build_source_use_assembly_response(
                 &mut namespace_users_seen,
                 record,
                 import_meta_glob_cap,
+                options,
             );
             continue;
         }
+        if is_projection_only_consumer_source(record.consumer_source.as_deref())
+            && has_pre_resolved_file
+        {
+            let resolved_file = record.resolved_file.clone().unwrap_or_default();
+            let record_id = record.record_id;
+            increment_branch(&mut response.branch_counts, "projectionOnlyTarget");
+            push_resolved_record_target(&mut response, &record_id, &resolved_file);
+            mark_handled(&mut response, options, record_id);
+            continue;
+        }
         if !has_pre_resolved_file && !is_relative_spec(from_spec) {
-            skip(&mut response, record.record_id, "non-relative-specifier");
+            skip(
+                &mut response,
+                options,
+                record.record_id,
+                "non-relative-specifier",
+            );
             continue;
         }
         if looks_like_non_source_asset(from_spec) {
             skip(
                 &mut response,
+                options,
                 record.record_id,
                 "non-source-asset-specifier",
             );
@@ -462,9 +772,26 @@ pub fn build_source_use_assembly_response(
             .map(ToString::to_string)
             .or_else(|| resolver.resolve(&record.consumer_file, from_spec));
         let Some(resolved_file) = resolved_file else {
-            skip(&mut response, record.record_id, "relative-target-missing");
+            if options.relative_target_missing_is_unresolved {
+                handle_relative_target_missing(&mut response, &root, record, options);
+            } else {
+                skip(
+                    &mut response,
+                    options,
+                    record.record_id,
+                    "relative-target-missing",
+                );
+            }
             continue;
         };
+
+        if is_projection_only_consumer_source(record.consumer_source.as_deref()) {
+            let record_id = record.record_id;
+            increment_branch(&mut response.branch_counts, "projectionOnlyTarget");
+            push_resolved_record_target(&mut response, &record_id, &resolved_file);
+            mark_handled(&mut response, options, record_id);
+            continue;
+        }
 
         if is_namespace_reexport_use(kind) {
             let Some(exported_name) = record
@@ -473,7 +800,12 @@ pub fn build_source_use_assembly_response(
                 .filter(|name| !name.is_empty())
                 .map(ToString::to_string)
             else {
-                skip(&mut response, record.record_id, "missing-symbol-name");
+                skip(
+                    &mut response,
+                    options,
+                    record.record_id,
+                    "missing-symbol-name",
+                );
                 continue;
             };
             let from = root_relative(&root, &record.consumer_file);
@@ -482,8 +814,10 @@ pub fn build_source_use_assembly_response(
             let source = record.from_spec.clone().unwrap_or_default();
             let line = record.line;
             increment_branch(&mut response.branch_counts, "namespaceReExport");
-            push_resolved_record_target(&mut response, &record_id, &resolved_file);
-            response.handled_record_ids.push(record_id);
+            if options.emit_standalone_transport {
+                push_resolved_record_target(&mut response, &record_id, &resolved_file);
+            }
+            mark_handled(&mut response, options, record_id);
 
             let Some(re_export) = namespace_resolver.resolve(&root, &resolved_file, &exported_name)
             else {
@@ -548,7 +882,12 @@ pub fn build_source_use_assembly_response(
             continue;
         }
         if requires_symbol_name(kind) && record.name.as_deref().map(str::is_empty).unwrap_or(true) {
-            skip(&mut response, record.record_id, "missing-symbol-name");
+            skip(
+                &mut response,
+                options,
+                record.record_id,
+                "missing-symbol-name",
+            );
             continue;
         }
 
@@ -557,8 +896,10 @@ pub fn build_source_use_assembly_response(
         let record_id = record.record_id;
         let source = record.from_spec.clone();
 
-        push_resolved_record_target(&mut response, &record_id, &resolved_file);
-        response.handled_record_ids.push(record_id);
+        if options.emit_standalone_transport {
+            push_resolved_record_target(&mut response, &record_id, &resolved_file);
+        }
+        mark_handled(&mut response, options, record_id);
         response.counters.total_uses += 1;
         response.counters.resolved_internal_uses += 1;
         if resolver_stage == Some("relative") {
@@ -612,8 +953,6 @@ pub fn build_source_use_assembly_response(
         });
     }
 
-    response.summary.handled_count = response.handled_record_ids.len();
-    response.summary.skipped_count = response.skipped_records.len();
     Ok(response)
 }
 
@@ -621,11 +960,19 @@ fn handle_external_record(
     response: &mut SourceUseAssemblyResponse,
     root: &str,
     record: SourceUseAssemblyRecord,
+    options: SourceUseAssemblyBuildOptions,
 ) {
     let kind = record.kind.clone().unwrap_or_else(|| "import".to_string());
     let record_id = record.record_id;
+    let projection_only = is_projection_only_consumer_source(record.consumer_source.as_deref());
     increment_branch(&mut response.branch_counts, "external");
-    response.handled_record_ids.push(record_id);
+    if options.emit_standalone_transport || projection_only {
+        response.external_record_ids.push(record_id.clone());
+    }
+    mark_handled(response, options, record_id);
+    if projection_only {
+        return;
+    }
     if is_namespace_reexport_use(&kind) {
         increment_branch(&mut response.branch_counts, "skippedNamespaceAlias");
         return;
@@ -654,13 +1001,17 @@ fn handle_external_record(
 fn handle_non_source_asset_record(
     response: &mut SourceUseAssemblyResponse,
     record: SourceUseAssemblyRecord,
+    options: SourceUseAssemblyBuildOptions,
 ) {
     increment_branch(&mut response.branch_counts, "asset");
-    response.handled_record_ids.push(record.record_id);
-    response.counters.non_source_asset_uses += 1;
+    let projection_only = is_projection_only_consumer_source(record.consumer_source.as_deref());
+    mark_handled(response, options, record.record_id);
+    if !projection_only {
+        response.counters.non_source_asset_uses += 1;
+    }
 }
 
-fn package_root_from_spec(spec: &str) -> Option<String> {
+pub(crate) fn package_root_from_spec(spec: &str) -> Option<String> {
     if spec.is_empty() || spec.starts_with('.') || spec.starts_with('/') || spec.starts_with('#') {
         return None;
     }
@@ -681,11 +1032,12 @@ fn handle_unresolved_record(
     root: &str,
     record: SourceUseAssemblyRecord,
     track_prefix: bool,
+    options: SourceUseAssemblyBuildOptions,
 ) {
     let kind = record.kind.clone().unwrap_or_else(|| "import".to_string());
     let record_id = record.record_id.clone();
     increment_branch(&mut response.branch_counts, "unresolved");
-    response.handled_record_ids.push(record_id);
+    mark_handled(response, options, record_id);
     if is_namespace_reexport_use(&kind) {
         increment_branch(&mut response.branch_counts, "skippedNamespaceAlias");
         return;
@@ -714,6 +1066,33 @@ fn handle_unresolved_record(
         .unresolved_internal_specifiers
         .insert(from_spec.clone());
     push_unresolved_specifier_record(response, root, &record, &from_spec, &kind);
+}
+
+fn handle_relative_target_missing(
+    response: &mut SourceUseAssemblyResponse,
+    root: &str,
+    mut record: SourceUseAssemblyRecord,
+    options: SourceUseAssemblyBuildOptions,
+) {
+    record.resolver_stage = Some("unresolved-relative".to_string());
+    record.unresolved_evidence = Some(relative_target_missing_evidence(
+        record.unresolved_evidence.take(),
+    ));
+    handle_unresolved_record(response, root, record, false, options);
+}
+
+fn relative_target_missing_evidence(existing: Option<Value>) -> Value {
+    let mut object = match existing {
+        Some(Value::Object(object)) => object,
+        _ => Map::new(),
+    };
+    object
+        .entry("reason".to_string())
+        .or_insert_with(|| json!("relative-target-missing"));
+    object
+        .entry("resolverStage".to_string())
+        .or_insert_with(|| json!("relative"));
+    Value::Object(object)
 }
 
 fn push_unresolved_specifier_record(
@@ -752,12 +1131,13 @@ fn handle_import_meta_glob_record(
     namespace_users_seen: &mut BTreeSet<(String, String)>,
     record: SourceUseAssemblyRecord,
     cap: usize,
+    options: SourceUseAssemblyBuildOptions,
 ) {
     let record_id = record.record_id.clone();
     match expand_import_meta_glob(root, resolver, &record, cap) {
         ImportMetaGlobExpansion::Resolved { targets } => {
             increment_branch(&mut response.branch_counts, "importMetaGlobResolved");
-            response.handled_record_ids.push(record_id);
+            mark_handled(response, options, record_id);
             let from = root_relative(root, &record.consumer_file);
             let source = record.from_spec.clone();
             for target in targets {
@@ -784,7 +1164,7 @@ fn handle_import_meta_glob_record(
         ImportMetaGlobExpansion::Unsupported { evidence } => {
             increment_branch(&mut response.branch_counts, "importMetaGlobUnsupported");
             increment_branch(&mut response.branch_counts, "unresolved");
-            response.handled_record_ids.push(record_id);
+            mark_handled(response, options, record_id);
             response.counters.unresolved_uses += 1;
             response.counters.unresolved_internal_uses += 1;
             let from_spec = record.from_spec.clone().unwrap_or_default();
@@ -959,11 +1339,12 @@ fn handle_generated_virtual_record(
     response: &mut SourceUseAssemblyResponse,
     root: &str,
     record: SourceUseAssemblyRecord,
+    options: SourceUseAssemblyBuildOptions,
 ) {
     let kind = record.kind.clone().unwrap_or_else(|| "import".to_string());
     let record_id = record.record_id.clone();
     increment_branch(&mut response.branch_counts, "generatedVirtual");
-    response.handled_record_ids.push(record_id);
+    mark_handled(response, options, record_id);
     if is_namespace_reexport_use(&kind) {
         increment_branch(&mut response.branch_counts, "skippedNamespaceAlias");
         return;
@@ -972,6 +1353,7 @@ fn handle_generated_virtual_record(
     let Some(surface) = record.generated_virtual_surface.clone() else {
         skip(
             response,
+            options,
             record.record_id,
             "generated-virtual-surface-missing",
         );
@@ -1084,10 +1466,29 @@ fn prefix_of(spec: &str) -> String {
         .unwrap_or_else(|| spec.to_string())
 }
 
-fn skip(response: &mut SourceUseAssemblyResponse, record_id: String, reason: &'static str) {
-    response
-        .skipped_records
-        .push(SkippedSourceUseRecord { record_id, reason });
+fn mark_handled(
+    response: &mut SourceUseAssemblyResponse,
+    options: SourceUseAssemblyBuildOptions,
+    record_id: String,
+) {
+    response.summary.handled_count += 1;
+    if options.emit_standalone_transport {
+        response.handled_record_ids.push(record_id);
+    }
+}
+
+fn skip(
+    response: &mut SourceUseAssemblyResponse,
+    options: SourceUseAssemblyBuildOptions,
+    record_id: String,
+    reason: &'static str,
+) {
+    response.summary.skipped_count += 1;
+    if options.emit_standalone_transport {
+        response
+            .skipped_records
+            .push(SkippedSourceUseRecord { record_id, reason });
+    }
 }
 
 fn push_resolved_record_target(
@@ -1117,7 +1518,18 @@ fn increment_out_of_band_consumer_counter(
     }
 }
 
-fn is_namespace_reexport_use(kind: &str) -> bool {
+fn is_projection_only_consumer_source(consumer_source: Option<&str>) -> bool {
+    matches!(
+        consumer_source,
+        Some(
+            "sfc-template-component-ref"
+                | "sfc-global-component-registration"
+                | "sfc-generated-component-manifest"
+        )
+    )
+}
+
+pub(crate) fn is_namespace_reexport_use(kind: &str) -> bool {
     kind == "imported-namespace-member" || kind == "imported-namespace-escape"
 }
 
@@ -1299,9 +1711,7 @@ impl NamespaceReExportResolver {
             return None;
         }
 
-        if let Some(direct) = self
-            .namespace
-            .get(&(normalized_barrel.clone(), exported.clone()))
+        if let Some(direct) = lookup_re_export(&self.namespace, root, &normalized_barrel, &exported)
         {
             return Some(ResolvedNamespaceReExport {
                 target_file: direct.target_file.clone(),
@@ -1315,9 +1725,7 @@ impl NamespaceReExportResolver {
             });
         }
 
-        let named = self
-            .named
-            .get(&(normalized_barrel.clone(), exported.clone()))?;
+        let named = lookup_re_export(&self.named, root, &normalized_barrel, &exported)?;
         let nested = self.resolve_inner(root, &named.target_file, exported_name, seen)?;
         let mut chain = vec![NamespaceReExportChainEntry {
             kind: "named-reexport",
@@ -1332,6 +1740,25 @@ impl NamespaceReExportResolver {
             chain,
         })
     }
+}
+
+fn lookup_re_export<'a>(
+    map: &'a BTreeMap<(String, String), ReExportTarget>,
+    root: &str,
+    barrel_file: &str,
+    exported_name: &str,
+) -> Option<&'a ReExportTarget> {
+    let normalized = normalize_path_text(barrel_file);
+    let exported = exported_name.to_string();
+    map.get(&(normalized.clone(), exported.clone()))
+        .or_else(|| {
+            let relative = root_relative(root, &normalized);
+            if relative == normalized {
+                None
+            } else {
+                map.get(&(relative, exported))
+            }
+        })
 }
 
 fn re_export_map(
@@ -1686,6 +2113,31 @@ mod tests {
     }
 
     #[test]
+    fn synthesizes_missing_record_ids_by_input_order() {
+        let response = response(must_request(json!({
+            "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+            "root": "C:/repo",
+            "pathTable": ["src/a.ts", "src/b.ts"],
+            "records": [{
+                "consumerFileId": 0,
+                "resolvedFileId": 1,
+                "fromSpec": "./b",
+                "name": "thing",
+                "kind": "import",
+                "resolverStage": "resolved-internal"
+            }]
+        })));
+
+        assert_eq!(response.summary.handled_count, 1);
+        assert_eq!(response.handled_record_ids[0], "r0");
+        assert_eq!(response.resolved_record_targets[0].record_id, "r0");
+        assert_eq!(
+            response.resolved_record_targets[0].resolved_file,
+            "src/b.ts"
+        );
+    }
+
+    #[test]
     fn assembles_enum_table_compacted_record_fields() {
         let response = response(must_request(json!({
             "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
@@ -1719,6 +2171,39 @@ mod tests {
     }
 
     #[test]
+    fn assembles_compact_record_rows() {
+        let response = response(must_request(json!({
+            "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+            "root": "C:/repo",
+            "pathTable": ["src/a.ts", "src/b.ts"],
+            "kindTable": ["import"],
+            "resolverStageTable": ["resolved-internal"],
+            "specifierTable": ["./b"],
+            "nameTable": ["thing"],
+            "recordRowFields": [
+                "consumerFileId",
+                "resolvedFileId",
+                "fromSpecId",
+                "nameId",
+                "kindId",
+                "typeOnlyState",
+                "line",
+                "resolverStageId"
+            ],
+            "recordRows": [[0, 1, 0, 0, 0, 1, 7, 0]]
+        })));
+
+        assert_eq!(response.summary.record_count, 1);
+        assert_eq!(response.summary.handled_count, 1);
+        assert_eq!(response.handled_record_ids[0], "r0");
+        assert_eq!(response.resolved_internal_edges[0].from, "src/a.ts");
+        assert_eq!(response.resolved_internal_edges[0].to, "src/b.ts");
+        assert_eq!(response.resolved_internal_edges[0].line, Some(7));
+        assert!(!response.resolved_internal_edges[0].type_only);
+        assert_eq!(response.direct_consumers[0].symbol, "thing");
+    }
+
+    #[test]
     fn exposes_relative_resolution_targets_for_js_embedding() {
         let response = response(must_request(json!({
             "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
@@ -1741,6 +2226,32 @@ mod tests {
             response.resolved_record_targets[0].record_id,
             "src/consumer.ts#0"
         );
+        assert_eq!(
+            response.resolved_record_targets[0].resolved_file,
+            "C:/repo/src/dep.ts"
+        );
+    }
+
+    #[test]
+    fn resolves_relative_targets_from_compacted_source_file_ids() {
+        let response = response(must_request(json!({
+            "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+            "root": "C:/repo",
+            "pathTable": ["src/consumer.ts", "src/dep.ts"],
+            "sourceFileIds": [0, 1],
+            "records": [{
+                "recordId": "src/consumer.ts#0",
+                "consumerFileId": 0,
+                "fromSpec": "./dep",
+                "name": "value",
+                "kind": "import",
+                "resolverStage": "relative"
+            }]
+        })));
+
+        assert_eq!(response.summary.handled_count, 1);
+        assert_eq!(response.counters.rust_resolved_relative_uses, 1);
+        assert_eq!(response.resolved_internal_edges[0].to, "src/dep.ts");
         assert_eq!(
             response.resolved_record_targets[0].resolved_file,
             "C:/repo/src/dep.ts"
@@ -1817,6 +2328,43 @@ mod tests {
         assert_eq!(
             response.skipped_records[0].reason,
             "non-relative-resolver-stage"
+        );
+    }
+
+    #[test]
+    fn resolves_namespace_reexport_after_relative_resolution_to_absolute_target() {
+        let request = must_request(json!({
+            "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+            "root": "C:/repo",
+            "sourceFiles": [
+                "src/consumer.ts",
+                "src/barrel.ts",
+                "src/source.ts"
+            ],
+            "namespaceReExports": [{
+                "barrelFile": "src/barrel.ts",
+                "exportedName": "ns",
+                "targetFile": "src/source.ts",
+                "sourceSpec": "./source"
+            }],
+            "records": [{
+                "recordId": "src/consumer.ts#0",
+                "consumerFile": "src/consumer.ts",
+                "fromSpec": "./barrel",
+                "name": "ns",
+                "kind": "imported-namespace-escape",
+                "resolverStage": "relative"
+            }]
+        }));
+        let response = response(request);
+
+        assert_eq!(response.summary.handled_count, 1);
+        assert_eq!(response.branch_counts["namespaceReExportEscape"], 1);
+        assert_eq!(response.resolved_internal_edges[0].to, "src/source.ts");
+        assert_eq!(response.namespace_users[0].def_file, "src/source.ts");
+        assert_eq!(
+            response.namespace_re_export_diagnostics[0].target_file,
+            "src/source.ts"
         );
     }
 
@@ -2557,6 +3105,45 @@ mod tests {
         assert_eq!(
             response.skipped_records[0].reason,
             "relative-target-missing"
+        );
+    }
+
+    #[test]
+    fn embedded_relative_target_missing_becomes_unresolved_evidence() {
+        let request = must_request(json!({
+            "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+            "root": "C:/repo",
+            "sourceFiles": ["C:/repo/src/consumer.ts"],
+            "records": [
+                {
+                    "recordId": "src/consumer.ts#0",
+                    "consumerFile": "C:/repo/src/consumer.ts",
+                    "fromSpec": "./missing",
+                    "name": "value",
+                    "kind": "import"
+                }
+            ]
+        }));
+        let response = match build_embedded_source_use_assembly_response(request) {
+            Ok(response) => response,
+            Err(error) => panic!("embedded test response must build: {error}"),
+        };
+
+        assert_eq!(response.summary.handled_count, 1);
+        assert!(response.skipped_records.is_empty());
+        assert_eq!(response.counters.unresolved_uses, 1);
+        assert_eq!(response.counters.unresolved_internal_uses, 1);
+        assert!(response
+            .unresolved_internal_specifiers
+            .contains("./missing"));
+        assert_eq!(response.unresolved_internal_specifier_records.len(), 1);
+        assert_eq!(
+            response.unresolved_internal_specifier_records[0]["reason"],
+            "relative-target-missing"
+        );
+        assert_eq!(
+            response.unresolved_internal_specifier_records[0]["resolverStage"],
+            "relative"
         );
     }
 }

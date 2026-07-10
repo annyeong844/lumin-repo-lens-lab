@@ -219,7 +219,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v21';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v30';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -345,6 +345,38 @@ function candidateSignatureKey(commands) {
   return JSON.stringify(commands.map((command) => [command, fileSignature(command)]));
 }
 
+export function auditCoreRuntimeCandidateSignature() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
+  const platformEnv = `LUMIN_AUDIT_CORE_BIN_${process.platform}_${process.arch}`
+    .replace(/[^A-Z0-9_]/gi, '_')
+    .toUpperCase();
+  const candidates = [
+    process.env[platformEnv] ? path.resolve(process.env[platformEnv]) : null,
+    process.env.LUMIN_AUDIT_CORE_BIN ? path.resolve(process.env.LUMIN_AUDIT_CORE_BIN) : null,
+    path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe),
+  ];
+
+  const packagedSourceManifest = path.resolve(here, '../rust', 'Cargo.toml');
+  if (isLuminAuditCoreWorkspace(path.dirname(packagedSourceManifest))) {
+    candidates.push(autoBuildCandidatePath(packagedSourceManifest, exe));
+  }
+  let cursor = here;
+  for (;;) {
+    const workspaceRoot = path.join(cursor, 'experiments');
+    const manifest = path.join(workspaceRoot, 'Cargo.toml');
+    if (isLuminAuditCoreWorkspace(workspaceRoot)) {
+      candidates.push(path.join(workspaceRoot, 'target', 'debug', exe));
+      candidates.push(autoBuildCandidatePath(manifest, exe));
+    }
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  candidates.push(executableOnPath(exe));
+  return candidateSignatureKey([...new Set(candidates.filter(Boolean))]);
+}
+
 function auditCoreBinarySupportsCurrentContract(command) {
   if (!auditCoreBinaryReportsCurrentContract(command)) return false;
   if (process.env.LUMIN_AUDIT_CORE_FULL_CONTRACT_PROBE === '1') {
@@ -377,30 +409,52 @@ function auditCoreBinaryReportsCurrentContract(command) {
   if (contract?.features?.resultOutputSilencesStdout !== true) return false;
   if (contract?.features?.jsTsExtractNamedImportEvidence !== true) return false;
   if (contract?.features?.jsTsExtractImportMetaGlobEvidence !== true) return false;
+  if (contract?.features?.jsTsExtractCjsRequireEvidence !== true) return false;
+  if (contract?.features?.jsTsExtractCjsExportSurfaceEvidence !== true) return false;
   if (contract?.features?.jsTsExtractLiteralDynamicImportEvidence !== true) return false;
   if (contract?.features?.jsTsExtractDynamicImportOpacity !== true) return false;
   if (contract?.features?.jsTsExtractPathBackedInput !== true) return false;
   if (contract?.features?.jsTsExtractLocalOperations !== true) return false;
   if (contract?.features?.sourceUseAssembly !== true) return false;
   if (contract?.features?.sourceUseAssemblyResolvedRecordTargets !== true) return false;
+  if (contract?.features?.sourceUseAssemblyExternalRecordIds !== true) return false;
   if (contract?.features?.nonSourceAssetSourceUseAssembly !== true) return false;
   if (contract?.features?.sourceUseAssemblyConsumerSourceCounters !== true) return false;
+  if (contract?.features?.sourceUseAssemblyProjectionOnlyNonSourceAssets !== true) return false;
   if (contract?.features?.sourceUseAssemblyRootRelativeSourceFiles !== true) return false;
+  if (contract?.features?.sourceUseAssemblySourceFileIds !== true) return false;
   if (contract?.features?.sourceUseAssemblyRootRelativeRecordPaths !== true) return false;
+  if (contract?.features?.sourceUseAssemblySyntheticRecordIds !== true) return false;
+  if (contract?.features?.sourceUseAssemblyPathTable !== true) return false;
+  if (contract?.features?.sourceUseAssemblyEnumTable !== true) return false;
+  if (contract?.features?.sourceUseAssemblySpecifierTable !== true) return false;
+  if (contract?.features?.sourceUseAssemblyRecordRows !== true) return false;
+  if (contract?.features?.sourceUseAssemblyNameTable !== true) return false;
+  if (contract?.features?.sourceUseAssemblyTypeOnlyState !== true) return false;
   if (contract?.features?.symbolGraphTypedFinalization !== true) return false;
   if (contract?.features?.symbolGraphCoreTypedFinalization !== true) return false;
   if (contract?.features?.symbolGraphTypedInputFinalization !== true) return false;
+  if (contract?.features?.symbolGraphPathTable !== true) return false;
+  if (contract?.features?.symbolGraphExternalDependencyInputFinalization !== true) return false;
+  if (contract?.features?.symbolGraphExternalSourceUseAssemblyFinalization !== true) return false;
   if (contract?.features?.symbolGraphFanInInputFinalization !== true) return false;
   if (contract?.features?.symbolGraphDeadCandidateInputFinalization !== true) return false;
   if (contract?.features?.generatedVirtualSourceUseAssembly !== true) return false;
   if (contract?.features?.importMetaGlobSourceUseAssembly !== true) return false;
   if (contract?.features?.sfcScriptSrcSourceUseAssembly !== true) return false;
   if (contract?.features?.symbolGraphEmbeddedSourceUseFinalization !== true) return false;
+  if (contract?.features?.symbolGraphEmbeddedRelativeMissingEvidence !== true) return false;
+  if (contract?.features?.symbolGraphEmbeddedSourceUseParentPathTable !== true) return false;
   if (contract?.features?.symbolGraphSfcStyleAssetFinalization !== true) return false;
   if (contract?.features?.symbolGraphSfcTemplateComponentFinalization !== true) return false;
   if (contract?.features?.symbolGraphSfcGlobalComponentFinalization !== true) return false;
   if (contract?.features?.symbolGraphSfcGeneratedManifestFinalization !== true) return false;
+  if (contract?.features?.symbolGraphSfcGeneratedManifestExternalCountOnly !== true) return false;
   if (contract?.features?.symbolGraphSfcFrameworkConventionFinalization !== true) return false;
+  if (contract?.features?.symbolGraphSfcComponentSourceUseRecordFinalization !== true) return false;
+  if (contract?.features?.symbolGraphSfcExternalSourceUseRecordProjection !== true) return false;
+  if (contract?.features?.symbolGraphGeneratedConsumerBlindZoneFinalization !== true) return false;
+  if (contract?.features?.symbolGraphAnyContaminationInputFinalization !== true) return false;
 
   const supported = new Set(Array.isArray(contract.supportedSubcommands)
     ? contract.supportedSubcommands
@@ -773,7 +827,7 @@ writeFileSync(latest, JSON.stringify(advisory));
       filesWithParseErrors: [],
       filesWithReadErrors: [],
     }));
-    const jsTsExtractProbeSource = 'import { api, bare } from "./dep";\napi.foo();\nexport const view = bare;\nexport const routes = import.meta.glob("./pages/*.ts");\nexport async function load(target) {\n  const mod = await import("web-tree-sitter");\n  Parser = mod.Parser;\n  const lazy = await import("./lazy");\n  lazy.boot();\n  await import(`./pages/${target}.ts`);\n  return import(target);\n}\nexport function buildProbeRepository() {\n  function getProbe() { return null; }\n}\n';
+    const jsTsExtractProbeSource = 'import { api, bare } from "./dep";\napi.foo();\nconst cjsApi = require("./cjs-api");\ncjsApi.run();\nconst { cjsExact } = require("./cjs-exact");\nrequire("./cjs-side-effect");\nrequire(target);\nexport const view = bare;\nexport const routes = import.meta.glob("./pages/*.ts");\nexport async function load(target) {\n  const mod = await import("web-tree-sitter");\n  Parser = mod.Parser;\n  const lazy = await import("./lazy");\n  lazy.boot();\n  await import(`./pages/${target}.ts`);\n  return import(target);\n}\nexport function buildProbeRepository() {\n  function getProbe() { return null; }\n}\nexports.probe = 1;\nmodule.exports.namedProbe = 2;\nexports[dynamicName] = 3;\nmodule.exports = { objectProbe: 4 };\nmodule.exports = makeExports();\n';
     writeFileSync(path.join(rootDir, 'src', 'consumer.mjs'), jsTsExtractProbeSource);
     writeFileSync(jsTsExtractInputPath, JSON.stringify({
       schemaVersion: 'lumin-js-ts-extract-request.v1',
@@ -788,6 +842,7 @@ writeFileSync(latest, JSON.stringify(advisory));
       schemaVersion: 'lumin-symbol-graph-producer-request.v1',
       generated: '2026-07-02T00:00:00.000Z',
       root: rootDir,
+      pathTable: ['src/App.vue'],
       files: [
         path.join(rootDir, 'src', 'a.ts'),
         path.join(rootDir, 'src', 'b.ts'),
@@ -809,6 +864,12 @@ writeFileSync(latest, JSON.stringify(advisory));
           reExports: [{ source: './b', line: 2 }],
           classMethods: [],
           localOperations: [],
+          typeEscapes: [{
+            file: 'src/a.ts',
+            line: 1,
+            escapeKind: 'explicit-any',
+            insideExportedIdentity: 'src/a.ts::alpha',
+          }],
           dynamicImportOpacity: [],
           cjsExportSurface: null,
           cjsRequireOpacity: [],
@@ -841,6 +902,20 @@ writeFileSync(latest, JSON.stringify(advisory));
         { from: 'src/b.ts', to: 'src/a.ts', kind: 'import', source: './a', typeOnly: false },
       ],
       generatedConsumerBlindZones: [],
+      generatedConsumerBlindZoneInputs: [{
+        specifier: '@scope/generated-client',
+        consumerFile: 'src/c.ts',
+        kind: 'import',
+        reason: 'workspace-generated-artifact-missing',
+        targetCandidates: ['packages/api/generated/client.ts'],
+        generatedArtifact: {
+          matchedPackage: '@scope/api',
+          targetSubpath: 'packages/api/generated/client.ts',
+          generatorFamily: 'path-segment',
+          confidence: 'supporting',
+          packageRoot: 'packages/api',
+        },
+      }],
       generatedVirtualSurfaces: [],
       generatedVirtualImportConsumers: [],
       unresolvedInternalUses: 1,
@@ -881,13 +956,12 @@ writeFileSync(latest, JSON.stringify(advisory));
         tagName: 'UiButton',
         normalizedTagName: 'ui-button',
         bindingName: 'UiButton',
-        bindingSource: './UiButton.vue',
+        bindingSource: './UiButton',
         source: 'sfc-template',
         language: 'vue',
         templateKind: 'template',
         confidence: 'component-binding',
-        status: 'resolved',
-        resolvedFile: path.join(rootDir, 'src', 'UiButton.vue'),
+        sourceUseRecordId: 'r0',
         bindingKind: 'import',
         importedName: 'default',
         line: 12,
@@ -919,8 +993,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         bindingName: 'RegisteredSource',
         bindingSource: './registered-source',
         source: 'sfc-global-component-registration',
-        status: 'resolved',
-        resolvedFile: path.join(rootDir, 'src', 'registered-source.ts'),
+        sourceUseRecordId: 'r1',
         bindingKind: 'import',
         importedName: 'default',
         line: 20,
@@ -948,8 +1021,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         fromSpec: './src/ManifestSource.ts',
         source: 'sfc-framework-generated-manifest',
         confidence: 'generated-manifest-availability',
-        status: 'resolved',
-        resolvedFile: path.join(rootDir, 'src', 'ManifestSource.ts'),
+        sourceUseRecordId: 'r2',
         line: 30,
       }, {
         manifestFile: path.join(rootDir, 'components.d.ts'),
@@ -977,6 +1049,17 @@ writeFileSync(latest, JSON.stringify(advisory));
         status: 'skipped',
         reason: 'sfc-framework-generated-manifest-nonliteral',
         line: 32,
+      }, {
+        manifestFile: path.join(rootDir, 'components.d.ts'),
+        manifestKind: 'unplugin-vue-components-dts',
+        componentName: 'ExternalManifest',
+        normalizedTagNames: ['external-manifest'],
+        bindingSource: '@scope/external-components',
+        fromSpec: '@scope/external-components',
+        source: 'sfc-framework-generated-manifest',
+        confidence: 'generated-manifest-availability',
+        sourceUseRecordId: 'generated-manifest-external#0',
+        line: 34,
       }],
       sfcFrameworkConventionComponents: [],
       sfcFrameworkConventionComponentInputs: [{
@@ -1022,10 +1105,43 @@ writeFileSync(latest, JSON.stringify(advisory));
       sourceUseAssembly: {
         schemaVersion: 'lumin-source-use-assembly-request.v1',
         root: rootDir,
-        sourceFiles: [],
+        sourceFiles: [
+          'src/UiButton.ts',
+          'src/registered-source.ts',
+          'src/ManifestSource.ts',
+        ],
         namespaceReExports: [],
         namedReExports: [],
         records: [{
+          consumerFileId: 0,
+          fromSpec: './UiButton',
+          name: '*',
+          kind: 'sfc-template-component-ref',
+          consumerSource: 'sfc-template-component-ref',
+          resolverStage: 'relative',
+        }, {
+          consumerFile: path.join(rootDir, 'src', 'main.ts'),
+          fromSpec: './registered-source',
+          name: '*',
+          kind: 'sfc-global-component-registration',
+          consumerSource: 'sfc-global-component-registration',
+          resolverStage: 'relative',
+        }, {
+          consumerFile: path.join(rootDir, 'components.d.ts'),
+          fromSpec: './src/ManifestSource.ts',
+          name: '*',
+          kind: 'sfc-generated-component-manifest',
+          consumerSource: 'sfc-generated-component-manifest',
+          resolverStage: 'relative',
+        }, {
+          recordId: 'generated-manifest-external#0',
+          consumerFile: path.join(rootDir, 'components.d.ts'),
+          fromSpec: '@scope/external-components',
+          name: '*',
+          kind: 'sfc-generated-component-manifest',
+          consumerSource: 'sfc-generated-component-manifest',
+          resolverStage: 'external',
+        }, {
           recordId: 'src/c.ts#0',
           consumerFile: path.join(rootDir, 'src', 'c.ts'),
           resolvedFile: path.join(rootDir, 'src', 'a.ts'),
@@ -1086,13 +1202,10 @@ writeFileSync(latest, JSON.stringify(advisory));
           kind: 'sfc-script-src',
           sfcLanguage: 'vue',
           resolverStage: 'relative',
+          consumerSource: 'sfc-script-src',
         }],
       },
       namespaceReExportDiagnostics: [],
-      anyContaminationFacts: {
-        helperOwnersByIdentity: {},
-        typeOwnersByIdentity: {},
-      },
     }));
     writeFileSync(checklistFactsInputPath, JSON.stringify({
       schemaVersion: 'lumin-checklist-facts-producer-request.v1',
@@ -1329,23 +1442,36 @@ writeFileSync(latest, JSON.stringify(advisory));
     writeFileSync(sourceUseAssemblyInputPath, JSON.stringify({
       schemaVersion: 'lumin-source-use-assembly-request.v1',
       root: rootDir,
-      sourceFiles: [
+      pathTable: [
         path.join(rootDir, 'src', 'consumer.ts'),
         path.join(rootDir, 'src', 'dep.ts'),
         path.join(rootDir, 'src', 'setup.ts'),
       ],
+      sourceFileIds: [0, 1, 2],
+      nameTable: ['value'],
+      recordRowFields: [
+        'recordId',
+        'consumerFileId',
+        'fromSpec',
+        'nameId',
+        'kind',
+        'typeOnlyState',
+        'line',
+        'resolverStage',
+        'consumerSource',
+      ],
+      recordRows: [[
+        'src/consumer.ts#0',
+        0,
+        './dep',
+        0,
+        'import',
+        1,
+        1,
+        'relative',
+        'mdx-import',
+      ]],
       records: [
-        {
-          recordId: 'src/consumer.ts#0',
-          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
-          fromSpec: './dep',
-          name: 'value',
-          kind: 'import',
-          typeOnly: false,
-          line: 1,
-          resolverStage: 'relative',
-          consumerSource: 'mdx-import',
-        },
         {
           recordId: 'src/consumer.ts#1',
           consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
@@ -1905,11 +2031,13 @@ function resultPayloadMatchesProbe(json, probe) {
       json.uses?.sfcStyleAssetReferences === 1 &&
       json.uses?.sfcTemplateComponentRefs === 2 &&
       json.uses?.sfcGlobalComponentRegistrations === 2 &&
-      json.uses?.sfcGeneratedComponentManifests === 3 &&
+      json.uses?.sfcGeneratedComponentManifests === 4 &&
       json.uses?.sfcFrameworkConventionComponents === 1 &&
       json.uses?.unresolvedInternalRatio === 0.3333 &&
-      json.dependencyImportConsumers?.[0]?.depRoot === 'react' &&
-      json.dependencyImportConsumers?.[0]?.fromSpec === 'react/jsx-runtime' &&
+      json.dependencyImportConsumers?.some((consumer) =>
+        consumer?.depRoot === 'react' &&
+        consumer?.fromSpec === 'react/jsx-runtime'
+      ) &&
       json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
       json.generatedVirtualImportConsumers?.[0]?.surfaceId === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
       json.resolvedInternalEdges?.some((edge) =>
@@ -1934,7 +2062,7 @@ function resultPayloadMatchesProbe(json, probe) {
       json.sfcTemplateComponentRefs?.some((reference) =>
         reference?.consumerFile === 'src/App.vue' &&
         reference?.bindingName === 'UiButton' &&
-        reference?.resolvedFile === 'src/UiButton.vue' &&
+        reference?.resolvedFile === 'src/UiButton.ts' &&
         reference?.status === 'resolved' &&
         reference?.eligibleForSafeFix === false
       ) &&
@@ -1977,6 +2105,9 @@ function resultPayloadMatchesProbe(json, probe) {
         manifest?.computedKeySource === "prefix + 'Manifest'" &&
         manifest?.status === 'skipped'
       ) &&
+      !json.sfcGeneratedComponentManifests?.some((manifest) =>
+        manifest?.componentName === 'ExternalManifest'
+      ) &&
       json.sfcFrameworkConventionComponents?.some((component) =>
         component?.framework === 'nuxt' &&
         component?.conventionKind === 'components-dir' &&
@@ -1991,7 +2122,19 @@ function resultPayloadMatchesProbe(json, probe) {
         component?.eligibleForFanIn === false &&
         component?.eligibleForSafeFix === false
       ) &&
+      json.generatedConsumerBlindZones?.some((zone) =>
+        zone?.reason === 'generated-consumer-blind-zone' &&
+        zone?.sourceReason === 'workspace-generated-artifact-missing' &&
+        zone?.specifier === '@scope/generated-client' &&
+        zone?.consumerFile === 'src/c.ts' &&
+        zone?.candidatePath === 'packages/api/generated/client.ts' &&
+        zone?.scopePackageRoot === 'packages/api' &&
+        zone?.mode === 'default'
+      ) &&
+      json.artifactSummary?.generatedConsumerBlindZoneCount === 1 &&
       json.defIndex?.['src/a.ts']?.alpha?.name === 'alpha' &&
+      json.defIndex?.['src/a.ts']?.alpha?.anyContamination?.label === 'any-contaminated' &&
+      json.helperOwnersByIdentity?.['src/a.ts::alpha']?.anyContamination?.measurements?.explicitAnyCount === 1 &&
       json.fanInByIdentity?.['src/a.ts::alpha'] === 1 &&
       json.fanInByIdentity?.['src/a.ts::beta'] === 0 &&
       json.fanInByIdentity?.['src/a.ts::gamma'] === 1 &&
@@ -2031,6 +2174,43 @@ function resultPayloadMatchesProbe(json, probe) {
         use?.resolverStage === 'import-meta-glob'
       ) &&
       uses.some((use) =>
+        use?.fromSpec === './cjs-api' &&
+        use?.name === 'run' &&
+        use?.kind === 'cjs-namespace-member' &&
+        use?.localName === 'cjsApi'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './cjs-exact' &&
+        use?.name === 'cjsExact' &&
+        use?.kind === 'cjs-require-exact'
+      ) &&
+      uses.some((use) =>
+        use?.fromSpec === './cjs-side-effect' &&
+        use?.name === '*' &&
+        use?.kind === 'cjs-side-effect-only'
+      ) &&
+      file.cjsRequireOpacity?.some((entry) =>
+        entry?.kind === 'dynamic-require'
+      ) &&
+      file.cjsExportSurface?.exact?.some((entry) =>
+        entry?.name === 'probe' &&
+        entry?.kind === 'exports-member'
+      ) &&
+      file.cjsExportSurface?.exact?.some((entry) =>
+        entry?.name === 'namedProbe' &&
+        entry?.kind === 'module-exports-member'
+      ) &&
+      file.cjsExportSurface?.exact?.some((entry) =>
+        entry?.name === 'objectProbe' &&
+        entry?.kind === 'module-exports-object'
+      ) &&
+      file.cjsExportSurface?.opaque?.some((entry) =>
+        entry?.kind === 'computed-export-name'
+      ) &&
+      file.cjsExportSurface?.opaque?.some((entry) =>
+        entry?.kind === 'module-exports-assignment'
+      ) &&
+      uses.some((use) =>
         use?.fromSpec === 'web-tree-sitter' &&
         use?.name === '*' &&
         use?.kind === 'dynamic' &&
@@ -2042,15 +2222,15 @@ function resultPayloadMatchesProbe(json, probe) {
         use?.name === 'boot' &&
         use?.kind === 'dynamic-member' &&
         use?.localName === 'lazy' &&
-        use?.degraded === false
+        use?.degraded !== true
       ) &&
       file.dynamicImportOpacity?.some((entry) =>
         entry?.kind === 'nonliteral' &&
-        entry?.line === 11
+        entry?.line === 16
       ) &&
       file.dynamicImportOpacity?.some((entry) =>
         entry?.kind === 'template-prefix' &&
-        entry?.line === 10 &&
+        entry?.line === 15 &&
         entry?.prefix === './pages/'
       ) &&
       file.defs?.[0]?.name === 'view' &&
@@ -2208,9 +2388,11 @@ function resultPayloadMatchesProbe(json, probe) {
         entry?.recordId === 'sfc-script-src:0:src/App.vue:./setup' &&
         entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/setup.ts')
       ).length === 1 &&
-      json.resolvedInternalEdges?.[0]?.from === 'src/consumer.ts' &&
-      json.resolvedInternalEdges?.[0]?.to === 'src/dep.ts' &&
-      json.resolvedInternalEdges?.[0]?.kind === 'import-named' &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/consumer.ts' &&
+        edge?.to === 'src/dep.ts' &&
+        edge?.kind === 'import-named'
+      ) &&
       json.resolvedInternalEdges?.some((edge) =>
         edge?.from === 'src/consumer.ts' &&
         edge?.to === 'src/dep.ts' &&
@@ -2225,7 +2407,7 @@ function resultPayloadMatchesProbe(json, probe) {
       json.unresolvedInternalSpecifierRecords?.[0]?.reason === 'tsconfig-path-target-missing' &&
       json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
       json.generatedVirtualImportConsumers?.[0]?.surfaceId === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
-      json.directConsumers?.[0]?.symbol === 'value' &&
+      json.directConsumers?.some((entry) => entry?.symbol === 'value') &&
       json.namespaceUsers?.filter((entry) =>
         entry?.defFile === 'src/dep.ts' &&
         entry?.consumerFile === 'src/consumer.ts'

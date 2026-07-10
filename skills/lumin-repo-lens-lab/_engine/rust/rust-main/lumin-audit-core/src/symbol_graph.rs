@@ -1,5 +1,7 @@
+use crate::scan_scope::{scan_scope_status_for_path, ScanScopeOptions};
 use crate::source_use_assembly::{
-    build_source_use_assembly_response, SourceUseAssemblyRequest, SourceUseAssemblyResponse,
+    build_embedded_source_use_assembly_response, is_namespace_reexport_use, package_root_from_spec,
+    SourceUseAssemblyRequest, SourceUseAssemblyResponse,
 };
 use anyhow::{bail, Result};
 use serde::Deserialize;
@@ -19,6 +21,12 @@ pub struct SymbolGraphRequest {
     pub schema_version: String,
     pub generated: String,
     pub root: String,
+    #[serde(default = "default_true")]
+    pub include_tests: bool,
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    #[serde(default = "default_generated_artifacts_mode")]
+    pub generated_artifacts_mode: String,
     #[serde(default)]
     pub path_table: Vec<String>,
     #[serde(default)]
@@ -60,9 +68,13 @@ pub struct SymbolGraphRequest {
     #[serde(default)]
     pub dependency_import_consumers: Vec<Value>,
     #[serde(default)]
+    pub external_dependency_import_inputs: Vec<ExternalDependencyImportInput>,
+    #[serde(default)]
     pub resolved_internal_edges: Vec<Value>,
     #[serde(default)]
     pub generated_consumer_blind_zones: Vec<Value>,
+    #[serde(default)]
+    pub generated_consumer_blind_zone_inputs: Vec<Value>,
     #[serde(default)]
     pub generated_virtual_surfaces: Vec<Value>,
     #[serde(default)]
@@ -160,6 +172,8 @@ pub struct FileDataRecord {
     #[serde(default)]
     pub local_operations: Vec<Value>,
     #[serde(default)]
+    pub type_escapes: Vec<Value>,
+    #[serde(default)]
     pub dynamic_import_opacity: Vec<Value>,
     #[serde(default)]
     pub cjs_export_surface: Option<Value>,
@@ -172,6 +186,22 @@ pub struct FileDataRecord {
 pub struct CountEntry {
     pub key: String,
     pub count: usize,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalDependencyImportInput {
+    #[serde(default)]
+    pub consumer_file: String,
+    #[serde(default)]
+    pub consumer_file_id: Option<usize>,
+    pub from_spec: String,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub type_only: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -234,6 +264,14 @@ pub struct SfcStyleAssetReferenceInput {
     pub sfc_language: Option<String>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_generated_artifacts_mode() -> String {
+    "default".to_string()
+}
+
 #[derive(Debug)]
 struct SfcStyleAssetProjection {
     references: Vec<Value>,
@@ -266,6 +304,8 @@ pub struct SfcTemplateComponentRefInput {
     pub resolved_file: Option<String>,
     #[serde(default)]
     pub reason: Option<String>,
+    #[serde(default)]
+    pub source_use_record_id: Option<String>,
     #[serde(default)]
     pub binding_kind: Option<String>,
     #[serde(default)]
@@ -311,6 +351,8 @@ pub struct SfcGlobalComponentRegistrationInput {
     #[serde(default)]
     pub reason: Option<String>,
     #[serde(default)]
+    pub source_use_record_id: Option<String>,
+    #[serde(default)]
     pub binding_kind: Option<String>,
     #[serde(default)]
     pub imported_name: Option<String>,
@@ -354,6 +396,8 @@ pub struct SfcGeneratedComponentManifestInput {
     pub resolved_file: Option<String>,
     #[serde(default)]
     pub reason: Option<String>,
+    #[serde(default)]
+    pub source_use_record_id: Option<String>,
     #[serde(default)]
     pub line: Option<u64>,
 }
@@ -494,6 +538,22 @@ fn normalize_symbol_graph_paths(request: &mut SymbolGraphRequest) -> Result<()> 
             file.file_path = symbol_path_from_table(&request.path_table, id, "filePathId")?;
         }
     }
+    for input in &mut request.external_dependency_import_inputs {
+        if input.consumer_file.is_empty() {
+            let id = input.consumer_file_id.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "symbol-graph-artifact: externalDependencyImportInputs entry missing consumerFile"
+                )
+            })?;
+            input.consumer_file =
+                symbol_path_from_table(&request.path_table, id, "consumerFileId")?;
+        }
+    }
+    if let Some(source_use_assembly) = &mut request.source_use_assembly {
+        if source_use_assembly.path_table.is_empty() && !request.path_table.is_empty() {
+            source_use_assembly.path_table = request.path_table.clone();
+        }
+    }
 
     Ok(())
 }
@@ -517,7 +577,7 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
     }
     let source_use_assembly = request
         .source_use_assembly
-        .map(build_source_use_assembly_response)
+        .map(build_embedded_source_use_assembly_response)
         .transpose()?;
 
     let supports = json!({
@@ -580,6 +640,10 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
     let source_use_counters = source_use_assembly
         .as_ref()
         .map(|assembly| &assembly.counters);
+    let external_dependency_projection = project_external_dependency_imports(
+        &request.root,
+        request.external_dependency_import_inputs,
+    );
     let total_uses = request.total_uses
         + source_use_counters
             .map(|counters| counters.total_uses)
@@ -587,7 +651,8 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
     let unresolved_uses = request.unresolved_uses
         + source_use_counters
             .map(|counters| counters.unresolved_uses)
-            .unwrap_or(0);
+            .unwrap_or(0)
+        + external_dependency_projection.count;
     let resolved_internal_uses = request.resolved_internal_uses
         + source_use_counters
             .map(|counters| counters.resolved_internal_uses)
@@ -595,7 +660,8 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
     let external_uses = request.external_uses
         + source_use_counters
             .map(|counters| counters.external_uses)
-            .unwrap_or(0);
+            .unwrap_or(0)
+        + external_dependency_projection.count;
     let resolved_generated_virtual_uses = request.resolved_generated_virtual_uses
         + source_use_counters
             .map(|counters| counters.resolved_generated_virtual_uses)
@@ -639,6 +705,7 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
     let dependency_import_consumers = merge_source_use_dependency_consumers(
         request.dependency_import_consumers,
         source_use_assembly.as_ref(),
+        external_dependency_projection.consumers,
     )?;
     let generated_virtual_surfaces = merge_source_use_generated_virtual_surfaces(
         request.generated_virtual_surfaces,
@@ -662,6 +729,15 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
         request.unresolved_internal_specifier_records,
         source_use_assembly.as_ref(),
     );
+    let generated_consumer_blind_zones = build_generated_consumer_blind_zones(
+        request.generated_consumer_blind_zones,
+        &request.root,
+        &unresolved_internal_specifier_records,
+        &request.generated_consumer_blind_zone_inputs,
+        request.include_tests,
+        &request.exclude,
+        &request.generated_artifacts_mode,
+    );
     let fan_in_inputs = merge_source_use_fan_in_inputs(
         &request.root,
         request.fan_in_inputs.as_ref(),
@@ -672,20 +748,29 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
         request.sfc_style_asset_references,
         request.sfc_style_asset_reference_inputs,
     );
+    let source_use_resolved_targets = source_use_resolved_target_map(source_use_assembly.as_ref());
+    let source_use_external_record_ids =
+        source_use_external_record_set(source_use_assembly.as_ref());
     let sfc_template_component_projection = project_sfc_template_component_refs(
         &request.root,
         request.sfc_template_component_refs,
         request.sfc_template_component_ref_inputs,
+        &source_use_resolved_targets,
+        &source_use_external_record_ids,
     );
     let sfc_global_component_projection = project_sfc_global_component_registrations(
         &request.root,
         request.sfc_global_component_registrations,
         request.sfc_global_component_registration_inputs,
+        &source_use_resolved_targets,
+        &source_use_external_record_ids,
     );
     let sfc_generated_manifest_projection = project_sfc_generated_component_manifests(
         &request.root,
         request.sfc_generated_component_manifests,
         request.sfc_generated_component_manifest_inputs,
+        &source_use_resolved_targets,
+        &source_use_external_record_ids,
     );
     let sfc_framework_convention_projection = project_sfc_framework_convention_components(
         &request.root,
@@ -693,11 +778,15 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
         request.sfc_framework_convention_component_inputs,
     );
 
-    let any_contamination = request
+    let computed_any_contamination =
+        build_any_contamination_facts(&request.root, &request.def_index, &request.file_data);
+    let legacy_any_contamination = request
         .any_contamination_facts
         .as_object()
-        .cloned()
-        .unwrap_or_default();
+        .filter(|object| {
+            object.contains_key("helperOwnersByIdentity")
+                || object.contains_key("typeOwnersByIdentity")
+        });
     let fan_in = fan_in_inputs
         .as_ref()
         .map(|inputs| build_fan_in(&request.root, &request.def_index, inputs));
@@ -768,6 +857,7 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
         "trulyDead": truly_dead.len(),
         "deadInProd": dead_in_prod.len(),
         "deadInTest": dead_in_test.len(),
+        "generatedConsumerBlindZoneCount": generated_consumer_blind_zones.len(),
     });
 
     let mut artifact = json!({
@@ -786,7 +876,7 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
         "sfcGlobalComponentRegistrations": sort_values_by_key(sfc_global_component_projection.registrations, sfc_global_registration_key),
         "sfcGeneratedComponentManifests": sort_values_by_key(sfc_generated_manifest_projection.manifests, sfc_generated_manifest_key),
         "sfcFrameworkConventionComponents": sort_values_by_key(sfc_framework_convention_projection.components, sfc_framework_convention_key),
-        "generatedConsumerBlindZones": sort_values_by_key(request.generated_consumer_blind_zones, generated_blind_zone_key),
+        "generatedConsumerBlindZones": sort_values_by_key(generated_consumer_blind_zones, generated_blind_zone_key),
         "generatedVirtualSurfaces": sort_generated_virtual_surfaces(generated_virtual_surfaces),
         "generatedVirtualImportConsumers": sort_values_by_key(generated_virtual_import_consumers, generated_import_consumer_key),
         "topUnresolvedSpecifiers": top_unresolved_specifiers(&unresolved_internal_by_prefix, &prefix_examples),
@@ -805,9 +895,17 @@ pub fn build_symbol_graph_artifact(mut request: SymbolGraphRequest) -> Result<Va
         "fanInByIdentity": fan_in_by_identity,
         "fanInByIdentitySpace": fan_in_by_identity_space,
         "namespaceReExportDiagnostics": sort_values_by_key(namespace_re_export_diagnostics, namespace_re_export_key),
-        "helperOwnersByIdentity": any_contamination.get("helperOwnersByIdentity").cloned().unwrap_or_else(|| json!({})),
-        "typeOwnersByIdentity": any_contamination.get("typeOwnersByIdentity").cloned().unwrap_or_else(|| json!({})),
-        "defIndex": build_plain_def_index(&request.root, &request.def_index),
+        "helperOwnersByIdentity": legacy_any_contamination
+            .and_then(|object| object.get("helperOwnersByIdentity").cloned())
+            .unwrap_or_else(|| computed_any_contamination.helper_owners_by_identity.clone()),
+        "typeOwnersByIdentity": legacy_any_contamination
+            .and_then(|object| object.get("typeOwnersByIdentity").cloned())
+            .unwrap_or_else(|| computed_any_contamination.type_owners_by_identity.clone()),
+        "defIndex": if legacy_any_contamination.is_some() {
+            build_plain_def_index(&request.root, &request.def_index)
+        } else {
+            computed_any_contamination.def_index
+        },
         "classMethodIndex": build_class_method_index(&request.root, &request.file_data),
         "preWriteLocalOperationIndex": build_pre_write_local_operation_index(&request.root, &request.file_data),
         "deadProdList": dead_in_prod,
@@ -908,13 +1006,125 @@ fn path_to_string(path: PathBuf) -> String {
     normalize_path_segments(&path.to_string_lossy())
 }
 
+fn source_use_resolved_target_map(
+    source_use_assembly: Option<&SourceUseAssemblyResponse>,
+) -> BTreeMap<String, String> {
+    source_use_assembly
+        .map(|assembly| {
+            assembly
+                .resolved_record_targets
+                .iter()
+                .map(|target| (target.record_id.clone(), target.resolved_file.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn source_use_external_record_set(
+    source_use_assembly: Option<&SourceUseAssemblyResponse>,
+) -> BTreeSet<String> {
+    source_use_assembly
+        .map(|assembly| assembly.external_record_ids.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn source_use_target_for_record(
+    targets: &BTreeMap<String, String>,
+    record_id: Option<&str>,
+) -> Option<String> {
+    record_id
+        .filter(|record_id| !record_id.is_empty())
+        .and_then(|record_id| targets.get(record_id))
+        .filter(|target| !target.is_empty())
+        .cloned()
+}
+
+fn source_use_record_is_external(targets: &BTreeSet<String>, record_id: Option<&str>) -> bool {
+    record_id
+        .filter(|record_id| !record_id.is_empty())
+        .is_some_and(|record_id| targets.contains(record_id))
+}
+
+fn sfc_generated_manifest_status_and_reason(
+    status: Option<String>,
+    reason: Option<String>,
+    source_use_record_id: Option<&str>,
+    resolved_file: Option<&str>,
+) -> (String, Option<String>) {
+    if let Some(status) = status {
+        return (status, reason);
+    }
+    if source_use_record_id.is_some() {
+        return match resolved_file {
+            Some(target) if is_js_family_target(target) => ("resolved".to_string(), reason),
+            Some(_) => (
+                "muted".to_string(),
+                reason.or_else(|| {
+                    Some("sfc-framework-generated-manifest-non-source-binding".to_string())
+                }),
+            ),
+            None => (
+                "unresolved".to_string(),
+                reason.or_else(|| Some("sfc-framework-generated-manifest-unresolved".to_string())),
+            ),
+        };
+    }
+    (
+        "unresolved".to_string(),
+        reason.or_else(|| Some("sfc-framework-generated-manifest-unresolved".to_string())),
+    )
+}
+
+fn is_js_family_target(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.ends_with(".d.ts")
+        || lower.ends_with(".d.mts")
+        || lower.ends_with(".d.cts")
+        || matches!(
+            Path::new(&lower)
+                .extension()
+                .and_then(|value| value.to_str()),
+            Some("ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs" | "mts" | "cts")
+        )
+}
+
 fn project_sfc_template_component_refs(
     root: &str,
     mut legacy_refs: Vec<Value>,
     inputs: Vec<SfcTemplateComponentRefInput>,
+    source_use_resolved_targets: &BTreeMap<String, String>,
+    source_use_external_record_ids: &BTreeSet<String>,
 ) -> SfcTemplateComponentProjection {
     let count = inputs.len();
     for input in inputs {
+        let source_use_record_id = input.source_use_record_id;
+        let has_source_use_record = source_use_record_id.is_some();
+        let has_external_source_use_record = source_use_record_is_external(
+            source_use_external_record_ids,
+            source_use_record_id.as_deref(),
+        );
+        let resolved_file = input.resolved_file.or_else(|| {
+            source_use_target_for_record(
+                source_use_resolved_targets,
+                source_use_record_id.as_deref(),
+            )
+        });
+        let status = input.status.unwrap_or_else(|| {
+            if has_external_source_use_record {
+                "external".to_string()
+            } else if has_source_use_record && resolved_file.is_some() {
+                "resolved".to_string()
+            } else {
+                "unresolved".to_string()
+            }
+        });
+        let reason = input.reason.or_else(|| {
+            if status == "external" {
+                Some("sfc-template-component-external-binding".to_string())
+            } else {
+                (status == "unresolved").then(|| "sfc-template-component-unresolved".to_string())
+            }
+        });
         let mut object = Map::new();
         object.insert(
             "consumerFile".to_string(),
@@ -930,17 +1140,14 @@ fn project_sfc_template_component_refs(
         insert_optional_string(&mut object, "confidence", input.confidence);
         object.insert("eligibleForFanIn".to_string(), json!(false));
         object.insert("eligibleForSafeFix".to_string(), json!(false));
-        object.insert(
-            "status".to_string(),
-            json!(input.status.unwrap_or_else(|| "unresolved".to_string())),
-        );
-        if let Some(resolved_file) = input.resolved_file.filter(|path| !path.is_empty()) {
+        object.insert("status".to_string(), json!(status));
+        if let Some(resolved_file) = resolved_file.filter(|path| !path.is_empty()) {
             object.insert(
                 "resolvedFile".to_string(),
                 json!(rel_path(root, &resolved_file)),
             );
         }
-        insert_optional_string(&mut object, "reason", input.reason);
+        insert_optional_string(&mut object, "reason", reason);
         insert_optional_string(&mut object, "bindingKind", input.binding_kind);
         insert_optional_string(&mut object, "importedName", input.imported_name);
         insert_optional_string(&mut object, "memberName", input.member_name);
@@ -961,10 +1168,39 @@ fn project_sfc_global_component_registrations(
     root: &str,
     mut legacy_registrations: Vec<Value>,
     inputs: Vec<SfcGlobalComponentRegistrationInput>,
+    source_use_resolved_targets: &BTreeMap<String, String>,
+    source_use_external_record_ids: &BTreeSet<String>,
 ) -> SfcGlobalComponentRegistrationProjection {
     let count = inputs.len();
     for input in inputs {
-        let status = input.status.unwrap_or_else(|| "unresolved".to_string());
+        let source_use_record_id = input.source_use_record_id;
+        let has_source_use_record = source_use_record_id.is_some();
+        let has_external_source_use_record = source_use_record_is_external(
+            source_use_external_record_ids,
+            source_use_record_id.as_deref(),
+        );
+        let resolved_file = input.resolved_file.or_else(|| {
+            source_use_target_for_record(
+                source_use_resolved_targets,
+                source_use_record_id.as_deref(),
+            )
+        });
+        let status = input.status.unwrap_or_else(|| {
+            if has_external_source_use_record {
+                "external".to_string()
+            } else if has_source_use_record && resolved_file.is_some() {
+                "resolved".to_string()
+            } else {
+                "unresolved".to_string()
+            }
+        });
+        let reason = input.reason.or_else(|| {
+            if status == "external" {
+                Some("sfc-global-component-external-binding".to_string())
+            } else {
+                (status == "unresolved").then(|| "sfc-global-component-unresolved".to_string())
+            }
+        });
         let mut object = Map::new();
         object.insert(
             "registrationFile".to_string(),
@@ -999,13 +1235,13 @@ fn project_sfc_global_component_registrations(
         object.insert("eligibleForFanIn".to_string(), json!(false));
         object.insert("eligibleForSafeFix".to_string(), json!(false));
         object.insert("status".to_string(), json!(status));
-        if let Some(resolved_file) = input.resolved_file.filter(|path| !path.is_empty()) {
+        if let Some(resolved_file) = resolved_file.filter(|path| !path.is_empty()) {
             object.insert(
                 "resolvedFile".to_string(),
                 json!(rel_path(root, &resolved_file)),
             );
         }
-        insert_optional_string(&mut object, "reason", input.reason);
+        insert_optional_string(&mut object, "reason", reason);
         insert_optional_string(&mut object, "bindingKind", input.binding_kind);
         insert_optional_string(&mut object, "importedName", input.imported_name);
         insert_optional_string(&mut object, "factoryKind", input.factory_kind);
@@ -1026,9 +1262,29 @@ fn project_sfc_generated_component_manifests(
     root: &str,
     mut legacy_manifests: Vec<Value>,
     inputs: Vec<SfcGeneratedComponentManifestInput>,
+    source_use_resolved_targets: &BTreeMap<String, String>,
+    source_use_external_record_ids: &BTreeSet<String>,
 ) -> SfcGeneratedComponentManifestProjection {
     let count = inputs.len();
     for input in inputs {
+        let source_use_record_id = input.source_use_record_id;
+        if source_use_record_is_external(
+            source_use_external_record_ids,
+            source_use_record_id.as_deref(),
+        ) {
+            continue;
+        }
+        let source_use_target = source_use_target_for_record(
+            source_use_resolved_targets,
+            source_use_record_id.as_deref(),
+        );
+        let resolved_file = input.resolved_file.or(source_use_target);
+        let (status, reason) = sfc_generated_manifest_status_and_reason(
+            input.status,
+            input.reason,
+            source_use_record_id.as_deref(),
+            resolved_file.as_deref(),
+        );
         let mut normalized_tag_names = input.normalized_tag_names;
         normalized_tag_names.sort();
         let mut object = Map::new();
@@ -1049,17 +1305,14 @@ fn project_sfc_generated_component_manifests(
         insert_optional_string(&mut object, "confidence", input.confidence);
         object.insert("eligibleForFanIn".to_string(), json!(false));
         object.insert("eligibleForSafeFix".to_string(), json!(false));
-        object.insert(
-            "status".to_string(),
-            json!(input.status.unwrap_or_else(|| "unresolved".to_string())),
-        );
-        if let Some(resolved_file) = input.resolved_file.filter(|path| !path.is_empty()) {
+        object.insert("status".to_string(), json!(status));
+        if let Some(resolved_file) = resolved_file.filter(|path| !path.is_empty()) {
             object.insert(
                 "resolvedFile".to_string(),
                 json!(rel_path(root, &resolved_file)),
             );
         }
-        insert_optional_string(&mut object, "reason", input.reason);
+        insert_optional_string(&mut object, "reason", reason);
         if let Some(line) = input.line {
             object.insert("line".to_string(), json!(line));
         }
@@ -1337,6 +1590,208 @@ fn generated_blind_zone_key(value: &Value) -> String {
         value_string(value, "specifier"),
         value_string(value, "consumerFile")
     )
+}
+
+fn build_generated_consumer_blind_zones(
+    legacy_zones: Vec<Value>,
+    root: &str,
+    unresolved_records: &[Value],
+    extra_records: &[Value],
+    include_tests: bool,
+    exclude: &[String],
+    mode: &str,
+) -> Vec<Value> {
+    let root_path = Path::new(root);
+    let mut zones = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for zone in legacy_zones {
+        let key = generated_consumer_zone_dedupe_key(&zone);
+        if seen.insert(key) {
+            zones.push(zone);
+        }
+    }
+
+    let scan_options = ScanScopeOptions {
+        include_tests,
+        exclude: exclude.to_vec(),
+        ..ScanScopeOptions::default()
+    };
+
+    for record in unresolved_records.iter().chain(extra_records.iter()) {
+        if !is_generated_artifact_missing_record(record) {
+            continue;
+        }
+        let Some(artifact) = record.get("generatedArtifact").and_then(Value::as_object) else {
+            continue;
+        };
+        for candidate in target_candidates(record) {
+            let Some(candidate_path) = generated_candidate_repo_relative(root_path, &candidate)
+            else {
+                continue;
+            };
+            let Some(scope_package_root) =
+                consumer_zone_scope_root(record, artifact, &candidate_path)
+            else {
+                continue;
+            };
+
+            let abs_candidate = root_path.join(&candidate_path);
+            let mut status = "missing";
+            let mut scan_scope_reason = None;
+            if abs_candidate.exists() {
+                let scope = scan_scope_status_for_path(root_path, &abs_candidate, &scan_options);
+                if scope.included {
+                    continue;
+                }
+                status = "present-but-out-of-scope";
+                scan_scope_reason = scope.reason.or(Some("excluded"));
+            }
+
+            let mut object = Map::new();
+            object.insert("reason".to_string(), json!("generated-consumer-blind-zone"));
+            object.insert(
+                "sourceReason".to_string(),
+                json!(value_string(record, "reason")),
+            );
+            object.insert(
+                "specifier".to_string(),
+                json!(nullable_string(record, "specifier")),
+            );
+            object.insert(
+                "consumerFile".to_string(),
+                json!(nullable_string(record, "consumerFile")
+                    .or_else(|| nullable_string(record, "fromHint"))),
+            );
+            object.insert(
+                "matchedPackage".to_string(),
+                json!(nullable_string_from_map(artifact, "matchedPackage")),
+            );
+            object.insert(
+                "targetSubpath".to_string(),
+                json!(nullable_string_from_map(artifact, "targetSubpath")),
+            );
+            object.insert(
+                "generatorFamily".to_string(),
+                json!(nullable_string_from_map(artifact, "generatorFamily")),
+            );
+            object.insert(
+                "confidence".to_string(),
+                json!(nullable_string_from_map(artifact, "confidence")),
+            );
+            object.insert("candidatePath".to_string(), json!(candidate_path));
+            object.insert("status".to_string(), json!(status));
+            object.insert("scopePackageRoot".to_string(), json!(scope_package_root));
+            object.insert("mode".to_string(), json!(mode));
+            if let Some(reason) = scan_scope_reason {
+                object.insert("scanScopeReason".to_string(), json!(reason));
+            }
+            if mode == "prepared" {
+                object.insert("staleStatus".to_string(), json!("unknown"));
+                object.insert(
+                    "staleReason".to_string(),
+                    json!("generator-input-hash-not-recorded"),
+                );
+            }
+            let zone = Value::Object(object);
+            let key = generated_consumer_zone_dedupe_key(&zone);
+            if seen.insert(key) {
+                zones.push(zone);
+            }
+        }
+    }
+
+    zones
+}
+
+fn is_generated_artifact_missing_record(record: &Value) -> bool {
+    value_string(record, "reason") == "workspace-generated-artifact-missing"
+        && record
+            .get("generatedArtifact")
+            .is_some_and(Value::is_object)
+}
+
+fn target_candidates(record: &Value) -> Vec<String> {
+    record
+        .get("targetCandidates")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn generated_candidate_repo_relative(root: &Path, candidate: &str) -> Option<String> {
+    let root_text = normalize_path_segments(&root.to_string_lossy());
+    let root_text = root_text.trim_end_matches('/');
+    let candidate_path = Path::new(candidate);
+    let candidate_text = if candidate_path.is_absolute() {
+        normalize_path_segments(&candidate_path.to_string_lossy())
+    } else {
+        normalize_path_segments(&format!("{root_text}/{candidate}"))
+    };
+    let prefix = format!("{root_text}/");
+    candidate_text
+        .strip_prefix(&prefix)
+        .filter(|relative| !relative.is_empty() && *relative != "..")
+        .filter(|relative| !relative.starts_with("../"))
+        .map(ToString::to_string)
+}
+
+fn generated_package_root(artifact: &Map<String, Value>) -> Option<String> {
+    nullable_string_from_map(artifact, "packageRoot")
+        .or_else(|| nullable_string_from_map(artifact, "packageDir"))
+        .or_else(|| nullable_string_from_map(artifact, "workspaceRoot"))
+}
+
+fn package_root_from_candidate(candidate_path: &str) -> Option<String> {
+    let parts = candidate_path
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if matches!(parts.first(), Some(&"apps" | &"packages")) && parts.len() >= 2 {
+        return Some(format!("{}/{}", parts[0], parts[1]));
+    }
+    None
+}
+
+fn consumer_zone_scope_root(
+    _record: &Value,
+    artifact: &Map<String, Value>,
+    candidate_path: &str,
+) -> Option<String> {
+    generated_package_root(artifact).or_else(|| package_root_from_candidate(candidate_path))
+}
+
+fn nullable_string(value: &Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn nullable_string_from_map(object: &Map<String, Value>, field: &str) -> Option<String> {
+    object
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn generated_consumer_zone_dedupe_key(zone: &Value) -> String {
+    [
+        value_string(zone, "specifier"),
+        value_string(zone, "consumerFile"),
+        value_string(zone, "candidatePath"),
+        value_string(zone, "mode"),
+    ]
+    .join("|")
 }
 
 fn generated_import_consumer_key(value: &Value) -> String {
@@ -1660,6 +2115,46 @@ struct ComputedDeadCandidates {
     dead_in_test: Vec<Value>,
 }
 
+struct ExternalDependencyProjection {
+    count: usize,
+    consumers: Vec<Value>,
+}
+
+fn project_external_dependency_imports(
+    root: &str,
+    inputs: Vec<ExternalDependencyImportInput>,
+) -> ExternalDependencyProjection {
+    let mut count = 0usize;
+    let mut consumers = Vec::new();
+    for input in inputs {
+        let kind = input.kind.unwrap_or_else(|| "import".to_string());
+        if is_namespace_reexport_use(&kind) {
+            continue;
+        }
+        count += 1;
+        let Some(dep_root) = package_root_from_spec(&input.from_spec) else {
+            continue;
+        };
+        let mut object = Map::new();
+        object.insert(
+            "file".to_string(),
+            json!(rel_path(root, &input.consumer_file)),
+        );
+        object.insert("fromSpec".to_string(), json!(input.from_spec));
+        object.insert("depRoot".to_string(), json!(dep_root));
+        object.insert("kind".to_string(), json!(kind));
+        object.insert(
+            "source".to_string(),
+            json!(input.source.unwrap_or_else(|| "source-import".to_string())),
+        );
+        if let Some(type_only) = input.type_only {
+            object.insert("typeOnly".to_string(), json!(type_only));
+        }
+        consumers.push(Value::Object(object));
+    }
+    ExternalDependencyProjection { count, consumers }
+}
+
 fn merge_source_use_edges(
     mut edges: Vec<Value>,
     source_use_assembly: Option<&SourceUseAssemblyResponse>,
@@ -1689,7 +2184,9 @@ fn merge_source_use_namespace_diagnostics(
 fn merge_source_use_dependency_consumers(
     mut consumers: Vec<Value>,
     source_use_assembly: Option<&SourceUseAssemblyResponse>,
+    external_consumers: Vec<Value>,
 ) -> Result<Vec<Value>> {
+    consumers.extend(external_consumers);
     let Some(assembly) = source_use_assembly else {
         return Ok(consumers);
     };
@@ -1854,7 +2351,6 @@ fn build_fan_in(root: &str, def_index: &[DefinitionFile], inputs: &FanInInputs) 
 
     for file in def_index {
         let rel_file = rel_path(root, &file.file_path);
-        let file_path = normalize_slashes(&file.file_path);
         for (symbol, definition) in &file.definitions {
             let identity = format!("{rel_file}::{symbol}");
             fan_in_by_identity.insert(identity.clone(), json!(0));
@@ -1867,7 +2363,7 @@ fn build_fan_in(root: &str, def_index: &[DefinitionFile], inputs: &FanInInputs) 
                 }),
             );
             def_kind_by_key.insert(
-                (file_path.clone(), symbol.clone()),
+                (rel_file.clone(), symbol.clone()),
                 value_string(definition, "kind"),
             );
         }
@@ -1877,27 +2373,26 @@ fn build_fan_in(root: &str, def_index: &[DefinitionFile], inputs: &FanInInputs) 
     let mut direct_order = Vec::<(String, String)>::new();
     let mut direct_seen = BTreeSet::<(String, String)>::new();
     for entry in &inputs.consumer_entries {
-        let key = (normalize_slashes(&entry.def_file), entry.symbol.clone());
+        let key = (rel_path(root, &entry.def_file), entry.symbol.clone());
         if direct_seen.insert(key.clone()) {
             direct_order.push(key.clone());
         }
         let fan_in = direct.entry(key).or_default();
-        fan_in.all.insert(normalize_slashes(&entry.consumer_file));
+        let consumer_file = rel_path(root, &entry.consumer_file);
+        fan_in.all.insert(consumer_file.clone());
         if entry.space.as_deref() == Some("type") {
-            fan_in
-                .type_only
-                .insert(normalize_slashes(&entry.consumer_file));
+            fan_in.type_only.insert(consumer_file);
         } else {
-            fan_in.value.insert(normalize_slashes(&entry.consumer_file));
+            fan_in.value.insert(consumer_file);
         }
     }
 
     let mut namespace_users = BTreeMap::<String, BTreeSet<String>>::new();
     for entry in &inputs.namespace_user_entries {
         namespace_users
-            .entry(normalize_slashes(&entry.def_file))
+            .entry(rel_path(root, &entry.def_file))
             .or_default()
-            .insert(normalize_slashes(&entry.consumer_file));
+            .insert(rel_path(root, &entry.consumer_file));
     }
 
     let mut symbol_fan_in = Vec::new();
@@ -1906,11 +2401,10 @@ fn build_fan_in(root: &str, def_index: &[DefinitionFile], inputs: &FanInInputs) 
         let Some(fan_in) = direct.get(&key) else {
             continue;
         };
-        let rel_file = rel_path(root, &def_file);
-        let identity = format!("{rel_file}::{symbol}");
+        let identity = format!("{def_file}::{symbol}");
         let count = fan_in.all.len();
         symbol_fan_in.push(json!({
-            "defFile": rel_file,
+            "defFile": def_file,
             "symbol": symbol,
             "count": count,
             "kind": def_kind_by_key
@@ -1931,13 +2425,12 @@ fn build_fan_in(root: &str, def_index: &[DefinitionFile], inputs: &FanInInputs) 
     }
 
     for file in def_index {
-        let file_path = normalize_slashes(&file.file_path);
+        let file_path = rel_path(root, &file.file_path);
         let Some(broad_consumers) = namespace_users.get(&file_path) else {
             continue;
         };
-        let rel_file = rel_path(root, &file.file_path);
         for symbol in file.definitions.keys() {
-            let identity = format!("{rel_file}::{symbol}");
+            let identity = format!("{file_path}::{symbol}");
             let mut existing = fan_in_by_identity_space
                 .get(&identity)
                 .and_then(Value::as_object)
@@ -1971,31 +2464,31 @@ fn build_dead_candidates(
     let barrel_files = inputs
         .barrel_files
         .iter()
-        .map(|file| normalize_slashes(file))
+        .map(|file| rel_path(root, file))
         .collect::<BTreeSet<_>>();
     let test_like_files = inputs
         .test_like_files
         .iter()
-        .map(|file| normalize_slashes(file))
+        .map(|file| rel_path(root, file))
         .collect::<BTreeSet<_>>();
     let direct_consumers = fan_in_inputs
         .consumer_entries
         .iter()
-        .map(|entry| (normalize_slashes(&entry.def_file), entry.symbol.clone()))
+        .map(|entry| (rel_path(root, &entry.def_file), entry.symbol.clone()))
         .collect::<BTreeSet<_>>();
     let namespace_files = fan_in_inputs
         .namespace_user_entries
         .iter()
-        .map(|entry| normalize_slashes(&entry.def_file))
+        .map(|entry| rel_path(root, &entry.def_file))
         .collect::<BTreeSet<_>>();
     let file_data_by_path = file_data
         .iter()
-        .map(|file| (normalize_slashes(&file.file_path), file))
+        .map(|file| (rel_path(root, &file.file_path), file))
         .collect::<BTreeMap<_, _>>();
 
     let mut dead = Vec::new();
     for file in def_index {
-        let file_path = normalize_slashes(&file.file_path);
+        let file_path = rel_path(root, &file.file_path);
         if barrel_files.contains(&file_path) {
             continue;
         }
@@ -2004,7 +2497,7 @@ fn build_dead_candidates(
         let public_set = file_info
             .and_then(|info| info.py_dunder_all.as_ref())
             .map(|items| items.iter().cloned().collect::<BTreeSet<_>>());
-        let rel_file = rel_path(root, &file.file_path);
+        let rel_file = file_path.clone();
 
         for (symbol, definition) in &file.definitions {
             if direct_consumers.contains(&(file_path.clone(), symbol.clone())) {
@@ -2080,6 +2573,348 @@ fn object_or_empty(value: Value) -> Value {
     } else {
         json!({})
     }
+}
+
+#[derive(Debug)]
+struct AnyOwnerRow {
+    identity: String,
+    name: String,
+    file: String,
+    kind: String,
+    line: Option<i64>,
+}
+
+#[derive(Debug)]
+struct ComputedAnyContamination {
+    helper_owners_by_identity: Value,
+    type_owners_by_identity: Value,
+    def_index: Value,
+}
+
+fn build_any_contamination_facts(
+    root: &str,
+    def_index: &[DefinitionFile],
+    file_data: &[FileDataRecord],
+) -> ComputedAnyContamination {
+    let (identity_to_row, defs_by_file) = build_any_owner_lookups(root, def_index);
+    let mut facts_by_identity = BTreeMap::<String, Vec<Value>>::new();
+
+    for file in file_data {
+        for fact in &file.type_escapes {
+            if let Some(identity) = identity_for_escape(fact, &identity_to_row, &defs_by_file) {
+                facts_by_identity
+                    .entry(identity)
+                    .or_default()
+                    .push(fact.clone());
+            }
+        }
+    }
+
+    let mut helper_owners = Map::new();
+    let mut type_owners = Map::new();
+    let mut annotations = BTreeMap::<String, Value>::new();
+
+    for (identity, row) in &identity_to_row {
+        let annotation = build_any_annotation(
+            facts_by_identity
+                .get(identity)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+            &row.kind,
+        );
+        if let Some(annotation) = annotation.clone() {
+            annotations.insert(identity.clone(), annotation);
+        }
+
+        let mut owner = Map::new();
+        owner.insert("ownerFile".to_string(), json!(row.file));
+        owner.insert("exportedName".to_string(), json!(row.name));
+        owner.insert("kind".to_string(), json!(row.kind));
+        owner.insert(
+            "line".to_string(),
+            row.line.map_or(Value::Null, |line| json!(line)),
+        );
+        owner.insert(
+            "anyContamination".to_string(),
+            annotation.unwrap_or(Value::Null),
+        );
+
+        if is_type_owner_kind(&row.kind) {
+            type_owners.insert(identity.clone(), Value::Object(owner));
+        } else if is_helper_owner_kind(&row.kind) {
+            helper_owners.insert(identity.clone(), Value::Object(owner));
+        }
+    }
+
+    ComputedAnyContamination {
+        helper_owners_by_identity: Value::Object(helper_owners),
+        type_owners_by_identity: Value::Object(type_owners),
+        def_index: build_annotated_def_index(root, def_index, &annotations),
+    }
+}
+
+fn build_any_owner_lookups(
+    root: &str,
+    def_index: &[DefinitionFile],
+) -> (
+    BTreeMap<String, AnyOwnerRow>,
+    BTreeMap<String, Vec<AnyOwnerRow>>,
+) {
+    let mut identity_to_row = BTreeMap::new();
+    let mut defs_by_file = BTreeMap::<String, Vec<AnyOwnerRow>>::new();
+
+    for file in def_index {
+        let rel_file = rel_path(root, &file.file_path);
+        for (name, def) in &file.definitions {
+            let kind = value_string(def, "kind");
+            if !is_any_owner_kind(&kind) {
+                continue;
+            }
+            let identity = format!("{rel_file}::{name}");
+            let row = AnyOwnerRow {
+                identity: identity.clone(),
+                name: name.clone(),
+                file: rel_file.clone(),
+                kind,
+                line: value_line(def, "line"),
+            };
+            identity_to_row.insert(
+                identity,
+                AnyOwnerRow {
+                    identity: row.identity.clone(),
+                    name: row.name.clone(),
+                    file: row.file.clone(),
+                    kind: row.kind.clone(),
+                    line: row.line,
+                },
+            );
+            defs_by_file.entry(rel_file.clone()).or_default().push(row);
+        }
+    }
+
+    for rows in defs_by_file.values_mut() {
+        rows.sort_by(|left, right| {
+            left.line
+                .unwrap_or(0)
+                .cmp(&right.line.unwrap_or(0))
+                .then_with(|| left.name.cmp(&right.name))
+        });
+    }
+
+    (identity_to_row, defs_by_file)
+}
+
+fn identity_for_escape(
+    fact: &Value,
+    identity_to_row: &BTreeMap<String, AnyOwnerRow>,
+    defs_by_file: &BTreeMap<String, Vec<AnyOwnerRow>>,
+) -> Option<String> {
+    if let Some(identity) = fact
+        .get("insideExportedIdentity")
+        .and_then(Value::as_str)
+        .filter(|identity| identity_to_row.contains_key(*identity))
+    {
+        return Some(identity.to_string());
+    }
+
+    if value_string(fact, "escapeKind") != "jsdoc-any" {
+        return None;
+    }
+    let file = value_string(fact, "file");
+    let line = value_line(fact, "line")?;
+    defs_by_file.get(&file).and_then(|rows| {
+        rows.iter()
+            .find(|row| {
+                let def_line = row.line.unwrap_or(0);
+                def_line >= line && def_line - line <= 3
+            })
+            .map(|row| row.identity.clone())
+    })
+}
+
+fn build_any_annotation(facts: &[Value], owner_kind: &str) -> Option<Value> {
+    if facts.is_empty() {
+        return None;
+    }
+
+    let mut counts = BTreeMap::<String, usize>::new();
+    for fact in facts {
+        let escape_kind = value_string(fact, "escapeKind");
+        if !escape_kind.is_empty() {
+            *counts.entry(escape_kind).or_insert(0) += 1;
+        }
+    }
+
+    let any_escape_count = counts
+        .iter()
+        .filter(|(kind, _)| is_any_escape_kind(kind))
+        .map(|(_, count)| *count)
+        .sum::<usize>();
+    if any_escape_count == 0 {
+        return None;
+    }
+
+    let explicit_any_count = count_escape(&counts, "explicit-any");
+    let as_any_count = count_escape(&counts, "as-any") + count_escape(&counts, "angle-any");
+    let laundering_count = count_escape(&counts, "as-unknown-as-T");
+    let rest_any_args_count = count_escape(&counts, "rest-any-args");
+    let index_signature_any_count = count_escape(&counts, "index-sig-any");
+    let generic_default_any_count = count_escape(&counts, "generic-default-any");
+    let jsdoc_any_count = count_escape(&counts, "jsdoc-any");
+    let no_explicit_any_disable_count = count_escape(&counts, "no-explicit-any-disable");
+    let is_type = is_type_owner_kind(owner_kind);
+    let is_helper = is_helper_owner_kind(owner_kind);
+    let mut labels = BTreeSet::<String>::from(["has-any".to_string()]);
+
+    if is_type
+        || as_any_count > 0
+        || explicit_any_count > 0
+        || rest_any_args_count > 0
+        || laundering_count > 0
+        || jsdoc_any_count > 0
+        || no_explicit_any_disable_count > 0
+    {
+        labels.insert("any-contaminated".to_string());
+    }
+
+    if laundering_count > 0
+        || rest_any_args_count > 0
+        || as_any_count >= 2
+        || explicit_any_count >= 3
+        || index_signature_any_count > 0
+        || (is_type && any_escape_count >= 3)
+        || (is_helper && jsdoc_any_count >= 2)
+    {
+        labels.insert("severely-any-contaminated".to_string());
+    }
+
+    let mut sorted_labels = labels.into_iter().collect::<Vec<_>>();
+    sorted_labels.sort_by_key(|label| severity_rank(label));
+    let label = sorted_labels
+        .iter()
+        .max_by_key(|label| severity_rank(label))
+        .cloned()
+        .unwrap_or_else(|| "has-any".to_string());
+    let mut lines = BTreeSet::<i64>::new();
+    for fact in facts {
+        if let Some(line) = value_line(fact, "line") {
+            lines.insert(line);
+        }
+    }
+
+    Some(json!({
+        "label": label,
+        "labels": sorted_labels,
+        "measurements": {
+            "escapeCount": facts.len(),
+            "anyEscapeCount": any_escape_count,
+            "escapeKindCounts": counts,
+            "explicitAnyCount": explicit_any_count,
+            "asAnyCount": as_any_count,
+            "launderingCount": laundering_count,
+            "restAnyArgsCount": rest_any_args_count,
+            "indexSignatureAnyCount": index_signature_any_count,
+            "genericDefaultAnyCount": generic_default_any_count,
+            "jsdocAnyCount": jsdoc_any_count,
+            "noExplicitAnyDisableCount": no_explicit_any_disable_count,
+            "lines": lines.into_iter().collect::<Vec<_>>(),
+        },
+    }))
+}
+
+fn build_annotated_def_index(
+    root: &str,
+    def_index: &[DefinitionFile],
+    annotations: &BTreeMap<String, Value>,
+) -> Value {
+    let mut out = Map::new();
+    for file in def_index {
+        let rel_file = rel_path(root, &file.file_path);
+        let mut definitions = Map::new();
+        for (name, definition) in &file.definitions {
+            let mut definition = definition.clone();
+            let kind = value_string(&definition, "kind");
+            if is_any_owner_kind(&kind) {
+                let identity = format!("{rel_file}::{name}");
+                if let Some(annotation) = annotations.get(&identity) {
+                    if let Some(object) = definition.as_object_mut() {
+                        object.insert("anyContamination".to_string(), annotation.clone());
+                    }
+                } else if let Some(object) = definition.as_object_mut() {
+                    object.remove("anyContamination");
+                }
+            }
+            definitions.insert(name.clone(), definition);
+        }
+        out.insert(rel_file, Value::Object(definitions));
+    }
+    Value::Object(out)
+}
+
+fn is_any_owner_kind(kind: &str) -> bool {
+    is_type_owner_kind(kind) || is_helper_owner_kind(kind)
+}
+
+fn is_type_owner_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "TSInterfaceDeclaration"
+            | "TSTypeAliasDeclaration"
+            | "TSEnumDeclaration"
+            | "TSModuleDeclaration"
+    )
+}
+
+fn is_helper_owner_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "FunctionDeclaration" | "const-var" | "let-var" | "var-var"
+    )
+}
+
+fn is_any_escape_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "explicit-any"
+            | "as-any"
+            | "angle-any"
+            | "as-unknown-as-T"
+            | "rest-any-args"
+            | "index-sig-any"
+            | "generic-default-any"
+            | "no-explicit-any-disable"
+            | "jsdoc-any"
+    )
+}
+
+fn count_escape(counts: &BTreeMap<String, usize>, kind: &str) -> usize {
+    counts.get(kind).copied().unwrap_or(0)
+}
+
+fn severity_rank(label: &str) -> i32 {
+    match label {
+        "severely-any-contaminated" => 3,
+        "any-contaminated" => 2,
+        "has-any" => 1,
+        "unknown-surface" => 0,
+        _ => -1,
+    }
+}
+
+fn value_line(value: &Value, field: &str) -> Option<i64> {
+    let value = value.get(field)?;
+    if let Some(line) = value.as_i64() {
+        return Some(line);
+    }
+    value
+        .as_u64()
+        .and_then(|line| i64::try_from(line).ok())
+        .or_else(|| {
+            value
+                .as_f64()
+                .filter(|line| line.is_finite())
+                .map(|line| line as i64)
+        })
 }
 
 fn build_plain_def_index(root: &str, def_index: &[DefinitionFile]) -> Value {
@@ -2345,6 +3180,9 @@ mod tests {
             schema_version: SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION.to_string(),
             generated: "2026-07-05T00:00:00.000Z".to_string(),
             root: "C:/repo".to_string(),
+            include_tests: true,
+            exclude: vec![],
+            generated_artifacts_mode: "default".to_string(),
             path_table: vec![],
             files: vec![
                 "C:/repo/src/a.ts".to_string(),
@@ -2376,6 +3214,12 @@ mod tests {
                     "line": 4,
                     "operationFamily": "format",
                     "domainTokens": ["z", "a"],
+                })],
+                type_escapes: vec![json!({
+                    "file": "src/a.ts",
+                    "line": 1,
+                    "escapeKind": "explicit-any",
+                    "insideExportedIdentity": "src/a.ts::alpha",
                 })],
                 dynamic_import_opacity: vec![
                     json!({"line": 5, "kind": "template", "prefix": "../routes"}),
@@ -2414,10 +3258,12 @@ mod tests {
             dependency_import_consumers: vec![
                 json!({"depRoot": "react", "fromSpec": "react", "file": "src/a.ts", "kind": "import"}),
             ],
+            external_dependency_import_inputs: vec![],
             resolved_internal_edges: vec![
                 json!({"from": "src/b.ts", "to": "src/a.ts", "kind": "import", "source": "./a", "typeOnly": false}),
             ],
             generated_consumer_blind_zones: vec![],
+            generated_consumer_blind_zone_inputs: vec![],
             generated_virtual_surfaces: vec![],
             generated_virtual_import_consumers: vec![],
             unresolved_internal_uses: 1,
@@ -2473,6 +3319,7 @@ mod tests {
                     status: Some("resolved".to_string()),
                     resolved_file: Some("C:/repo/src/UiButton.vue".to_string()),
                     reason: None,
+                    source_use_record_id: None,
                     binding_kind: Some("import".to_string()),
                     imported_name: Some("default".to_string()),
                     member_name: None,
@@ -2492,6 +3339,7 @@ mod tests {
                     status: Some("external".to_string()),
                     resolved_file: None,
                     reason: Some("sfc-template-component-external-binding".to_string()),
+                    source_use_record_id: None,
                     binding_kind: Some("import".to_string()),
                     imported_name: Some("ExternalWidget".to_string()),
                     member_name: None,
@@ -2514,6 +3362,7 @@ mod tests {
                     status: Some("resolved".to_string()),
                     resolved_file: Some("C:/repo/src/registered-source.ts".to_string()),
                     reason: None,
+                    source_use_record_id: None,
                     binding_kind: Some("import".to_string()),
                     imported_name: Some("default".to_string()),
                     factory_kind: None,
@@ -2533,6 +3382,7 @@ mod tests {
                     status: Some("muted".to_string()),
                     resolved_file: Some("C:/repo/src/AsyncGlobal.vue".to_string()),
                     reason: Some("sfc-global-component-async-factory".to_string()),
+                    source_use_record_id: None,
                     binding_kind: None,
                     imported_name: None,
                     factory_kind: Some("defineAsyncComponent".to_string()),
@@ -2555,6 +3405,7 @@ mod tests {
                     status: Some("resolved".to_string()),
                     resolved_file: Some("C:/repo/src/ManifestSource.ts".to_string()),
                     reason: None,
+                    source_use_record_id: None,
                     line: Some(30),
                 },
                 SfcGeneratedComponentManifestInput {
@@ -2570,6 +3421,7 @@ mod tests {
                     status: Some("muted".to_string()),
                     resolved_file: Some("C:/repo/components/ManifestButton.vue".to_string()),
                     reason: Some("sfc-framework-generated-manifest-non-source-binding".to_string()),
+                    source_use_record_id: None,
                     line: Some(31),
                 },
                 SfcGeneratedComponentManifestInput {
@@ -2585,6 +3437,7 @@ mod tests {
                     status: Some("skipped".to_string()),
                     resolved_file: None,
                     reason: Some("sfc-framework-generated-manifest-nonliteral".to_string()),
+                    source_use_record_id: None,
                     line: Some(32),
                 },
             ],
@@ -2646,10 +3499,7 @@ mod tests {
             dead_candidate_inputs: None,
             source_use_assembly: None,
             namespace_re_export_diagnostics: vec![],
-            any_contamination_facts: json!({
-                "helperOwnersByIdentity": {"src/a.ts::alpha": []},
-                "typeOwnersByIdentity": {},
-            }),
+            any_contamination_facts: json!({}),
             incremental: None,
         })?;
 
@@ -2657,6 +3507,15 @@ mod tests {
         assert_eq!(artifact["meta"]["schemaVersion"], 3);
         assert_eq!(artifact["files"], 2);
         assert_eq!(artifact["totalDefs"], 1);
+        assert_eq!(
+            artifact["defIndex"]["src/a.ts"]["alpha"]["anyContamination"]["label"],
+            "any-contaminated"
+        );
+        assert_eq!(
+            artifact["helperOwnersByIdentity"]["src/a.ts::alpha"]["anyContamination"]
+                ["measurements"]["explicitAnyCount"],
+            1
+        );
         assert_eq!(artifact["uses"]["unresolvedInternalRatio"], 0.5);
         assert_eq!(artifact["uses"]["sfcStyleAssetReferences"], 1);
         assert_eq!(
@@ -2810,11 +3669,327 @@ mod tests {
     }
 
     #[test]
+    fn preserves_external_generated_manifest_source_use_count_without_rows() -> Result<()> {
+        let request = serde_json::from_value::<SymbolGraphRequest>(json!({
+            "schemaVersion": SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION,
+            "generated": "2026-07-08T00:00:00.000Z",
+            "root": "C:/repo",
+            "files": ["C:/repo/components.d.ts"],
+            "sourceUseAssembly": {
+                "schemaVersion": "lumin-source-use-assembly-request.v1",
+                "root": "C:/repo",
+                "records": [{
+                    "recordId": "generated-manifest-external#0",
+                    "consumerFile": "C:/repo/components.d.ts",
+                    "fromSpec": "@scope/external-components",
+                    "kind": "sfc-generated-component-manifest",
+                    "name": "*",
+                    "consumerSource": "sfc-generated-component-manifest",
+                    "resolverStage": "external"
+                }]
+            },
+            "sfcGeneratedComponentManifestInputs": [{
+                "manifestFile": "C:/repo/components.d.ts",
+                "manifestKind": "unplugin-vue-components-dts",
+                "componentName": "ExternalComponent",
+                "normalizedTagNames": ["external-component"],
+                "bindingSource": "@scope/external-components",
+                "fromSpec": "@scope/external-components",
+                "source": "sfc-framework-generated-manifest",
+                "confidence": "generated-manifest-availability",
+                "sourceUseRecordId": "generated-manifest-external#0"
+            }]
+        }))?;
+
+        let artifact = build_symbol_graph_artifact(request)?;
+
+        assert_eq!(artifact["uses"]["sfcGeneratedComponentManifests"], 1);
+        assert_eq!(
+            artifact["sfcGeneratedComponentManifests"]
+                .as_array()
+                .context("generated manifest array")?
+                .len(),
+            0
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn applies_embedded_source_use_targets_to_sfc_component_projection_only() -> Result<()> {
+        let request = serde_json::from_value::<SymbolGraphRequest>(json!({
+            "schemaVersion": SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION,
+            "generated": "2026-07-08T00:00:00.000Z",
+            "root": "C:/repo",
+            "files": [
+                "C:/repo/src/App.vue",
+                "C:/repo/src/Button.ts",
+                "C:/repo/src/Registered.ts",
+                "C:/repo/src/ManifestSource.ts",
+                "C:/repo/components/ManifestButton.vue"
+            ],
+            "sourceUseAssembly": {
+                "schemaVersion": "lumin-source-use-assembly-request.v1",
+                "root": "C:/repo",
+                "sourceFiles": [
+                    "src/Button.ts",
+                    "src/Registered.ts",
+                    "src/ManifestSource.ts"
+                ],
+                "records": [
+                    {
+                        "consumerFile": "C:/repo/src/App.vue",
+                        "fromSpec": "./Button",
+                        "kind": "sfc-template-component-ref",
+                        "name": "*",
+                        "consumerSource": "sfc-template-component-ref",
+                        "resolverStage": "relative"
+                    },
+                    {
+                        "consumerFile": "C:/repo/src/App.vue",
+                        "fromSpec": "./Registered",
+                        "kind": "sfc-global-component-registration",
+                        "name": "*",
+                        "consumerSource": "sfc-global-component-registration",
+                        "resolverStage": "relative"
+                    },
+                    {
+                        "consumerFile": "C:/repo/components.d.ts",
+                        "fromSpec": "./src/ManifestSource",
+                        "kind": "sfc-generated-component-manifest",
+                        "name": "*",
+                        "consumerSource": "sfc-generated-component-manifest",
+                        "resolverStage": "relative"
+                    },
+                    {
+                        "consumerFile": "C:/repo/components.d.ts",
+                        "fromSpec": "./components/ManifestButton.vue",
+                        "resolvedFile": "C:/repo/components/ManifestButton.vue",
+                        "kind": "sfc-generated-component-manifest",
+                        "name": "*",
+                        "consumerSource": "sfc-generated-component-manifest",
+                        "resolverStage": "resolved-internal"
+                    }
+                ]
+            },
+            "sfcTemplateComponentRefInputs": [{
+                "consumerFile": "C:/repo/src/App.vue",
+                "tagName": "UiButton",
+                "bindingName": "UiButton",
+                "bindingSource": "./Button",
+                "source": "sfc-template",
+                "sourceUseRecordId": "r0"
+            }],
+            "sfcGlobalComponentRegistrationInputs": [{
+                "registrationFile": "C:/repo/src/App.vue",
+                "componentName": "RegisteredSource",
+                "bindingName": "RegisteredSource",
+                "bindingSource": "./Registered",
+                "source": "sfc-global-component-registration",
+                "sourceUseRecordId": "r1"
+            }],
+            "sfcGeneratedComponentManifestInputs": [
+                {
+                    "manifestFile": "C:/repo/components.d.ts",
+                    "componentName": "ManifestSource",
+                    "normalizedTagNames": ["manifest-source"],
+                    "bindingSource": "./src/ManifestSource",
+                    "fromSpec": "./src/ManifestSource",
+                    "source": "sfc-framework-generated-manifest",
+                    "sourceUseRecordId": "r2"
+                },
+                {
+                    "manifestFile": "C:/repo/components.d.ts",
+                    "componentName": "ManifestButton",
+                    "normalizedTagNames": ["manifest-button"],
+                    "bindingSource": "./components/ManifestButton.vue",
+                    "fromSpec": "./components/ManifestButton.vue",
+                    "source": "sfc-framework-generated-manifest",
+                    "sourceUseRecordId": "r3"
+                }
+            ]
+        }))?;
+
+        let artifact = build_symbol_graph_artifact(request)?;
+
+        assert_eq!(artifact["uses"]["resolvedInternal"], 0);
+        assert_eq!(
+            artifact["resolvedInternalEdges"]
+                .as_array()
+                .context("resolved internal edges")?
+                .len(),
+            0
+        );
+        assert_eq!(artifact["uses"]["sfcTemplateComponentRefs"], 1);
+        assert_eq!(
+            artifact["sfcTemplateComponentRefs"][0]["resolvedFile"],
+            "src/Button.ts"
+        );
+        assert_eq!(
+            artifact["sfcTemplateComponentRefs"][0]["status"],
+            "resolved"
+        );
+        assert_eq!(artifact["uses"]["sfcGlobalComponentRegistrations"], 1);
+        assert_eq!(
+            artifact["sfcGlobalComponentRegistrations"][0]["resolvedFile"],
+            "src/Registered.ts"
+        );
+        let manifests = artifact["sfcGeneratedComponentManifests"]
+            .as_array()
+            .context("generated manifests")?;
+        assert!(manifests.iter().any(|item| {
+            item["componentName"] == "ManifestSource"
+                && item["resolvedFile"] == "src/ManifestSource.ts"
+                && item["status"] == "resolved"
+        }));
+        assert!(manifests.iter().any(|item| {
+            item["componentName"] == "ManifestButton"
+                && item["resolvedFile"] == "components/ManifestButton.vue"
+                && item["status"] == "muted"
+                && item["reason"] == "sfc-framework-generated-manifest-non-source-binding"
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn builds_generated_consumer_blind_zones_from_embedded_unresolved_records() -> Result<()> {
+        let request = serde_json::from_value::<SymbolGraphRequest>(json!({
+            "schemaVersion": SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION,
+            "generated": "2026-07-08T00:00:00.000Z",
+            "root": "C:/repo",
+            "generatedArtifactsMode": "prepared",
+            "sourceUseAssembly": {
+                "schemaVersion": "lumin-source-use-assembly-request.v1",
+                "root": "C:/repo",
+                "records": [{
+                    "recordId": "src/consumer.ts#0",
+                    "consumerFile": "C:/repo/src/consumer.ts",
+                    "fromSpec": "@scope/generated-client",
+                    "kind": "import",
+                    "resolverStage": "unresolved-internal",
+                    "unresolvedEvidence": {
+                        "reason": "workspace-generated-artifact-missing",
+                        "resolverStage": "tsconfig-paths",
+                        "targetCandidates": ["packages/api/generated/client.ts"],
+                        "generatedArtifact": {
+                            "matchedPackage": "@scope/api",
+                            "targetSubpath": "packages/api/generated/client.ts",
+                            "generatorFamily": "path-segment",
+                            "confidence": "supporting",
+                            "packageRoot": "packages/api"
+                        }
+                    }
+                }]
+            }
+        }))?;
+
+        let artifact = build_symbol_graph_artifact(request)?;
+        let zones = artifact["generatedConsumerBlindZones"]
+            .as_array()
+            .context("generated consumer blind zones")?;
+
+        assert_eq!(zones.len(), 1);
+        assert_eq!(zones[0]["reason"], "generated-consumer-blind-zone");
+        assert_eq!(
+            zones[0]["sourceReason"],
+            "workspace-generated-artifact-missing"
+        );
+        assert_eq!(zones[0]["specifier"], "@scope/generated-client");
+        assert_eq!(zones[0]["consumerFile"], "src/consumer.ts");
+        assert_eq!(
+            zones[0]["candidatePath"],
+            "packages/api/generated/client.ts"
+        );
+        assert_eq!(zones[0]["scopePackageRoot"], "packages/api");
+        assert_eq!(zones[0]["mode"], "prepared");
+        assert_eq!(zones[0]["staleStatus"], "unknown");
+        assert_eq!(
+            artifact["artifactSummary"]["generatedConsumerBlindZoneCount"],
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn builds_generated_consumer_blind_zones_from_extra_inputs() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = path_to_string(temp.path().to_path_buf());
+        let request = serde_json::from_value::<SymbolGraphRequest>(json!({
+            "schemaVersion": SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION,
+            "generated": "2026-07-08T00:00:00.000Z",
+            "root": root,
+            "generatedConsumerBlindZoneInputs": [{
+                "specifier": "@scope/generated-client",
+                "consumerFile": "src/component.ts",
+                "reason": "workspace-generated-artifact-missing",
+                "targetCandidates": ["packages/api/generated/client.ts"],
+                "generatedArtifact": {
+                    "matchedPackage": "@scope/api",
+                    "targetSubpath": "packages/api/generated/client.ts",
+                    "generatorFamily": "path-segment",
+                    "confidence": "supporting",
+                    "packageRoot": "packages/api"
+                }
+            }]
+        }))?;
+
+        let artifact = build_symbol_graph_artifact(request)?;
+
+        assert_eq!(
+            artifact["generatedConsumerBlindZones"][0]["consumerFile"],
+            "src/component.ts"
+        );
+        assert_eq!(
+            artifact["artifactSummary"]["generatedConsumerBlindZoneCount"],
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn projects_external_dependency_import_inputs() -> Result<()> {
+        let request = serde_json::from_value::<SymbolGraphRequest>(json!({
+            "schemaVersion": SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION,
+            "generated": "2026-07-08T00:00:00.000Z",
+            "root": "C:/repo",
+            "files": ["C:/repo/src/a.ts"],
+            "externalDependencyImportInputs": [{
+                "consumerFile": "C:/repo/src/a.ts",
+                "fromSpec": "@scope/pkg/subpath",
+                "kind": "import",
+                "source": "source-import",
+                "typeOnly": true
+            }, {
+                "consumerFile": "C:/repo/src/a.ts",
+                "fromSpec": "ignored",
+                "kind": "imported-namespace-escape",
+                "source": "source-import"
+            }]
+        }))?;
+
+        let artifact = build_symbol_graph_artifact(request)?;
+
+        assert_eq!(artifact["uses"]["external"], 1);
+        assert_eq!(artifact["unresolvedUses"], 1);
+        let consumers = artifact["dependencyImportConsumers"]
+            .as_array()
+            .context("dependency import consumers")?;
+        assert_eq!(consumers.len(), 1);
+        assert_eq!(consumers[0]["file"], "src/a.ts");
+        assert_eq!(consumers[0]["fromSpec"], "@scope/pkg/subpath");
+        assert_eq!(consumers[0]["depRoot"], "@scope/pkg");
+        assert_eq!(consumers[0]["typeOnly"], true);
+        Ok(())
+    }
+
+    #[test]
     fn parse_errors_are_visible() -> Result<()> {
         let artifact = build_symbol_graph_artifact(SymbolGraphRequest {
             schema_version: SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION.to_string(),
             generated: "2026-07-05T00:00:00.000Z".to_string(),
             root: "C:/repo".to_string(),
+            include_tests: true,
+            exclude: vec![],
+            generated_artifacts_mode: "default".to_string(),
             path_table: vec![],
             files: vec!["C:/repo/src/bad.ts".to_string()],
             file_ids: vec![],
@@ -2838,8 +4013,10 @@ mod tests {
             non_source_asset_uses: 0,
             external_uses: 0,
             dependency_import_consumers: vec![],
+            external_dependency_import_inputs: vec![],
             resolved_internal_edges: vec![],
             generated_consumer_blind_zones: vec![],
+            generated_consumer_blind_zone_inputs: vec![],
             generated_virtual_surfaces: vec![],
             generated_virtual_import_consumers: vec![],
             unresolved_internal_uses: 0,
@@ -3165,6 +4342,72 @@ mod tests {
     }
 
     #[test]
+    fn embedded_namespace_reexport_fan_in_matches_compacted_relative_def_paths() -> Result<()> {
+        let request = serde_json::from_value::<SymbolGraphRequest>(json!({
+            "schemaVersion": SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION,
+            "generated": "2026-07-08T00:00:00.000Z",
+            "root": "C:/repo",
+            "pathTable": [
+                "src/source.ts",
+                "src/barrel.ts",
+                "src/consumer.ts"
+            ],
+            "files": [
+                "src/source.ts",
+                "src/barrel.ts",
+                "src/consumer.ts"
+            ],
+            "defIndex": [{
+                "filePathId": 0,
+                "definitions": {
+                    "escapeFunc": {"name": "escapeFunc", "kind": "FunctionDeclaration", "line": 1},
+                    "escapeConst": {"name": "escapeConst", "kind": "VariableDeclaration", "line": 2}
+                }
+            }],
+            "fanInInputs": {
+                "consumerEntries": [],
+                "namespaceUserEntries": []
+            },
+            "sourceUseAssembly": {
+                "schemaVersion": "lumin-source-use-assembly-request.v1",
+                "root": "C:/repo",
+                "sourceFileIds": [0, 1, 2],
+                "namespaceReExports": [{
+                    "barrelFile": "src/barrel.ts",
+                    "exportedName": "ns",
+                    "targetFile": "src/source.ts",
+                    "sourceSpec": "./source"
+                }],
+                "records": [{
+                    "recordId": "src/consumer.ts#0",
+                    "consumerFileId": 2,
+                    "fromSpec": "./barrel",
+                    "name": "ns",
+                    "kind": "imported-namespace-escape",
+                    "resolverStage": "relative"
+                }]
+            }
+        }))?;
+
+        let artifact = build_symbol_graph_artifact(request)?;
+
+        assert_eq!(
+            artifact["fanInByIdentitySpace"]["src/source.ts::escapeFunc"]["broad"],
+            1
+        );
+        assert_eq!(
+            artifact["fanInByIdentitySpace"]["src/source.ts::escapeConst"]["broad"],
+            1
+        );
+        assert_eq!(artifact["fanInByIdentity"]["src/source.ts::escapeFunc"], 0);
+        assert_eq!(
+            artifact["namespaceReExportDiagnostics"][0]["targetFile"],
+            "src/source.ts"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn accepts_path_table_compacted_core_file_identities() -> Result<()> {
         let request = serde_json::from_value::<SymbolGraphRequest>(json!({
             "schemaVersion": SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION,
@@ -3193,11 +4436,54 @@ mod tests {
     }
 
     #[test]
+    fn embedded_source_use_can_share_symbol_graph_path_table() -> Result<()> {
+        let request = serde_json::from_value::<SymbolGraphRequest>(json!({
+            "schemaVersion": SYMBOL_GRAPH_REQUEST_SCHEMA_VERSION,
+            "generated": "2026-07-08T00:00:00.000Z",
+            "root": "C:/repo",
+            "pathTable": ["src/consumer.ts", "src/dep.ts"],
+            "fileIds": [0, 1],
+            "defIndex": [{
+                "filePathId": 1,
+                "definitions": {
+                    "alpha": {"name": "alpha", "kind": "FunctionDeclaration", "line": 1}
+                }
+            }],
+            "sourceUseAssembly": {
+                "schemaVersion": "lumin-source-use-assembly-request.v1",
+                "root": "C:/repo",
+                "records": [{
+                    "recordId": "src/consumer.ts#0",
+                    "consumerFileId": 0,
+                    "resolvedFileId": 1,
+                    "fromSpec": "./dep",
+                    "name": "alpha",
+                    "kind": "import",
+                    "resolverStage": "resolved-internal"
+                }]
+            }
+        }))?;
+
+        let artifact = build_symbol_graph_artifact(request)?;
+
+        assert_eq!(
+            artifact["resolvedInternalEdges"][0]["from"],
+            "src/consumer.ts"
+        );
+        assert_eq!(artifact["resolvedInternalEdges"][0]["to"], "src/dep.ts");
+        assert_eq!(artifact["fanInByIdentity"]["src/dep.ts::alpha"], 1);
+        Ok(())
+    }
+
+    #[test]
     fn rejects_unknown_schema() {
         let error = match build_symbol_graph_artifact(SymbolGraphRequest {
             schema_version: "future".to_string(),
             generated: "2026-07-05T00:00:00.000Z".to_string(),
             root: "C:/repo".to_string(),
+            include_tests: true,
+            exclude: vec![],
+            generated_artifacts_mode: "default".to_string(),
             path_table: vec![],
             files: vec![],
             file_ids: vec![],
@@ -3218,8 +4504,10 @@ mod tests {
             non_source_asset_uses: 0,
             external_uses: 0,
             dependency_import_consumers: vec![],
+            external_dependency_import_inputs: vec![],
             resolved_internal_edges: vec![],
             generated_consumer_blind_zones: vec![],
+            generated_consumer_blind_zone_inputs: vec![],
             generated_virtual_surfaces: vec![],
             generated_virtual_import_consumers: vec![],
             unresolved_internal_uses: 0,

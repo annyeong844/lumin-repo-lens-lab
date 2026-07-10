@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v21"
+        "audit-core-js-runtime-bridge.v30"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -57,8 +57,13 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         contract["features"]["sourceUseAssemblyRootRelativeSourceFiles"],
         true
     );
+    assert_eq!(contract["features"]["sourceUseAssemblySourceFileIds"], true);
     assert_eq!(
         contract["features"]["sourceUseAssemblyRootRelativeRecordPaths"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["sourceUseAssemblySyntheticRecordIds"],
         true
     );
     assert_eq!(contract["features"]["symbolGraphTypedFinalization"], true);
@@ -92,6 +97,10 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         true
     );
     assert_eq!(
+        contract["features"]["symbolGraphEmbeddedSourceUseParentPathTable"],
+        true
+    );
+    assert_eq!(
         contract["features"]["symbolGraphSfcStyleAssetFinalization"],
         true
     );
@@ -111,6 +120,21 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         contract["features"]["symbolGraphSfcFrameworkConventionFinalization"],
         true
     );
+    assert_eq!(
+        contract["features"]["symbolGraphSfcComponentSourceUseRecordFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphGeneratedConsumerBlindZoneFinalization"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["symbolGraphAnyContaminationInputFinalization"],
+        true
+    );
+    assert_eq!(contract["features"]["sourceUseAssemblyRecordRows"], true);
+    assert_eq!(contract["features"]["sourceUseAssemblyNameTable"], true);
+    assert_eq!(contract["features"]["sourceUseAssemblyTypeOnlyState"], true);
 
     let supported = contract["supportedSubcommands"]
         .as_array()
