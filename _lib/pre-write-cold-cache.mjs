@@ -49,12 +49,6 @@ const PRODUCERS = [
     failKind: 'cold-cache-topology-failed',
     timeoutKind: 'cold-cache-topology-timeout',
   },
-  {
-    artifact: 'triage.json',
-    script: 'triage-repo.mjs',
-    failKind: 'cold-cache-triage-failed',
-    timeoutKind: 'cold-cache-triage-timeout',
-  },
 ];
 
 const SHAPE_INDEX_PRODUCER = {
@@ -112,11 +106,12 @@ function selectProducers({ intent, includeShapeIndex }) {
   }
 
   if (hasEntries(intent.files)) {
-    // File lookup needs topology + triage for neighboring/cluster evidence
-    // and symbols for parse-error honesty and file-local definition facts.
+    // File lookup needs topology for neighboring/cluster evidence and
+    // symbols for parse-error honesty and file-local definition facts.
+    // Boundary evaluation has no planned edge endpoints in this intent shape,
+    // so triage cannot change its required NOT_EVALUATED result.
     needed.add('symbols.json');
     needed.add('topology.json');
-    needed.add('triage.json');
   }
 
   if (hasEntries(intent.dependencies)) {

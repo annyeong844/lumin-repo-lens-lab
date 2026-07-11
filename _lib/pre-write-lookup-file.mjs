@@ -234,7 +234,6 @@ function computeTags(intentFile) {
  * @param {{
  *   topology: object | null,
  *   symbols: object | null,
- *   triage: object | null,
  *   canonicalClaims?: Array,
  *   root: string | null,
  * }} ctx
@@ -243,7 +242,6 @@ export function lookupFile(intentFile, ctx) {
   const norm_intent = norm(intentFile);
   const topology = ctx?.topology ?? null;
   const symbols = ctx?.symbols ?? null;
-  const triage = ctx?.triage ?? null;
   const root = ctx?.root ?? null;
 
   const inTopology = fileExistsInTopology(norm_intent, topology);
@@ -298,8 +296,8 @@ export function lookupFile(intentFile, ctx) {
 
   // ── Boundary: ALWAYS NOT_EVALUATED in P1-2 ────────────────
   //
-  // Intent has no planned `from → to` edge. Even when triage is present,
-  // we cannot evaluate a rule without endpoints. This is a deliberate
+  // Intent has no planned `from → to` edge, so a repository-wide triage
+  // artifact cannot make a boundary decision. This is a deliberate
   // P1-2 honesty floor — real ALLOWED / FORBIDDEN verdicts require
   // planned-edge information, deferred to P1-3.
 
@@ -307,11 +305,7 @@ export function lookupFile(intentFile, ctx) {
     status: 'NOT_EVALUATED',
     rule: null,
   };
-  if (!triage) {
-    citations.push(`[확인 불가, reason: triage.json absent — boundary evaluation not available]`);
-  } else {
-    citations.push(`[확인 불가, reason: P1-2 intent carries no planned from→to edge; boundary rules consulted only when endpoints are known (P1-3)]`);
-  }
+  citations.push(`[확인 불가, reason: P1-2 intent carries no planned-edge endpoints; boundary rules can be consulted only when both endpoints are known]`);
 
   return {
     kind: 'file',

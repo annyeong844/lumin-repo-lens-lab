@@ -142,7 +142,6 @@ function buildEvidenceAvailability({
   failures,
   symbols,
   topology,
-  triage,
   shapeIndex,
   functionClones,
   inlinePatterns,
@@ -168,14 +167,6 @@ function buildEvidenceAvailability({
       artifact: 'topology.json',
       requiredFor: ['files'],
       loaded: !!topology,
-      output,
-      freshAudit,
-      failures,
-    }));
-    artifacts.push(evidenceArtifact({
-      artifact: 'triage.json',
-      requiredFor: ['files'],
-      loaded: !!triage,
       output,
       freshAudit,
       failures,
@@ -310,7 +301,6 @@ if (existsSync(canonicalPath)) {
 // ── Load optional P1-2 artifacts ─────────────────────────────
 
 const topology = loadIfExists(OUTPUT, 'topology.json', { tag: 'pre-write' });
-const triage = loadIfExists(OUTPUT, 'triage.json', { tag: 'pre-write' });
 const shapeIndex = loadIfExists(OUTPUT, 'shape-index.json', { tag: 'pre-write' });
 const functionClones = loadIfExists(OUTPUT, 'function-clones.json', { tag: 'pre-write' });
 const inlinePatterns = loadIfExists(OUTPUT, 'inline-patterns.json', { tag: 'pre-write' });
@@ -321,7 +311,6 @@ const evidenceAvailability = buildEvidenceAvailability({
   failures,
   symbols,
   topology,
-  triage,
   shapeIndex,
   functionClones,
   inlinePatterns,
@@ -370,7 +359,7 @@ if (symbols) {
 // docs/history/phases/p1/p1-2.md §4.4.
 
 for (const intentFile of intent.files) {
-  const result = lookupFile(intentFile, { topology, symbols, triage, root: ROOT });
+  const result = lookupFile(intentFile, { topology, symbols, root: ROOT });
   lookups.push(result);
 }
 

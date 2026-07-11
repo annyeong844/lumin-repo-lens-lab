@@ -36,7 +36,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: true,
       }),
       symbols: buildSymbols(),
-      triage: null,
       root: "/root",
     });
     expect(topologyResult).toMatchObject({
@@ -54,7 +53,6 @@ describe("pre-write file lookup status evidence", () => {
           "src/legacy/old.ts": { someExport: { kind: "const", line: 1 } },
         },
       }),
-      triage: null,
       root: "/root",
     });
     expect(defIndexResult.result).toBe("FILE_EXISTS");
@@ -70,7 +68,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: true,
       }),
       symbols: buildSymbols({ filesWithParseErrors: [] }),
-      triage: null,
       root: "/root",
     });
     expect(newFile.result).toBe("NEW_FILE");
@@ -78,7 +75,6 @@ describe("pre-write file lookup status evidence", () => {
     const topologyAbsent = lookupFile("src/utils/time.ts", {
       topology: null,
       symbols: buildSymbols(),
-      triage: null,
       root: "/root",
     });
     expect(topologyAbsent.result).toBe("FILE_STATUS_UNKNOWN");
@@ -91,7 +87,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: false,
       }),
       symbols: buildSymbols(),
-      triage: null,
       root: "/root",
     });
     expect(incompleteTopology.result).toBe("FILE_STATUS_UNKNOWN");
@@ -99,7 +94,6 @@ describe("pre-write file lookup status evidence", () => {
     const defIndexAbsentOnly = lookupFile("src/any.ts", {
       topology: null,
       symbols: buildSymbols({ defIndex: {} }),
-      triage: null,
       root: "/root",
     });
     expect(defIndexAbsentOnly.result).toBe("FILE_STATUS_UNKNOWN");
@@ -110,7 +104,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: true,
       }),
       symbols: buildSymbols({ filesWithParseErrors: ["src/broken.ts"] }),
-      triage: null,
       root: "/root",
     });
     expect(parseError.result).toBe("FILE_STATUS_UNKNOWN");
@@ -129,7 +122,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: true,
       }),
       symbols: buildSymbols({ filesWithParseErrors: [] }),
-      triage: null,
       root: "/root",
     });
     expect(prefixCluster.result).toBe("NEW_FILE");
@@ -154,7 +146,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: true,
       }),
       symbols: buildSymbols({ filesWithParseErrors: [] }),
-      triage: null,
       root: "/root",
     });
     expect(suffixCluster.domainCluster).toMatchObject({
@@ -178,7 +169,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: true,
       }),
       symbols: buildSymbols({ filesWithParseErrors: [] }),
-      triage: null,
       root: "/root",
     });
     expect(strongPrefix.domainCluster).toMatchObject({
@@ -192,7 +182,7 @@ describe("pre-write file lookup status evidence", () => {
     );
   });
 
-  it("keeps boundary status not evaluated and records triage absence", () => {
+  it("keeps boundary status not evaluated without planned edge endpoints", () => {
     const withEdges = lookupFile("src/a.ts", {
       topology: buildTopology({
         nodes: { "src/a.ts": { loc: 1 }, "src/b.ts": { loc: 1 } },
@@ -203,7 +193,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: true,
       }),
       symbols: buildSymbols(),
-      triage: null,
       root: "/root",
     });
     expect(withEdges.inboundFanIn).toBe(2);
@@ -214,26 +203,23 @@ describe("pre-write file lookup status evidence", () => {
     const blanketAllow = lookupFile("src/new.ts", {
       topology: buildTopology({ nodes: {}, complete: true }),
       symbols: buildSymbols(),
-      triage: { boundaryRules: [{ action: "ALLOW" }] },
       root: "/root",
     });
     expect(blanketAllow.boundary.status).toBe("NOT_EVALUATED");
 
-    const triageAbsent = lookupFile("src/new.ts", {
+    const endpointsAbsent = lookupFile("src/new.ts", {
       topology: buildTopology({ nodes: {}, complete: true }),
       symbols: buildSymbols(),
-      triage: null,
       root: "/root",
     });
-    expect(triageAbsent.boundary.status).toBe("NOT_EVALUATED");
-    expect(triageAbsent.citations.join(" ")).toMatch(/triage|planned-edge/i);
+    expect(endpointsAbsent.boundary.status).toBe("NOT_EVALUATED");
+    expect(endpointsAbsent.citations.join(" ")).toMatch(/planned-edge/i);
   });
 
   it("tags tests, normalizes backslashes, and exposes stable discriminator fields", () => {
     const testPath = lookupFile("tests/foo.test.ts", {
       topology: buildTopology({ nodes: {}, complete: true }),
       symbols: buildSymbols(),
-      triage: null,
       root: "/root",
     });
     expect(testPath.tags).toContain("test-only");
@@ -244,7 +230,6 @@ describe("pre-write file lookup status evidence", () => {
         complete: true,
       }),
       symbols: buildSymbols(),
-      triage: null,
       root: "/root",
     });
     expect(backslash.result).toBe("FILE_EXISTS");
