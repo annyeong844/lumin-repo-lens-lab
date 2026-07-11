@@ -101,24 +101,8 @@ function selectProducers({ intent, includeShapeIndex }) {
 
   const needed = new Set();
 
-  if (hasEntries(intent.names)) {
-    needed.add('symbols.json');
-  }
-
-  if (hasEntries(intent.files)) {
-    // File lookup needs topology for neighboring/cluster evidence and
-    // symbols for parse-error honesty and file-local definition facts.
-    // Boundary evaluation has no planned edge endpoints in this intent shape,
-    // so triage cannot change its required NOT_EVALUATED result.
-    needed.add('symbols.json');
-    needed.add('topology.json');
-  }
-
-  if (hasEntries(intent.dependencies)) {
-    // package.json is read directly, but symbols lets the advisory report
-    // observed import consumers without running a full audit.
-    needed.add('symbols.json');
-  }
+  // Name, file, and dependency evidence comes from the Rust compact
+  // pre-write pass. Do not materialize symbols.json or topology.json here.
 
   if (hasEntries(intent.shapes) || includeShapeIndex) {
     needed.add('shape-index.json');

@@ -180,13 +180,19 @@ export function formatRuntimeSetupError(error) {
   return `${error.message}${suffix}`;
 }
 
-export async function assertRuntimeSetup({ startDir, commandName = 'audit-repo' } = {}) {
+export async function assertRuntimeSetup({
+  startDir,
+  commandName = 'audit-repo',
+  requireAnalysisDependencies = true,
+} = {}) {
   if (!isSupportedNodeVersion()) {
     throw new RuntimeSetupError(
       `[${commandName}] Node ${process.versions.node} is not supported; requires ${NODE_ENGINE}`,
       { details: ['Install Node ^20.19.0 or >=22.12.0, then retry.'] },
     );
   }
+
+  if (!requireAnalysisDependencies) return;
 
   const { packageRoot, packageJson } = findRuntimePackageRoot(startDir ?? process.cwd());
   if (!packageRoot || !packageJson) {

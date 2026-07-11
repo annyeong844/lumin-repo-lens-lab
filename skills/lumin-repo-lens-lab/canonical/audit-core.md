@@ -406,6 +406,19 @@ removes this artifact cache together with per-file facts.
   project the checked raw lifecycle block, but it must not own post-write delta
   producer semantics. These modules run existing producer entrypoints but do
   not reinterpret source-language producer semantics.
+- `js_ts_pre_write.rs` is the explicit JS/TS pre-write evidence exception. It
+  may read the JS-owned scan-range file list, parse those files with OXC, and
+  project compact symbol, file-topology, fan-in, parse-error, local-operation,
+  request-scoped package-import evidence, and the pre-write type-escape baseline
+  from one OXC pass. The baseline uses the canonical `type-escape` vocabulary
+  and remains shape-compatible with post-write's `any-inventory.json`; the
+  standalone/post-write inventory producer remains `any-inventory.mjs`. This
+  Rust owner must not write `symbols.json` or `topology.json`, broaden the
+  supplied scan scope, invent fallback evidence, or own cue-tier/rendering
+  policy. A malformed request, unreadable required source, omitted response
+  row, result-file failure, or audit-core contract mismatch is a hard failure
+  rather than a request to run the legacy JS extractor. Parser failures remain
+  artifact-visible incomplete evidence and must prevent absence claims.
 - Audit-core may own orchestration routing separately from execution. The plan
   is declarative profile/lifecycle evidence; `lifecycle_request.rs` owns only
   request-level hard-stop blocks before intent reading or child execution;

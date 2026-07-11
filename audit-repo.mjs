@@ -234,8 +234,20 @@ if (!values.root) {
   process.exit(1);
 }
 
+const PROFILE_EXPLICIT = process.argv.slice(2).some((arg) =>
+  arg === '--profile' || arg.startsWith('--profile='));
+const PRE_WRITE_ONLY = values['pre-write'] === true &&
+  values['post-write'] !== true &&
+  values['canon-draft'] !== true &&
+  values['check-canon'] !== true &&
+  values.sarif !== true &&
+  !PROFILE_EXPLICIT;
 try {
-  await assertRuntimeSetup({ startDir: __dirname, commandName: 'audit-repo' });
+  await assertRuntimeSetup({
+    startDir: __dirname,
+    commandName: 'audit-repo',
+    requireAnalysisDependencies: !PRE_WRITE_ONLY,
+  });
 } catch (error) {
   console.error(formatRuntimeSetupError(error));
   process.exit(error?.exitCode ?? 2);
@@ -245,8 +257,6 @@ const ROOT = path.resolve(values.root);
 const OUT = path.resolve(values.output ?? path.join(ROOT, '.audit'));
 const OUTPUT_WAS_DEFAULT = !values.output;
 const PROFILE = values.profile;
-const PROFILE_EXPLICIT = process.argv.slice(2).some((arg) =>
-  arg === '--profile' || arg.startsWith('--profile='));
 const AUDIT_RUN_ID = generateInvocationId();
 const SOURCES_VALUE = values.sources ?? values.source;
 const INCLUDE_TESTS = normalizeIncludeTests(values, process.argv.slice(2));

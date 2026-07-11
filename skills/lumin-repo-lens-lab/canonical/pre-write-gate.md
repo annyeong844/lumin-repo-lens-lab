@@ -180,16 +180,33 @@ evidence instead of an absence claim.
 
 ## 4. Minimum script subset for fresh audit
 
-When `<output>/` lacks recent artifacts for the JS/TS pre-write surface, run
-only what the JS/TS intent items require:
+The JS/TS name, file, and dependency lanes use the Rust-owned
+`js-ts-pre-write-evidence` command. JS supplies the checked scan-range file
+list; Rust reads and parses those files once with OXC and returns the compact
+`symbols` and `topology` evidence needed by pre-write plus the occurrence-level
+`any-inventory.pre.<invocationId>.json` baseline required by post-write. The
+command does not write or require repository-sized `symbols.json` or
+`topology.json` artifacts, and those Rust-owned lanes do not load the Node
+`oxc-parser` binding. Dependency consumer projection is restricted to the normalized package
+roots requested by the intent so unresolved aliases cannot masquerade as
+package imports. Failure is a pre-write failure; JS must not run a fallback
+extractor or classifier. Per-file parse failures remain explicit incomplete
+evidence and prevent absence claims; unreadable required files hard-stop.
+The public CLI also skips Node analysis dependency setup for a pre-write-only
+invocation. An explicit base profile, SARIF, canon, or post-write request keeps
+the normal dependency guard because those paths still run JS-owned producers.
 
-- Name lookup → `build-symbol-graph.mjs` (alone; fastest ground state).
+Run only what the requested JS/TS intent items require:
+
+- Name lookup → compact Rust pre-write evidence.
 - Shape lookup → `build-shape-index.mjs` when the intent includes shape entries. Grounded matches still require an exact `shape.hash` or supported `shape.typeLiteral`. If the intent has only loose field names, or if no validated `shape-index.json` is available, emit `[확인 불가]` rather than a fuzzy match.
-- File lookup → `build-symbol-graph.mjs` + `measure-topology.mjs` (if not cached). Symbols are included for parse-error honesty and file-local definition facts. Do not run `triage-repo.mjs`: the current intent shape has no planned edge endpoints, so triage cannot change the required `NOT_EVALUATED` boundary result.
-- Dependency lookup → package.json direct read + `build-symbol-graph.mjs`
+- File lookup → compact Rust pre-write evidence. Do not run
+  `triage-repo.mjs`: the current intent shape has no planned edge endpoints,
+  so triage cannot change the required `NOT_EVALUATED` boundary result.
+- Dependency lookup → package.json direct read + compact Rust pre-write evidence
   for observed static package-import consumer counts. This lane is for
   package specifiers, not relative/internal module paths. If the symbol
-  graph is unavailable or lacks `meta.supports.dependencyImportConsumers`,
+  evidence is unavailable or lacks `meta.supports.dependencyImportConsumers`,
   report the import count as unavailable; never render it as `0 observed
 consumers`.
 

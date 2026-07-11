@@ -16,8 +16,7 @@
 //   0 — normal completion (advisory emitted; may include [확인 불가] rows)
 //   1 — malformed intent, missing flags, or unhandled error
 
-import { readFileSync, existsSync, readSync, unlinkSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { readFileSync, existsSync, readSync } from 'node:fs';
 import path from 'node:path';
 import { parseCliArgs } from './_lib/cli.mjs';
 import { loadIfExists } from './_lib/artifacts.mjs';
@@ -31,6 +30,7 @@ import { classifyPreWriteCues } from './_lib/pre-write-cue-tiers.mjs';
 import { parseCanonicalFile } from './_lib/pre-write-canonical-parser.mjs';
 import { computeDrift } from './_lib/pre-write-drift.mjs';
 import { runColdCachePreflight } from './_lib/pre-write-cold-cache.mjs';
+import { buildRustPreWriteEvidence } from './_lib/pre-write-rust-evidence.mjs';
 import { functionSignatureFromTypeLiteral } from './_lib/function-signature-hash.mjs';
 import { collectFiles } from './_lib/collect-files.mjs';
 import { repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
@@ -145,6 +145,7 @@ function buildEvidenceAvailability({
   shapeIndex,
   functionClones,
   inlinePatterns,
+  rustEvidence,
 }) {
   const artifacts = [];
   const symbolUses = [
@@ -154,23 +155,25 @@ function buildEvidenceAvailability({
   ];
   if (symbolUses.length > 0) {
     artifacts.push(evidenceArtifact({
-      artifact: 'symbols.json',
+      artifact: rustEvidence?.artifactName ?? 'symbols.json',
       requiredFor: symbolUses,
-      loaded: !!symbols,
+      loaded: rustEvidence ? true : !!symbols,
       output,
       freshAudit,
       failures,
     }));
   }
   if (hasEntries(intent.files)) {
-    artifacts.push(evidenceArtifact({
-      artifact: 'topology.json',
-      requiredFor: ['files'],
-      loaded: !!topology,
-      output,
-      freshAudit,
-      failures,
-    }));
+    if (!rustEvidence) {
+      artifacts.push(evidenceArtifact({
+        artifact: 'topology.json',
+        requiredFor: ['files'],
+        loaded: !!topology,
+        output,
+        freshAudit,
+        failures,
+      }));
+    }
   }
   if (hasEntries(intent.shapes)) {
     artifacts.push(evidenceArtifact({
@@ -244,6 +247,8 @@ if (!validation.ok) {
 }
 const intent = validation.intent;
 const intentWarnings = validation.warnings ?? [];
+const invocationId = generateInvocationId();
+const intentHash = hashIntent(intent);
 
 // ── Cold-cache preflight + artifact load ────────────────────
 
@@ -267,7 +272,28 @@ const preflight = runColdCachePreflight({
 });
 failures.push(...preflight.failures);
 
-const symbols = loadIfExists(OUTPUT, 'symbols.json', { tag: 'pre-write' });
+let rustEvidence = null;
+let symbols;
+let topology;
+if (!noFreshAudit) {
+  try {
+    rustEvidence = buildRustPreWriteEvidence({
+      root: ROOT,
+      output: OUTPUT,
+      invocationId,
+      includeTests: args.includeTests,
+      exclude: args.exclude,
+      dependencySpecifiers: intent.dependencies,
+    });
+    symbols = rustEvidence.evidence.symbols;
+    topology = rustEvidence.evidence.topology;
+  } catch (error) {
+    die(`Rust evidence failed: ${error?.message ?? String(error)}`);
+  }
+} else {
+  symbols = loadIfExists(OUTPUT, 'symbols.json', { tag: 'pre-write' });
+  topology = loadIfExists(OUTPUT, 'topology.json', { tag: 'pre-write' });
+}
 if (needsSymbols && !symbols && !preflight.failures.some((f) => f.kind === 'symbols-missing' || /symbols/i.test(f.kind))) {
   failures.push({ kind: 'symbols-missing', reason: `symbols.json not found in ${OUTPUT}` });
 }
@@ -300,7 +326,6 @@ if (existsSync(canonicalPath)) {
 
 // ── Load optional P1-2 artifacts ─────────────────────────────
 
-const topology = loadIfExists(OUTPUT, 'topology.json', { tag: 'pre-write' });
 const shapeIndex = loadIfExists(OUTPUT, 'shape-index.json', { tag: 'pre-write' });
 const functionClones = loadIfExists(OUTPUT, 'function-clones.json', { tag: 'pre-write' });
 const inlinePatterns = loadIfExists(OUTPUT, 'inline-patterns.json', { tag: 'pre-write' });
@@ -314,6 +339,7 @@ const evidenceAvailability = buildEvidenceAvailability({
   shapeIndex,
   functionClones,
   inlinePatterns,
+  rustEvidence,
 });
 
 // Read package.json for dependency lookup. Absence is a caller-level
@@ -379,38 +405,30 @@ if ((intent.refactorSources?.length ?? 0) > 0) {
 
 // ── Assemble advisory ────────────────────────────────────────
 
-const invocationId = generateInvocationId();
-const intentHash = hashIntent(intent);
-
 // Compute canonical drift from P1-1 lookup results (P1-3 §5.4).
 // Read-only projection — no canonical re-parse, no lookup re-run.
 const drift = computeDrift({ canonicalClaims, lookups });
 const cueTierResult = classifyPreWriteCues({ lookups, intent });
 
-// ── P2-0 snapshot hook ───────────────────────────────────────
-//
-// Narrow append-only hook: spawn any-inventory.mjs to snapshot current
-// type-escape occurrences BEFORE Claude writes code, writing
-// any-inventory.pre.<invocationId>.json alongside the advisory. The
-// advisory's `preWrite.anyInventoryPath` points at the snapshot so P2-1
-// post-write can find the exact baseline for a given invocation.
-//
-// Contract per docs/history/phases/p2/p2-0.md §5.5:
-//   - execFileSync with argv arrays (NO shell strings).
-//   - Same scan-range flags as this pre-write run (--include-tests /
-//     --production / --exclude) passed through to any-inventory.mjs.
-//   - --no-fresh-audit → skip the hook entirely (no snapshot file, no
-//     preWrite.anyInventoryPath field).
-//   - Hook failure → CLI exits 0; failures[] records the error; no
-//     partial snapshot file left on disk; preWrite.anyInventoryPath
-//     stays ABSENT.
+// The Rust compact pass owns the matching before-inventory snapshot. It uses
+// the same OXC parse results as name/file/dependency evidence, so pre-write
+// does not load the Node oxc-parser binding or scan the repository twice.
 
 const preWriteBlock = {};
+if (rustEvidence) {
+  preWriteBlock.rustEvidencePath = rustEvidence.artifactName;
+  preWriteBlock.anyInventoryPath = rustEvidence.anyInventoryArtifact;
+  preWriteBlock.rustEvidence = {
+    schemaVersion: rustEvidence.evidence.schemaVersion,
+    summary: rustEvidence.evidence.summary,
+  };
+}
 try {
-  const files = repoRelativeFileList(ROOT, collectFiles(ROOT, {
+  const inventoryFiles = rustEvidence?.files ?? collectFiles(ROOT, {
     includeTests: args.includeTests,
     exclude: args.exclude,
-  }));
+  });
+  const files = repoRelativeFileList(ROOT, inventoryFiles);
   preWriteBlock.fileInventory = {
     status: 'available',
     pathMode: 'repo-relative',
@@ -427,55 +445,6 @@ try {
     reason: preWriteBlock.fileInventory.reason,
   });
 }
-if (!noFreshAudit) {
-  const snapshotFileName = `any-inventory.pre.${invocationId}.json`;
-  const snapshotPathAbs = path.join(OUTPUT, snapshotFileName);
-  const inventoryCli = path.join(SKILL_ROOT, 'any-inventory.mjs');
-
-  // Scan-range flag propagation (docs/history/phases/p2/p2-0.md §5.5 P1-5). Re-pass what this
-  // pre-write run received; don't invent new defaults.
-  const hookArgs = [
-    inventoryCli,
-    '--root', ROOT,
-    '--output', OUTPUT,
-    '--artifact-name', snapshotFileName,
-  ];
-  // parseCliArgs exposes `includeTests` as a boolean derived from the
-  // raw flags. Pass `--production` through when `includeTests === false`
-  // (matches how parseCliArgs computes it); otherwise inventory uses its
-  // default which mirrors this pre-write's settings.
-  if (args.includeTests === false) hookArgs.push('--production');
-  for (const exc of (args.exclude ?? [])) hookArgs.push('--exclude', exc);
-
-  process.stderr.write(`[pre-write] P2-0 hook: running any-inventory.mjs\n`);
-  try {
-    execFileSync(process.execPath, hookArgs, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    });
-    if (existsSync(snapshotPathAbs)) {
-      preWriteBlock.anyInventoryPath = snapshotFileName;
-      process.stderr.write(`[pre-write] P2-0 hook: snapshot → ${snapshotFileName}\n`);
-    } else {
-      failures.push({
-        kind: 'any-inventory-hook-failed',
-        reason: `any-inventory.mjs succeeded but produced no ${snapshotFileName} artifact`,
-      });
-    }
-  } catch (e) {
-    // Any leftover partial file? Remove.
-    if (existsSync(snapshotPathAbs)) {
-      try { unlinkSync(snapshotPathAbs); } catch { /* best-effort */ }
-    }
-    failures.push({
-      kind: 'any-inventory-hook-failed',
-      reason: e?.message?.slice(0, 400) ?? 'unknown',
-      stderr: e?.stderr?.toString?.()?.slice(0, 400) ?? '',
-    });
-    process.stderr.write(`[pre-write] P2-0 hook: FAILED\n`);
-  }
-}
-
 const advisory = {
   invocationId,
   intentHash,

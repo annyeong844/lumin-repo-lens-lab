@@ -1383,6 +1383,8 @@ fn current_lifecycle_artifacts(
     for pointer in [
         "/preWrite/advisoryPath",
         "/preWrite/latestAdvisoryPath",
+        "/preWrite/rustEvidencePath",
+        "/preWrite/anyInventoryPath",
         "/preWrite/rustNativeArtifactPath",
         "/preWrite/rustNativeLatestPath",
         "/postWrite/deltaPath",
@@ -1410,6 +1412,7 @@ fn current_lifecycle_artifacts(
                 output,
                 &format!("any-inventory.pre.{invocation_id}.json"),
             );
+            add_current_output_file(&mut artifacts, output, "pre-write-evidence.latest.json");
         }
     }
 
@@ -1653,6 +1656,8 @@ mod post_write_base_evidence_tests {
         for name in [
             "symbols.json",
             "producer-performance.json",
+            "pre-write-evidence.PRE.json",
+            "pre-write-evidence.latest.json",
             "pre-write-advisory.latest.json",
             "pre-write-advisory.PRE.json",
             "any-inventory.pre.PRE.json",
@@ -1665,7 +1670,8 @@ mod post_write_base_evidence_tests {
                 "ran": true,
                 "advisoryPath": output.join("pre-write-advisory.PRE.json"),
                 "latestAdvisoryPath": output.join("pre-write-advisory.latest.json"),
-                "advisoryInvocationId": "PRE"
+                "advisoryInvocationId": "PRE",
+                "rustEvidencePath": "pre-write-evidence.PRE.json"
             }
         });
         let artifacts = current_lifecycle_artifacts(
@@ -1680,6 +1686,8 @@ mod post_write_base_evidence_tests {
                 "any-inventory.pre.PRE.json",
                 "pre-write-advisory.PRE.json",
                 "pre-write-advisory.latest.json",
+                "pre-write-evidence.PRE.json",
+                "pre-write-evidence.latest.json",
             ]
         );
         Ok(())

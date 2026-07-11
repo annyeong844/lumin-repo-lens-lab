@@ -333,6 +333,29 @@ fn js_pre_write_runs_existing_producer_and_projects_advisory_block() -> Result<(
 }
 
 #[test]
+fn fresh_js_pre_write_preserves_validated_rust_evidence_paths() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let out = temp.path().join("out");
+    fs::create_dir_all(&out)?;
+    let fake = write_fake_js_pre_write(temp.path(), &out, 0)?;
+    let mut request = js_request(temp.path(), &out, &fake);
+    request["noFreshAudit"] = json!(false);
+
+    let result = execute_js_pre_write_lifecycle(parse_js_request(request)?)?;
+
+    assert_eq!(result.exit_code, 0, "result={result:#?}");
+    assert_eq!(
+        result.block.rust_evidence_path.as_deref(),
+        Some("pre-write-evidence.JS-1.json")
+    );
+    assert_eq!(
+        result.block.any_inventory_path.as_deref(),
+        Some("any-inventory.pre.JS-1.json")
+    );
+    Ok(())
+}
+
+#[test]
 fn js_pre_write_child_failure_records_block_without_advisory() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let out = temp.path().join("out");
@@ -601,7 +624,10 @@ fn write_fake_js_pre_write(dir: &Path, out: &Path, exit_code: i32) -> Result<Fak
     fs::write(scripts_dir.join("pre-write.mjs"), "// fake path only\n")?;
     let script = dir.join(format!("fake-js-pre-write-{exit_code}.cmd"));
     let template = dir.join("js-advisory-template.json");
+    let evidence_template = dir.join("js-pre-write-evidence-template.json");
+    let inventory_template = dir.join("js-pre-write-inventory-template.json");
     write_js_advisory_template(&template, out)?;
+    write_js_pre_write_evidence_templates(&evidence_template, &inventory_template)?;
     fs::write(
         &script,
         format!(
@@ -623,6 +649,8 @@ fn write_fake_js_pre_write(dir: &Path, out: &Path, exit_code: i32) -> Result<Fak
                 "if {exit_code} EQU 0 (\r\n",
                 "  copy /Y \"{template}\" \"%OUT%\\pre-write-advisory.latest.json\" >NUL\r\n",
                 "  copy /Y \"{template}\" \"%OUT%\\pre-write-advisory.JS-1.json\" >NUL\r\n",
+                "  copy /Y \"{evidence_template}\" \"%OUT%\\pre-write-evidence.JS-1.json\" >NUL\r\n",
+                "  copy /Y \"{inventory_template}\" \"%OUT%\\any-inventory.pre.JS-1.json\" >NUL\r\n",
                 "  echo ## js pre-write\r\n",
                 "  echo [js-pre-write] diagnostic 1>&2\r\n",
                 ")\r\n",
@@ -631,6 +659,8 @@ fn write_fake_js_pre_write(dir: &Path, out: &Path, exit_code: i32) -> Result<Fak
             args_log = path_string(&dir.join("js-args.log")),
             stdin_log = path_string(&dir.join("js-intent.stdin")),
             template = path_string(&template),
+            evidence_template = path_string(&evidence_template),
+            inventory_template = path_string(&inventory_template),
             exit_code = exit_code,
         ),
     )?;
@@ -649,7 +679,10 @@ fn write_fake_js_pre_write(dir: &Path, out: &Path, exit_code: i32) -> Result<Fak
     fs::write(scripts_dir.join("pre-write.mjs"), "// fake path only\n")?;
     let script = dir.join(format!("fake-js-pre-write-{exit_code}"));
     let template = dir.join("js-advisory-template.json");
+    let evidence_template = dir.join("js-pre-write-evidence-template.json");
+    let inventory_template = dir.join("js-pre-write-inventory-template.json");
     write_js_advisory_template(&template, out)?;
+    write_js_pre_write_evidence_templates(&evidence_template, &inventory_template)?;
     fs::write(
         &script,
         format!(
@@ -667,6 +700,8 @@ done
 if [ {exit_code} -eq 0 ]; then
   cp '{template}' "$out/pre-write-advisory.latest.json"
   cp '{template}' "$out/pre-write-advisory.JS-1.json"
+  cp '{evidence_template}' "$out/pre-write-evidence.JS-1.json"
+  cp '{inventory_template}' "$out/any-inventory.pre.JS-1.json"
   printf '%s\n' '## js pre-write'
   printf '%s\n' '[js-pre-write] diagnostic' >&2
 fi
@@ -675,6 +710,8 @@ exit {exit_code}
             args_log = path_string(&dir.join("js-args.log")),
             stdin_log = path_string(&dir.join("js-intent.stdin")),
             template = path_string(&template),
+            evidence_template = path_string(&evidence_template),
+            inventory_template = path_string(&inventory_template),
         ),
     )?;
     let mut permissions = fs::metadata(&script)?.permissions();
@@ -698,7 +735,34 @@ fn write_js_advisory_template(path: &Path, out: &Path) -> Result<()> {
             "evidenceAvailability": {
                 "status": "available",
                 "producer": "pre-write.mjs"
+            },
+            "preWrite": {
+                "rustEvidencePath": "pre-write-evidence.JS-1.json",
+                "anyInventoryPath": "any-inventory.pre.JS-1.json"
             }
+        }))?,
+    )?;
+    Ok(())
+}
+
+fn write_js_pre_write_evidence_templates(evidence: &Path, inventory: &Path) -> Result<()> {
+    fs::write(
+        evidence,
+        serde_json::to_string_pretty(&json!({
+            "schemaVersion": "lumin-js-ts-pre-write-evidence-response.v1",
+            "anyInventory": {
+                "meta": { "artifact": "any-inventory.pre.JS-1.json" }
+            }
+        }))?,
+    )?;
+    fs::write(
+        inventory,
+        serde_json::to_string_pretty(&json!({
+            "meta": {
+                "artifact": "any-inventory.pre.JS-1.json",
+                "supports": { "typeEscapes": true }
+            },
+            "typeEscapes": []
         }))?,
     )?;
     Ok(())

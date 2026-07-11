@@ -5,7 +5,7 @@ use super::io_support::write_stdout_json;
 use super::usage::USAGE;
 
 const RUNTIME_CONTRACT_SCHEMA_VERSION: &str = "lumin-audit-core-runtime-contract.v1";
-const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v41";
+const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v42";
 
 const SUPPORTED_SUBCOMMANDS: &[&str] = &[
     "artifact-registry",
@@ -29,6 +29,7 @@ const SUPPORTED_SUBCOMMANDS: &[&str] = &[
     "framework-resource-surfaces-artifact",
     "function-clones-artifact",
     "js-ts-extract-artifact",
+    "js-ts-pre-write-evidence",
     "module-reachability-artifact",
     "rank-fixes-artifact",
     "resolver-diagnostics-artifacts",
@@ -108,6 +109,7 @@ const RESULT_OUTPUT_SUBCOMMANDS: &[&str] = &[
     "framework-resource-surfaces-artifact",
     "function-clones-artifact",
     "js-ts-extract-artifact",
+    "js-ts-pre-write-evidence",
     "module-reachability-artifact",
     "rank-fixes-artifact",
     "resolver-diagnostics-artifacts",
@@ -133,6 +135,7 @@ const RUNTIME_FEATURES: &[&str] = &[
     "jsTsExtractDynamicImportOpacity",
     "jsTsExtractPathBackedInput",
     "jsTsExtractLocalOperations",
+    "jsTsPreWriteEvidence",
     "sourceUseAssembly",
     "sourceUseAssemblyResolvedRecordTargets",
     "sourceUseAssemblyExternalRecordIds",

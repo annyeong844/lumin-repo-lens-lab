@@ -300,7 +300,8 @@ Any one condition failing demotes to `medium`. Two failing → `low`. Three → 
 | Producer | Facts it emits |
 |---|---|
 | `build-symbol-graph.mjs` | type-owner, helper-owner (both optionally annotated with `anyContamination`), dependency-import-consumer, blind-zone, resolver-confidence |
-| `any-inventory.mjs` | type-escape |
+| `any-inventory.mjs` | type-escape for standalone and post-write inventories |
+| `lumin-audit-core::js_ts_pre_write` | type-escape for the pre-write baseline, projected from the same OXC pass as compact pre-write symbol/topology evidence |
 | `measure-topology.mjs` | topology-edge |
 | `classify-dead-exports.mjs` | (annotates facts via provenance; does not produce new facts) |
 | `rank-fixes.mjs` | (annotates via tiers; does not produce new facts) |

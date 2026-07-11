@@ -137,6 +137,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'js-ts-extract-artifact: missing --input <path|->',
   ],
   [
+    ['js-ts-pre-write-evidence'],
+    'js-ts-pre-write-evidence: missing --input <path|->',
+  ],
+  [
     ['module-reachability-artifact'],
     'module-reachability-artifact: missing --input <path|->',
   ],
@@ -206,6 +210,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'framework-resource-surfaces-artifact',
   'function-clones-artifact',
   'js-ts-extract-artifact',
+  'js-ts-pre-write-evidence',
   'module-reachability-artifact',
   'rank-fixes-artifact',
   'resolver-diagnostics-artifacts',
@@ -221,7 +226,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v41';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v42';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -417,6 +422,7 @@ function auditCoreBinaryReportsCurrentContract(command) {
   if (contract?.features?.jsTsExtractDynamicImportOpacity !== true) return false;
   if (contract?.features?.jsTsExtractPathBackedInput !== true) return false;
   if (contract?.features?.jsTsExtractLocalOperations !== true) return false;
+  if (contract?.features?.jsTsPreWriteEvidence !== true) return false;
   if (contract?.features?.sourceUseAssembly !== true) return false;
   if (contract?.features?.sourceUseAssemblyResolvedRecordTargets !== true) return false;
   if (contract?.features?.sourceUseAssemblyExternalRecordIds !== true) return false;
@@ -517,6 +523,7 @@ function auditCoreBinaryWritesResultFiles(command) {
   const exportActionSafetyInputPath = path.join(tempDir, 'export-action-safety-artifact.json');
   const functionClonesInputPath = path.join(tempDir, 'function-clones-artifact.json');
   const jsTsExtractInputPath = path.join(tempDir, 'js-ts-extract-artifact.json');
+  const jsTsPreWriteInputPath = path.join(tempDir, 'js-ts-pre-write-evidence.json');
   const moduleReachabilityInputPath = path.join(tempDir, 'module-reachability-artifact.json');
   const rankFixesInputPath = path.join(tempDir, 'rank-fixes-artifact.json');
   const resolverDiagnosticsInputPath = path.join(tempDir, 'resolver-diagnostics-artifacts.json');
@@ -623,11 +630,28 @@ mkdirSync(output, { recursive: true });
 const advisoryId = output.includes('lifecycle-out') ? 'PROBE-LIFECYCLE' : 'PROBE';
 const specific = path.join(output, \`pre-write-advisory.\${advisoryId}.json\`);
 const latest = path.join(output, 'pre-write-advisory.latest.json');
+const evidenceName = \`pre-write-evidence.\${advisoryId}.json\`;
+const inventoryName = \`any-inventory.pre.\${advisoryId}.json\`;
+const inventory = {
+  meta: { artifact: inventoryName, supports: { typeEscapes: true } },
+  typeEscapes: [],
+};
+const evidence = {
+  schemaVersion: 'lumin-js-ts-pre-write-evidence-response.v1',
+  anyInventory: inventory,
+};
 const advisory = {
   invocationId: advisoryId,
   artifactPaths: { invocationSpecific: specific, latest },
   evidenceAvailability: { status: 'available', producer: 'pre-write.mjs' },
+  preWrite: {
+    rustEvidencePath: evidenceName,
+    anyInventoryPath: inventoryName,
+  },
 };
+writeFileSync(path.join(output, evidenceName), JSON.stringify(evidence));
+writeFileSync(path.join(output, 'pre-write-evidence.latest.json'), JSON.stringify(evidence));
+writeFileSync(path.join(output, inventoryName), JSON.stringify(inventory));
 writeFileSync(specific, JSON.stringify(advisory));
 writeFileSync(latest, JSON.stringify(advisory));
 `);
@@ -830,12 +854,33 @@ writeFileSync(latest, JSON.stringify(advisory));
     }));
     const jsTsExtractProbeSource = 'import { api, bare } from "./dep";\napi.foo();\nconst cjsApi = require("./cjs-api");\ncjsApi.run();\nconst { cjsExact } = require("./cjs-exact");\nrequire("./cjs-side-effect");\nrequire(target);\nexport const view = bare;\nexport const routes = import.meta.glob("./pages/*.ts");\nexport async function load(target) {\n  const mod = await import("web-tree-sitter");\n  Parser = mod.Parser;\n  const lazy = await import("./lazy");\n  lazy.boot();\n  await import(`./pages/${target}.ts`);\n  return import(target);\n}\nexport function buildProbeRepository() {\n  function getProbe() { return null; }\n}\nexports.probe = 1;\nmodule.exports.namedProbe = 2;\nexports[dynamicName] = 3;\nmodule.exports = { objectProbe: 4 };\nmodule.exports = makeExports();\n';
     writeFileSync(path.join(rootDir, 'src', 'consumer.mjs'), jsTsExtractProbeSource);
+    writeFileSync(path.join(rootDir, 'src', 'dep.ts'), 'export const api = { foo() {} };\nexport const bare = 1;\nexport const escaped = bare as any;\n');
     writeFileSync(jsTsExtractInputPath, JSON.stringify({
       schemaVersion: 'lumin-js-ts-extract-request.v1',
       files: [
         {
           filePath: path.join(rootDir, 'src', 'consumer.mjs'),
           artifactFilePath: 'src/consumer.mjs',
+        },
+      ],
+    }));
+    writeFileSync(jsTsPreWriteInputPath, JSON.stringify({
+      schemaVersion: 'lumin-js-ts-pre-write-evidence-request.v1',
+      root: rootDir,
+      evidenceArtifact: 'pre-write-evidence.PROBE.json',
+      anyInventoryArtifact: 'any-inventory.pre.PROBE.json',
+      generated: '2026-07-11T00:00:00.000Z',
+      includeTests: true,
+      excludes: [],
+      dependencyRoots: ['web-tree-sitter'],
+      files: [
+        {
+          filePath: path.join(rootDir, 'src', 'consumer.mjs'),
+          artifactFilePath: 'src/consumer.mjs',
+        },
+        {
+          filePath: path.join(rootDir, 'src', 'dep.ts'),
+          artifactFilePath: 'src/dep.ts',
         },
       ],
     }));
@@ -1474,6 +1519,11 @@ writeFileSync(latest, JSON.stringify(advisory));
         requiresArtifactReads: false,
       },
       {
+        subcommand: 'js-ts-pre-write-evidence',
+        args: ['js-ts-pre-write-evidence', '--input', jsTsPreWriteInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'symbol-graph-artifact',
         args: ['symbol-graph-artifact', '--input', symbolGraphInputPath],
         requiresArtifactReads: false,
@@ -1702,7 +1752,28 @@ function resultPayloadMatchesProbe(json, probe) {
       json.deadProdList?.[0]?.symbol === 'beta' &&
       json.unresolvedInternalSummaryByReason?.['alias-miss']?.count === 1 &&
       json.unresolvedInternalSummaryByReason?.['workspace-generated-artifact-missing']?.count === 1;
-  }  if (probe.subcommand === 'js-ts-extract-artifact') {
+  }
+  if (probe.subcommand === 'js-ts-pre-write-evidence') {
+    return json.schemaVersion === 'lumin-js-ts-pre-write-evidence-response.v1' &&
+      json.symbols?.meta?.supports?.identityFanIn === true &&
+      json.symbols?.meta?.supports?.dependencyImportConsumers === true &&
+      json.symbols?.defIndex?.['src/dep.ts']?.api?.name === 'api' &&
+      json.symbols?.fanInByIdentity?.['src/dep.ts::api'] === 1 &&
+      json.symbols?.dependencyImportConsumers?.some((consumer) =>
+        consumer?.depRoot === 'web-tree-sitter' &&
+        consumer?.file === 'src/consumer.mjs'
+      ) &&
+      json.anyInventory?.meta?.artifact === 'any-inventory.pre.PROBE.json' &&
+      json.anyInventory?.meta?.supports?.typeEscapes === true &&
+      json.anyInventory?.typeEscapes?.some((escape) =>
+        escape?.file === 'src/dep.ts' && escape?.escapeKind === 'as-any'
+      ) &&
+      json.topology?.meta?.complete === true &&
+      json.topology?.edges?.some((edge) =>
+        edge?.from === 'src/consumer.mjs' && edge?.to === 'src/dep.ts'
+      );
+  }
+  if (probe.subcommand === 'js-ts-extract-artifact') {
     const file = json.files?.[0];
     const uses = Array.isArray(file?.uses) ? file.uses : [];
     const localOperations = Array.isArray(file?.localOperations) ? file.localOperations : [];
@@ -2087,6 +2158,8 @@ function resultPayloadMatchesProbe(json, probe) {
       json.block.producer === 'pre-write.mjs' &&
       json.block.ran === true &&
       json.block.advisoryInvocationId === 'PROBE' &&
+      json.block.rustEvidencePath === 'pre-write-evidence.PROBE.json' &&
+      json.block.anyInventoryPath === 'any-inventory.pre.PROBE.json' &&
       json.exitCode === 0 &&
       json.stdout === undefined &&
       json.stderr === undefined;
@@ -2100,6 +2173,8 @@ function resultPayloadMatchesProbe(json, probe) {
       json.preWrite.producer === 'pre-write.mjs' &&
       json.preWrite.ran === true &&
       json.preWrite.advisoryInvocationId === 'PROBE-LIFECYCLE' &&
+      json.preWrite.rustEvidencePath === 'pre-write-evidence.PROBE-LIFECYCLE.json' &&
+      json.preWrite.anyInventoryPath === 'any-inventory.pre.PROBE-LIFECYCLE.json' &&
       typeof json.preWrite.advisoryPath === 'string' &&
       json.preWrite.advisoryPath.includes('pre-write-advisory.PROBE-LIFECYCLE.json') &&
       json.postWrite === null &&

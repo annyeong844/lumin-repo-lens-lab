@@ -520,9 +520,57 @@ fn cli_rust_analysis_run_merge_reads_stdin_json() -> Result<()> {
 }
 
 #[test]
+fn cli_js_ts_pre_write_writes_shared_evidence_to_result_file() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let source = temp.path().join("app.ts");
+    let result_path = temp.path().join("result.json");
+    fs::write(&source, "export const value = input as any;\n")?;
+    let request = json!({
+        "schemaVersion": "lumin-js-ts-pre-write-evidence-request.v1",
+        "root": temp.path(),
+        "evidenceArtifact": "pre-write-evidence.PROBE.json",
+        "anyInventoryArtifact": "any-inventory.pre.PROBE.json",
+        "generated": "2026-07-11T00:00:00.000Z",
+        "includeTests": true,
+        "excludes": [],
+        "dependencyRoots": [],
+        "files": [{
+            "filePath": source,
+            "artifactFilePath": "app.ts"
+        }]
+    });
+    let child = Command::new(audit_core_bin())
+        .arg("js-ts-pre-write-evidence")
+        .arg("--input")
+        .arg("-")
+        .arg("--result-output")
+        .arg(&result_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    let output = write_child_stdin_and_wait(child, &request.to_string())?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    let result = serde_json::from_slice::<serde_json::Value>(&fs::read(result_path)?)?;
+    assert_eq!(
+        result["anyInventory"]["typeEscapes"][0]["escapeKind"],
+        "as-any"
+    );
+    Ok(())
+}
+
+#[test]
 fn cli_artifact_registry_emits_stdout_json() -> Result<()> {
     let temp = tempfile::tempdir()?;
     fs::write(temp.path().join("symbols.json"), "{}\n")?;
+    fs::write(temp.path().join("pre-write-evidence.PROBE.json"), "{}\n")?;
+    fs::write(temp.path().join("pre-write-evidence.latest.json"), "{}\n")?;
     fs::write(temp.path().join("rust-analyzer-health.latest.json"), "{}\n")?;
 
     let output = Command::new(audit_core_bin())
@@ -533,7 +581,14 @@ fn cli_artifact_registry_emits_stdout_json() -> Result<()> {
 
     assert!(output.status.success());
     let artifacts = serde_json::from_slice::<Vec<String>>(&output.stdout)?;
-    assert_eq!(artifacts, names(&["symbols.json"]));
+    assert_eq!(
+        artifacts,
+        names(&[
+            "pre-write-evidence.PROBE.json",
+            "pre-write-evidence.latest.json",
+            "symbols.json",
+        ])
+    );
     Ok(())
 }
 

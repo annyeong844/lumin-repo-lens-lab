@@ -106,6 +106,10 @@ pub struct PreWriteBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence_availability: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub rust_evidence_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub any_inventory_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rust_native_artifact_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rust_native_latest_path: Option<String>,
@@ -322,6 +326,30 @@ fn execute_js_pre_write_lifecycle_with_stdio(
             ));
         }
     };
+    let (rust_evidence_path, any_inventory_path) = match js_pre_write_evidence_paths(
+        &advisory,
+        &request.output,
+        &advisory_invocation_id,
+        request.no_fresh_audit,
+    ) {
+        Ok(paths) => paths,
+        Err(error) => {
+            let reason = js_advisory_failure_reason(
+                &latest_advisory_path,
+                Some(&advisory_path),
+                error.to_string(),
+            );
+            return Ok(js_failure_result(
+                &request,
+                PreWriteFailureKind::AdvisoryArtifactInvalid,
+                reason,
+                1,
+                child.exit_code,
+                nonempty(child.stdout),
+                nonempty(child.stderr),
+            ));
+        }
+    };
 
     Ok(PreWriteLifecycleResult {
         schema_version: PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
@@ -337,6 +365,8 @@ fn execute_js_pre_write_lifecycle_with_stdio(
             latest_advisory_path: Some(path_string(&latest_advisory_path)),
             advisory_invocation_id: Some(advisory_invocation_id),
             evidence_availability: Some(evidence_availability),
+            rust_evidence_path,
+            any_inventory_path,
             rust_native_artifact_path: None,
             rust_native_latest_path: None,
             source_commit: None,
@@ -456,6 +486,8 @@ fn execute_pre_write_lifecycle_with_stdio(
             latest_advisory_path: Some(path_string(&written.latest_path)),
             advisory_invocation_id: Some(request.advisory_invocation_id.clone()),
             evidence_availability: None,
+            rust_evidence_path: None,
+            any_inventory_path: None,
             rust_native_artifact_path: Some(path_string(&request.rust_native_artifact_path)),
             rust_native_latest_path: Some(path_string(&request.rust_native_latest_path)),
             source_commit: Some(source_commit),
@@ -728,6 +760,64 @@ fn read_js_pre_write_advisory(path: &Path) -> Result<Value> {
     })?;
     required_invocation_id(&advisory, "js pre-write advisory")?;
     Ok(advisory)
+}
+
+fn js_pre_write_evidence_paths(
+    advisory: &Value,
+    output: &Path,
+    invocation_id: &str,
+    no_fresh_audit: bool,
+) -> Result<(Option<String>, Option<String>)> {
+    if no_fresh_audit {
+        return Ok((None, None));
+    }
+    let expected_evidence = format!("pre-write-evidence.{invocation_id}.json");
+    let expected_inventory = format!("any-inventory.pre.{invocation_id}.json");
+    let rust_evidence_path = advisory
+        .pointer("/preWrite/rustEvidencePath")
+        .and_then(Value::as_str)
+        .context("js pre-write advisory.preWrite.rustEvidencePath must be a string")?;
+    let any_inventory_path = advisory
+        .pointer("/preWrite/anyInventoryPath")
+        .and_then(Value::as_str)
+        .context("js pre-write advisory.preWrite.anyInventoryPath must be a string")?;
+    if rust_evidence_path != expected_evidence || any_inventory_path != expected_inventory {
+        bail!("js pre-write advisory evidence paths do not match invocationId {invocation_id}");
+    }
+
+    let evidence = read_required_json(&output.join(&expected_evidence), "js pre-write evidence")?;
+    if evidence.get("schemaVersion").and_then(Value::as_str)
+        != Some("lumin-js-ts-pre-write-evidence-response.v1")
+        || evidence
+            .pointer("/anyInventory/meta/artifact")
+            .and_then(Value::as_str)
+            != Some(expected_inventory.as_str())
+    {
+        bail!("js pre-write evidence contract is invalid");
+    }
+    let inventory = read_required_json(
+        &output.join(&expected_inventory),
+        "js pre-write any inventory",
+    )?;
+    if inventory.pointer("/meta/artifact").and_then(Value::as_str)
+        != Some(expected_inventory.as_str())
+        || inventory
+            .pointer("/meta/supports/typeEscapes")
+            .and_then(Value::as_bool)
+            != Some(true)
+        || !inventory.get("typeEscapes").is_some_and(Value::is_array)
+    {
+        bail!("js pre-write any inventory contract is invalid");
+    }
+
+    Ok((Some(expected_evidence), Some(expected_inventory)))
+}
+
+fn read_required_json(path: &Path, label: &str) -> Result<Value> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("{label}: failed to read {}", path.display()))?;
+    serde_json::from_str(&text)
+        .with_context(|| format!("{label}: invalid JSON in {}", path.display()))
 }
 
 fn read_rust_pre_write_artifact(path: &Path) -> Result<RustPreWriteArtifact> {
@@ -1115,6 +1205,8 @@ fn rust_failure_result(
             latest_advisory_path: None,
             advisory_invocation_id: Some(request.advisory_invocation_id.clone()),
             evidence_availability: Some(evidence_availability),
+            rust_evidence_path: None,
+            any_inventory_path: None,
             rust_native_artifact_path: Some(path_string(&request.rust_native_artifact_path)),
             rust_native_latest_path: None,
             source_commit: request.source_commit.clone(),
@@ -1157,6 +1249,8 @@ fn js_failure_result(
                 "failureKind": failure_kind,
                 "reason": reason,
             })),
+            rust_evidence_path: None,
+            any_inventory_path: None,
             rust_native_artifact_path: None,
             rust_native_latest_path: None,
             source_commit: None,

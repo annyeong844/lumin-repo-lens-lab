@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v41"
+        "audit-core-js-runtime-bridge.v42"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -40,6 +40,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         true
     );
     assert_eq!(contract["features"]["jsTsExtractLocalOperations"], true);
+    assert_eq!(contract["features"]["jsTsPreWriteEvidence"], true);
     assert_eq!(contract["features"]["sourceUseAssembly"], true);
     assert_eq!(
         contract["features"]["sourceUseAssemblyResolvedRecordTargets"],
@@ -101,6 +102,9 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     assert!(supported.iter().any(|item| item == "symbol-graph-artifact"));
     assert!(supported
         .iter()
+        .any(|item| item == "js-ts-pre-write-evidence"));
+    assert!(supported
+        .iter()
         .any(|item| item == "execute-audit-lifecycle"));
 
     let result_output = contract["resultOutputSubcommands"]
@@ -109,6 +113,9 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     assert!(result_output
         .iter()
         .any(|item| item == "symbol-graph-artifact"));
+    assert!(result_output
+        .iter()
+        .any(|item| item == "js-ts-pre-write-evidence"));
     assert!(result_output
         .iter()
         .any(|item| item == "execute-audit-lifecycle"));

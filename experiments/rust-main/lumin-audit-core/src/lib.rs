@@ -20,6 +20,7 @@ pub mod framework_resource_surfaces;
 pub mod function_clones;
 pub mod generated_artifacts;
 pub mod js_ts_extract;
+pub mod js_ts_pre_write;
 pub mod lifecycle;
 pub mod lifecycle_exit_policy;
 pub mod lifecycle_request;
