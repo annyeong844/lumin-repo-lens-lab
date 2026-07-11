@@ -245,6 +245,8 @@ const ROOT = path.resolve(values.root);
 const OUT = path.resolve(values.output ?? path.join(ROOT, '.audit'));
 const OUTPUT_WAS_DEFAULT = !values.output;
 const PROFILE = values.profile;
+const PROFILE_EXPLICIT = process.argv.slice(2).some((arg) =>
+  arg === '--profile' || arg.startsWith('--profile='));
 const AUDIT_RUN_ID = generateInvocationId();
 const SOURCES_VALUE = values.sources ?? values.source;
 const INCLUDE_TESTS = normalizeIncludeTests(values, process.argv.slice(2));
@@ -396,6 +398,7 @@ function manifestEvidenceOptions() {
     rustAnalysisRun,
     mergeRustAnalysisRun: true,
     onArtifactRead: artifactReadMetrics.observeRead,
+    basePipelinePlanned: RUN_BASE_PIPELINE,
   };
 }
 
@@ -422,6 +425,7 @@ function buildRuntimeExecutorRequest() {
     schemaVersion: 'lumin-audit-runtime-executor-request.v2',
     runId: AUDIT_RUN_ID,
     profile: PROFILE,
+    profileExplicit: PROFILE_EXPLICIT,
     sarif: values.sarif === true,
     preWrite: values['pre-write'] === true,
     postWrite: values['post-write'] === true,

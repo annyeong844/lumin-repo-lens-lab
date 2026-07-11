@@ -208,6 +208,25 @@ fn cli_orchestration_plan_emits_typed_json() -> Result<()> {
 }
 
 #[test]
+fn cli_explicit_full_post_write_keeps_the_base_pipeline() -> Result<()> {
+    let output = Command::new(audit_core_bin())
+        .arg("orchestration-plan")
+        .arg("--profile")
+        .arg("full")
+        .arg("--post-write")
+        .output()?;
+
+    assert!(output.status.success());
+    let plan = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+    assert_eq!(plan["basePipeline"]["status"], "planned");
+    assert_eq!(plan["basePipeline"]["requested"], true);
+    assert!(plan["steps"].as_array().is_some_and(|steps| steps
+        .iter()
+        .any(|step| step["step"] == "build-call-graph.mjs")));
+    Ok(())
+}
+
+#[test]
 fn cli_orchestration_plan_rejects_unknown_profile() -> Result<()> {
     let output = Command::new(audit_core_bin())
         .arg("orchestration-plan")

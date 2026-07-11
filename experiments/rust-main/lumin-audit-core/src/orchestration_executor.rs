@@ -66,6 +66,8 @@ pub struct RuntimeExecutorRequest {
     #[serde(default = "default_profile")]
     pub profile: String,
     #[serde(default)]
+    pub profile_explicit: bool,
+    #[serde(default)]
     pub sarif: bool,
     #[serde(default)]
     pub pre_write: bool,
@@ -300,6 +302,7 @@ pub fn execute_runtime_request(request: RuntimeExecutorRequest) -> Result<Runtim
     let profile = AuditProfile::parse(&request.profile)?;
     let plan = build_orchestration_plan(OrchestrationPlanOptions {
         profile,
+        profile_explicit: request.profile_explicit,
         sarif: request.sarif,
         pre_write: request.pre_write,
         post_write: request.post_write,

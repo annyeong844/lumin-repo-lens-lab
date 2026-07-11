@@ -206,12 +206,14 @@ pub(super) fn run_orchestration_plan(args: Vec<String>) -> Result<()> {
         profile: AuditProfile::Quick,
         ..OrchestrationPlanArgs::default()
     };
+    let mut profile_explicit = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--profile" => {
                 let profile = take_string(&mut args, "--profile")?;
                 parsed.profile = AuditProfile::parse(&profile)?;
+                profile_explicit = true;
             }
             "--sarif" => parsed.sarif = true,
             "--pre-write" => parsed.pre_write = true,
@@ -225,6 +227,7 @@ pub(super) fn run_orchestration_plan(args: Vec<String>) -> Result<()> {
 
     let plan = build_orchestration_plan(OrchestrationPlanOptions {
         profile: parsed.profile,
+        profile_explicit,
         sarif: parsed.sarif,
         pre_write: parsed.pre_write,
         post_write: parsed.post_write,

@@ -5,7 +5,7 @@ use super::io_support::write_stdout_json;
 use super::usage::USAGE;
 
 const RUNTIME_CONTRACT_SCHEMA_VERSION: &str = "lumin-audit-core-runtime-contract.v1";
-const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v39";
+const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v40";
 
 const SUPPORTED_SUBCOMMANDS: &[&str] = &[
     "artifact-registry",
@@ -159,6 +159,7 @@ const RUNTIME_FEATURES: &[&str] = &[
     "sourceInventoryRunBinding",
     "failClosedLifecycleArtifacts",
     "postWriteOnlyBasePipelineSkip",
+    "postWriteScopedBaseEvidence",
 ];
 
 pub(super) fn run_runtime_contract(args: Vec<String>) -> Result<()> {

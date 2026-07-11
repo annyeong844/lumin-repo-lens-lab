@@ -46,6 +46,7 @@ impl Serialize for AuditProfile {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OrchestrationPlanOptions {
     pub profile: AuditProfile,
+    pub profile_explicit: bool,
     pub sarif: bool,
     pub pre_write: bool,
     pub post_write: bool,
@@ -300,6 +301,8 @@ fn base_pipeline_plan(options: OrchestrationPlanOptions, emit_sarif: bool) -> Ba
         && !options.canon_draft
         && !options.check_canon
         && !emit_sarif
+        && !options.profile_explicit
+        && !options.rust_analyzer
     {
         return BasePipelinePlan {
             requested: false,
@@ -638,4 +641,48 @@ fn push_precondition_step_with_owner(
         precondition: Some(spec.precondition),
         skip_reason_when_unmet: Some(spec.skip_reason_when_unmet),
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn post_write_options() -> OrchestrationPlanOptions {
+        OrchestrationPlanOptions {
+            post_write: true,
+            ..OrchestrationPlanOptions::default()
+        }
+    }
+
+    #[test]
+    fn skips_only_the_implicit_quick_post_write_base_pipeline() {
+        let plan = build_orchestration_plan(post_write_options());
+        assert_eq!(plan.base_pipeline.status, BasePipelineStatus::Skipped);
+        assert!(!plan.base_pipeline.requested);
+    }
+
+    #[test]
+    fn explicit_profile_keeps_the_post_write_base_pipeline() {
+        let plan = build_orchestration_plan(OrchestrationPlanOptions {
+            profile: AuditProfile::Full,
+            profile_explicit: true,
+            ..post_write_options()
+        });
+        assert_eq!(plan.base_pipeline.status, BasePipelineStatus::Planned);
+        assert!(plan.base_pipeline.requested);
+        assert!(plan
+            .steps
+            .iter()
+            .any(|step| step.script == "build-call-graph.mjs"));
+    }
+
+    #[test]
+    fn requested_rust_analysis_keeps_the_post_write_base_pipeline() {
+        let plan = build_orchestration_plan(OrchestrationPlanOptions {
+            rust_analyzer: true,
+            ..post_write_options()
+        });
+        assert_eq!(plan.base_pipeline.status, BasePipelineStatus::Planned);
+        assert!(plan.base_pipeline.requested);
+    }
 }

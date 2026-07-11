@@ -758,9 +758,7 @@ fn cli_finalize_companion_policy_skips_summary_without_base_or_lifecycle() -> Re
         String::from_utf8_lossy(&output.stderr)
     );
     let result = serde_json::from_str::<Value>(&fs::read_to_string(&result_path)?)?;
-    assert!(result["topologyMermaidPath"]
-        .as_str()
-        .is_some_and(|path| path.ends_with("topology.mermaid.md")));
+    assert!(result["topologyMermaidPath"].is_null());
     assert!(result["auditSummaryPath"].is_null());
     assert!(result["reviewPackPath"].is_null());
     assert!(!output_dir.join("audit-summary.latest.md").exists());
@@ -768,9 +766,11 @@ fn cli_finalize_companion_policy_skips_summary_without_base_or_lifecycle() -> Re
 
     let manifest =
         serde_json::from_str::<Value>(&fs::read_to_string(output_dir.join("manifest.json"))?)?;
-    assert_eq!(manifest["topologyMermaid"]["format"], "markdown");
+    assert!(manifest.get("topologyMermaid").is_none());
     assert!(manifest.get("auditSummary").is_none());
     assert!(manifest.get("reviewPack").is_none());
+    assert_eq!(manifest["baseEvidence"]["status"], "not-refreshed");
+    assert_eq!(manifest["artifactsProduced"], json!([]));
     Ok(())
 }
 

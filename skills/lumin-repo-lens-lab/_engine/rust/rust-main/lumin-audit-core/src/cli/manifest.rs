@@ -266,6 +266,8 @@ struct ManifestLifecycleEvidenceRefreshInput {
     rust_analysis_ran: bool,
     #[serde(default)]
     rust_analysis_run: Option<RustAnalysisRunObservation>,
+    #[serde(default = "default_true")]
+    base_pipeline_planned: bool,
 }
 
 #[derive(Serialize)]
@@ -300,12 +302,14 @@ struct ManifestRootWithEvidenceCliInput {
     rust_analysis_ran: bool,
     #[serde(default)]
     rust_analysis_run: Option<RustAnalysisRunObservation>,
+    #[serde(default = "default_true")]
+    base_pipeline_planned: bool,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ManifestRootWithEvidenceResult {
-    manifest: lumin_audit_core::manifest_root::ManifestRoot,
+    manifest: serde_json::Value,
     artifact_reads: ManifestEvidenceArtifactReadEvents,
 }
 
@@ -315,6 +319,107 @@ fn default_true() -> bool {
 
 fn default_generated_artifacts_mode() -> String {
     "default".to_string()
+}
+
+struct BasePipelineEvidenceRequest {
+    label: &'static str,
+    root: String,
+    output: PathBuf,
+    include_tests: bool,
+    production: bool,
+    excludes: Vec<String>,
+    auto_excludes: Vec<String>,
+    generated_artifacts_mode: String,
+    rust_analysis_ran: bool,
+    rust_analysis_run: Option<RustAnalysisRunObservation>,
+    planned: bool,
+}
+
+fn manifest_evidence_for_base_pipeline(
+    request: BasePipelineEvidenceRequest,
+) -> Result<(
+    ManifestEvidenceUpdateFields,
+    ManifestEvidenceArtifactReadEvents,
+)> {
+    if !request.planned {
+        let reason = "base-pipeline-skipped-post-write-only";
+        let unavailable = || {
+            serde_json::json!({
+                "status": "unavailable",
+                "reason": reason,
+            })
+        };
+        return Ok((
+            ManifestEvidenceUpdateFields {
+                scan_range: serde_json::json!({
+                    "status": "unavailable",
+                    "reason": reason,
+                    "root": request.root,
+                    "includeTests": request.include_tests,
+                    "production": request.production,
+                    "excludes": request.excludes,
+                    "autoExcludes": request.auto_excludes,
+                }),
+                confidence: unavailable(),
+                resolver_diagnostics: unavailable(),
+                blind_zones: vec![serde_json::json!({
+                    "area": "base-audit",
+                    "severity": "high",
+                    "effect": "Base audit evidence was not refreshed for this post-write-only run; absence and freshness claims are unavailable.",
+                    "reason": reason,
+                })],
+                rust_analysis: unavailable(),
+                generated_artifacts: unavailable(),
+                framework_resource_surfaces: unavailable(),
+                unused_dependencies: unavailable(),
+                block_clones: unavailable(),
+                sfc_evidence: unavailable(),
+                living_audit: unavailable(),
+            },
+            ManifestEvidenceArtifactReadEvents {
+                schema_version: ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
+                root_dir: request.output.to_string_lossy().to_string(),
+                reads: Vec::new(),
+            },
+        ));
+    }
+
+    let generated_artifacts_mode =
+        GeneratedArtifactsMode::parse(&request.generated_artifacts_mode)?;
+    let summary = build_manifest_evidence_summary_with_reads(ManifestEvidenceReadRequest {
+        root: request.root,
+        output: request.output,
+        include_tests: request.include_tests,
+        production: request.production,
+        excludes: request.excludes,
+        auto_excludes: request.auto_excludes,
+        generated_artifacts_mode,
+        rust_analysis_ran: request.rust_analysis_ran,
+        rust_analysis_run: request.rust_analysis_run,
+        label: request.label.to_string(),
+    })?;
+    let evidence = serde_json::from_value::<ManifestEvidenceUpdateFields>(
+        serde_json::to_value(summary.summary)
+            .with_context(|| format!("{}: invalid summary shape", request.label))?,
+    )
+    .with_context(|| format!("{}: invalid evidence update shape", request.label))?;
+    Ok((evidence, summary.artifact_reads))
+}
+
+fn mark_base_evidence_not_refreshed(manifest: &mut serde_json::Value) -> Result<()> {
+    let object = manifest
+        .as_object_mut()
+        .context("manifest-root-with-evidence: manifest must be an object")?;
+    object.insert(
+        "baseEvidence".to_string(),
+        serde_json::json!({
+            "status": "not-refreshed",
+            "reason": "base-pipeline-skipped-post-write-only",
+            "artifactsProducedStatus": "not-current-run",
+        }),
+    );
+    object.insert("artifactsProduced".to_string(), serde_json::json!([]));
+    Ok(())
 }
 
 pub(super) fn run_manifest_write(args: Vec<String>) -> Result<()> {
@@ -436,6 +541,10 @@ pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Resul
     let request = serde_json::from_value::<FinalizeAuditRunWithCompanionsCliInput>(json)
         .context("finalize-audit-run-with-companions: invalid request shape")?;
     let output = Path::new(&request.context.output).to_path_buf();
+    let base_pipeline_planned = request
+        .companion_policy
+        .as_ref()
+        .is_none_or(|policy| policy.base_pipeline_planned);
     let companions = request
         .companion_policy
         .as_ref()
@@ -444,12 +553,20 @@ pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Resul
     let mut manifest = request.manifest;
     let mut artifact_read_events = request.artifact_read_events;
 
-    let topology = companion_artifact(&output, "topology.json", &mut artifact_read_events.reads);
-    let module_reachability = companion_artifact(
-        &output,
-        "module-reachability.json",
-        &mut artifact_read_events.reads,
-    );
+    let topology = if base_pipeline_planned {
+        companion_artifact(&output, "topology.json", &mut artifact_read_events.reads)
+    } else {
+        serde_json::Value::Null
+    };
+    let module_reachability = if base_pipeline_planned {
+        companion_artifact(
+            &output,
+            "module-reachability.json",
+            &mut artifact_read_events.reads,
+        )
+    } else {
+        serde_json::Value::Null
+    };
 
     let mut topology_mermaid_path = None;
     if companions.topology_mermaid && !topology.is_null() {
@@ -586,6 +703,9 @@ pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Resul
         companion,
     )?;
     apply_manifest_closeout_update(&mut manifest, update.clone())?;
+    if !base_pipeline_planned {
+        mark_base_evidence_not_refreshed(&mut manifest)?;
+    }
     let manifest_path = output.join("manifest.json");
     write_pretty_json_file(&manifest_path, &manifest)?;
 
@@ -632,31 +752,26 @@ pub(super) fn run_manifest_lifecycle_evidence_refresh(args: Vec<String>) -> Resu
     let mut manifest = request.manifest;
     let lifecycle_update = build_manifest_lifecycle_update(request.lifecycle);
     apply_manifest_lifecycle_update(&mut manifest, lifecycle_update)?;
-    let generated_artifacts_mode =
-        GeneratedArtifactsMode::parse(&request.evidence.generated_artifacts_mode)?;
-    let summary = build_manifest_evidence_summary_with_reads(ManifestEvidenceReadRequest {
-        root: request.evidence.root,
-        output: request.evidence.output,
-        include_tests: request.evidence.include_tests,
-        production: request.evidence.production,
-        excludes: request.evidence.excludes,
-        auto_excludes: request.evidence.auto_excludes,
-        generated_artifacts_mode,
-        rust_analysis_ran: request.evidence.rust_analysis_ran,
-        rust_analysis_run: request.evidence.rust_analysis_run,
-        label: "manifest-lifecycle-evidence-refresh".to_string(),
-    })?;
-    let evidence = serde_json::from_value::<ManifestEvidenceUpdateFields>(
-        serde_json::to_value(summary.summary)
-            .context("manifest-lifecycle-evidence-refresh: invalid summary shape")?,
-    )
-    .context("manifest-lifecycle-evidence-refresh: invalid evidence update shape")?;
+    let (evidence, artifact_reads) =
+        manifest_evidence_for_base_pipeline(BasePipelineEvidenceRequest {
+            label: "manifest-lifecycle-evidence-refresh",
+            root: request.evidence.root,
+            output: request.evidence.output,
+            include_tests: request.evidence.include_tests,
+            production: request.evidence.production,
+            excludes: request.evidence.excludes,
+            auto_excludes: request.evidence.auto_excludes,
+            generated_artifacts_mode: request.evidence.generated_artifacts_mode,
+            rust_analysis_ran: request.evidence.rust_analysis_ran,
+            rust_analysis_run: request.evidence.rust_analysis_run,
+            planned: request.evidence.base_pipeline_planned,
+        })?;
     apply_manifest_evidence_update(&mut manifest, evidence)?;
     write_json_result(
         result_output,
         &ManifestLifecycleEvidenceRefreshResult {
             manifest,
-            artifact_reads: summary.artifact_reads,
+            artifact_reads,
         },
     )
 }
@@ -677,26 +792,22 @@ pub(super) fn run_manifest_root_with_evidence(args: Vec<String>) -> Result<()> {
     let json = read_json_input(&input, "manifest-root-with-evidence")?;
     let request = serde_json::from_value::<ManifestRootWithEvidenceCliInput>(json)
         .context("manifest-root-with-evidence: invalid request shape")?;
-    let generated_artifacts_mode =
-        GeneratedArtifactsMode::parse(&request.generated_artifacts_mode)?;
-    let summary = build_manifest_evidence_summary_with_reads(ManifestEvidenceReadRequest {
-        root: request.root.clone(),
-        output: PathBuf::from(&request.output),
-        include_tests: request.include_tests,
-        production: request.production,
-        excludes: request.excludes,
-        auto_excludes: request.auto_excludes,
-        generated_artifacts_mode,
-        rust_analysis_ran: request.rust_analysis_ran,
-        rust_analysis_run: request.rust_analysis_run,
-        label: "manifest-root-with-evidence".to_string(),
-    })?;
-    let evidence = serde_json::from_value::<ManifestEvidenceUpdateFields>(
-        serde_json::to_value(summary.summary)
-            .context("manifest-root-with-evidence: invalid summary shape")?,
-    )
-    .context("manifest-root-with-evidence: invalid evidence shape")?;
-    let manifest = build_manifest_root(ManifestRootInput {
+    let base_pipeline_planned = request.base_pipeline_planned;
+    let (evidence, artifact_reads) =
+        manifest_evidence_for_base_pipeline(BasePipelineEvidenceRequest {
+            label: "manifest-root-with-evidence",
+            root: request.root.clone(),
+            output: PathBuf::from(&request.output),
+            include_tests: request.include_tests,
+            production: request.production,
+            excludes: request.excludes,
+            auto_excludes: request.auto_excludes,
+            generated_artifacts_mode: request.generated_artifacts_mode,
+            rust_analysis_ran: request.rust_analysis_ran,
+            rust_analysis_run: request.rust_analysis_run,
+            planned: base_pipeline_planned,
+        })?;
+    let mut manifest = serde_json::to_value(build_manifest_root(ManifestRootInput {
         generated: request.generated,
         profile: request.profile,
         root: request.root,
@@ -704,12 +815,16 @@ pub(super) fn run_manifest_root_with_evidence(args: Vec<String>) -> Result<()> {
         commands_run: request.commands_run,
         skipped: request.skipped,
         evidence,
-    })?;
+    })?)
+    .context("manifest-root-with-evidence: invalid manifest shape")?;
+    if !base_pipeline_planned {
+        mark_base_evidence_not_refreshed(&mut manifest)?;
+    }
     write_json_result(
         result_output,
         &ManifestRootWithEvidenceResult {
             manifest,
-            artifact_reads: summary.artifact_reads,
+            artifact_reads,
         },
     )
 }
@@ -1124,25 +1239,13 @@ fn write_json_result<T: Serialize>(result_output: Option<PathBuf>, value: &T) ->
 fn build_finalize_companion_plan(
     policy: &FinalizeAuditRunCompanionPolicy,
     context: &ProducerPerformanceAuditRunContext,
-    manifest: &serde_json::Value,
+    _manifest: &serde_json::Value,
 ) -> FinalizeAuditRunCompanionPlan {
-    let lifecycle_requested = lifecycle_block_requested(manifest, "preWrite")
-        || lifecycle_block_requested(manifest, "postWrite")
-        || lifecycle_block_requested(manifest, "canonDraft")
-        || lifecycle_block_requested(manifest, "checkCanon");
     FinalizeAuditRunCompanionPlan {
-        topology_mermaid: true,
-        audit_summary: policy.base_pipeline_planned || lifecycle_requested,
+        topology_mermaid: policy.base_pipeline_planned,
+        audit_summary: policy.base_pipeline_planned,
         review_pack: policy.base_pipeline_planned && context.profile != "quick",
     }
-}
-
-fn lifecycle_block_requested(manifest: &serde_json::Value, field: &str) -> bool {
-    manifest
-        .get(field)
-        .and_then(|block| block.get("requested"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
 }
 
 fn companion_artifact(
@@ -1157,6 +1260,48 @@ fn companion_artifact(
     match observed.value {
         Some(value) if !is_malformed_optional_artifact(&value) => value,
         _ => serde_json::Value::Null,
+    }
+}
+
+#[cfg(test)]
+mod post_write_base_evidence_tests {
+    use super::*;
+
+    #[test]
+    fn skipped_base_pipeline_returns_unavailable_evidence_without_reads() -> Result<()> {
+        let output = PathBuf::from("C:/tmp/lumin-post-write-output");
+        let (evidence, reads) = manifest_evidence_for_base_pipeline(BasePipelineEvidenceRequest {
+            label: "test",
+            root: "C:/repo".to_string(),
+            output: output.clone(),
+            include_tests: true,
+            production: false,
+            excludes: Vec::new(),
+            auto_excludes: Vec::new(),
+            generated_artifacts_mode: "default".to_string(),
+            rust_analysis_ran: false,
+            rust_analysis_run: None,
+            planned: false,
+        })?;
+        assert_eq!(evidence.scan_range["status"], "unavailable");
+        assert_eq!(
+            evidence.confidence["reason"],
+            "base-pipeline-skipped-post-write-only"
+        );
+        assert_eq!(reads.root_dir, output.to_string_lossy());
+        assert!(reads.reads.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn skipped_base_pipeline_marks_artifact_inventory_non_current() -> Result<()> {
+        let mut manifest = serde_json::json!({
+            "artifactsProduced": ["symbols.json", "triage.json"]
+        });
+        mark_base_evidence_not_refreshed(&mut manifest)?;
+        assert_eq!(manifest["baseEvidence"]["status"], "not-refreshed");
+        assert_eq!(manifest["artifactsProduced"], serde_json::json!([]));
+        Ok(())
     }
 }
 
