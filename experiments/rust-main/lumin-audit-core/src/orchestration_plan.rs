@@ -295,6 +295,21 @@ fn base_pipeline_plan(options: OrchestrationPlanOptions, emit_sarif: bool) -> Ba
         };
     }
 
+    if options.post_write
+        && !options.pre_write
+        && !options.canon_draft
+        && !options.check_canon
+        && !emit_sarif
+    {
+        return BasePipelinePlan {
+            requested: false,
+            status: BasePipelineStatus::Skipped,
+            reason: Some(
+                "post-write-only mode refreshes delta-required inventory instead of running the full quick audit",
+            ),
+        };
+    }
+
     BasePipelinePlan {
         requested: true,
         status: BasePipelineStatus::Planned,

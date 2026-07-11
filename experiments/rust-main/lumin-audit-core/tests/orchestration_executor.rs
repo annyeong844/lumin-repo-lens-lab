@@ -8,7 +8,9 @@ use lumin_audit_core::orchestration_executor::{
     execute_base_plan, execute_runtime_request, validate_executor_request, ExecutorRequest,
     RuntimeExecutorRequest,
 };
-use lumin_audit_core::orchestration_plan::{build_orchestration_plan, OrchestrationPlanOptions};
+use lumin_audit_core::orchestration_plan::{
+    build_orchestration_plan, BasePipelineStatus, OrchestrationPlanOptions,
+};
 
 fn base_request() -> Value {
     json!({
@@ -132,6 +134,29 @@ fn runtime_executor_builds_plan_inside_rust_before_execution() -> Result<()> {
     assert!(result.commands_run.is_empty());
     assert_eq!(result.skipped.len(), 1);
     assert_eq!(result.skipped[0].step, "base-audit-profile");
+    Ok(())
+}
+
+#[test]
+fn runtime_executor_skips_the_base_profile_for_post_write_only() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let mut value = runtime_request_json(temp.path());
+    value["preWrite"] = json!(false);
+    value["postWrite"] = json!(true);
+
+    let result = execute_runtime_request(runtime_request(value)?)?;
+
+    assert_eq!(
+        result.plan.base_pipeline.status,
+        BasePipelineStatus::Skipped
+    );
+    assert!(result.commands_run.is_empty());
+    assert_eq!(result.skipped.len(), 1);
+    assert_eq!(result.skipped[0].step, "base-audit-profile");
+    assert_eq!(
+        result.skipped[0].reason,
+        "post-write-only mode refreshes delta-required inventory instead of running the full quick audit"
+    );
     Ok(())
 }
 

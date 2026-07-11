@@ -240,8 +240,8 @@ No. Pre-write does not claim semantic equivalence from names alone. It surfaces 
 
 Exact normalized body-hash cueing is deferred until a body-hash lane exists in the lookup artifacts. When two helpers only share a common verb such as `create`, the default chat surface stays quiet and the muted cue remains in JSON diagnostics.
 
-**Q. Why can post-write feel as expensive as a quick scan?**
-Post-write refreshes the after-snapshot before comparing it to the matching pre-write advisory, so small edits can still pay the repository walk cost. Reusing the same `--output` keeps artifacts together; an incremental post-write cache is planned, but the current default favors a fresh comparison over a stale clean result.
+**Q. Why does post-write still walk the repository?**
+Post-write skips the unrelated quick audit profile, but it refreshes the after-snapshot before comparing it to the matching pre-write advisory. Small edits therefore still pay the focused inventory walk cost. Reusing the same `--output` keeps the paired evidence together; the default favors a fresh comparison over a stale clean result.
 
 **Q. Does it call a model or subagent by itself?**
 No. Full and CI profiles may write `audit-review-pack.latest.md`, but that file does not call any model or API by itself. In Claude Code, the main assistant can turn a lane into a focused codebase-reading assignment. Subagents should inspect repository files directly and report file:line evidence.

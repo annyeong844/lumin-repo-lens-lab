@@ -137,14 +137,9 @@ fn write_fake_child(dir: &Path, exit_code: i32) -> Result<PathBuf> {
 
 #[cfg(not(windows))]
 fn write_fake_child(dir: &Path, exit_code: i32) -> Result<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let path = dir.join(format!("fake-child-{exit_code}"));
+    let path = dir.join("generate-canon-draft.mjs");
     fs::write(&path, format!("#!/bin/sh\nexit {exit_code}\n"))?;
-    let mut permissions = fs::metadata(&path)?.permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions)?;
-    Ok(path)
+    Ok(PathBuf::from("/bin/sh"))
 }
 
 fn path_string(path: &Path) -> String {

@@ -112,6 +112,42 @@ fn pre_write_only_plan_skips_base_profile_without_losing_lifecycle_request() {
 }
 
 #[test]
+fn post_write_only_plan_skips_base_profile_without_losing_lifecycle_request() {
+    let plan = build_orchestration_plan(OrchestrationPlanOptions {
+        post_write: true,
+        ..OrchestrationPlanOptions::default()
+    });
+
+    assert_eq!(plan.base_pipeline.status, BasePipelineStatus::Skipped);
+    assert!(plan.steps.is_empty());
+    assert_eq!(plan.summary.planned_step_count, 0);
+    assert!(!plan.lifecycle.pre_write.requested);
+    assert!(plan.lifecycle.post_write.requested);
+    assert_eq!(
+        plan.skipped
+            .iter()
+            .find(|skip| skip.step == "base-audit-profile")
+            .map(|skip| skip.reason),
+        Some(
+            "post-write-only mode refreshes delta-required inventory instead of running the full quick audit"
+        )
+    );
+}
+
+#[test]
+fn post_write_with_sarif_keeps_the_base_profile() {
+    let plan = build_orchestration_plan(OrchestrationPlanOptions {
+        post_write: true,
+        sarif: true,
+        ..OrchestrationPlanOptions::default()
+    });
+
+    assert_eq!(plan.base_pipeline.status, BasePipelineStatus::Planned);
+    assert!(plan.lifecycle.post_write.requested);
+    assert!(step_names(&plan).contains(&"emit-sarif.mjs"));
+}
+
+#[test]
 fn pre_post_mutex_plan_records_base_skip() {
     let plan = build_orchestration_plan(OrchestrationPlanOptions {
         pre_write: true,
