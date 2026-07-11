@@ -5,7 +5,7 @@ use super::io_support::write_stdout_json;
 use super::usage::USAGE;
 
 const RUNTIME_CONTRACT_SCHEMA_VERSION: &str = "lumin-audit-core-runtime-contract.v1";
-const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v36";
+const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v38";
 
 const SUPPORTED_SUBCOMMANDS: &[&str] = &[
     "artifact-registry",
@@ -149,6 +149,8 @@ const RUNTIME_FEATURES: &[&str] = &[
     "sourceUseAssemblyRecordRows",
     "sourceUseAssemblyNameTable",
     "sourceUseAssemblyTypeOnlyState",
+    "sourceUseAssemblyDerivedReExportMaps",
+    "sourceUseAssemblyTerminalRecordOutcomes",
     "symbolGraphStrictRequestV2",
     "generatedVirtualSourceUseAssembly",
     "importMetaGlobSourceUseAssembly",

@@ -1,6 +1,57 @@
 use super::*;
 
 #[test]
+fn derives_reexport_maps_from_current_records_before_namespace_projection() {
+    let request = must_request(json!({
+        "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+        "root": "C:/repo",
+        "sourceFiles": [
+            "src/consumer.ts",
+            "src/barrel.ts",
+            "src/nested.ts",
+            "src/dep.ts"
+        ],
+        "records": [
+            {
+                "recordId": "consumer",
+                "consumerFile": "src/consumer.ts",
+                "fromSpec": "./barrel",
+                "name": "api",
+                "memberName": "run",
+                "kind": "imported-namespace-member",
+                "resolverStage": "relative"
+            },
+            {
+                "recordId": "named-map",
+                "consumerFile": "src/barrel.ts",
+                "fromSpec": "./nested",
+                "resolvedFile": "src/nested.ts",
+                "name": "api",
+                "kind": "reExport",
+                "resolverStage": "resolved-internal"
+            },
+            {
+                "recordId": "namespace-map",
+                "consumerFile": "src/nested.ts",
+                "fromSpec": "./dep",
+                "name": "api",
+                "kind": "reExportNamespace",
+                "resolverStage": "relative"
+            }
+        ]
+    }));
+
+    let response = response(request);
+    assert!(response
+        .direct_consumers
+        .iter()
+        .any(|consumer| consumer.consumer_file == "src/consumer.ts"
+            && consumer.def_file == "src/dep.ts"
+            && consumer.symbol == "run"));
+    assert_eq!(response.summary.skipped_count, 0);
+}
+
+#[test]
 fn handles_namespace_reexport_miss_and_skips_non_relative_records() {
     let response = response(request(json!([
         {

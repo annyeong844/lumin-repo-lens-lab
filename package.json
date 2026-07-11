@@ -80,7 +80,6 @@
     "test:vitest:cjs-classification": "vitest run tests/cjs-classification.test.mjs",
     "test:vitest:cjs-export-surface-artifact": "vitest run tests/cjs-export-surface-artifact.test.mjs",
     "test:vitest:cjs-integration": "vitest run tests/cjs-integration.test.mjs",
-    "test:vitest:class-method-index-prototype-names": "vitest run tests/class-method-index-prototype-names.test.mjs",
     "test:vitest:class-method-prewrite-surface": "vitest run tests/class-method-prewrite-surface.test.mjs",
     "test:vitest:classify-facts-ast": "vitest run tests/classify-facts-ast.test.mjs",
     "test:vitest:classify-performance-metadata": "vitest run tests/classify-performance-metadata.test.mjs",

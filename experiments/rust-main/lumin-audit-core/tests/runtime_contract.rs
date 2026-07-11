@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v36"
+        "audit-core-js-runtime-bridge.v38"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -82,6 +82,14 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     assert_eq!(contract["features"]["sourceUseAssemblyRecordRows"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyNameTable"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyTypeOnlyState"], true);
+    assert_eq!(
+        contract["features"]["sourceUseAssemblyDerivedReExportMaps"],
+        true
+    );
+    assert_eq!(
+        contract["features"]["sourceUseAssemblyTerminalRecordOutcomes"],
+        true
+    );
 
     let supported = contract["supportedSubcommands"]
         .as_array()

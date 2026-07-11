@@ -85,7 +85,6 @@ node tests/test-citation-verifier.mjs                    # Rule 1 grounded citat
 node tests/test-cjs-classification.mjs                   # PCEF P0 CJS consumer classification through symbol graph + dead-export pipeline
 node tests/test-cjs-export-surface-artifact.mjs          # CJS export surface facts survive into symbols.json for downstream blind-zone handling
 node tests/test-cjs-integration.mjs                      # CJS export surface, alias destructuring, and dynamic require opacity integration guard
-node tests/test-class-method-index-prototype-names.mjs   # class method index handles prototype method names as plain dictionary keys
 node tests/test-class-method-prewrite-surface.mjs        # WT-15 class method index remains separate from defIndex and feeds pre-write review cues
 node tests/test-classification-gates.mjs                 # canonical §3/§9/§10.3/§10.4/§11.4/§12.3 label-set + LOW_INFO + TOPOLOGY + NAMING mirrors drift-lock (P3-1..P3-4) + canon-drift.md §3 category/family mirror (P5-0)
 node tests/test-classification-label-emission-corpus.mjs # synthetic TS corpus proving canonical type classification labels emit through build-symbol-graph → canon-draft

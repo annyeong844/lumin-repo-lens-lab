@@ -80,13 +80,13 @@ export function buildSourceInventoryArtifact({
       throw new Error(`source inventory file is outside root: ${file}`);
     }
     return path.relative(resolvedRoot, resolvedFile).split(path.sep).join('/');
-  }).toSorted(compareUtf8);
+  }).sort(compareUtf8);
 
   for (let index = 0; index < repoRelativeFiles.length; index += 1) {
     validateRelativePath(repoRelativeFiles[index], index === 0 ? null : repoRelativeFiles[index - 1]);
   }
 
-  const sortedLanguages = [...new Set(languages)].toSorted(compareUtf8);
+  const sortedLanguages = [...new Set(languages)].sort(compareUtf8);
   const countsByLanguage = Object.fromEntries(sortedLanguages.map((language) => [language, 0]));
   for (const file of repoRelativeFiles) {
     const language = path.posix.extname(file).slice(1);
@@ -218,7 +218,7 @@ function loadValidatedArtifact(inputPath, expected) {
     throw new Error('source inventory countsByLanguage must be an object');
   }
 
-  const countLanguages = Object.keys(artifact.countsByLanguage).toSorted(compareUtf8);
+  const countLanguages = Object.keys(artifact.countsByLanguage).sort(compareUtf8);
   if (!arraysEqual(countLanguages, artifact.walkScope.languages)) {
     throw new Error('source inventory countsByLanguage keys must match walkScope.languages');
   }

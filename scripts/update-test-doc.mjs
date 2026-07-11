@@ -110,8 +110,6 @@ const SUITE_DESCRIPTIONS = {
     "CJS export surface facts survive into symbols.json for downstream blind-zone handling",
   "test-class-method-prewrite-surface.mjs":
     "WT-15 class method index remains separate from defIndex and feeds pre-write review cues",
-  "test-class-method-index-prototype-names.mjs":
-    "class method index handles prototype method names as plain dictionary keys",
   "test-call-graph-bounded.mjs":
     "PCEF P3 bounded member-call resolution for exported object member calls",
   "test-call-graph-parse-errors.mjs":

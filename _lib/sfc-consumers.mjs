@@ -1,8 +1,21 @@
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { parseSync } from "oxc-parser";
 import { collectFiles } from "./collect-files.mjs";
 import { JS_FAMILY_LANGS, SFC_FAMILY_LANGS } from "./lang.mjs";
+
+const require = createRequire(import.meta.url);
+let parseSync = null;
+
+function loadParseSync() {
+  if (parseSync) return parseSync;
+  const parser = require("oxc-parser");
+  if (typeof parser?.parseSync !== "function") {
+    throw new Error("oxc-parser parseSync export unavailable");
+  }
+  parseSync = parser.parseSync;
+  return parseSync;
+}
 
 function lineOf(src, offset) {
   let line = 1;
@@ -242,6 +255,7 @@ function extractAstroFrontmatter(src) {
 }
 
 function parseScriptAst(script, filePath, parserLang) {
+  const parse = loadParseSync();
   const candidates = [parserLang || "ts"];
   if (parserLang === "ts") candidates.push("tsx");
   if (parserLang === "js") candidates.push("jsx");
@@ -250,7 +264,7 @@ function parseScriptAst(script, filePath, parserLang) {
   for (const lang of candidates) {
     if (!["ts", "tsx", "js", "jsx"].includes(lang)) continue;
     try {
-      const result = parseSync(filePath, script, {
+      const result = parse(filePath, script, {
         sourceType: "module",
         lang,
       });

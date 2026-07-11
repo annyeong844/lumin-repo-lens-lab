@@ -140,6 +140,36 @@ pub(super) fn source_use_external_record_set(
         .collect()
 }
 
+pub(super) fn source_use_non_source_asset_record_set(
+    source_use_assembly: &SourceUseAssemblyResponse,
+) -> BTreeSet<String> {
+    source_use_assembly
+        .non_source_asset_record_ids
+        .iter()
+        .cloned()
+        .collect()
+}
+
+pub(super) fn source_use_non_source_asset_target_map(
+    source_use_assembly: &SourceUseAssemblyResponse,
+) -> BTreeMap<String, String> {
+    source_use_assembly
+        .non_source_asset_record_targets
+        .iter()
+        .map(|target| (target.record_id.clone(), target.resolved_file.clone()))
+        .collect()
+}
+
+pub(super) fn source_use_generated_virtual_record_set(
+    source_use_assembly: &SourceUseAssemblyResponse,
+) -> BTreeSet<String> {
+    source_use_assembly
+        .generated_virtual_record_ids
+        .iter()
+        .cloned()
+        .collect()
+}
+
 fn source_use_target_for_record(
     targets: &BTreeMap<String, String>,
     record_id: Option<&str>,
@@ -151,7 +181,7 @@ fn source_use_target_for_record(
         .cloned()
 }
 
-fn source_use_record_is_external(targets: &BTreeSet<String>, record_id: Option<&str>) -> bool {
+fn source_use_record_is_in_set(targets: &BTreeSet<String>, record_id: Option<&str>) -> bool {
     record_id
         .filter(|record_id| !record_id.is_empty())
         .is_some_and(|record_id| targets.contains(record_id))
@@ -162,9 +192,18 @@ fn sfc_generated_manifest_status_and_reason(
     reason: Option<String>,
     source_use_record_id: Option<&str>,
     resolved_file: Option<&str>,
+    non_source_or_generated: bool,
 ) -> (String, Option<String>) {
     if let Some(status) = status {
         return (status, reason);
+    }
+    if non_source_or_generated {
+        return (
+            "muted".to_string(),
+            reason.or_else(|| {
+                Some("sfc-framework-generated-manifest-non-source-binding".to_string())
+            }),
+        );
     }
     if source_use_record_id.is_some() {
         return match resolved_file {
@@ -205,25 +244,45 @@ pub(super) fn project_sfc_template_component_refs(
     inputs: Vec<SfcTemplateComponentRefInput>,
     source_use_resolved_targets: &BTreeMap<String, String>,
     source_use_external_record_ids: &BTreeSet<String>,
+    source_use_non_source_asset_record_ids: &BTreeSet<String>,
+    source_use_non_source_asset_targets: &BTreeMap<String, String>,
+    source_use_generated_virtual_record_ids: &BTreeSet<String>,
 ) -> SfcTemplateComponentProjection {
     let count = inputs.len();
     let mut refs = Vec::with_capacity(count);
     for input in inputs {
         let source_use_record_id = input.source_use_record_id;
         let has_source_use_record = source_use_record_id.is_some();
-        let has_external_source_use_record = source_use_record_is_external(
+        let has_external_source_use_record = source_use_record_is_in_set(
             source_use_external_record_ids,
             source_use_record_id.as_deref(),
         );
-        let resolved_file = input.resolved_file.or_else(|| {
-            source_use_target_for_record(
-                source_use_resolved_targets,
-                source_use_record_id.as_deref(),
-            )
-        });
+        let has_non_source_or_generated_record = source_use_record_is_in_set(
+            source_use_non_source_asset_record_ids,
+            source_use_record_id.as_deref(),
+        ) || source_use_record_is_in_set(
+            source_use_generated_virtual_record_ids,
+            source_use_record_id.as_deref(),
+        );
+        let resolved_file = input
+            .resolved_file
+            .or_else(|| {
+                source_use_target_for_record(
+                    source_use_resolved_targets,
+                    source_use_record_id.as_deref(),
+                )
+            })
+            .or_else(|| {
+                source_use_target_for_record(
+                    source_use_non_source_asset_targets,
+                    source_use_record_id.as_deref(),
+                )
+            });
         let status = input.status.unwrap_or_else(|| {
             if has_external_source_use_record {
                 "external".to_string()
+            } else if has_non_source_or_generated_record {
+                "muted".to_string()
             } else if has_source_use_record && resolved_file.is_some() {
                 "resolved".to_string()
             } else {
@@ -233,6 +292,8 @@ pub(super) fn project_sfc_template_component_refs(
         let reason = input.reason.or_else(|| {
             if status == "external" {
                 Some("sfc-template-component-external-binding".to_string())
+            } else if status == "muted" && has_non_source_or_generated_record {
+                Some("sfc-template-component-non-source-binding".to_string())
             } else {
                 (status == "unresolved").then(|| "sfc-template-component-unresolved".to_string())
             }
@@ -278,25 +339,45 @@ pub(super) fn project_sfc_global_component_registrations(
     inputs: Vec<SfcGlobalComponentRegistrationInput>,
     source_use_resolved_targets: &BTreeMap<String, String>,
     source_use_external_record_ids: &BTreeSet<String>,
+    source_use_non_source_asset_record_ids: &BTreeSet<String>,
+    source_use_non_source_asset_targets: &BTreeMap<String, String>,
+    source_use_generated_virtual_record_ids: &BTreeSet<String>,
 ) -> SfcGlobalComponentRegistrationProjection {
     let count = inputs.len();
     let mut registrations = Vec::with_capacity(count);
     for input in inputs {
         let source_use_record_id = input.source_use_record_id;
         let has_source_use_record = source_use_record_id.is_some();
-        let has_external_source_use_record = source_use_record_is_external(
+        let has_external_source_use_record = source_use_record_is_in_set(
             source_use_external_record_ids,
             source_use_record_id.as_deref(),
         );
-        let resolved_file = input.resolved_file.or_else(|| {
-            source_use_target_for_record(
-                source_use_resolved_targets,
-                source_use_record_id.as_deref(),
-            )
-        });
+        let has_non_source_or_generated_record = source_use_record_is_in_set(
+            source_use_non_source_asset_record_ids,
+            source_use_record_id.as_deref(),
+        ) || source_use_record_is_in_set(
+            source_use_generated_virtual_record_ids,
+            source_use_record_id.as_deref(),
+        );
+        let resolved_file = input
+            .resolved_file
+            .or_else(|| {
+                source_use_target_for_record(
+                    source_use_resolved_targets,
+                    source_use_record_id.as_deref(),
+                )
+            })
+            .or_else(|| {
+                source_use_target_for_record(
+                    source_use_non_source_asset_targets,
+                    source_use_record_id.as_deref(),
+                )
+            });
         let status = input.status.unwrap_or_else(|| {
             if has_external_source_use_record {
                 "external".to_string()
+            } else if has_non_source_or_generated_record {
+                "muted".to_string()
             } else if has_source_use_record && resolved_file.is_some() {
                 "resolved".to_string()
             } else {
@@ -306,6 +387,8 @@ pub(super) fn project_sfc_global_component_registrations(
         let reason = input.reason.or_else(|| {
             if status == "external" {
                 Some("sfc-global-component-external-binding".to_string())
+            } else if status == "muted" && has_non_source_or_generated_record {
+                Some("sfc-global-component-non-source-binding".to_string())
             } else {
                 (status == "unresolved").then(|| "sfc-global-component-unresolved".to_string())
             }
@@ -372,12 +455,15 @@ pub(super) fn project_sfc_generated_component_manifests(
     inputs: Vec<SfcGeneratedComponentManifestInput>,
     source_use_resolved_targets: &BTreeMap<String, String>,
     source_use_external_record_ids: &BTreeSet<String>,
+    source_use_non_source_asset_record_ids: &BTreeSet<String>,
+    source_use_non_source_asset_targets: &BTreeMap<String, String>,
+    source_use_generated_virtual_record_ids: &BTreeSet<String>,
 ) -> SfcGeneratedComponentManifestProjection {
     let count = inputs.len();
     let mut manifests = Vec::with_capacity(count);
     for input in inputs {
         let source_use_record_id = input.source_use_record_id;
-        if source_use_record_is_external(
+        if source_use_record_is_in_set(
             source_use_external_record_ids,
             source_use_record_id.as_deref(),
         ) {
@@ -387,12 +473,25 @@ pub(super) fn project_sfc_generated_component_manifests(
             source_use_resolved_targets,
             source_use_record_id.as_deref(),
         );
-        let resolved_file = input.resolved_file.or(source_use_target);
+        let has_non_source_or_generated_record = source_use_record_is_in_set(
+            source_use_non_source_asset_record_ids,
+            source_use_record_id.as_deref(),
+        ) || source_use_record_is_in_set(
+            source_use_generated_virtual_record_ids,
+            source_use_record_id.as_deref(),
+        );
+        let resolved_file = input.resolved_file.or(source_use_target).or_else(|| {
+            source_use_target_for_record(
+                source_use_non_source_asset_targets,
+                source_use_record_id.as_deref(),
+            )
+        });
         let (status, reason) = sfc_generated_manifest_status_and_reason(
             input.status,
             input.reason,
             source_use_record_id.as_deref(),
             resolved_file.as_deref(),
+            has_non_source_or_generated_record,
         );
         let mut normalized_tag_names = input.normalized_tag_names;
         normalized_tag_names.sort();

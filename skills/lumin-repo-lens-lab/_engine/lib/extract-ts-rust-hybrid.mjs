@@ -1,32 +1,14 @@
-import { readFileSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 
 import { runAuditCoreJsonResultFile } from './audit-core.mjs';
 import { relPath } from './paths.mjs';
 
-export const RUST_JS_EXTRACTOR_POLICY_VERSION = 'rust-js-extract-hybrid.v12';
+export const RUST_JS_EXTRACTOR_POLICY_VERSION = 'rust-js-extract-hybrid.v13';
 const REQUEST_SCHEMA_VERSION = 'lumin-js-ts-extract-request.v1';
 const MAX_BATCH_SOURCE_BYTES = 16 * 1024 * 1024;
 
-// These are file-level fallback guards for semantic lanes the Rust foundation
-// does not own yet. Dynamic `import(...)` is Rust-owned once the audit-core
-// contract reports literal dynamic import evidence and nonliteral opacity.
-const STATIC_UNSUPPORTED_PATTERNS = [];
-const NEEDS_SOURCE_ELIGIBILITY_SCAN = STATIC_UNSUPPORTED_PATTERNS.length > 0;
-
 function emptyReasonCounts() {
   return Object.create(null);
-}
-
-function incrementReason(counts, reason) {
-  counts[reason] = (counts[reason] ?? 0) + 1;
-}
-
-export function rustJsEligibilityForSource(source) {
-  for (const [reason, pattern] of STATIC_UNSUPPORTED_PATTERNS) {
-    if (pattern.test(source)) return { eligible: false, reason };
-  }
-
-  return { eligible: true, reason: null };
 }
 
 function pushRequestFile(batch, root, filePath) {
@@ -51,7 +33,6 @@ export function extractRustJsHybridBatch({
   files,
   fileSizes,
   sourceFiles = files,
-  verbose = false,
 }) {
   const results = new Map();
   const warnings = [];
@@ -73,17 +54,11 @@ export function extractRustJsHybridBatch({
     fallbackByReason,
   };
 
-  let disabledReason = null;
   let batch = [];
   let batchBytes = 0;
 
-  function markFallback(reason) {
-    summary.fallbackFiles++;
-    incrementReason(fallbackByReason, reason);
-  }
-
   function flushBatch() {
-    if (batch.length === 0 || disabledReason) return;
+    if (batch.length === 0) return;
     const request = {
       schemaVersion: REQUEST_SCHEMA_VERSION,
       sourceFiles: [...sourceFiles],
@@ -104,35 +79,25 @@ export function extractRustJsHybridBatch({
         { input: requestText },
       );
     } catch (error) {
-      disabledReason = error?.message ?? 'unknown audit-core failure';
-      summary.commandFailedFiles += currentBatch.length;
-      for (const file of currentBatch) markFallback('rust-command-failed');
-      warnings.push({
-        code: 'rust-js-extractor-unavailable',
-        message: disabledReason,
-        affected: currentBatch.length,
+      const reason = error?.message ?? 'unknown audit-core failure';
+      throw new Error(`symbols rust-js extractor failed: ${reason}`, {
+        cause: error,
       });
-      if (verbose) {
-        console.error(`[symbols] rust-js extractor unavailable: ${disabledReason}`);
-      }
-      return;
+    }
+
+    if (!Array.isArray(response?.files)) {
+      throw new Error('symbols rust-js extractor returned malformed files');
     }
 
     const byFile = new Map(
-      Array.isArray(response?.files)
-        ? response.files.map((file) => [file.filePath, file])
-        : [],
+      response.files.map((file) => [file.filePath, file]),
     );
     for (const file of currentBatch) {
       const result = byFile.get(file.filePath);
       if (!result) {
-        markFallback('rust-result-missing');
-        warnings.push({
-          code: 'rust-js-extractor-missing-result',
-          file: relPath(root, file.filePath),
-          message: 'audit-core did not return a result for an eligible JS/TS file',
-        });
-        continue;
+        throw new Error(
+          `symbols rust-js extractor omitted ${relPath(root, file.filePath)}`,
+        );
       }
       results.set(file.filePath, result);
       if (result.error) summary.rustParseErrorFiles++;
@@ -146,42 +111,11 @@ export function extractRustJsHybridBatch({
   }
 
   for (const filePath of files) {
-    if (disabledReason) {
-      markFallback('rust-command-disabled');
-      continue;
-    }
-
-    let sourceBytes = sourceByteEstimate(filePath, fileSizes);
-    if (NEEDS_SOURCE_ELIGIBILITY_SCAN) {
-      let source;
-      try {
-        source = readFileSync(filePath, 'utf8');
-      } catch (error) {
-        summary.readErrorFiles++;
-        markFallback('read-error');
-        warnings.push({
-          code: 'rust-js-extractor-read-error',
-          file: relPath(root, filePath),
-          message: error?.message ?? 'failed to read source',
-        });
-        continue;
-      }
-
-      const eligibility = rustJsEligibilityForSource(source);
-      if (!eligibility.eligible) {
-        markFallback(eligibility.reason);
-        continue;
-      }
-      sourceBytes = Buffer.byteLength(source, 'utf8');
-    }
+    const sourceBytes = sourceByteEstimate(filePath, fileSizes);
 
     summary.eligibleFiles++;
     if (batch.length > 0 && batchBytes + sourceBytes > MAX_BATCH_SOURCE_BYTES) {
       flushBatch();
-    }
-    if (disabledReason) {
-      markFallback('rust-command-disabled');
-      continue;
     }
     summary.sourceBytes += sourceBytes;
     pushRequestFile(batch, root, filePath);

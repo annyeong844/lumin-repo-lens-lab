@@ -117,6 +117,10 @@ fn assembles_generated_virtual_consumers_and_unresolved_exports() {
     assert_eq!(response.counters.unresolved_internal_uses, 1);
     assert_eq!(response.generated_virtual_surfaces.len(), 1);
     assert_eq!(
+        response.generated_virtual_record_ids,
+        ["src/a.ts#0", "src/a.ts#1"]
+    );
+    assert_eq!(
         response.generated_virtual_import_consumers[0]["surfaceId"],
         "generated-virtual:prisma-enums:@pkg/db:enums"
     );

@@ -321,6 +321,10 @@ pub(super) struct SfcFrameworkConventionComponentInput {
     pub source: Option<String>,
     #[serde(default)]
     pub confidence: Option<String>,
+    #[serde(default, rename = "eligibleForFanIn")]
+    pub _eligible_for_fan_in: Option<bool>,
+    #[serde(default, rename = "eligibleForSafeFix")]
+    pub _eligible_for_safe_fix: Option<bool>,
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]

@@ -28,7 +28,8 @@ use sfc::{
     project_sfc_framework_convention_components, project_sfc_generated_component_manifests,
     project_sfc_global_component_registrations, project_sfc_style_asset_references,
     project_sfc_template_component_refs, source_use_external_record_set,
-    source_use_resolved_target_map,
+    source_use_generated_virtual_record_set, source_use_non_source_asset_record_set,
+    source_use_non_source_asset_target_map, source_use_resolved_target_map,
 };
 
 const TOOL_NAME: &str = "build-symbol-graph.mjs";
@@ -443,6 +444,12 @@ pub fn build_symbol_graph_artifact(request: SymbolGraphRequest) -> Result<Value>
     };
     let source_use_resolved_targets = source_use_resolved_target_map(&source_use_assembly);
     let source_use_external_record_ids = source_use_external_record_set(&source_use_assembly);
+    let source_use_non_source_asset_record_ids =
+        source_use_non_source_asset_record_set(&source_use_assembly);
+    let source_use_non_source_asset_targets =
+        source_use_non_source_asset_target_map(&source_use_assembly);
+    let source_use_generated_virtual_record_ids =
+        source_use_generated_virtual_record_set(&source_use_assembly);
     let fan_in_inputs = merge_source_use_fan_in_inputs(&root, fan_in_inputs, &source_use_assembly);
 
     let SymbolGraphSfcInputs {
@@ -460,18 +467,27 @@ pub fn build_symbol_graph_artifact(request: SymbolGraphRequest) -> Result<Value>
         template_component_refs,
         &source_use_resolved_targets,
         &source_use_external_record_ids,
+        &source_use_non_source_asset_record_ids,
+        &source_use_non_source_asset_targets,
+        &source_use_generated_virtual_record_ids,
     );
     let sfc_global_component_projection = project_sfc_global_component_registrations(
         &root,
         global_component_registrations,
         &source_use_resolved_targets,
         &source_use_external_record_ids,
+        &source_use_non_source_asset_record_ids,
+        &source_use_non_source_asset_targets,
+        &source_use_generated_virtual_record_ids,
     );
     let sfc_generated_manifest_projection = project_sfc_generated_component_manifests(
         &root,
         generated_component_manifests,
         &source_use_resolved_targets,
         &source_use_external_record_ids,
+        &source_use_non_source_asset_record_ids,
+        &source_use_non_source_asset_targets,
+        &source_use_generated_virtual_record_ids,
     );
     let sfc_framework_convention_projection =
         project_sfc_framework_convention_components(&root, framework_convention_components);

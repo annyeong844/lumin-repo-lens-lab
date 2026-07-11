@@ -137,7 +137,7 @@ function walkSourceFiles(scanRoot, dir, extSet, excludeRules, out) {
 }
 
 function dedupeSorted(files) {
-  const sorted = files.toSorted();
+  const sorted = [...files].sort();
   const deduped = [];
   let prev = null;
   for (const f of sorted) {

@@ -28,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v36';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v38';
 const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -56,6 +56,8 @@ const AUDIT_CORE_REQUIRED_FEATURES = [
   'sourceUseAssemblyRecordRows',
   'sourceUseAssemblyNameTable',
   'sourceUseAssemblyTypeOnlyState',
+  'sourceUseAssemblyDerivedReExportMaps',
+  'sourceUseAssemblyTerminalRecordOutcomes',
   'symbolGraphStrictRequestV2',
   'generatedVirtualSourceUseAssembly',
   'importMetaGlobSourceUseAssembly',
@@ -1251,6 +1253,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         {
           recordId: 'src/consumer.ts#6',
           consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          resolvedFile: path.join(rootDir, 'src', 'style.css'),
           fromSpec: './style.css',
           kind: 'import-side-effect',
           resolverStage: 'non-source-asset',
@@ -1757,12 +1760,12 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.supports?.identityFanIn === true &&
       json.files === 3 &&
       json.totalDefs === 3 &&
-      json.totalUsesResolved === 2 &&
+      json.totalUsesResolved === 3 &&
       json.unresolvedUses === 3 &&
-      json.uses?.resolvedInternal === 2 &&
+      json.uses?.resolvedInternal === 3 &&
       json.uses?.external === 1 &&
       json.uses?.unresolvedInternal === 2 &&
-      json.uses?.unresolvedInternalRatio === 0.5 &&
+      json.uses?.unresolvedInternalRatio === 0.4 &&
       json.dependencyImportConsumers?.some((consumer) =>
         consumer?.depRoot === 'react' &&
         consumer?.fromSpec === 'react/jsx-runtime'
@@ -2021,6 +2024,12 @@ function resultPayloadMatchesProbe(json, probe) {
       json.branchCounts?.sfcScriptSrcReachability === 1 &&
       json.branchCounts?.directConsumer === 1 &&
       json.branchCounts?.broadNamespace === 2 &&
+      json.nonSourceAssetRecordIds?.includes('src/consumer.ts#6') &&
+      json.nonSourceAssetRecordTargets?.some((entry) =>
+        entry?.recordId === 'src/consumer.ts#6' &&
+        entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/style.css')
+      ) &&
+      json.generatedVirtualRecordIds?.includes('src/consumer.ts#3') &&
       json.resolvedRecordTargets?.filter((entry) =>
         entry?.recordId === 'src/consumer.ts#0' &&
         entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/dep.ts')

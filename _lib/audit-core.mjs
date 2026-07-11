@@ -221,7 +221,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v36';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v38';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -433,6 +433,8 @@ function auditCoreBinaryReportsCurrentContract(command) {
   if (contract?.features?.sourceUseAssemblyRecordRows !== true) return false;
   if (contract?.features?.sourceUseAssemblyNameTable !== true) return false;
   if (contract?.features?.sourceUseAssemblyTypeOnlyState !== true) return false;
+  if (contract?.features?.sourceUseAssemblyDerivedReExportMaps !== true) return false;
+  if (contract?.features?.sourceUseAssemblyTerminalRecordOutcomes !== true) return false;
   if (contract?.features?.symbolGraphStrictRequestV2 !== true) return false;
   if (contract?.features?.generatedVirtualSourceUseAssembly !== true) return false;
   if (contract?.features?.importMetaGlobSourceUseAssembly !== true) return false;
@@ -1669,12 +1671,12 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.supports?.identityFanIn === true &&
       json.files === 3 &&
       json.totalDefs === 3 &&
-      json.totalUsesResolved === 2 &&
+      json.totalUsesResolved === 3 &&
       json.unresolvedUses === 3 &&
-      json.uses?.resolvedInternal === 2 &&
+      json.uses?.resolvedInternal === 3 &&
       json.uses?.external === 1 &&
       json.uses?.unresolvedInternal === 2 &&
-      json.uses?.unresolvedInternalRatio === 0.5 &&
+      json.uses?.unresolvedInternalRatio === 0.4 &&
       json.dependencyImportConsumers?.some((consumer) =>
         consumer?.depRoot === 'react' &&
         consumer?.fromSpec === 'react/jsx-runtime'

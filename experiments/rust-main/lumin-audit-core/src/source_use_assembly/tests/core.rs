@@ -207,6 +207,7 @@ fn records_non_source_asset_uses_without_reachability_edges() {
             {
                 "recordId": "sfc-script-src:0:components/App.vue:./style.css",
                 "consumerFile": "C:/repo/components/App.vue",
+                "resolvedFile": "C:/repo/components/style.css",
                 "fromSpec": "./style.css",
                 "name": "*",
                 "kind": "sfc-script-src",
@@ -220,6 +221,14 @@ fn records_non_source_asset_uses_without_reachability_edges() {
     assert_eq!(response.summary.skipped_count, 0);
     assert_eq!(response.counters.non_source_asset_uses, 1);
     assert_eq!(response.branch_counts["asset"], 1);
+    assert_eq!(
+        response.non_source_asset_record_ids,
+        ["sfc-script-src:0:components/App.vue:./style.css"]
+    );
+    assert_eq!(
+        response.non_source_asset_record_targets[0].resolved_file,
+        "C:/repo/components/style.css"
+    );
     assert!(response.resolved_internal_edges.is_empty());
     assert!(response.direct_consumers.is_empty());
     assert!(response.namespace_users.is_empty());

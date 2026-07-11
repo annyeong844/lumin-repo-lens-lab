@@ -86,6 +86,9 @@ fn build_source_use_assembly_response_with_options(
         handled_record_ids: Vec::new(),
         resolved_record_targets: Vec::new(),
         external_record_ids: Vec::new(),
+        non_source_asset_record_ids: Vec::new(),
+        non_source_asset_record_targets: Vec::new(),
+        generated_virtual_record_ids: Vec::new(),
         skipped_records: Vec::new(),
         counters: SourceUseAssemblyCounters::default(),
         branch_counts: BTreeMap::new(),
@@ -112,23 +115,25 @@ fn build_source_use_assembly_response_with_options(
     let source_files =
         source_files_from_request(path_table, request.source_files, request.source_file_ids)?;
     let resolver = RelativeSourceResolver::from_rooted_paths(&root, source_files);
-    let namespace_resolver =
+    let tables = SourceUseAssemblyTables {
+        path_table,
+        kind_table: &request.kind_table,
+        resolver_stage_table: &request.resolver_stage_table,
+        consumer_source_table: &request.consumer_source_table,
+        specifier_table: &request.specifier_table,
+        name_table: &request.name_table,
+    };
+    let records = records
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| normalize_record(record, index, tables))
+        .collect::<Result<Vec<_>>>()?;
+    let mut namespace_resolver =
         NamespaceReExportResolver::new(request.namespace_re_exports, request.named_re_exports);
+    namespace_resolver.extend_from_records(&resolver, &records);
     let mut namespace_users_seen = BTreeSet::new();
 
-    for (index, record) in records.into_iter().enumerate() {
-        let record = normalize_record(
-            record,
-            index,
-            SourceUseAssemblyTables {
-                path_table,
-                kind_table: &request.kind_table,
-                resolver_stage_table: &request.resolver_stage_table,
-                consumer_source_table: &request.consumer_source_table,
-                specifier_table: &request.specifier_table,
-                name_table: &request.name_table,
-            },
-        )?;
+    for record in records {
         let resolver_stage = record.resolver_stage.as_deref();
         let has_pre_resolved_file = record
             .resolved_file
@@ -459,6 +464,23 @@ fn handle_non_source_asset_record(
 ) {
     increment_branch(&mut response.branch_counts, "asset");
     let projection_only = is_projection_only_consumer_source(record.consumer_source.as_deref());
+    if options.emit_standalone_transport || projection_only {
+        response
+            .non_source_asset_record_ids
+            .push(record.record_id.clone());
+        if let Some(resolved_file) = record
+            .resolved_file
+            .as_deref()
+            .filter(|path| !path.is_empty())
+        {
+            response
+                .non_source_asset_record_targets
+                .push(ResolvedRecordTarget {
+                    record_id: record.record_id.clone(),
+                    resolved_file: resolved_file.to_string(),
+                });
+        }
+    }
     mark_handled(response, options, record.record_id);
     if !projection_only {
         response.counters.non_source_asset_uses += 1;
@@ -648,7 +670,13 @@ fn handle_generated_virtual_record(
 ) {
     let kind = record.kind.clone().unwrap_or_else(|| "import".to_string());
     let record_id = record.record_id.clone();
+    let projection_only = is_projection_only_consumer_source(record.consumer_source.as_deref());
     increment_branch(&mut response.branch_counts, "generatedVirtual");
+    if options.emit_standalone_transport || projection_only {
+        response
+            .generated_virtual_record_ids
+            .push(record_id.clone());
+    }
     mark_handled(response, options, record_id);
     if is_namespace_reexport_use(&kind) {
         increment_branch(&mut response.branch_counts, "skippedNamespaceAlias");

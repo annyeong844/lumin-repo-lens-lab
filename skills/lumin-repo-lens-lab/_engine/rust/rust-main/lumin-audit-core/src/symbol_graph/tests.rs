@@ -85,7 +85,13 @@ fn builds_strict_graph_from_raw_facts_once() -> Result<()> {
             "filePathId": 0,
             "pyDunderAll": null,
             "reExports": [{"source": "./b", "line": 3}],
-            "classMethods": [],
+            "classMethods": [
+                {"className": "Example", "name": "constructor", "line": 5},
+                {"className": "Example", "name": "toString", "line": 6},
+                {"className": "Example", "name": "hasOwnProperty", "line": 7},
+                {"className": "Example", "name": "valueOf", "line": 8},
+                {"className": "Example", "name": "__proto__", "line": 9}
+            ],
             "localOperations": [{
                 "identity": "src/a.ts::outer#formatName",
                 "name": "formatName",
@@ -163,6 +169,15 @@ fn builds_strict_graph_from_raw_facts_once() -> Result<()> {
     assert_eq!(artifact["fanInByIdentity"]["src/a.ts::alpha"], 1);
     assert_eq!(artifact["fanInByIdentity"]["src/a.ts::beta"], 0);
     assert_eq!(artifact["deadProdList"][0]["symbol"], "beta");
+    for method_name in [
+        "constructor",
+        "toString",
+        "hasOwnProperty",
+        "valueOf",
+        "__proto__",
+    ] {
+        assert!(artifact["classMethodIndex"]["src/a.ts"][method_name].is_array());
+    }
     assert_eq!(
         artifact["helperOwnersByIdentity"]["src/a.ts::alpha"]["anyContamination"]["measurements"]
             ["explicitAnyCount"],
@@ -245,6 +260,16 @@ fn projects_sfc_rows_from_source_use_targets() -> Result<()> {
                 "resolverStage": "resolved-internal",
             },
             {
+                "recordId": "template-asset",
+                "consumerFileId": 0,
+                "resolvedFile": "src/Button.css",
+                "fromSpec": "./Button.css",
+                "name": "*",
+                "kind": "sfc-template-component-ref",
+                "consumerSource": "sfc-template-component-ref",
+                "resolverStage": "non-source-asset",
+            },
+            {
                 "recordId": "manifest-local",
                 "consumerFileId": 2,
                 "resolvedFileId": 3,
@@ -267,6 +292,11 @@ fn projects_sfc_rows_from_source_use_targets() -> Result<()> {
                 "bindingName": "UiButton",
                 "bindingSource": "./Button",
                 "sourceUseRecordId": "template",
+            }, {
+                "consumerFile": "src/App.vue",
+                "tagName": "ZCssButton",
+                "bindingSource": "./Button.css",
+                "sourceUseRecordId": "template-asset",
             }],
             "globalComponentRegistrations": [],
             "generatedComponentManifests": [{
@@ -287,6 +317,8 @@ fn projects_sfc_rows_from_source_use_targets() -> Result<()> {
                 "resolvedFile": "components/ConventionCard.vue",
                 "pathPrefix": true,
                 "global": true,
+                "eligibleForFanIn": false,
+                "eligibleForSafeFix": false,
             }],
         },
     });
@@ -297,12 +329,29 @@ fn projects_sfc_rows_from_source_use_targets() -> Result<()> {
         artifact["sfcTemplateComponentRefs"][0]["resolvedFile"],
         "src/Button.ts"
     );
+    assert_eq!(artifact["sfcTemplateComponentRefs"][1]["status"], "muted");
+    assert_eq!(
+        artifact["sfcTemplateComponentRefs"][1]["resolvedFile"],
+        "src/Button.css"
+    );
+    assert_eq!(
+        artifact["sfcTemplateComponentRefs"][1]["reason"],
+        "sfc-template-component-non-source-binding"
+    );
     assert_eq!(
         artifact["sfcGeneratedComponentManifests"][0]["resolvedFile"],
         "src/Manifest.ts"
     );
     assert_eq!(artifact["uses"]["sfcGeneratedComponentManifests"], 2);
     assert_eq!(artifact["uses"]["sfcFrameworkConventionComponents"], 1);
+    assert_eq!(
+        artifact["sfcFrameworkConventionComponents"][0]["eligibleForFanIn"],
+        false
+    );
+    assert_eq!(
+        artifact["sfcFrameworkConventionComponents"][0]["eligibleForSafeFix"],
+        false
+    );
     Ok(())
 }
 

@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::relative_source_resolver::normalize_path_text;
+use crate::relative_source_resolver::{normalize_path_text, RelativeSourceResolver};
 
+use super::input::SourceUseAssemblyRecord;
 use super::path::root_relative;
 use super::protocol::{NamespaceReExportChainEntry, SourceUseAssemblyReExport};
 
@@ -42,6 +43,70 @@ impl NamespaceReExportResolver {
     ) -> Option<ResolvedNamespaceReExport> {
         let mut seen = BTreeSet::new();
         self.resolve_inner(root, barrel_file, exported_name, &mut seen)
+    }
+
+    pub(super) fn extend_from_records(
+        &mut self,
+        resolver: &RelativeSourceResolver,
+        records: &[SourceUseAssemblyRecord],
+    ) {
+        for record in records {
+            let Some(kind) = record.kind.as_deref() else {
+                continue;
+            };
+            let target_map = match kind {
+                "reExportNamespace" => &mut self.namespace,
+                "reExport" => &mut self.named,
+                _ => continue,
+            };
+            if record.type_only {
+                continue;
+            }
+            let Some(exported_name) = record
+                .name
+                .as_deref()
+                .filter(|name| !name.is_empty() && *name != "*")
+            else {
+                continue;
+            };
+            let resolver_stage = record.resolver_stage.as_deref();
+            if matches!(
+                resolver_stage,
+                Some(
+                    "external"
+                        | "generated-virtual"
+                        | "non-source-asset"
+                        | "unresolved-internal"
+                        | "unresolved-relative"
+                )
+            ) {
+                continue;
+            }
+            let target_file = record
+                .resolved_file
+                .as_deref()
+                .filter(|path| !path.is_empty())
+                .map(ToString::to_string)
+                .or_else(|| {
+                    let from_spec = record.from_spec.as_deref()?;
+                    (from_spec.starts_with("./") || from_spec.starts_with("../"))
+                        .then(|| resolver.resolve(&record.consumer_file, from_spec))
+                        .flatten()
+                });
+            let Some(target_file) = target_file else {
+                continue;
+            };
+            target_map.insert(
+                (
+                    normalize_path_text(&record.consumer_file),
+                    exported_name.to_string(),
+                ),
+                ReExportTarget {
+                    target_file: normalize_path_text(&target_file),
+                    source_spec: record.from_spec.clone(),
+                },
+            );
+        }
     }
 
     fn resolve_inner(
