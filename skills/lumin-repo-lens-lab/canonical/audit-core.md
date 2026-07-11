@@ -416,7 +416,13 @@ removes this artifact cache together with per-file facts.
   compact symbol projection must reuse `symbol_graph/any_contamination.rs` for
   identity annotations and owner maps. Broad namespace/dynamic consumers belong
   only to `fanInByIdentitySpace.broad`, not exact `fanInByIdentity` counts. The
-  standalone/post-write inventory producer remains `any-inventory.mjs`. This
+  normal fresh post-write reuses the same command's `anyInventory` and `files`
+  projections for the after-snapshot and file delta input. The JS bridge may
+  write `any-inventory.json` and pass those returned files to the existing
+  delta owner, but it must not run `any-inventory.mjs`, load Node `oxc-parser`,
+  or perform a second repository walk as a fallback. `any-inventory.mjs`
+  remains only the legacy/reference producer and explicit no-fresh paths may
+  retain parser-free file-delta discovery. This
   Rust owner must not write `symbols.json` or `topology.json`, broaden the
   supplied scan scope, invent fallback evidence, or own cue-tier/rendering
   policy. A malformed request, unreadable required source, omitted response

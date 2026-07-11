@@ -6,12 +6,13 @@
 //   --output <dir>               artifact dir (source of after-inventory)
 //   --pre-write-advisory <file>  advisory JSON (required)
 //   --delta-out <dir>            where delta artifact lands (defaults to --output)
-//   --no-fresh-audit             skip cold-cache spawn of any-inventory.mjs
-//   --no-incremental             force cold after-inventory generation
-//   --cache-root <dir>           stable incremental cache root for after-inventory
-//   --clear-incremental-cache    clear this repo's incremental cache before after-inventory
+//   --no-fresh-audit             skip the Rust after-snapshot refresh
+//   --no-incremental / --cache-root / --clear-incremental-cache
+//                                accepted for CLI compatibility; the shared
+//                                Rust after-snapshot currently reports
+//                                incremental.enabled=false
 //   --include-tests / --no-include-tests / --production / --exclude
-//                                forwarded to any-inventory.mjs
+//                                forwarded to Rust source discovery
 //
 // Exit codes:
 //   0 — delta computed (may contain silent-new; acknowledgment is a caller concern)
@@ -21,18 +22,15 @@
 // keeps computeDelta pure (docs/history/phases/p2/p2-1.md v3 §4.1 purity contract).
 
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseCliArgs } from './_lib/cli.mjs';
 import { loadIfExists } from './_lib/artifacts.mjs';
 import { computeDelta } from './_lib/post-write-delta.mjs';
 import { computeFileDelta, repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
 import { collectFiles } from './_lib/collect-files.mjs';
+import { buildRustPostWriteInventory } from './_lib/post-write-rust-inventory.mjs';
 import { renderMarkdown } from './_lib/post-write-render.mjs';
 import { writeDelta, generateDeltaInvocationId } from './_lib/post-write-artifact.mjs';
-
-const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 function die(msg, code = 1) {
   process.stderr.write(`[post-write] ${msg}\n`);
@@ -79,28 +77,23 @@ function typeEscapeDeltaNotApplicable(advisory) {
 }
 
 const skipTypeEscapeDelta = typeEscapeDeltaNotApplicable(preWriteAdvisory);
+const deltaInvocationId = generateDeltaInvocationId();
 
-// ── Cold-cache spawn of any-inventory.mjs for after-snapshot ─
+// ── Rust-owned after-snapshot ──────────────────────────────
 
+let freshInventory = null;
 if (!noFreshAudit && !skipTypeEscapeDelta) {
-  const inventoryCli = path.join(SKILL_ROOT, 'any-inventory.mjs');
-  const hookArgs = [inventoryCli, '--root', ROOT, '--output', OUTPUT];
-  // Match pre-write hook convention: includeTests===false → --production flag.
-  if (args.includeTests === false) hookArgs.push('--production');
-  for (const exc of (args.exclude ?? [])) hookArgs.push('--exclude', exc);
-  if (args.raw?.['no-incremental'] === true) hookArgs.push('--no-incremental');
-  if (args.raw?.['cache-root']) hookArgs.push('--cache-root', path.resolve(args.raw['cache-root']));
-  if (args.raw?.['clear-incremental-cache'] === true) hookArgs.push('--clear-incremental-cache');
-
-  process.stderr.write(`[post-write] running any-inventory.mjs for after-snapshot\n`);
+  process.stderr.write('[post-write] running lumin-audit-core for after-snapshot\n');
   try {
-    execFileSync(process.execPath, hookArgs, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
+    freshInventory = buildRustPostWriteInventory({
+      root: ROOT,
+      output: OUTPUT,
+      deltaInvocationId,
+      includeTests: args.includeTests,
+      exclude: args.exclude,
     });
   } catch (e) {
-    // Non-fatal — computeDelta will report capabilityParity: 'missing' with a failure entry.
-    process.stderr.write(`[post-write] any-inventory.mjs failed: ${e?.message?.slice(0, 200) ?? 'unknown'}\n`);
+    die(`Rust after-inventory failed: ${e?.message?.slice(0, 400) ?? 'unknown'}`);
   }
 }
 
@@ -108,7 +101,9 @@ if (!noFreshAudit && !skipTypeEscapeDelta) {
 
 const afterInventory = skipTypeEscapeDelta
   ? null
-  : loadIfExists(OUTPUT, 'any-inventory.json', { tag: 'post-write' });
+  : noFreshAudit
+    ? loadIfExists(OUTPUT, 'any-inventory.json', { tag: 'post-write' })
+    : freshInventory?.inventory ?? null;
 
 // ── Load before-inventory via advisory.preWrite.anyInventoryPath ─
 
@@ -144,16 +139,19 @@ if (!skipTypeEscapeDelta && beforeRelPath) {
 // deltaInvocationId is generated HERE (CLI-level) and injected into
 // computeDelta, which keeps computeDelta pure per §4.1.
 
-const deltaInvocationId = generateDeltaInvocationId();
 let afterFiles = null;
 let afterFileScanFailure = null;
-try {
-  afterFiles = repoRelativeFileList(ROOT, collectFiles(ROOT, {
-    includeTests: args.includeTests,
-    exclude: args.exclude,
-  }));
-} catch (e) {
-  afterFileScanFailure = e?.message?.slice(0, 400) ?? 'unknown';
+if (freshInventory) {
+  afterFiles = freshInventory.files;
+} else {
+  try {
+    afterFiles = repoRelativeFileList(ROOT, collectFiles(ROOT, {
+      includeTests: args.includeTests,
+      exclude: args.exclude,
+    }));
+  } catch (e) {
+    afterFileScanFailure = e?.message?.slice(0, 400) ?? 'unknown';
+  }
 }
 
 const fileDelta = computeFileDelta({

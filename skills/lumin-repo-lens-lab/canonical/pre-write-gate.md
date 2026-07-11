@@ -197,9 +197,12 @@ Explicit path-backed file requests remain available for contract probes and
 focused callers, but JS must not walk the repository before a normal fresh
 pre-write. This Rust-only discovery exception avoids repeated Node/DrvFS
 directory-entry crossings on WSL while preserving the checked JS scan policy.
-The public CLI also skips Node analysis dependency setup for a pre-write-only
-invocation. An explicit base profile, SARIF, canon, or post-write request keeps
-the normal dependency guard because those paths still run JS-owned producers.
+The public CLI skips Node analysis dependency setup for pre-write-only and
+post-write-only invocations. Normal fresh post-write obtains its after type-
+escape inventory and file list from the same Rust command; it does not load the
+Node parser package. An explicit base profile, Rust analysis, SARIF, or canon
+request keeps the normal dependency guard because those paths still run
+JS-owned producers.
 
 Run only what the requested JS/TS intent items require:
 

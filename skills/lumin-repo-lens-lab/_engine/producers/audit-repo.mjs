@@ -234,17 +234,19 @@ if (!values.root) {
 
 const PROFILE_EXPLICIT = process.argv.slice(2).some((arg) =>
   arg === '--profile' || arg.startsWith('--profile='));
-const PRE_WRITE_ONLY = values['pre-write'] === true &&
-  values['post-write'] !== true &&
+const WRITE_LIFECYCLE_ONLY =
+  (values['pre-write'] === true || values['post-write'] === true) &&
+  !(values['pre-write'] === true && values['post-write'] === true) &&
   values['canon-draft'] !== true &&
   values['check-canon'] !== true &&
   values.sarif !== true &&
+  values['rust-analyzer'] !== true &&
   !PROFILE_EXPLICIT;
 try {
   await assertRuntimeSetup({
     startDir: __dirname,
     commandName: 'audit-repo',
-    requireAnalysisDependencies: !PRE_WRITE_ONLY,
+    requireAnalysisDependencies: !WRITE_LIFECYCLE_ONLY,
   });
 } catch (error) {
   console.error(formatRuntimeSetupError(error));
