@@ -1,3 +1,5 @@
+use anyhow::{Context, Result};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 const JS_FAMILY_EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
@@ -133,6 +135,112 @@ pub fn scan_scope_status_for_path(
     }
 
     included()
+}
+
+pub fn collect_source_files(root: &Path, options: &ScanScopeOptions) -> Result<Vec<PathBuf>> {
+    let root = absolute_existing_or_lexical(root);
+    if !root.is_dir() {
+        anyhow::bail!(
+            "source discovery root is not a directory: {}",
+            root.display()
+        );
+    }
+
+    let exclude_rules = build_exclude_rules(&options.exclude);
+    let root_entries = read_directory(&root)?;
+    let mut search_dirs = Vec::new();
+    let mut files = Vec::new();
+
+    for entry in &root_entries {
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("failed to inspect {}", entry.path().display()))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let full = entry.path();
+        if file_type.is_dir() {
+            if should_prune_root_dir(&name) || is_excluded_path(&root, &full, &exclude_rules, true)
+            {
+                continue;
+            }
+            search_dirs.push(full);
+        } else if file_type.is_file()
+            && extension_is_in_scope(&full, &options.languages)
+            && !is_excluded_path(&root, &full, &exclude_rules, false)
+        {
+            files.push(full);
+        }
+    }
+
+    if search_dirs.is_empty() {
+        walk_source_files(&root, &root, true, options, &exclude_rules, &mut files)?;
+    } else {
+        for directory in search_dirs {
+            walk_source_files(
+                &root,
+                &directory,
+                false,
+                options,
+                &exclude_rules,
+                &mut files,
+            )?;
+        }
+    }
+
+    files.sort();
+    files.dedup();
+    if !options.include_tests {
+        files.retain(|file| {
+            relative_posix(&root, file).is_some_and(|relative| !is_test_like_path(&relative))
+        });
+    }
+    Ok(files)
+}
+
+fn walk_source_files(
+    root: &Path,
+    directory: &Path,
+    walking_root: bool,
+    options: &ScanScopeOptions,
+    exclude_rules: &[ExcludeRule],
+    files: &mut Vec<PathBuf>,
+) -> Result<()> {
+    for entry in read_directory(directory)? {
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("failed to inspect {}", entry.path().display()))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let full = entry.path();
+        if file_type.is_dir() {
+            if (walking_root && should_prune_root_dir(&name))
+                || should_prune_walk_dir(&name, &full)
+                || is_excluded_path(root, &full, exclude_rules, true)
+            {
+                continue;
+            }
+            walk_source_files(root, &full, false, options, exclude_rules, files)?;
+        } else if file_type.is_file()
+            && extension_is_in_scope(&full, &options.languages)
+            && !is_excluded_path(root, &full, exclude_rules, false)
+        {
+            files.push(full);
+        }
+    }
+    Ok(())
+}
+
+fn read_directory(directory: &Path) -> Result<Vec<fs::DirEntry>> {
+    let mut entries = fs::read_dir(directory)
+        .with_context(|| format!("failed to read directory {}", directory.display()))?
+        .collect::<std::io::Result<Vec<_>>>()
+        .with_context(|| format!("failed to enumerate directory {}", directory.display()))?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    Ok(entries)
 }
 
 pub fn to_repo_relative(root: &Path, candidate: &str) -> Option<String> {
@@ -279,6 +387,72 @@ mod tests {
             scan_scope_status_for_path(root, &authored, &options),
             included()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn collects_files_with_checked_pruning_and_analysis_scope() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let paths = [
+            "index.ts",
+            "coverage/generated.ts",
+            "src/coverage/authored.ts",
+            "src/target/index.ts",
+            "src/unit.test.ts",
+            "src/excluded/skip.ts",
+            "packages/pkg/target/generated.ts",
+        ];
+        for path in paths {
+            let file = root.join(path);
+            fs::create_dir_all(file.parent().context("fixture file has no parent")?)?;
+            fs::write(file, "export const value = true;\n")?;
+        }
+        fs::write(
+            root.join("packages/pkg/Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\n",
+        )?;
+
+        let files = collect_source_files(
+            root,
+            &ScanScopeOptions {
+                include_tests: false,
+                exclude: vec!["src/excluded".to_string()],
+                ..ScanScopeOptions::default()
+            },
+        )?;
+        let relative = files
+            .iter()
+            .filter_map(|file| to_repo_relative(root, &file.to_string_lossy()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            relative,
+            vec![
+                "index.ts".to_string(),
+                "src/coverage/authored.ts".to_string(),
+                "src/target/index.ts".to_string(),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn flat_repo_fallback_keeps_root_entries_and_prunes_root_coverage() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("coverage"))?;
+        fs::write(root.join("index.ts"), "export const entry = true;\n")?;
+        fs::write(
+            root.join("coverage/generated.ts"),
+            "export const generated = true;\n",
+        )?;
+
+        let files = collect_source_files(root, &ScanScopeOptions::default())?;
+        let relative = files
+            .iter()
+            .filter_map(|file| to_repo_relative(root, &file.to_string_lossy()))
+            .collect::<Vec<_>>();
+        assert_eq!(relative, vec!["index.ts"]);
         Ok(())
     }
 }

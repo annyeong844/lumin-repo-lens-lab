@@ -181,8 +181,9 @@ evidence instead of an absence claim.
 ## 4. Minimum script subset for fresh audit
 
 The JS/TS name, file, and dependency lanes use the Rust-owned
-`js-ts-pre-write-evidence` command. JS supplies the checked scan-range file
-list; Rust reads and parses those files once with OXC and returns the compact
+`js-ts-pre-write-evidence` command. For normal repository runs Rust discovers
+the checked scan-range file list with the `scan_scope.rs` mirror, then reads and
+parses those files once with OXC and returns the compact
 `symbols` and `topology` evidence needed by pre-write plus the occurrence-level
 `any-inventory.pre.<invocationId>.json` baseline required by post-write. The
 command does not write or require repository-sized `symbols.json` or
@@ -192,6 +193,10 @@ roots requested by the intent so unresolved aliases cannot masquerade as
 package imports. Failure is a pre-write failure; JS must not run a fallback
 extractor or classifier. Per-file parse failures remain explicit incomplete
 evidence and prevent absence claims; unreadable required files hard-stop.
+Explicit path-backed file requests remain available for contract probes and
+focused callers, but JS must not walk the repository before a normal fresh
+pre-write. This Rust-only discovery exception avoids repeated Node/DrvFS
+directory-entry crossings on WSL while preserving the checked JS scan policy.
 The public CLI also skips Node analysis dependency setup for a pre-write-only
 invocation. An explicit base profile, SARIF, canon, or post-write request keeps
 the normal dependency guard because those paths still run JS-owned producers.

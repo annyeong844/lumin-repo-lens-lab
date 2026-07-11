@@ -1398,22 +1398,12 @@ fn current_lifecycle_artifacts(
         );
     }
 
-    if manifest
-        .pointer("/preWrite/ran")
-        .and_then(serde_json::Value::as_bool)
-        == Some(true)
-    {
-        if let Some(invocation_id) = manifest
-            .pointer("/preWrite/advisoryInvocationId")
-            .and_then(serde_json::Value::as_str)
-        {
-            add_current_output_file(
-                &mut artifacts,
-                output,
-                &format!("any-inventory.pre.{invocation_id}.json"),
-            );
-            add_current_output_file(&mut artifacts, output, "pre-write-evidence.latest.json");
-        }
+    let fresh_rust_evidence = manifest
+        .pointer("/preWrite/rustEvidencePath")
+        .and_then(serde_json::Value::as_str)
+        .is_some();
+    if fresh_rust_evidence {
+        add_current_output_file(&mut artifacts, output, "pre-write-evidence.latest.json");
     }
 
     if manifest
@@ -1671,7 +1661,8 @@ mod post_write_base_evidence_tests {
                 "advisoryPath": output.join("pre-write-advisory.PRE.json"),
                 "latestAdvisoryPath": output.join("pre-write-advisory.latest.json"),
                 "advisoryInvocationId": "PRE",
-                "rustEvidencePath": "pre-write-evidence.PRE.json"
+                "rustEvidencePath": "pre-write-evidence.PRE.json",
+                "anyInventoryPath": "any-inventory.pre.PRE.json"
             }
         });
         let artifacts = current_lifecycle_artifacts(
@@ -1688,6 +1679,44 @@ mod post_write_base_evidence_tests {
                 "pre-write-advisory.latest.json",
                 "pre-write-evidence.PRE.json",
                 "pre-write-evidence.latest.json",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn lifecycle_artifact_scope_excludes_stale_pre_write_evidence() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let output = temp.path();
+        for name in [
+            "pre-write-advisory.latest.json",
+            "pre-write-advisory.PRE.json",
+            "pre-write-evidence.latest.json",
+            "any-inventory.pre.PRE.json",
+        ] {
+            std::fs::write(output.join(name), "{}")?;
+        }
+        let manifest = serde_json::json!({
+            "preWrite": {
+                "requested": true,
+                "ran": true,
+                "advisoryPath": output.join("pre-write-advisory.PRE.json"),
+                "latestAdvisoryPath": output.join("pre-write-advisory.latest.json"),
+                "advisoryInvocationId": "PRE"
+            }
+        });
+
+        let artifacts = current_lifecycle_artifacts(
+            output,
+            &manifest,
+            &ManifestCloseoutCompanionInput::default(),
+            false,
+        );
+        assert_eq!(
+            artifacts,
+            vec![
+                "pre-write-advisory.PRE.json",
+                "pre-write-advisory.latest.json",
             ]
         );
         Ok(())

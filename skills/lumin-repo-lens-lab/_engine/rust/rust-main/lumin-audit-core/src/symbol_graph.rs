@@ -1,4 +1,4 @@
-mod any_contamination;
+pub(crate) mod any_contamination;
 mod protocol;
 mod reachability;
 mod sfc;

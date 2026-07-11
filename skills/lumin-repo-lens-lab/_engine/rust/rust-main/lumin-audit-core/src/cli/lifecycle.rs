@@ -35,6 +35,7 @@ use lumin_audit_core::pre_write_lifecycle::{
 use lumin_audit_core::pre_write_routing::{
     resolve_pre_write_route, PreWriteRoutingRequest, PreWriteRoutingResult,
 };
+use lumin_audit_core::scan_scope::{collect_source_files, to_repo_relative, ScanScopeOptions};
 
 const AUDIT_LIFECYCLE_EXECUTION_REQUEST_SCHEMA_VERSION: &str =
     "lumin-audit-lifecycle-execution-request.v1";
@@ -97,7 +98,8 @@ struct RustPreWriteLifecycleTemplate {
     production: bool,
     #[serde(default)]
     excludes: Vec<String>,
-    file_inventory: Value,
+    #[serde(default)]
+    file_inventory: Option<Value>,
     #[serde(default)]
     failures: Vec<Value>,
 }
@@ -434,6 +436,15 @@ fn build_rust_pre_write_request(
     template: RustPreWriteLifecycleTemplate,
     route: &PreWriteRoutingResult,
 ) -> Result<RustPreWriteLifecycleRequest> {
+    let mut failures = template.failures;
+    let file_inventory = template.file_inventory.unwrap_or_else(|| {
+        build_deferred_pre_write_file_inventory(
+            &template.root,
+            template.include_tests,
+            &template.excludes,
+            &mut failures,
+        )
+    });
     Ok(RustPreWriteLifecycleRequest {
         schema_version: "lumin-rust-pre-write-lifecycle-request.v1".to_string(),
         root: template.root,
@@ -450,9 +461,60 @@ fn build_rust_pre_write_request(
         production: template.production,
         excludes: template.excludes,
         engine_selection: serde_json::to_value(&route.engine_selection)?,
-        file_inventory: template.file_inventory,
-        failures: template.failures,
+        file_inventory,
+        failures,
     })
+}
+
+fn build_deferred_pre_write_file_inventory(
+    root: &Path,
+    include_tests: bool,
+    excludes: &[String],
+    failures: &mut Vec<Value>,
+) -> Value {
+    let options = ScanScopeOptions {
+        include_tests,
+        exclude: excludes.to_vec(),
+        languages: ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "rs"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        directory: false,
+    };
+    let inventory = collect_source_files(root, &options).and_then(|files| {
+        files
+            .iter()
+            .map(|file| {
+                to_repo_relative(root, &file.to_string_lossy()).with_context(|| {
+                    format!(
+                        "deferred pre-write inventory file escaped root: {}",
+                        file.display()
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+    });
+    match inventory {
+        Ok(files) => {
+            json!({
+                "status": "available",
+                "pathMode": "repo-relative",
+                "fileCount": files.len(),
+                "files": files,
+            })
+        }
+        Err(error) => {
+            let reason = error.to_string().chars().take(400).collect::<String>();
+            failures.push(json!({
+                "kind": "file-inventory-hook-failed",
+                "reason": reason,
+            }));
+            json!({
+                "status": "failed",
+                "reason": reason,
+            })
+        }
+    }
 }
 
 fn build_js_pre_write_request(

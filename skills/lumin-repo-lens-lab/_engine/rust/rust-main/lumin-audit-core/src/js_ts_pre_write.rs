@@ -2,6 +2,10 @@ use crate::js_ts_extract::{
     build_js_ts_extract_response, ClassMethodRecord, JsTsExtractFileResult, JsTsExtractInputFile,
     JsTsExtractRequest, TypeEscapeRecord, UseRecord, JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION,
 };
+use crate::scan_scope::{collect_source_files, to_repo_relative, ScanScopeOptions};
+use crate::symbol_graph::any_contamination::{
+    annotate_projected_def_index, ProjectedAnyContamination,
+};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -40,6 +44,8 @@ pub struct JsTsPreWriteEvidenceRequest {
     #[serde(default)]
     pub dependency_roots: Vec<String>,
     #[serde(default)]
+    pub discover_files: bool,
+    #[serde(default)]
     pub files: Vec<JsTsPreWriteSourceFile>,
 }
 
@@ -76,19 +82,24 @@ struct FanInSpaceConsumers {
 pub fn build_js_ts_pre_write_evidence(request: JsTsPreWriteEvidenceRequest) -> Result<Value> {
     validate_request(&request)?;
 
-    let root = request.root;
-    let evidence_artifact = request.evidence_artifact;
-    let any_inventory_artifact = request.any_inventory_artifact;
-    let generated = request.generated;
-    let include_tests = request.include_tests;
-    let excludes = request.excludes;
-    let dependency_roots = request
-        .dependency_roots
-        .into_iter()
-        .collect::<BTreeSet<_>>();
+    let JsTsPreWriteEvidenceRequest {
+        schema_version: _,
+        root,
+        evidence_artifact,
+        any_inventory_artifact,
+        generated,
+        include_tests,
+        excludes,
+        dependency_roots,
+        discover_files,
+        mut files,
+    } = request;
+    let dependency_roots = dependency_roots.into_iter().collect::<BTreeSet<_>>();
+    if discover_files {
+        files = discover_js_ts_source_files(&root, include_tests, &excludes)?;
+    }
 
-    let path_map = request
-        .files
+    let path_map = files
         .iter()
         .map(|file| {
             (
@@ -97,13 +108,11 @@ pub fn build_js_ts_pre_write_evidence(request: JsTsPreWriteEvidenceRequest) -> R
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let source_files = request
-        .files
+    let source_files = files
         .iter()
         .map(|file| file.file_path.to_string_lossy().to_string())
         .collect::<Vec<_>>();
-    let extract_files = request
-        .files
+    let extract_files = files
         .into_iter()
         .map(|file| JsTsExtractInputFile {
             file_path: file.file_path.to_string_lossy().to_string(),
@@ -188,6 +197,9 @@ fn validate_request(request: &JsTsPreWriteEvidenceRequest) -> Result<()> {
     if request.generated.trim().is_empty() {
         bail!("js-ts-pre-write-evidence: generated must be a non-empty string");
     }
+    if request.discover_files && !request.files.is_empty() {
+        bail!("js-ts-pre-write-evidence: discoverFiles and explicit files are mutually exclusive");
+    }
     let mut previous_dependency = None::<&str>;
     for dependency in &request.dependency_roots {
         if package_root(dependency).as_deref() != Some(dependency.as_str()) {
@@ -226,6 +238,41 @@ fn validate_request(request: &JsTsPreWriteEvidenceRequest) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn discover_js_ts_source_files(
+    root: &Path,
+    include_tests: bool,
+    excludes: &[String],
+) -> Result<Vec<JsTsPreWriteSourceFile>> {
+    let files = collect_source_files(
+        root,
+        &ScanScopeOptions {
+            include_tests,
+            exclude: excludes.to_vec(),
+            languages: ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            directory: false,
+        },
+    )?;
+    files
+        .into_iter()
+        .map(|file_path| {
+            let artifact_file_path = to_repo_relative(root, &file_path.to_string_lossy())
+                .with_context(|| {
+                    format!(
+                        "js-ts-pre-write-evidence: discovered file escaped root: {}",
+                        file_path.display()
+                    )
+                })?;
+            Ok(JsTsPreWriteSourceFile {
+                file_path,
+                artifact_file_path,
+            })
+        })
+        .collect()
 }
 
 fn validate_artifact_path(value: &str) -> Result<()> {
@@ -361,8 +408,10 @@ fn project_evidence(
             let (names, broad) = referenced_names(usage, target_definitions);
             for name in names {
                 let identity = format!("{target}::{name}");
-                if let Some(consumers) = fan_in_consumers.get_mut(&identity) {
-                    consumers.insert(row.relative_path.clone());
+                if !broad {
+                    if let Some(consumers) = fan_in_consumers.get_mut(&identity) {
+                        consumers.insert(row.relative_path.clone());
+                    }
                 }
                 if let Some(spaces) = fan_in_space.get_mut(&identity) {
                     if broad {
@@ -408,6 +457,14 @@ fn project_evidence(
         .values()
         .map(BTreeSet::len)
         .sum::<usize>();
+    let type_escape_values = type_escapes
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let ProjectedAnyContamination {
+        helper_owners_by_identity,
+        type_owners_by_identity,
+    } = annotate_projected_def_index(&mut def_index, &type_escape_values);
     let dependency_consumer_count = dependency_consumers.len();
     let internal_edge_count = topology_edges.len();
     let complete = parse_error_files.is_empty();
@@ -424,9 +481,14 @@ fn project_evidence(
     } else {
         "TS/JS production files"
     };
+    let files = rows
+        .iter()
+        .map(|row| row.relative_path.clone())
+        .collect::<Vec<_>>();
     Ok(json!({
         "schemaVersion": JS_TS_PRE_WRITE_EVIDENCE_RESPONSE_SCHEMA_VERSION,
         "root": normalize_slashes(&context.root.to_string_lossy()),
+        "files": files,
         "summary": {
             "fileCount": rows.len(),
             "parseErrorFileCount": parse_error_files.len(),
@@ -446,10 +508,12 @@ fn project_evidence(
                     "dependencyImportConsumers": true,
                     "classMethodIndex": true,
                     "preWriteLocalOperationIndex": true,
-                    "anyContamination": false,
+                    "anyContamination": true,
                 },
             },
             "defIndex": def_index,
+            "helperOwnersByIdentity": helper_owners_by_identity,
+            "typeOwnersByIdentity": type_owners_by_identity,
             "classMethodIndex": class_method_index,
             "preWriteLocalOperationIndex": {
                 "schemaVersion": "pre-write-local-operations.v1",
@@ -658,6 +722,7 @@ mod tests {
             root.join("src/app.ts"),
             "import { live } from './dep';\nimport react from 'react';\nimport aliasValue from 'lib/alias';\nexport const app = 1 as any;\n",
         )?;
+        fs::write(root.join("src/side.ts"), "import './dep';\n")?;
         let request = JsTsPreWriteEvidenceRequest {
             schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
             root: root.to_path_buf(),
@@ -667,9 +732,11 @@ mod tests {
             include_tests: true,
             excludes: vec!["vendor".to_string()],
             dependency_roots: vec!["react".to_string()],
+            discover_files: false,
             files: vec![
                 source_file(root, "src/app.ts"),
                 source_file(root, "src/dep.ts"),
+                source_file(root, "src/side.ts"),
             ],
         };
 
@@ -689,6 +756,19 @@ mod tests {
         assert_eq!(
             evidence["symbols"]["fanInByIdentity"]["src/dep.ts::unused"],
             0
+        );
+        assert_eq!(
+            evidence["symbols"]["fanInByIdentitySpace"]["src/dep.ts::unused"]["broad"],
+            1
+        );
+        assert_eq!(
+            evidence["symbols"]["defIndex"]["src/app.ts"]["app"]["anyContamination"]["label"],
+            "any-contaminated"
+        );
+        assert_eq!(
+            evidence["symbols"]["helperOwnersByIdentity"]["src/app.ts::app"]["anyContamination"]
+                ["label"],
+            "any-contaminated"
         );
         assert_eq!(
             evidence["symbols"]["dependencyImportConsumers"][0]["depRoot"],
@@ -732,6 +812,7 @@ mod tests {
             include_tests: false,
             excludes: Vec::new(),
             dependency_roots: Vec::new(),
+            discover_files: false,
             files: vec![source_file(root, "src/broken.ts")],
         })?;
 
@@ -758,6 +839,7 @@ mod tests {
             include_tests: true,
             excludes: Vec::new(),
             dependency_roots: Vec::new(),
+            discover_files: false,
             files: vec![source_file(root, "src/missing.ts")],
         });
         let Err(error) = result else {
@@ -781,6 +863,7 @@ mod tests {
             include_tests: true,
             excludes: Vec::new(),
             dependency_roots: Vec::new(),
+            discover_files: false,
             files: vec![JsTsPreWriteSourceFile {
                 file_path: outside.path().join("outside.ts"),
                 artifact_file_path: "outside.ts".to_string(),
@@ -791,6 +874,38 @@ mod tests {
             bail!("outside path did not fail");
         };
         assert!(error.to_string().contains("inside root"));
+        Ok(())
+    }
+
+    #[test]
+    fn discovers_the_checked_production_scope_before_parsing() -> Result<()> {
+        let temp = tempdir()?;
+        let root = temp.path();
+        fs::create_dir_all(root.join("src"))?;
+        fs::write(root.join("src/app.ts"), "export const app = true;\n")?;
+        fs::write(
+            root.join("src/app.test.ts"),
+            "export const testOnly = true;\n",
+        )?;
+
+        let evidence = build_js_ts_pre_write_evidence(JsTsPreWriteEvidenceRequest {
+            schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
+            root: root.to_path_buf(),
+            evidence_artifact: "pre-write-evidence.PROBE.json".to_string(),
+            any_inventory_artifact: "any-inventory.pre.PROBE.json".to_string(),
+            generated: "2026-07-11T00:00:00.000Z".to_string(),
+            include_tests: false,
+            excludes: Vec::new(),
+            dependency_roots: Vec::new(),
+            discover_files: true,
+            files: Vec::new(),
+        })?;
+
+        assert_eq!(evidence["files"], json!(["src/app.ts"]));
+        assert_eq!(evidence["summary"]["fileCount"], 1);
+        assert!(evidence["symbols"]["defIndex"]
+            .get("src/app.test.ts")
+            .is_none());
         Ok(())
     }
 

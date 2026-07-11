@@ -3,8 +3,6 @@ import path from 'node:path';
 
 import { runAuditCoreJsonResultFile } from './audit-core.mjs';
 import { atomicWrite } from './atomic-write.mjs';
-import { collectFiles } from './collect-files.mjs';
-import { relPath } from './paths.mjs';
 import { packageRoot } from './pre-write-lookup-dep.mjs';
 
 const REQUEST_SCHEMA_VERSION = 'lumin-js-ts-pre-write-evidence-request.v1';
@@ -18,7 +16,7 @@ function evidenceFileName(invocationId) {
   return `pre-write-evidence.${invocationId}.json`;
 }
 
-function validateResponse(response, expectedArtifact, expectedInventory, expectedFiles) {
+function validateResponse(response, expectedArtifact, expectedInventory) {
   if (response?.schemaVersion !== RESPONSE_SCHEMA_VERSION) {
     throw new Error('pre-write Rust evidence returned an unsupported schemaVersion');
   }
@@ -31,6 +29,16 @@ function validateResponse(response, expectedArtifact, expectedInventory, expecte
       response.topology.meta?.evidenceArtifact !== expectedArtifact) {
     throw new Error('pre-write Rust evidence returned the wrong artifact identity');
   }
+  if (!Array.isArray(response.files) || response.files.some((file) =>
+    typeof file !== 'string' || file.length === 0 || path.isAbsolute(file) ||
+    file.split('/').includes('..'))) {
+    throw new Error('pre-write Rust evidence returned an invalid file inventory');
+  }
+  const sortedFiles = [...new Set(response.files)].sort();
+  if (JSON.stringify(sortedFiles) !== JSON.stringify(response.files)) {
+    throw new Error('pre-write Rust evidence returned an unsorted or duplicate file inventory');
+  }
+  const expectedFiles = response.files.length;
   if (response.summary?.fileCount !== expectedFiles) {
     throw new Error(
       `pre-write Rust evidence returned ${response.summary?.fileCount ?? 'unknown'} files; expected ${expectedFiles}`,
@@ -59,7 +67,6 @@ export function buildRustPreWriteEvidence({
   exclude = [],
   dependencySpecifiers = [],
 }) {
-  const files = collectFiles(root, { includeTests, exclude });
   const artifactName = evidenceFileName(invocationId);
   const anyInventoryArtifact = `any-inventory.pre.${invocationId}.json`;
   const dependencyRoots = [...new Set(
@@ -74,10 +81,8 @@ export function buildRustPreWriteEvidence({
     includeTests: includeTests === true,
     excludes: [...exclude],
     dependencyRoots,
-    files: files.map((filePath) => ({
-      filePath,
-      artifactFilePath: relPath(root, filePath),
-    })),
+    discoverFiles: true,
+    files: [],
   };
   const response = runAuditCoreJsonResultFile(
     ['js-ts-pre-write-evidence', '--input', '-'],
@@ -88,7 +93,6 @@ export function buildRustPreWriteEvidence({
     response,
     artifactName,
     anyInventoryArtifact,
-    files.length,
   );
   const content = `${JSON.stringify(evidence, null, 2)}\n`;
   const inventoryContent = `${JSON.stringify(evidence.anyInventory, null, 2)}\n`;
@@ -112,6 +116,6 @@ export function buildRustPreWriteEvidence({
     anyInventoryArtifact,
     anyInventoryPath,
     evidence,
-    files,
+    files: evidence.files.map((file) => path.join(root, ...file.split('/'))),
   };
 }

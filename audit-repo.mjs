@@ -50,7 +50,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { normalizeIncludeTests } from './_lib/cli.mjs';
-import { collectFiles } from './_lib/collect-files.mjs';
 import { assertRuntimeSetup, formatRuntimeSetupError } from './_lib/dependency-guard.mjs';
 import { detectMaintainerSelfAuditExcludes, mergeExcludes } from './_lib/self-audit-excludes.mjs';
 import {
@@ -66,7 +65,6 @@ import {
   applyLifecycleAndRefreshManifestEvidence,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
-import { repoRelativeFileList } from './_lib/post-write-file-delta.mjs';
 import {
   generateInvocationId,
 } from './_lib/pre-write-artifact.mjs';
@@ -518,7 +516,6 @@ function buildRustPreWriteLifecycleRequest({
   rustNativePath,
   rustNativeLatestPath,
 }) {
-  const failures = [];
   return {
     schemaVersion: 'lumin-rust-pre-write-lifecycle-request.v1',
     root: ROOT,
@@ -535,8 +532,7 @@ function buildRustPreWriteLifecycleRequest({
     includeTests: INCLUDE_TESTS,
     production: INCLUDE_TESTS === false,
     excludes: EFFECTIVE_EXCLUDES,
-    fileInventory: buildPreWriteFileInventory(failures),
-    failures,
+    failures: [],
   };
 }
 
@@ -550,32 +546,6 @@ function buildJsPreWriteLifecycleRequest() {
     noFreshAudit: values['no-fresh-audit'] === true,
     scanArgs: forwardedScanArgs(),
   };
-}
-
-function buildPreWriteFileInventory(failures) {
-  try {
-    const files = repoRelativeFileList(ROOT, collectFiles(ROOT, {
-      includeTests: INCLUDE_TESTS,
-      exclude: EFFECTIVE_EXCLUDES,
-      languages: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'rs'],
-    }));
-    return {
-      status: 'available',
-      pathMode: 'repo-relative',
-      fileCount: files.length,
-      files,
-    };
-  } catch (e) {
-    const reason = e?.message?.slice(0, 400) ?? 'unknown';
-    failures.push({
-      kind: 'file-inventory-hook-failed',
-      reason,
-    });
-    return {
-      status: 'failed',
-      reason,
-    };
-  }
 }
 
 console.log(`[audit-repo] profile=${PROFILE}  root=${ROOT}  output=${OUT}`);

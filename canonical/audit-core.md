@@ -284,7 +284,7 @@ and the packaged source fallback must be regenerated from the same contract.
 | `experiments/rust-main/lumin-audit-core/src/orchestration_result.rs` | `manifest.json.orchestration` projection from the typed `producer-performance.json` source shape, including execution status counts, required/optional failure counts, skipped counts, and capped examples | child process execution, live telemetry collection, raw `commandsRun`/`skipped` value production, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/producer_performance.rs` | `manifest.json.performance` projection from already-produced `producer-performance.json` | producer execution, memory measurement, artifact read measurement, producer-performance artifact writing |
 | `experiments/rust-main/lumin-audit-core/src/source_inventory.rs` | Typed validation of the current-run `source-inventory.json` produced by `triage-repo.mjs`, including run binding, schema/root/walk/analysis-scope/path safety checks, and language counts used by orchestration | repository walking, source parsing, file-content hashing, producer-specific filtering, or reuse across audit invocations |
-| `experiments/rust-main/lumin-audit-core/src/scan_scope.rs` | Audit manifest scan-scope path inclusion policy used by migrated manifest summaries, matching the JS `scanScopeStatusForPath` contract. Root `coverage` output remains pruned, while nested authored `coverage` source modules remain in scope; nested `target` is pruned only when its parent owns `Cargo.toml`. | source walking, parsing, producer orchestration |
+| `experiments/rust-main/lumin-audit-core/src/scan_scope.rs` | Audit manifest scan-scope path inclusion policy used by migrated manifest summaries, matching the JS `scanScopeStatusForPath` contract, plus repository discovery for the Rust-owned JS/TS pre-write evidence command and deferred Rust pre-write file inventory. Root `coverage` output remains pruned, while nested authored `coverage` source modules remain in scope; nested `target` is pruned only when its parent owns `Cargo.toml`. | base-audit source walking, parsing, producer orchestration outside pre-write |
 | `experiments/rust-main/lumin-audit-core/src/unused_deps.rs` | `unused-deps.json` artifact construction from JS-supplied package records and already-produced `symbols.json`: package identity normalization, package-script tool evidence, package-scope consumer matching, review-only dependency classification, deterministic summary projection | JS/TS symbol graph production, repo-mode/package discovery, package manager execution, manifest summary rendering |
 | `experiments/rust-main/lumin-audit-core/src/cli/mod.rs` | CLI command dispatch for audit-core commands | producer orchestration, manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/cli/args.rs` | CLI-only parsed argument structs shared by audit-core command runners | product projection logic, producer orchestration |
@@ -409,11 +409,15 @@ removes this artifact cache together with per-file facts.
   producer semantics. These modules run existing producer entrypoints but do
   not reinterpret source-language producer semantics.
 - `js_ts_pre_write.rs` is the explicit JS/TS pre-write evidence exception. It
-  may read the JS-owned scan-range file list, parse those files with OXC, and
+  may discover files through the checked `scan_scope.rs` mirror or consume an
+  explicit path-backed file list, parse those files with OXC, and
   project compact symbol, file-topology, fan-in, parse-error, local-operation,
   request-scoped package-import evidence, and the pre-write type-escape baseline
   from one OXC pass. The baseline uses the canonical `type-escape` vocabulary
   and remains shape-compatible with post-write's `any-inventory.json`; the
+  compact symbol projection must reuse `symbol_graph/any_contamination.rs` for
+  identity annotations and owner maps. Broad namespace/dynamic consumers belong
+  only to `fanInByIdentitySpace.broad`, not exact `fanInByIdentity` counts. The
   standalone/post-write inventory producer remains `any-inventory.mjs`. This
   Rust owner must not write `symbols.json` or `topology.json`, broaden the
   supplied scan scope, invent fallback evidence, or own cue-tier/rendering

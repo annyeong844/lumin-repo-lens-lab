@@ -2,7 +2,7 @@ use super::{rel_path, value_string, DefinitionFile, FileDataRecord};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct AnyOwnerRow {
     identity: String,
     name: String,
@@ -16,6 +16,12 @@ pub(super) struct ComputedAnyContamination {
     pub(super) helper_owners_by_identity: Value,
     pub(super) type_owners_by_identity: Value,
     pub(super) def_index: Value,
+}
+
+#[derive(Debug)]
+pub(crate) struct ProjectedAnyContamination {
+    pub(crate) helper_owners_by_identity: Value,
+    pub(crate) type_owners_by_identity: Value,
 }
 
 pub(super) fn build_any_contamination_facts(
@@ -37,11 +43,105 @@ pub(super) fn build_any_contamination_facts(
         }
     }
 
+    let (helper_owners, type_owners, annotations) =
+        project_any_owner_facts(&identity_to_row, &facts_by_identity);
+
+    ComputedAnyContamination {
+        helper_owners_by_identity: Value::Object(helper_owners),
+        type_owners_by_identity: Value::Object(type_owners),
+        def_index: build_annotated_def_index(root, def_index, &annotations),
+    }
+}
+
+pub(crate) fn annotate_projected_def_index(
+    def_index: &mut Map<String, Value>,
+    facts: &[Value],
+) -> ProjectedAnyContamination {
+    let (identity_to_row, defs_by_file) = build_projected_owner_lookups(def_index);
+    let mut facts_by_identity = BTreeMap::<String, Vec<Value>>::new();
+    for fact in facts {
+        if let Some(identity) = identity_for_escape(fact, &identity_to_row, &defs_by_file) {
+            facts_by_identity
+                .entry(identity)
+                .or_default()
+                .push(fact.clone());
+        }
+    }
+    let (helper_owners, type_owners, annotations) =
+        project_any_owner_facts(&identity_to_row, &facts_by_identity);
+
+    for (file, definitions) in def_index.iter_mut() {
+        let Some(definitions) = definitions.as_object_mut() else {
+            continue;
+        };
+        for (name, definition) in definitions {
+            let kind = value_string(definition, "kind");
+            if !is_any_owner_kind(&kind) {
+                continue;
+            }
+            let identity = format!("{file}::{name}");
+            let Some(object) = definition.as_object_mut() else {
+                continue;
+            };
+            if let Some(annotation) = annotations.get(&identity) {
+                object.insert("anyContamination".to_string(), annotation.clone());
+            } else {
+                object.remove("anyContamination");
+            }
+        }
+    }
+
+    ProjectedAnyContamination {
+        helper_owners_by_identity: Value::Object(helper_owners),
+        type_owners_by_identity: Value::Object(type_owners),
+    }
+}
+
+fn build_projected_owner_lookups(
+    def_index: &Map<String, Value>,
+) -> (
+    BTreeMap<String, AnyOwnerRow>,
+    BTreeMap<String, Vec<AnyOwnerRow>>,
+) {
+    let mut identity_to_row = BTreeMap::new();
+    let mut defs_by_file = BTreeMap::<String, Vec<AnyOwnerRow>>::new();
+    for (file, definitions) in def_index {
+        let Some(definitions) = definitions.as_object() else {
+            continue;
+        };
+        for (name, definition) in definitions {
+            let kind = value_string(definition, "kind");
+            if !is_any_owner_kind(&kind) {
+                continue;
+            }
+            let identity = format!("{file}::{name}");
+            let row = AnyOwnerRow {
+                identity: identity.clone(),
+                name: name.clone(),
+                file: file.clone(),
+                kind,
+                line: value_line(definition, "line"),
+            };
+            identity_to_row.insert(identity, row.clone());
+            defs_by_file.entry(file.clone()).or_default().push(row);
+        }
+    }
+    sort_owner_rows(&mut defs_by_file);
+    (identity_to_row, defs_by_file)
+}
+
+fn project_any_owner_facts(
+    identity_to_row: &BTreeMap<String, AnyOwnerRow>,
+    facts_by_identity: &BTreeMap<String, Vec<Value>>,
+) -> (
+    Map<String, Value>,
+    Map<String, Value>,
+    BTreeMap<String, Value>,
+) {
     let mut helper_owners = Map::new();
     let mut type_owners = Map::new();
     let mut annotations = BTreeMap::<String, Value>::new();
-
-    for (identity, row) in &identity_to_row {
+    for (identity, row) in identity_to_row {
         let annotation = build_any_annotation(
             facts_by_identity
                 .get(identity)
@@ -52,31 +152,30 @@ pub(super) fn build_any_contamination_facts(
         if let Some(annotation) = annotation.clone() {
             annotations.insert(identity.clone(), annotation);
         }
-
-        let mut owner = Map::new();
-        owner.insert("ownerFile".to_string(), json!(row.file));
-        owner.insert("exportedName".to_string(), json!(row.name));
-        owner.insert("kind".to_string(), json!(row.kind));
-        owner.insert(
-            "line".to_string(),
-            row.line.map_or(Value::Null, |line| json!(line)),
-        );
-        owner.insert(
-            "anyContamination".to_string(),
-            annotation.unwrap_or(Value::Null),
-        );
-
+        let owner = json!({
+            "ownerFile": row.file,
+            "exportedName": row.name,
+            "kind": row.kind,
+            "line": row.line,
+            "anyContamination": annotation,
+        });
         if is_type_owner_kind(&row.kind) {
-            type_owners.insert(identity.clone(), Value::Object(owner));
+            type_owners.insert(identity.clone(), owner);
         } else if is_helper_owner_kind(&row.kind) {
-            helper_owners.insert(identity.clone(), Value::Object(owner));
+            helper_owners.insert(identity.clone(), owner);
         }
     }
+    (helper_owners, type_owners, annotations)
+}
 
-    ComputedAnyContamination {
-        helper_owners_by_identity: Value::Object(helper_owners),
-        type_owners_by_identity: Value::Object(type_owners),
-        def_index: build_annotated_def_index(root, def_index, &annotations),
+fn sort_owner_rows(defs_by_file: &mut BTreeMap<String, Vec<AnyOwnerRow>>) {
+    for rows in defs_by_file.values_mut() {
+        rows.sort_by(|left, right| {
+            left.line
+                .unwrap_or(0)
+                .cmp(&right.line.unwrap_or(0))
+                .then_with(|| left.name.cmp(&right.name))
+        });
     }
 }
 
@@ -105,28 +204,12 @@ fn build_any_owner_lookups(
                 kind,
                 line: value_line(def, "line"),
             };
-            identity_to_row.insert(
-                identity,
-                AnyOwnerRow {
-                    identity: row.identity.clone(),
-                    name: row.name.clone(),
-                    file: row.file.clone(),
-                    kind: row.kind.clone(),
-                    line: row.line,
-                },
-            );
+            identity_to_row.insert(identity, row.clone());
             defs_by_file.entry(rel_file.clone()).or_default().push(row);
         }
     }
 
-    for rows in defs_by_file.values_mut() {
-        rows.sort_by(|left, right| {
-            left.line
-                .unwrap_or(0)
-                .cmp(&right.line.unwrap_or(0))
-                .then_with(|| left.name.cmp(&right.name))
-        });
-    }
+    sort_owner_rows(&mut defs_by_file);
 
     (identity_to_row, defs_by_file)
 }

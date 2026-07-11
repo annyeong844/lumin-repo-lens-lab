@@ -226,7 +226,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v42';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v43';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -423,6 +423,7 @@ function auditCoreBinaryReportsCurrentContract(command) {
   if (contract?.features?.jsTsExtractPathBackedInput !== true) return false;
   if (contract?.features?.jsTsExtractLocalOperations !== true) return false;
   if (contract?.features?.jsTsPreWriteEvidence !== true) return false;
+  if (contract?.features?.jsTsPreWriteDiscovery !== true) return false;
   if (contract?.features?.sourceUseAssembly !== true) return false;
   if (contract?.features?.sourceUseAssemblyResolvedRecordTargets !== true) return false;
   if (contract?.features?.sourceUseAssemblyExternalRecordIds !== true) return false;
@@ -873,16 +874,8 @@ writeFileSync(latest, JSON.stringify(advisory));
       includeTests: true,
       excludes: [],
       dependencyRoots: ['web-tree-sitter'],
-      files: [
-        {
-          filePath: path.join(rootDir, 'src', 'consumer.mjs'),
-          artifactFilePath: 'src/consumer.mjs',
-        },
-        {
-          filePath: path.join(rootDir, 'src', 'dep.ts'),
-          artifactFilePath: 'src/dep.ts',
-        },
-      ],
+      discoverFiles: true,
+      files: [],
     }));
     writeFileSync(
       symbolGraphInputPath,
@@ -1768,6 +1761,8 @@ function resultPayloadMatchesProbe(json, probe) {
       json.anyInventory?.typeEscapes?.some((escape) =>
         escape?.file === 'src/dep.ts' && escape?.escapeKind === 'as-any'
       ) &&
+      json.files?.includes('src/consumer.mjs') &&
+      json.files?.includes('src/dep.ts') &&
       json.topology?.meta?.complete === true &&
       json.topology?.edges?.some((edge) =>
         edge?.from === 'src/consumer.mjs' && edge?.to === 'src/dep.ts'

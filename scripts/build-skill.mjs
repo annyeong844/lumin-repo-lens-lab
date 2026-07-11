@@ -28,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v42';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v43';
 const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -41,6 +41,7 @@ const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsExtractPathBackedInput',
   'jsTsExtractLocalOperations',
   'jsTsPreWriteEvidence',
+  'jsTsPreWriteDiscovery',
   'sourceUseAssembly',
   'sourceUseAssemblyResolvedRecordTargets',
   'sourceUseAssemblyExternalRecordIds',
@@ -950,16 +951,8 @@ writeFileSync(latest, JSON.stringify(advisory));
       includeTests: true,
       excludes: [],
       dependencyRoots: ['web-tree-sitter'],
-      files: [
-        {
-          filePath: path.join(rootDir, 'src', 'consumer.mjs'),
-          artifactFilePath: 'src/consumer.mjs',
-        },
-        {
-          filePath: path.join(rootDir, 'src', 'dep.ts'),
-          artifactFilePath: 'src/dep.ts',
-        },
-      ],
+      discoverFiles: true,
+      files: [],
     }));
     writeFileSync(
       symbolGraphInputPath,
@@ -1852,6 +1845,8 @@ function resultPayloadMatchesProbe(json, probe) {
       json.anyInventory?.typeEscapes?.some((escape) =>
         escape?.file === 'src/dep.ts' && escape?.escapeKind === 'as-any'
       ) &&
+      json.files?.includes('src/consumer.mjs') &&
+      json.files?.includes('src/dep.ts') &&
       json.topology?.meta?.complete === true &&
       json.topology?.edges?.some((edge) =>
         edge?.from === 'src/consumer.mjs' && edge?.to === 'src/dep.ts'
