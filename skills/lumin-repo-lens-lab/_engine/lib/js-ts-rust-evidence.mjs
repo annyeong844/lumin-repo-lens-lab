@@ -1,6 +1,11 @@
 import path from 'node:path';
 
-import { runAuditCoreJsonResultFile } from './audit-core.mjs';
+import {
+  runAuditCoreJsonResultFile,
+  runWindowsHostAuditCoreJsonResultFile,
+  windowsHostPathToWsl,
+  wslPathToWindowsHost,
+} from './audit-core.mjs';
 import { packageRoot } from './pre-write-lookup-dep.mjs';
 
 const REQUEST_SCHEMA_VERSION = 'lumin-js-ts-pre-write-evidence-request.v1';
@@ -85,8 +90,46 @@ export function collectRustJsTsEvidence({
       clear: clearIncrementalCache === true,
     },
   };
-  const response = runAuditCoreJsonResultFile(
-    ['js-ts-pre-write-evidence', '--input', '-'],
+  const args = ['js-ts-pre-write-evidence', '--input', '-'];
+  const windowsRoot = wslPathToWindowsHost(request.root);
+  const windowsCacheRoot = wslPathToWindowsHost(request.incremental.cacheRoot);
+  let response = null;
+  if (windowsRoot && windowsCacheRoot) {
+    response = runWindowsHostAuditCoreJsonResultFile(
+      args,
+      label,
+      {
+        input: JSON.stringify({
+          ...request,
+          root: windowsRoot,
+          incremental: {
+            ...request.incremental,
+            cacheRoot: windowsCacheRoot,
+          },
+        }),
+        resultTempRoot: request.incremental.cacheRoot,
+      },
+    );
+    if (response) {
+      response.root = request.root;
+      if (isObject(response.anyInventory?.meta)) {
+        response.anyInventory.meta.root = request.root;
+      }
+      const incremental = response.anyInventory?.meta?.incremental;
+      if (isObject(incremental)) {
+        incremental.cacheRoot = request.incremental.cacheRoot;
+        if (typeof incremental.cacheFile === 'string') {
+          const cacheFile = windowsHostPathToWsl(incremental.cacheFile);
+          if (!cacheFile) {
+            throw new Error('Rust JS/TS evidence returned an untranslatable host cache path');
+          }
+          incremental.cacheFile = cacheFile;
+        }
+      }
+    }
+  }
+  response ??= runAuditCoreJsonResultFile(
+    args,
     label,
     { input: JSON.stringify(request) },
   );

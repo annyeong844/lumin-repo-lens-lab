@@ -320,6 +320,17 @@ must install the skill dependencies from a supported Node/npm toolchain inside
 WSL and must not reuse a Windows `node_modules` tree. Missing native bindings
 are an unavailable runtime dependency, not clean parser evidence.
 
+For `js-ts-pre-write-evidence` only, the JS bridge may prefer the packaged
+Windows x64 audit-core while running under x64 WSL against a Windows-mounted
+repository. `_engine/lib/js-ts-rust-evidence.mjs` owns command-specific request and
+response path translation; `_engine/lib/audit-core.mjs` owns current-contract
+validation, Windows helper selection, mounted temporary result transport, and
+fail-closed execution. Explicit Linux/generic binary overrides disable this
+optimization. An unavailable or incompatible Windows candidate may select the
+normal Linux helper before execution, but a started Windows command must never
+fall back after failure. This route must not spread to other subcommands
+without a separate owner/contract review.
+
 ### Shared Source Inventory
 
 The base audit pipeline has one current-run source inventory owner.

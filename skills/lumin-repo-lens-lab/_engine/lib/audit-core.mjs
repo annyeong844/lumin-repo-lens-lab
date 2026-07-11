@@ -2309,6 +2309,85 @@ export function runAuditCoreJsonResultFile(args, label, options = {}) {
   }
 }
 
+export function wslPathToWindowsHost(value) {
+  if (process.platform !== 'linux' || typeof value !== 'string' || value.length === 0) {
+    return null;
+  }
+  const normalized = path.resolve(value).replaceAll('\\', '/');
+  const match = /^\/mnt\/([A-Za-z])(?:\/(.*))?$/.exec(normalized);
+  if (!match) return null;
+  return `${match[1].toUpperCase()}:/${match[2] ?? ''}`;
+}
+
+export function windowsHostPathToWsl(value) {
+  if (process.platform !== 'linux' || typeof value !== 'string' || value.length === 0) {
+    return null;
+  }
+  const normalized = value.replaceAll('\\', '/');
+  const match = /^([A-Za-z]):\/(.*)$/.exec(normalized);
+  if (!match) return null;
+  return `/mnt/${match[1].toLowerCase()}/${match[2]}`;
+}
+
+function windowsHostAuditCoreBinary() {
+  if (process.platform !== 'linux' || process.arch !== 'x64') return null;
+  if (!process.env.WSL_INTEROP && !process.env.WSL_DISTRO_NAME) return null;
+
+  const currentPlatformEnv = `LUMIN_AUDIT_CORE_BIN_${process.platform}_${process.arch}`
+    .replace(/[^A-Z0-9_]/gi, '_')
+    .toUpperCase();
+  if (process.env[currentPlatformEnv] || process.env.LUMIN_AUDIT_CORE_BIN) return null;
+
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    process.env.LUMIN_AUDIT_CORE_BIN_WIN32_X64,
+    path.resolve(here, '../bin/win32-x64/lumin-audit-core.exe'),
+    path.resolve(
+      here,
+      '../skills/lumin-repo-lens-lab/_engine/bin/win32-x64/lumin-audit-core.exe',
+    ),
+  ].filter(Boolean);
+  const resolvedCandidates = candidates.map((value) =>
+    windowsHostPathToWsl(value) ?? path.resolve(value));
+  for (const candidate of [...new Set(resolvedCandidates)]) {
+    if (existsSync(candidate) && auditCoreBinaryReportsCurrentContract(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+export function runWindowsHostAuditCoreJsonResultFile(
+  args,
+  label,
+  { input, resultTempRoot } = {},
+) {
+  const command = windowsHostAuditCoreBinary();
+  if (!command) return null;
+  const windowsResultRoot = wslPathToWindowsHost(resultTempRoot);
+  if (!windowsResultRoot) return null;
+
+  mkdirSync(resultTempRoot, { recursive: true });
+  const tempDir = mkdtempSync(path.join(resultTempRoot, 'lumin-audit-core-host-'));
+  const resultPath = path.join(tempDir, 'result.json');
+  const relativeResultPath = path.relative(resultTempRoot, resultPath).replaceAll('\\', '/');
+  const windowsResultPath = `${windowsResultRoot.replace(/\/$/, '')}/${relativeResultPath}`;
+  try {
+    const childOptions = {
+      encoding: 'utf8',
+      stdio: [input === undefined ? 'ignore' : 'pipe', 'inherit', 'inherit'],
+    };
+    if (input !== undefined) childOptions.input = input;
+    execFileSync(command, [...args, '--result-output', windowsResultPath], childOptions);
+    if (!existsSync(resultPath)) {
+      throw new Error(`${label}: Windows host audit-core did not write ${resultPath}`);
+    }
+    return JSON.parse(readFileSync(resultPath, 'utf8'));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 export function runAuditCoreJsonToResultFile(args, label, resultPath, options = {}) {
   const command = auditCoreBinary();
   if (!existsSync(command)) {

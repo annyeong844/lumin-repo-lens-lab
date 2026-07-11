@@ -56,3 +56,38 @@ The regenerated packaged skill was then dogfooded on the same WSL checkout with
 `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1`, proving that no Cargo/source fallback was
 used. Lifecycle-only pre-write completed in 6.56s and the paired post-write
 completed in 5.01s with `No silent new any`.
+
+## Follow-up phase profile
+
+Temporary in-process timing showed that the remaining wall time was not final
+projection or result serialization:
+
+| Phase | Observed |
+| --- | ---: |
+| repository discovery | 3.27-5.32s |
+| extraction/cache | 0.81-1.00s |
+| projection | 0.04-0.07s |
+| result JSON write | < 0.01s |
+
+Increasing the local discovery pool from 8 through 48 workers did not produce
+a stable winner. The bottleneck remained DrvFS traversal, especially source-
+empty `docs`, `experiments`, `tools`, and generated skill subtrees. A direct
+probe of the already-packaged Windows x64 Rust helper completed the same
+no-cache request in 1.77s. Its `files`, `symbols`, `topology`, `summary`, and
+type-escape inventory matched the Linux result canonically. The next slice
+therefore routes only this WSL-mounted pre-write evidence command through the
+current-contract Windows helper instead of adding more Linux walker threads or
+weakening scan scope.
+
+The implemented source bridge was then dogfooded with Cargo auto-build disabled:
+
+| Lifecycle route | Elapsed |
+| --- | ---: |
+| cold pre-write | 2.97s |
+| warm pre-write, 564/564 facts reused | 3.45s |
+| paired post-write | 3.31s |
+
+The returned evidence restored `root`, inventory root, cache root, and cache
+file paths to WSL spelling. Temporary host result directories were removed
+after each command, and the paired post-write completed without a silent-new-
+any delta.
