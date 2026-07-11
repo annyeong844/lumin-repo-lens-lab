@@ -62,6 +62,8 @@ pub struct JsPreWriteLifecycleRequest {
     pub no_fresh_audit: bool,
     #[serde(default)]
     pub scan_args: Vec<String>,
+    #[serde(default)]
+    pub incremental_args: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -634,6 +636,7 @@ fn run_js_pre_write_child(
         request.child_intent_flag.clone(),
     ];
     args.extend(request.scan_args.clone());
+    args.extend(request.incremental_args.clone());
     if request.no_fresh_audit {
         args.push("--no-fresh-audit".to_string());
     }

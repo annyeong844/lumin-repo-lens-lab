@@ -115,6 +115,8 @@ struct JsPreWriteLifecycleTemplate {
     no_fresh_audit: bool,
     #[serde(default)]
     scan_args: Vec<String>,
+    #[serde(default)]
+    incremental_args: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -532,6 +534,7 @@ fn build_js_pre_write_request(
         engine_selection: serde_json::to_value(&route.engine_selection)?,
         no_fresh_audit: template.no_fresh_audit,
         scan_args: template.scan_args,
+        incremental_args: template.incremental_args,
     })
 }
 

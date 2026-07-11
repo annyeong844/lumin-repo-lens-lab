@@ -166,11 +166,11 @@ pub(super) fn collect_cjs_export_surface(
     }
 
     surface.exact.sort_by(|left, right| {
-        (&left.name, left.kind, left.line).cmp(&(&right.name, right.kind, right.line))
+        (&left.name, &left.kind, left.line).cmp(&(&right.name, &right.kind, right.line))
     });
     surface
         .opaque
-        .sort_by(|left, right| (left.kind, left.line).cmp(&(right.kind, right.line)));
+        .sort_by(|left, right| (&left.kind, left.line).cmp(&(&right.kind, right.line)));
 
     (!surface.exact.is_empty() || !surface.opaque.is_empty()).then_some(surface)
 }
@@ -184,12 +184,12 @@ fn collect_cjs_export_assignment(
         if let Some(name) = member.name {
             surface.exact.push(CjsExportExactRecord {
                 name,
-                kind: member.kind,
+                kind: member.kind.to_string(),
                 line: line_for_span(line_starts, assignment.left.span()),
             });
         } else {
             surface.opaque.push(CjsExportOpaqueRecord {
-                kind: "computed-export-name",
+                kind: "computed-export-name".to_string(),
                 line: line_for_span(line_starts, assignment.left.span()),
             });
         }
@@ -201,7 +201,7 @@ fn collect_cjs_export_assignment(
     }
     let Expression::ObjectExpression(object) = &assignment.right else {
         surface.opaque.push(CjsExportOpaqueRecord {
-            kind: "module-exports-assignment",
+            kind: "module-exports-assignment".to_string(),
             line: line_for_span(line_starts, assignment.left.span()),
         });
         return;
@@ -281,7 +281,7 @@ fn collect_module_exports_object_properties(
     for property in &object.properties {
         let ObjectPropertyKind::ObjectProperty(property) = property else {
             surface.opaque.push(CjsExportOpaqueRecord {
-                kind: "module-exports-object-opaque",
+                kind: "module-exports-object-opaque".to_string(),
                 line: line_for_span(line_starts, property.span()),
             });
             continue;
@@ -289,12 +289,12 @@ fn collect_module_exports_object_properties(
         if let Some(name) = cjs_object_property_name(&property.key, property.computed) {
             surface.exact.push(CjsExportExactRecord {
                 name,
-                kind: "module-exports-object",
+                kind: "module-exports-object".to_string(),
                 line: line_for_span(line_starts, property.span),
             });
         } else {
             surface.opaque.push(CjsExportOpaqueRecord {
-                kind: "computed-export-name",
+                kind: "computed-export-name".to_string(),
                 line: line_for_span(line_starts, property.span),
             });
         }
@@ -454,7 +454,7 @@ impl CjsRequireVisitor<'_> {
         self.handled_require_starts.insert(require.span.start);
         self.opacity.push(CjsRequireOpacityRecord {
             line: line_for_span(self.line_starts, require.span),
-            kind: "dynamic-require",
+            kind: "dynamic-require".to_string(),
         });
     }
 

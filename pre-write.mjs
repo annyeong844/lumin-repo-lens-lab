@@ -11,6 +11,8 @@
 //   --intent <file|->       intent JSON; use "-" to read from stdin
 //   --advisory-out <dir>    where to write the advisory artifacts
 //                           (defaults to --output)
+//   --no-incremental / --cache-root / --clear-incremental-cache
+//                           control the strict Rust per-file fact cache
 //
 // Exit codes:
 //   0 — normal completion (advisory emitted; may include [확인 불가] rows)
@@ -89,6 +91,9 @@ const args = parseCliArgs({
   intent: { type: 'string' },
   'advisory-out': { type: 'string' },
   'no-fresh-audit': { type: 'boolean', default: false },
+  'no-incremental': { type: 'boolean', default: false },
+  'cache-root': { type: 'string' },
+  'clear-incremental-cache': { type: 'boolean', default: false },
 });
 
 const intentFlag = args.raw?.intent;
@@ -284,6 +289,9 @@ if (!noFreshAudit) {
       includeTests: args.includeTests,
       exclude: args.exclude,
       dependencySpecifiers: intent.dependencies,
+      noIncremental: args.raw?.['no-incremental'] === true,
+      cacheRoot: args.raw?.['cache-root'],
+      clearIncrementalCache: args.raw?.['clear-incremental-cache'] === true,
     });
     symbols = rustEvidence.evidence.symbols;
     topology = rustEvidence.evidence.topology;

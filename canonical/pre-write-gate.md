@@ -199,6 +199,22 @@ Explicit path-backed file requests remain available for contract probes and
 focused callers, but JS must not walk the repository before a normal fresh
 pre-write. This Rust-only discovery exception avoids repeated Node/DrvFS
 directory-entry crossings on WSL while preserving the checked JS scan policy.
+The shared Rust pass may skip OXC parsing for files whose exact current content
+and extraction context match its strict per-file cache. It still discovers the
+current scoped file set and rebuilds the complete before or after evidence
+artifact every time. Clean tracked files may be identified by a Git index blob
+OID after Git confirms the working-tree path is clean; dirty, untracked,
+ignored, non-Git, and ambiguous files are read and identified by SHA-256.
+For a WSL-mounted Windows checkout, the Rust pass may use host `git.exe` for
+the clean-blob proof so the identity follows the Git implementation that
+created the checkout and its line-ending policy. Missing or mismatched host Git
+falls back to current-byte SHA-256.
+Added, deleted, and renamed paths change the source-set fingerprint and
+invalidate cached relative-resolution facts. Cache corruption or identity
+mismatch reparses current source and is reported as a miss; it never produces
+empty evidence or selects the legacy JS extractor. Consequently the first run
+still pays full discovery/read/parse cost, while a fresh post-write snapshot and
+later pre-write runs may reuse only proven unchanged per-file parse facts.
 The public CLI skips Node analysis dependency setup for pre-write-only and
 post-write-only invocations. Normal fresh post-write obtains its after type-
 escape inventory and file list from the same Rust command; it does not load the

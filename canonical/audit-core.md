@@ -128,6 +128,7 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/symbol_graph/sfc.rs`               | Typed SFC style/template/global/generated-manifest/framework-convention projection, source-use target linkage, and status/reason selection from explicit source-use terminal outcomes                                                                                                                                                                               | SFC discovery, source walking, source-use resolution, fan-in eligibility, or safe-fix policy                                                                                                                                                                       |
 | `experiments/rust-main/lumin-audit-core/src/symbol_graph/reachability.rs`      | Source-use fan-in merge, identity/space fan-in projection, top fan-in ranking, and dead-candidate partitioning                                                                                                                                                                                                                                                      | parsing, resolution, final artifact assembly, or compatibility fallback                                                                                                                                                                                            |
 | `experiments/rust-main/lumin-audit-core/src/symbol_graph/any_contamination.rs` | Type-escape-to-owner association, contamination labels/measurements, owner indexes, and annotated definition projection                                                                                                                                                                                                                                             | type-escape extraction, edit-safety policy, or final artifact assembly                                                                                                                                                                                             |
+| `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/cache.rs`         | Strict per-file OXC fact cache for the shared JS/TS pre-write/post-write evidence pass: repository and source-set identity, Git clean-blob identity, content-SHA identity for dirty/untracked files, cache load/store validation, and incremental observations                                                                                                           | source discovery, parser traversal, final evidence reuse, absence claims, cue/ranking policy, or stat/mtime-only identity                                                                                                                                           |
 
 `build-symbol-graph.mjs` requires Rust JS/TS extraction for every JS-family file
 in its changed set. An audit-core command failure, malformed batch response, or
@@ -431,6 +432,31 @@ removes this artifact cache together with per-file facts.
   row, result-file failure, or audit-core contract mismatch is a hard failure
   rather than a request to run the legacy JS extractor. Parser failures remain
   artifact-visible incomplete evidence and must prevent absence claims.
+  The command may reuse strict per-file OXC facts, but it must discover the
+  current scoped file set and rebuild every compact symbol, topology,
+  type-escape, inventory, and summary projection on every invocation. A cache
+  hit is a parser skip, never reuse of a before/after artifact or an absence
+  claim. A tracked file may use its Git index blob OID without opening the
+  working-tree file only when Git reports that path clean. Dirty, untracked,
+  ignored, non-Git, and otherwise ambiguous paths require a current byte read
+  and SHA-256 identity. The identity also covers the normalized repository
+  root, relative path, complete source-set fingerprint, extractor/cache profile
+  version, and scan context. The source-set fingerprint invalidates cached
+  resolved relative edges when files are added, deleted, or renamed.
+  Missing, malformed, incompatible, or partially written cache state is an
+  artifact-visible miss and triggers current-source parsing; it must not become
+  empty evidence or invoke a JS extractor fallback. `--no-incremental` disables
+  reuse, and `--clear-incremental-cache` removes this producer cache before the
+  current pass. The default cache root is the existing repository-scoped audit
+  cache root.
+  On a WSL-mounted Windows worktree, the Rust cache owner may query the host
+  `git.exe` with a translated drive path before trying WSL Git. The host Git
+  owns that checkout's clean/smudge and line-ending policy; WSL Git can
+  otherwise classify every CRLF-clean file as dirty and force a full DrvFS
+  byte read. This optimization is Rust-only because this Rust command owns the
+  source reads and cache identity. If host Git is absent, fails, reports an
+  unexpected repository root, or exposes an ambiguous index state, Rust falls
+  back to current-byte SHA-256 rather than trusting a weaker identity.
 - Audit-core may own orchestration routing separately from execution. The plan
   is declarative profile/lifecycle evidence; `lifecycle_request.rs` owns only
   request-level hard-stop blocks before intent reading or child execution;

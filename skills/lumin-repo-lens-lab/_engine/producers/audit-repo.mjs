@@ -327,6 +327,7 @@ function forwardedIncrementalArgs() {
   const args = [];
   if (values['no-incremental'] === true) args.push('--no-incremental');
   if (values['cache-root']) args.push('--cache-root', path.resolve(values['cache-root']));
+  if (values['clear-incremental-cache'] === true) args.push('--clear-incremental-cache');
   return args;
 }
 
@@ -547,6 +548,7 @@ function buildJsPreWriteLifecycleRequest() {
     nodeExecutable: process.execPath,
     noFreshAudit: values['no-fresh-audit'] === true,
     scanArgs: forwardedScanArgs(),
+    incrementalArgs: forwardedIncrementalArgs(),
   };
 }
 

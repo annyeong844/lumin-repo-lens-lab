@@ -60,6 +60,9 @@ export function collectRustJsTsEvidence({
   includeTests,
   exclude = [],
   dependencySpecifiers = [],
+  noIncremental = false,
+  cacheRoot = null,
+  clearIncrementalCache = false,
   label = 'Rust JS/TS evidence',
 }) {
   const dependencyRoots = [...new Set(
@@ -76,6 +79,11 @@ export function collectRustJsTsEvidence({
     dependencyRoots,
     discoverFiles: true,
     files: [],
+    incremental: {
+      enabled: noIncremental !== true,
+      cacheRoot: path.resolve(cacheRoot ?? path.join(root, '.audit', '.cache')),
+      clear: clearIncrementalCache === true,
+    },
   };
   const response = runAuditCoreJsonResultFile(
     ['js-ts-pre-write-evidence', '--input', '-'],

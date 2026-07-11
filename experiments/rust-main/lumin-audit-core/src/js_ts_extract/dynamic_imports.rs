@@ -45,7 +45,7 @@ impl<'a> Visit<'a> for ImportMetaGlobVisitor<'_> {
                 local_name: None,
                 degraded: true,
                 resolved_file: None,
-                resolver_stage: Some("import-meta-glob"),
+                resolver_stage: Some("import-meta-glob".to_string()),
             });
         }
         walk::walk_call_expression(self, it);
@@ -369,7 +369,7 @@ fn dynamic_import_opacity_record(
         if let Some(prefix) = dynamic_import_template_prefix(template) {
             return DynamicImportOpacityRecord {
                 line: line_for_span(line_starts, import.span),
-                kind: "template-prefix",
+                kind: "template-prefix".to_string(),
                 prefix: Some(prefix),
             };
         }
@@ -377,7 +377,7 @@ fn dynamic_import_opacity_record(
 
     DynamicImportOpacityRecord {
         line: line_for_span(line_starts, import.span),
-        kind: "nonliteral",
+        kind: "nonliteral".to_string(),
         prefix: None,
     }
 }

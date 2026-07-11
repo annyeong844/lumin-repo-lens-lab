@@ -15,6 +15,9 @@ export function buildRustPreWriteEvidence({
   includeTests,
   exclude = [],
   dependencySpecifiers = [],
+  noIncremental = false,
+  cacheRoot = null,
+  clearIncrementalCache = false,
 }) {
   const artifactName = evidenceFileName(invocationId);
   const anyInventoryArtifact = `any-inventory.pre.${invocationId}.json`;
@@ -25,6 +28,9 @@ export function buildRustPreWriteEvidence({
     includeTests,
     exclude,
     dependencySpecifiers,
+    noIncremental,
+    cacheRoot,
+    clearIncrementalCache,
     label: 'pre-write Rust evidence',
   });
   const content = `${JSON.stringify(evidence, null, 2)}\n`;

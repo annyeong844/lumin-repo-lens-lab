@@ -255,7 +255,7 @@ fn collect_comment_type_escapes(
         facts.push(TypeEscapeRecord {
             file: artifact_file_path.to_string(),
             line: line_for_span(line_starts, comment.span),
-            escape_kind,
+            escape_kind: escape_kind.to_string(),
             code_shape,
             normalized_code_shape,
             inside_exported_identity: None,
@@ -350,7 +350,7 @@ fn type_escape_record(
     TypeEscapeRecord {
         file: artifact_file_path.to_string(),
         line: line_for_span(line_starts, span),
-        escape_kind,
+        escape_kind: escape_kind.to_string(),
         code_shape,
         normalized_code_shape,
         inside_exported_identity,

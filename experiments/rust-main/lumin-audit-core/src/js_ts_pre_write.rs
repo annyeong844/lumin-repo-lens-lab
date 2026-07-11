@@ -1,7 +1,6 @@
-use crate::js_ts_extract::{
-    build_js_ts_extract_response, ClassMethodRecord, JsTsExtractFileResult, JsTsExtractInputFile,
-    JsTsExtractRequest, TypeEscapeRecord, UseRecord, JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION,
-};
+mod cache;
+
+use crate::js_ts_extract::{ClassMethodRecord, JsTsExtractFileResult, TypeEscapeRecord, UseRecord};
 use crate::scan_scope::{collect_source_files, to_repo_relative, ScanScopeOptions};
 use crate::symbol_graph::any_contamination::{
     annotate_projected_def_index, ProjectedAnyContamination,
@@ -11,6 +10,8 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
+
+use cache::{extract_with_cache, JsTsPreWriteIncrementalRequest};
 
 pub const JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION: &str =
     "lumin-js-ts-pre-write-evidence-request.v1";
@@ -47,6 +48,8 @@ pub struct JsTsPreWriteEvidenceRequest {
     pub discover_files: bool,
     #[serde(default)]
     pub files: Vec<JsTsPreWriteSourceFile>,
+    #[serde(default)]
+    pub incremental: JsTsPreWriteIncrementalRequest,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +73,7 @@ struct ProjectionContext<'a> {
     include_tests: bool,
     excludes: Vec<String>,
     dependency_roots: &'a BTreeSet<String>,
+    incremental: Value,
 }
 
 #[derive(Debug, Default)]
@@ -93,6 +97,7 @@ pub fn build_js_ts_pre_write_evidence(request: JsTsPreWriteEvidenceRequest) -> R
         dependency_roots,
         discover_files,
         mut files,
+        incremental,
     } = request;
     let dependency_roots = dependency_roots.into_iter().collect::<BTreeSet<_>>();
     if discover_files {
@@ -112,30 +117,25 @@ pub fn build_js_ts_pre_write_evidence(request: JsTsPreWriteEvidenceRequest) -> R
         .iter()
         .map(|file| file.file_path.to_string_lossy().to_string())
         .collect::<Vec<_>>();
-    let extract_files = files
-        .into_iter()
-        .map(|file| JsTsExtractInputFile {
-            file_path: file.file_path.to_string_lossy().to_string(),
-            artifact_file_path: Some(normalize_slashes(&file.artifact_file_path)),
-            source: None,
-        })
-        .collect();
-    let extracted = build_js_ts_extract_response(JsTsExtractRequest {
-        schema_version: JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION.to_string(),
-        files: extract_files,
+    let (extracted, incremental) = extract_with_cache(
+        &root,
+        files,
         source_files,
-    })?;
-    if extracted.files.len() != path_map.len() {
+        include_tests,
+        &excludes,
+        &incremental,
+    )?;
+    if extracted.len() != path_map.len() {
         bail!(
             "js-ts-pre-write-evidence: extractor returned {} rows for {} files",
-            extracted.files.len(),
+            extracted.len(),
             path_map.len()
         );
     }
 
-    let mut rows = Vec::with_capacity(extracted.files.len());
+    let mut rows = Vec::with_capacity(extracted.len());
     let mut seen = BTreeSet::new();
-    for file in extracted.files {
+    for file in extracted {
         let normalized = normalize_slashes(&file.file_path);
         let relative_path = path_map.get(&normalized).with_context(|| {
             format!(
@@ -176,6 +176,7 @@ pub fn build_js_ts_pre_write_evidence(request: JsTsPreWriteEvidenceRequest) -> R
             include_tests,
             excludes,
             dependency_roots: &dependency_roots,
+            incremental,
         },
         rows,
         &path_map,
@@ -472,7 +473,7 @@ fn project_evidence(
         left.file
             .cmp(&right.file)
             .then_with(|| left.line.cmp(&right.line))
-            .then_with(|| left.escape_kind.cmp(right.escape_kind))
+            .then_with(|| left.escape_kind.cmp(&right.escape_kind))
             .then_with(|| left.occurrence_key.cmp(&right.occurrence_key))
     });
     let type_escape_count = type_escapes.len();
@@ -553,17 +554,7 @@ fn project_evidence(
                 "exclude": context.excludes,
                 "fileCount": rows.len(),
                 "filesWithParseErrors": parse_errors,
-                "incremental": {
-                    "enabled": false,
-                    "identityMode": Value::Null,
-                    "cacheVersion": 1,
-                    "cacheRoot": Value::Null,
-                    "changedFiles": rows.len(),
-                    "reusedFiles": 0,
-                    "droppedFiles": 0,
-                    "invalidatedFiles": 0,
-                    "reason": "shared-pre-write-extraction",
-                },
+                "incremental": context.incremental,
                 "supports": {
                     "typeEscapes": true,
                     "escapeKinds": TYPE_ESCAPE_KINDS,
@@ -738,6 +729,7 @@ mod tests {
                 source_file(root, "src/dep.ts"),
                 source_file(root, "src/side.ts"),
             ],
+            incremental: Default::default(),
         };
 
         let evidence = build_js_ts_pre_write_evidence(request)?;
@@ -814,6 +806,7 @@ mod tests {
             dependency_roots: Vec::new(),
             discover_files: false,
             files: vec![source_file(root, "src/broken.ts")],
+            incremental: Default::default(),
         })?;
 
         assert_eq!(evidence["symbols"]["meta"]["complete"], false);
@@ -841,6 +834,7 @@ mod tests {
             dependency_roots: Vec::new(),
             discover_files: false,
             files: vec![source_file(root, "src/missing.ts")],
+            incremental: Default::default(),
         });
         let Err(error) = result else {
             bail!("missing required source did not hard-stop");
@@ -868,6 +862,7 @@ mod tests {
                 file_path: outside.path().join("outside.ts"),
                 artifact_file_path: "outside.ts".to_string(),
             }],
+            incremental: Default::default(),
         };
         let result = build_js_ts_pre_write_evidence(request);
         let Err(error) = result else {
@@ -899,6 +894,7 @@ mod tests {
             dependency_roots: Vec::new(),
             discover_files: true,
             files: Vec::new(),
+            incremental: Default::default(),
         })?;
 
         assert_eq!(evidence["files"], json!(["src/app.ts"]));
@@ -906,6 +902,86 @@ mod tests {
         assert!(evidence["symbols"]["defIndex"]
             .get("src/app.test.ts")
             .is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn strict_cache_reuses_only_byte_identical_files_and_rebuilds_current_evidence() -> Result<()> {
+        let temp = tempdir()?;
+        let root = temp.path();
+        let cache_root = root.join(".cache");
+        fs::create_dir_all(root.join("src"))?;
+        fs::write(root.join("src/a.ts"), "export const a = 1;\n")?;
+        fs::write(root.join("src/b.ts"), "export const b = 1;\n")?;
+
+        let build = || {
+            build_js_ts_pre_write_evidence(JsTsPreWriteEvidenceRequest {
+                schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
+                root: root.to_path_buf(),
+                evidence_artifact: "pre-write-evidence.PROBE.json".to_string(),
+                any_inventory_artifact: "any-inventory.pre.PROBE.json".to_string(),
+                generated: "2026-07-11T00:00:00.000Z".to_string(),
+                include_tests: true,
+                excludes: Vec::new(),
+                dependency_roots: Vec::new(),
+                discover_files: true,
+                files: Vec::new(),
+                incremental: JsTsPreWriteIncrementalRequest {
+                    enabled: true,
+                    cache_root: Some(cache_root.clone()),
+                    clear: false,
+                },
+            })
+        };
+
+        let cold = build()?;
+        assert_eq!(
+            cold["anyInventory"]["meta"]["incremental"]["changedFiles"],
+            2
+        );
+        assert_eq!(
+            cold["anyInventory"]["meta"]["incremental"]["reusedFiles"],
+            0
+        );
+
+        let warm = build()?;
+        assert_eq!(
+            warm["anyInventory"]["meta"]["incremental"]["changedFiles"],
+            0
+        );
+        assert_eq!(
+            warm["anyInventory"]["meta"]["incremental"]["reusedFiles"],
+            2
+        );
+        assert_eq!(
+            warm["anyInventory"]["meta"]["incremental"]["writeStatus"],
+            "unchanged"
+        );
+        assert_eq!(warm["symbols"]["defIndex"]["src/a.ts"]["a"]["line"], 1);
+
+        fs::write(root.join("src/a.ts"), "export const a = 2;\n")?;
+        let changed = build()?;
+        assert_eq!(
+            changed["anyInventory"]["meta"]["incremental"]["changedFiles"],
+            1
+        );
+        assert_eq!(
+            changed["anyInventory"]["meta"]["incremental"]["reusedFiles"],
+            1
+        );
+        assert_eq!(changed["summary"]["fileCount"], 2);
+
+        fs::write(root.join("src/c.ts"), "export const c = 1;\n")?;
+        let expanded = build()?;
+        assert_eq!(
+            expanded["anyInventory"]["meta"]["incremental"]["changedFiles"],
+            3
+        );
+        assert_eq!(
+            expanded["anyInventory"]["meta"]["incremental"]["reusedFiles"],
+            0
+        );
+        assert_eq!(expanded["summary"]["fileCount"], 3);
         Ok(())
     }
 

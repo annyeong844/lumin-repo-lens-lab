@@ -58,7 +58,7 @@ pub struct JsTsExtractResponse {
     pub files: Vec<JsTsExtractFileResult>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsTsExtractFileResult {
     pub file_path: String,
@@ -68,9 +68,9 @@ pub struct JsTsExtractFileResult {
     pub class_methods: Vec<ClassMethodRecord>,
     pub local_operations: Vec<serde_json::Value>,
     pub type_escapes: Vec<TypeEscapeRecord>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dynamic_import_opacity: Vec<DynamicImportOpacityRecord>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cjs_require_opacity: Vec<CjsRequireOpacityRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cjs_export_surface: Option<CjsExportSurface>,
@@ -79,7 +79,7 @@ pub struct JsTsExtractFileResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DefinitionRecord {
     pub name: String,
@@ -91,7 +91,7 @@ pub struct DefinitionRecord {
     pub definition_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UseRecord {
     pub from_spec: String,
@@ -103,53 +103,53 @@ pub struct UseRecord {
     pub line: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_name: Option<String>,
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub degraded: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved_file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resolver_stage: Option<&'static str>,
+    pub resolver_stage: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DynamicImportOpacityRecord {
     pub line: usize,
-    pub kind: &'static str,
+    pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prefix: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CjsRequireOpacityRecord {
     pub line: usize,
-    pub kind: &'static str,
+    pub kind: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CjsExportSurface {
     pub exact: Vec<CjsExportExactRecord>,
     pub opaque: Vec<CjsExportOpaqueRecord>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CjsExportExactRecord {
     pub name: String,
-    pub kind: &'static str,
+    pub kind: String,
     pub line: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CjsExportOpaqueRecord {
-    pub kind: &'static str,
+    pub kind: String,
     pub line: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReExportRecord {
     pub source: String,
@@ -158,7 +158,7 @@ pub struct ReExportRecord {
     pub namespace: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClassMethodRecord {
     pub identity: String,
@@ -166,7 +166,7 @@ pub struct ClassMethodRecord {
     pub class_name: String,
     pub name: String,
     pub method_name: String,
-    pub kind: &'static str,
+    pub kind: String,
     pub member_kind: String,
     pub visibility: String,
     pub r#static: bool,
@@ -176,12 +176,12 @@ pub struct ClassMethodRecord {
     pub end_line: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TypeEscapeRecord {
     pub file: String,
     pub line: usize,
-    pub escape_kind: &'static str,
+    pub escape_kind: String,
     pub code_shape: String,
     pub normalized_code_shape: String,
     pub inside_exported_identity: Option<String>,
@@ -1173,7 +1173,7 @@ fn annotate_relative_resolutions(
     for use_record in uses {
         if let Some(resolved) = resolver.resolve(from_file, &use_record.from_spec) {
             use_record.resolved_file = Some(resolved);
-            use_record.resolver_stage = Some("relative");
+            use_record.resolver_stage = Some("relative".to_string());
         }
     }
 }

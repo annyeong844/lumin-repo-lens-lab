@@ -10,6 +10,9 @@ export function buildRustPostWriteInventory({
   deltaInvocationId,
   includeTests,
   exclude = [],
+  noIncremental = false,
+  cacheRoot = null,
+  clearIncrementalCache = false,
 }) {
   const anyInventoryArtifact = 'any-inventory.json';
   const inventoryPath = path.join(output, anyInventoryArtifact);
@@ -22,6 +25,9 @@ export function buildRustPostWriteInventory({
     anyInventoryArtifact,
     includeTests,
     exclude,
+    noIncremental,
+    cacheRoot,
+    clearIncrementalCache,
     label: 'post-write Rust after-inventory',
   });
   try {

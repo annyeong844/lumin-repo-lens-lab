@@ -8,9 +8,7 @@
 //   --delta-out <dir>            where delta artifact lands (defaults to --output)
 //   --no-fresh-audit             skip the Rust after-snapshot refresh
 //   --no-incremental / --cache-root / --clear-incremental-cache
-//                                accepted for CLI compatibility; the shared
-//                                Rust after-snapshot currently reports
-//                                incremental.enabled=false
+//                                control the shared strict Rust per-file cache
 //   --include-tests / --no-include-tests / --production / --exclude
 //                                forwarded to Rust source discovery
 //
@@ -91,6 +89,9 @@ if (!noFreshAudit && !skipTypeEscapeDelta) {
       deltaInvocationId,
       includeTests: args.includeTests,
       exclude: args.exclude,
+      noIncremental: args.raw?.['no-incremental'] === true,
+      cacheRoot: args.raw?.['cache-root'],
+      clearIncrementalCache: args.raw?.['clear-incremental-cache'] === true,
     });
   } catch (e) {
     die(`Rust after-inventory failed: ${e?.message?.slice(0, 400) ?? 'unknown'}`);
