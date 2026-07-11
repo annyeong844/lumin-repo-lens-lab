@@ -221,7 +221,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v40';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v41';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -444,6 +444,7 @@ function auditCoreBinaryReportsCurrentContract(command) {
   if (contract?.features?.failClosedLifecycleArtifacts !== true) return false;
   if (contract?.features?.postWriteOnlyBasePipelineSkip !== true) return false;
   if (contract?.features?.postWriteScopedBaseEvidence !== true) return false;
+  if (contract?.features?.lifecycleScopedArtifacts !== true) return false;
 
   const supported = new Set(Array.isArray(contract.supportedSubcommands)
     ? contract.supportedSubcommands

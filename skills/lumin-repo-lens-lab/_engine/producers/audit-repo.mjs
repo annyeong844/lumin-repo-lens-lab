@@ -399,6 +399,7 @@ function manifestEvidenceOptions() {
     mergeRustAnalysisRun: true,
     onArtifactRead: artifactReadMetrics.observeRead,
     basePipelinePlanned: RUN_BASE_PIPELINE,
+    basePipelineSkipReason: BASE_PIPELINE_SKIP_REASON,
   };
 }
 
@@ -572,6 +573,9 @@ console.log(`[audit-repo] profile=${PROFILE}  root=${ROOT}  output=${OUT}`);
 const baseExecution = executeBaseRuntime(buildRuntimeExecutorRequest());
 const ORCHESTRATION_PLAN = baseExecution.plan;
 const RUN_BASE_PIPELINE = ORCHESTRATION_PLAN?.basePipeline?.status === 'planned';
+const BASE_PIPELINE_SKIP_REASON = RUN_BASE_PIPELINE
+  ? null
+  : ORCHESTRATION_PLAN?.basePipeline?.reason ?? 'base-pipeline-skipped';
 commandsRun.push(...(baseExecution.commandsRun ?? []));
 skipped.push(...(baseExecution.skipped ?? []));
 rustAnalysisRun = baseExecution.rustAnalysisRun ?? rustAnalysisRun;
@@ -673,6 +677,7 @@ const manifestWrite = finalizeAuditRunWithCompanions({
   skipped,
   companionPolicy: {
     basePipelinePlanned: RUN_BASE_PIPELINE,
+    basePipelineSkipReason: BASE_PIPELINE_SKIP_REASON,
   },
 });
 Object.assign(manifest, manifestWrite.closeoutUpdate ?? {});

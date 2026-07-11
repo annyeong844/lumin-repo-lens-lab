@@ -451,6 +451,7 @@ export function buildManifestRootWithEvidence({
   rustAnalysisRan = false,
   onArtifactRead,
   basePipelinePlanned = true,
+  basePipelineSkipReason = null,
 }) {
   const result = runJsonInputResultFileCommand(
     'manifest-root-with-evidence',
@@ -470,6 +471,7 @@ export function buildManifestRootWithEvidence({
       rustAnalysisRun,
       rustAnalysisRan: rustAnalysisRun ? false : rustAnalysisRan,
       basePipelinePlanned,
+      basePipelineSkipReason,
     },
   );
   observeRustArtifactReads(result.artifactReads, onArtifactRead);
@@ -500,6 +502,7 @@ export function applyLifecycleAndRefreshManifestEvidence({
   rustAnalysisRan = false,
   onArtifactRead,
   basePipelinePlanned = true,
+  basePipelineSkipReason = null,
 }) {
   const result = runJsonInputResultFileCommand(
     'manifest-lifecycle-evidence-refresh',
@@ -518,6 +521,7 @@ export function applyLifecycleAndRefreshManifestEvidence({
         rustAnalysisRun,
         rustAnalysisRan: rustAnalysisRun ? false : rustAnalysisRan,
         basePipelinePlanned,
+        basePipelineSkipReason,
       },
     },
   );

@@ -676,7 +676,7 @@ fn cli_finalize_audit_run_with_companions_renders_and_closes_manifest() -> Resul
 }
 
 #[test]
-fn cli_finalize_companion_policy_skips_summary_without_base_or_lifecycle() -> Result<()> {
+fn cli_post_write_only_closeout_scopes_artifacts_and_skips_stale_summary() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root_dir = temp.path().join("repo");
     let output_dir = root_dir.join(".audit");
@@ -691,6 +691,9 @@ fn cli_finalize_companion_policy_skips_summary_without_base_or_lifecycle() -> Re
             "edges": []
         }))?,
     )?;
+    fs::write(output_dir.join("symbols.json"), "{}")?;
+    fs::write(output_dir.join("post-write-delta.latest.json"), "{}")?;
+    fs::write(output_dir.join("post-write-delta.PRE.DELTA.json"), "{}")?;
 
     let result_path = temp.path().join("finalize-result.json");
     let input = json!({
@@ -707,7 +710,14 @@ fn cli_finalize_companion_policy_skips_summary_without_base_or_lifecycle() -> Re
                 "unresolvedInternalRatio": 0
             },
             "artifactsProduced": [],
-            "blindZones": []
+            "blindZones": [],
+            "postWrite": {
+                "requested": true,
+                "ran": true,
+                "deltaPath": output_dir.join("post-write-delta.latest.json"),
+                "preWriteInvocationId": "PRE",
+                "deltaInvocationId": "DELTA"
+            }
         },
         "context": {
             "generated": "2026-07-02T00:00:00.000Z",
@@ -733,7 +743,8 @@ fn cli_finalize_companion_policy_skips_summary_without_base_or_lifecycle() -> Re
         "skipped": [],
         "rustAnalysis": null,
         "companionPolicy": {
-            "basePipelinePlanned": false
+            "basePipelinePlanned": false,
+            "basePipelineSkipReason": "post-write-only mode refreshes delta-required inventory instead of running the full quick audit"
         }
     });
 
@@ -770,7 +781,23 @@ fn cli_finalize_companion_policy_skips_summary_without_base_or_lifecycle() -> Re
     assert!(manifest.get("auditSummary").is_none());
     assert!(manifest.get("reviewPack").is_none());
     assert_eq!(manifest["baseEvidence"]["status"], "not-refreshed");
-    assert_eq!(manifest["artifactsProduced"], json!([]));
+    assert_eq!(manifest["baseEvidence"]["reason"], "post-write-only mode refreshes delta-required inventory instead of running the full quick audit");
+    assert_eq!(
+        manifest["artifactsProduced"],
+        json!([
+            "post-write-delta.PRE.DELTA.json",
+            "post-write-delta.latest.json",
+            "producer-performance.json"
+        ])
+    );
+    assert_eq!(
+        result["closeoutUpdate"]["artifactsProduced"],
+        manifest["artifactsProduced"]
+    );
+    assert_eq!(result["artifactsProducedCount"], 3);
+    let performance = fs::read_to_string(output_dir.join("producer-performance.json"))?;
+    assert!(!performance.contains("topology.json"));
+    assert!(!performance.contains("symbols.json"));
     Ok(())
 }
 

@@ -28,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v40';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v41';
 const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -67,6 +67,7 @@ const AUDIT_CORE_REQUIRED_FEATURES = [
   'failClosedLifecycleArtifacts',
   'postWriteOnlyBasePipelineSkip',
   'postWriteScopedBaseEvidence',
+  'lifecycleScopedArtifacts',
 ];
 const MAX_PACKAGED_LINUX_GLIBC = { major: 2, minor: 31 };
 
