@@ -985,6 +985,62 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn strict_cache_keys_git_identity_by_source_path_not_artifact_alias() -> Result<()> {
+        let temp = tempdir()?;
+        let root = temp.path();
+        let cache_root = root.join(".cache");
+        fs::create_dir_all(root.join("src"))?;
+        fs::write(root.join("src/real.ts"), "export const before = 1;\n")?;
+        fs::write(root.join("alias.ts"), "export const unrelated = 1;\n")?;
+        cache::initialize_git_fixture(root)?;
+
+        let build = || {
+            build_js_ts_pre_write_evidence(JsTsPreWriteEvidenceRequest {
+                schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
+                root: root.to_path_buf(),
+                evidence_artifact: "pre-write-evidence.PROBE.json".to_string(),
+                any_inventory_artifact: "any-inventory.pre.PROBE.json".to_string(),
+                generated: "2026-07-11T00:00:00.000Z".to_string(),
+                include_tests: true,
+                excludes: Vec::new(),
+                dependency_roots: Vec::new(),
+                discover_files: false,
+                files: vec![JsTsPreWriteSourceFile {
+                    file_path: root.join("src/real.ts"),
+                    artifact_file_path: "alias.ts".to_string(),
+                }],
+                incremental: JsTsPreWriteIncrementalRequest {
+                    enabled: true,
+                    cache_root: Some(cache_root.clone()),
+                    clear: false,
+                },
+            })
+        };
+
+        let cold = build()?;
+        assert_eq!(cold["symbols"]["defIndex"]["alias.ts"]["before"]["line"], 1);
+
+        fs::write(root.join("src/real.ts"), "export const after = 2;\n")?;
+        let changed = build()?;
+        assert_eq!(
+            changed["anyInventory"]["meta"]["incremental"]["changedFiles"],
+            1
+        );
+        assert_eq!(
+            changed["anyInventory"]["meta"]["incremental"]["reusedFiles"],
+            0
+        );
+        assert_eq!(
+            changed["symbols"]["defIndex"]["alias.ts"]["after"]["line"],
+            1
+        );
+        assert!(changed["symbols"]["defIndex"]["alias.ts"]
+            .get("before")
+            .is_none());
+        Ok(())
+    }
+
     fn source_file(root: &Path, relative: &str) -> JsTsPreWriteSourceFile {
         JsTsPreWriteSourceFile {
             file_path: root.join(relative),

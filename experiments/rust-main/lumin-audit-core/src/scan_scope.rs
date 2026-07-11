@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use rayon::{prelude::*, ThreadPoolBuilder};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -39,6 +40,7 @@ const ROOT_PRUNE_NAMES: &[&str] = &[
 ];
 const WALK_PRUNE_NAMES: &[&str] = &["node_modules", ".git"];
 const WALK_PRUNE_PREFIXES: &[&str] = &["dist", "build"];
+const SOURCE_DISCOVERY_WORKER_STACK_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ScanScopeOptions {
@@ -177,16 +179,12 @@ pub fn collect_source_files(root: &Path, options: &ScanScopeOptions) -> Result<V
     if search_dirs.is_empty() {
         walk_source_files(&root, &root, true, options, &exclude_rules, &mut files)?;
     } else {
-        for directory in search_dirs {
-            walk_source_files(
-                &root,
-                &directory,
-                false,
-                options,
-                &exclude_rules,
-                &mut files,
-            )?;
-        }
+        files.extend(walk_search_directories(
+            &root,
+            search_dirs,
+            options,
+            &exclude_rules,
+        )?);
     }
 
     files.sort();
@@ -195,6 +193,84 @@ pub fn collect_source_files(root: &Path, options: &ScanScopeOptions) -> Result<V
         files.retain(|file| {
             relative_posix(&root, file).is_some_and(|relative| !is_test_like_path(&relative))
         });
+    }
+    Ok(files)
+}
+
+fn walk_search_directories(
+    root: &Path,
+    search_dirs: Vec<PathBuf>,
+    options: &ScanScopeOptions,
+    exclude_rules: &[ExcludeRule],
+) -> Result<Vec<PathBuf>> {
+    let available_threads = std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(1);
+    if available_threads == 1 {
+        let mut files = Vec::new();
+        for directory in search_dirs {
+            walk_source_files(root, &directory, false, options, exclude_rules, &mut files)?;
+        }
+        return Ok(files);
+    }
+
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(available_threads)
+        .stack_size(SOURCE_DISCOVERY_WORKER_STACK_BYTES)
+        .build()
+        .context("failed to build source discovery worker pool")?;
+    let directory_results = pool.install(|| {
+        search_dirs
+            .into_par_iter()
+            .map(|directory| walk_source_files_parallel(root, &directory, options, exclude_rules))
+            .collect::<Vec<Result<Vec<PathBuf>>>>()
+    });
+
+    let mut files = Vec::new();
+    for result in directory_results {
+        files.extend(result?);
+    }
+    Ok(files)
+}
+
+fn walk_source_files_parallel(
+    root: &Path,
+    directory: &Path,
+    options: &ScanScopeOptions,
+    exclude_rules: &[ExcludeRule],
+) -> Result<Vec<PathBuf>> {
+    let entry_results = read_directory(directory)?
+        .into_par_iter()
+        .map(|entry| {
+            let file_type = entry
+                .file_type()
+                .with_context(|| format!("failed to inspect {}", entry.path().display()))?;
+            if file_type.is_symlink() {
+                return Ok(Vec::new());
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            let full = entry.path();
+            if file_type.is_dir() {
+                if should_prune_walk_dir(&name, &full)
+                    || is_excluded_path(root, &full, exclude_rules, true)
+                {
+                    return Ok(Vec::new());
+                }
+                return walk_source_files_parallel(root, &full, options, exclude_rules);
+            }
+            if file_type.is_file()
+                && extension_is_in_scope(&full, &options.languages)
+                && !is_excluded_path(root, &full, exclude_rules, false)
+            {
+                return Ok(vec![full]);
+            }
+            Ok(Vec::new())
+        })
+        .collect::<Vec<Result<Vec<PathBuf>>>>();
+
+    let mut files = Vec::new();
+    for result in entry_results {
+        files.extend(result?);
     }
     Ok(files)
 }
