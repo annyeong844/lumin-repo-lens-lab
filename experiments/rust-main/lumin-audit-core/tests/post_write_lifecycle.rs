@@ -121,6 +121,35 @@ fn post_write_missing_advisory_is_a_force_exit_contract_failure() -> Result<()> 
 }
 
 #[test]
+fn post_write_invalid_advisory_removes_stale_latest_before_validation() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let out = temp.path().join("out");
+    fs::create_dir_all(&out)?;
+    let advisory = temp.path().join("pre-write-advisory.latest.json");
+    fs::write(&advisory, "{")?;
+    let delta_path = out.join("post-write-delta.latest.json");
+    fs::write(&delta_path, serde_json::to_vec(&default_delta())?)?;
+    let log = temp.path().join("child.log");
+    let fake_node = write_fake_child(temp.path(), 0, &log)?;
+
+    let result = execute_post_write_lifecycle(parse_request(request(
+        temp.path(),
+        &out,
+        &fake_node,
+        Some(&advisory),
+    ))?)?;
+
+    assert_eq!(result.exit_code, 2);
+    assert_eq!(
+        serde_json::to_value(&result.block)?["failureKind"],
+        "invalid-advisory"
+    );
+    assert!(!delta_path.exists(), "stale latest must be cleared first");
+    assert!(!log.exists(), "invalid advisory must stop before the child");
+    Ok(())
+}
+
+#[test]
 fn post_write_delta_out_relocates_delta_path_and_allows_null_after_complete() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let out = temp.path().join("out");
@@ -228,6 +257,82 @@ fn post_write_success_without_current_delta_rejects_and_removes_stale_latest() -
         !delta_path.exists(),
         "stale latest must not survive the run"
     );
+    Ok(())
+}
+
+#[test]
+fn post_write_compares_complete_delta_json_and_removes_mismatched_pair() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let out = temp.path().join("out");
+    fs::create_dir_all(&out)?;
+    let advisory = temp.path().join("pre-write-advisory.latest.json");
+    write_advisory(&advisory)?;
+    let latest_path = out.join("post-write-delta.latest.json");
+    let specific_path = out.join("post-write-delta.PRE-1.DELTA-1.json");
+    let log = temp.path().join("child.log");
+    let mut latest = default_delta();
+    latest["intentHash"] = json!("latest");
+    let mut specific = latest.clone();
+    specific["intentHash"] = json!("specific");
+    let fake_node = write_fake_child_with_delta_texts(
+        temp.path(),
+        0,
+        &log,
+        Some(serde_json::to_string_pretty(&latest)?),
+        Some(serde_json::to_string_pretty(&specific)?),
+    )?;
+
+    let result = execute_post_write_lifecycle(parse_request(request(
+        temp.path(),
+        &out,
+        &fake_node,
+        Some(&advisory),
+    ))?)?;
+
+    assert_eq!(result.exit_code, 1);
+    assert!(result
+        .block
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("artifacts differ")));
+    assert!(!latest_path.exists());
+    assert!(!specific_path.exists());
+    Ok(())
+}
+
+#[test]
+fn post_write_removes_malformed_invocation_specific_delta() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let out = temp.path().join("out");
+    fs::create_dir_all(&out)?;
+    let advisory = temp.path().join("pre-write-advisory.latest.json");
+    write_advisory(&advisory)?;
+    let latest_path = out.join("post-write-delta.latest.json");
+    let specific_path = out.join("post-write-delta.PRE-1.DELTA-1.json");
+    let log = temp.path().join("child.log");
+    let fake_node = write_fake_child_with_delta_texts(
+        temp.path(),
+        0,
+        &log,
+        Some(serde_json::to_string_pretty(&default_delta())?),
+        Some("{".to_string()),
+    )?;
+
+    let result = execute_post_write_lifecycle(parse_request(request(
+        temp.path(),
+        &out,
+        &fake_node,
+        Some(&advisory),
+    ))?)?;
+
+    assert_eq!(result.exit_code, 1);
+    assert!(result
+        .block
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("invalid JSON")));
+    assert!(!latest_path.exists());
+    assert!(!specific_path.exists());
     Ok(())
 }
 
@@ -347,12 +452,31 @@ fn write_fake_child_with_delta(
     log: &Path,
     delta: Option<Value>,
 ) -> Result<PathBuf> {
+    let delta = delta
+        .map(|delta| serde_json::to_string_pretty(&delta))
+        .transpose()?;
+    write_fake_child_with_delta_texts(dir, exit_code, log, delta.clone(), delta)
+}
+
+#[cfg(windows)]
+fn write_fake_child_with_delta_texts(
+    dir: &Path,
+    exit_code: i32,
+    log: &Path,
+    latest_delta: Option<String>,
+    specific_delta: Option<String>,
+) -> Result<PathBuf> {
     let path = dir.join(format!("fake-post-write-{exit_code}.cmd"));
-    let template = dir.join("post-write-delta-template.json");
-    if let Some(delta) = delta {
-        fs::write(&template, serde_json::to_string_pretty(&delta)?)?;
+    let latest_template = dir.join("post-write-delta-latest-template.json");
+    let specific_template = dir.join("post-write-delta-specific-template.json");
+    if let Some(delta) = latest_delta {
+        fs::write(&latest_template, delta)?;
     }
-    let emit_delta = template.is_file() && exit_code == 0;
+    if let Some(delta) = specific_delta {
+        fs::write(&specific_template, delta)?;
+    }
+    let emit_latest = latest_template.is_file() && exit_code == 0;
+    let emit_specific = specific_template.is_file() && exit_code == 0;
     fs::write(
         &path,
         format!(
@@ -370,17 +494,17 @@ fn write_fake_child_with_delta(
                 "goto loop\r\n",
                 ":done\r\n",
                 "if not defined DELTA_OUT set \"DELTA_OUT=%OUT%\"\r\n",
-                "if {emit_delta} EQU 1 (\r\n",
-                "  copy /Y \"{template}\" \"%DELTA_OUT%\\post-write-delta.latest.json\" >NUL\r\n",
-                "  copy /Y \"{template}\" \"%DELTA_OUT%\\post-write-delta.PRE-1.DELTA-1.json\" >NUL\r\n",
-                ")\r\n",
+                "if {emit_latest} EQU 1 copy /Y \"{latest_template}\" \"%DELTA_OUT%\\post-write-delta.latest.json\" >NUL\r\n",
+                "if {emit_specific} EQU 1 copy /Y \"{specific_template}\" \"%DELTA_OUT%\\post-write-delta.PRE-1.DELTA-1.json\" >NUL\r\n",
                 "echo ## post-write delta\r\n",
                 "echo [post-write] diagnostic 1>&2\r\n",
                 "exit /b {exit_code}\r\n"
             ),
             log = path_string(log),
-            template = path_string(&template),
-            emit_delta = i32::from(emit_delta),
+            latest_template = path_string(&latest_template),
+            specific_template = path_string(&specific_template),
+            emit_latest = i32::from(emit_latest),
+            emit_specific = i32::from(emit_specific),
             exit_code = exit_code,
         ),
     )?;
@@ -399,12 +523,31 @@ fn write_fake_child_with_delta(
     log: &Path,
     delta: Option<Value>,
 ) -> Result<PathBuf> {
+    let delta = delta
+        .map(|delta| serde_json::to_string_pretty(&delta))
+        .transpose()?;
+    write_fake_child_with_delta_texts(dir, exit_code, log, delta.clone(), delta)
+}
+
+#[cfg(not(windows))]
+fn write_fake_child_with_delta_texts(
+    dir: &Path,
+    exit_code: i32,
+    log: &Path,
+    latest_delta: Option<String>,
+    specific_delta: Option<String>,
+) -> Result<PathBuf> {
     let path = dir.join("post-write.mjs");
-    let template = dir.join("post-write-delta-template.json");
-    if let Some(delta) = delta {
-        fs::write(&template, serde_json::to_string_pretty(&delta)?)?;
+    let latest_template = dir.join("post-write-delta-latest-template.json");
+    let specific_template = dir.join("post-write-delta-specific-template.json");
+    if let Some(delta) = latest_delta {
+        fs::write(&latest_template, delta)?;
     }
-    let emit_delta = template.is_file() && exit_code == 0;
+    if let Some(delta) = specific_delta {
+        fs::write(&specific_template, delta)?;
+    }
+    let emit_latest = latest_template.is_file() && exit_code == 0;
+    let emit_specific = specific_template.is_file() && exit_code == 0;
     fs::write(
         &path,
         format!(
@@ -423,17 +566,17 @@ while [ "$#" -gt 0 ]; do
   shift || true
 done
 if [ -z "$delta_out" ]; then delta_out="$out"; fi
-if [ {emit_delta} -eq 1 ]; then
-  cp '{template}' "$delta_out/post-write-delta.latest.json"
-  cp '{template}' "$delta_out/post-write-delta.PRE-1.DELTA-1.json"
-fi
+if [ {emit_latest} -eq 1 ]; then cp '{latest_template}' "$delta_out/post-write-delta.latest.json"; fi
+if [ {emit_specific} -eq 1 ]; then cp '{specific_template}' "$delta_out/post-write-delta.PRE-1.DELTA-1.json"; fi
 printf '%s\n' '## post-write delta'
 printf '%s\n' '[post-write] diagnostic' >&2
 exit {exit_code}
 "#,
             log = path_string(log),
-            template = path_string(&template),
-            emit_delta = i32::from(emit_delta),
+            latest_template = path_string(&latest_template),
+            specific_template = path_string(&specific_template),
+            emit_latest = i32::from(emit_latest),
+            emit_specific = i32::from(emit_specific),
         ),
     )?;
     Ok(PathBuf::from("/bin/sh"))

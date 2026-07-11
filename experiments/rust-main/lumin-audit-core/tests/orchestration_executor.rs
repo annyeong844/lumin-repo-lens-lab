@@ -449,6 +449,23 @@ fn rust_analyzer_requested_without_rust_files_is_artifact_visible_skip() -> Resu
 }
 
 #[test]
+fn production_rust_count_excludes_test_like_inventory_files() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let analyzer = write_fake_analyzer(temp.path(), true)?;
+    let mut value = rust_analyzer_request(temp.path(), &analyzer)?;
+    write_source_inventory_template(temp.path(), temp.path(), false, &[], &["tests/only.rs"])?;
+    value["scanRange"]["includeTests"] = json!(false);
+    value["scanRange"]["production"] = json!(true);
+
+    let result = execute_base_plan(request(value)?)?;
+
+    assert_eq!(result.rust_analysis_run.status, "skipped");
+    assert_eq!(result.rust_analysis_run.rust_files, 0);
+    assert_eq!(result.commands_run.len(), 1, "the analyzer must not run");
+    Ok(())
+}
+
+#[test]
 fn rust_analyzer_success_preserves_public_invocation_shape_without_command() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let analyzer = write_fake_analyzer(temp.path(), true)?;

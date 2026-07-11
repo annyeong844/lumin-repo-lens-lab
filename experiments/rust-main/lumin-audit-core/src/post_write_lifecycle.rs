@@ -163,6 +163,21 @@ fn execute_post_write_lifecycle_with_stdio(
     child_stdio: ChildStdio,
 ) -> Result<PostWriteLifecycleResult> {
     validate_request(&request)?;
+    let delta_path = delta_output_dir(&request).join("post-write-delta.latest.json");
+    if let Err(error) = remove_file_if_present(&delta_path) {
+        return Ok(failure_result(
+            PostWriteFailureKind::OutputCleanupFailed,
+            format!(
+                "execute-post-write: failed to clear stale {}: {error}",
+                delta_path.display()
+            ),
+            1,
+            None,
+            None,
+            None,
+            None,
+        ));
+    }
     let Some(advisory_path) = request.advisory_path.as_ref() else {
         return Ok(failure_result(
             PostWriteFailureKind::MissingAdvisory,
@@ -194,26 +209,10 @@ fn execute_post_write_lifecycle_with_stdio(
             ));
         }
     };
-    let delta_path = delta_output_dir(&request).join("post-write-delta.latest.json");
-    if let Err(error) = remove_file_if_present(&delta_path) {
-        return Ok(failure_result(
-            PostWriteFailureKind::OutputCleanupFailed,
-            format!(
-                "execute-post-write: failed to clear stale {}: {error}",
-                delta_path.display()
-            ),
-            1,
-            Some(pre_write_invocation_id),
-            None,
-            None,
-            None,
-        ));
-    }
-
     let child = run_post_write_child(&request, advisory_path, child_stdio);
     if !child.status_success {
         let reason = post_write_failure_reason(
-            &delta_path,
+            &[&delta_path],
             format!("post-write.mjs exited non-zero: {}", child.reason),
         );
         return Ok(failure_result(
@@ -227,10 +226,10 @@ fn execute_post_write_lifecycle_with_stdio(
         ));
     }
 
-    let delta = match read_delta(&delta_path, &pre_write_invocation_id) {
+    let latest_delta = match read_delta(&delta_path, &pre_write_invocation_id) {
         Ok(delta) => delta,
         Err(error) => {
-            let reason = post_write_failure_reason(&delta_path, error.to_string());
+            let reason = post_write_failure_reason(&[&delta_path], error.to_string());
             return Ok(failure_result(
                 PostWriteFailureKind::DeltaArtifactInvalid,
                 reason,
@@ -242,11 +241,13 @@ fn execute_post_write_lifecycle_with_stdio(
             ));
         }
     };
-    let specific_delta_path = delta_specific_path(delta_output_dir(&request), &delta);
+    let specific_delta_path =
+        delta_specific_path(delta_output_dir(&request), &latest_delta.artifact);
     let specific_delta = match read_delta(&specific_delta_path, &pre_write_invocation_id) {
         Ok(delta) => delta,
         Err(error) => {
-            let reason = post_write_failure_reason(&delta_path, error.to_string());
+            let reason =
+                post_write_failure_reason(&[&delta_path, &specific_delta_path], error.to_string());
             return Ok(failure_result(
                 PostWriteFailureKind::DeltaArtifactInvalid,
                 reason,
@@ -258,9 +259,9 @@ fn execute_post_write_lifecycle_with_stdio(
             ));
         }
     };
-    if delta != specific_delta {
+    if latest_delta.raw != specific_delta.raw {
         let reason = post_write_failure_reason(
-            &delta_path,
+            &[&delta_path, &specific_delta_path],
             format!(
                 "post-write delta contract failed: latest and invocation-specific artifacts differ ({} != {})",
                 delta_path.display(),
@@ -277,6 +278,7 @@ fn execute_post_write_lifecycle_with_stdio(
             nonempty(child.stderr),
         ));
     }
+    let delta = latest_delta.artifact;
 
     let mut block = PostWriteBlock {
         requested: true,
@@ -461,21 +463,36 @@ fn read_advisory_invocation_id(advisory_path: &Path) -> Result<String> {
     Ok(invocation_id.to_string())
 }
 
-fn read_delta(delta_path: &Path, expected_pre_write_id: &str) -> Result<PostWriteDeltaArtifact> {
+struct ValidatedDelta {
+    artifact: PostWriteDeltaArtifact,
+    raw: Value,
+}
+
+fn read_delta(delta_path: &Path, expected_pre_write_id: &str) -> Result<ValidatedDelta> {
     let bytes = fs::read(delta_path).with_context(|| {
         format!(
             "post-write delta contract failed: failed to read {}",
             delta_path.display()
         )
     })?;
-    let delta = serde_json::from_slice::<PostWriteDeltaArtifact>(&bytes).with_context(|| {
+    let raw = serde_json::from_slice::<Value>(&bytes).with_context(|| {
         format!(
-            "post-write delta contract failed: invalid shape or JSON in {}",
+            "post-write delta contract failed: invalid JSON in {}",
             delta_path.display()
         )
     })?;
+    let delta =
+        serde_json::from_value::<PostWriteDeltaArtifact>(raw.clone()).with_context(|| {
+            format!(
+                "post-write delta contract failed: invalid shape in {}",
+                delta_path.display()
+            )
+        })?;
     delta.validate(expected_pre_write_id)?;
-    Ok(delta)
+    Ok(ValidatedDelta {
+        artifact: delta,
+        raw,
+    })
 }
 
 impl PostWriteDeltaArtifact {
@@ -539,14 +556,16 @@ fn remove_file_if_present(path: &Path) -> std::io::Result<()> {
     }
 }
 
-fn post_write_failure_reason(delta_path: &Path, reason: String) -> String {
-    match remove_file_if_present(delta_path) {
-        Ok(()) => reason,
-        Err(cleanup_error) => format!(
-            "{reason}; failed to remove invalid latest delta {}: {cleanup_error}",
-            delta_path.display()
-        ),
+fn post_write_failure_reason(delta_paths: &[&Path], mut reason: String) -> String {
+    for delta_path in delta_paths {
+        if let Err(cleanup_error) = remove_file_if_present(delta_path) {
+            reason.push_str(&format!(
+                "; failed to remove invalid delta {}: {cleanup_error}",
+                delta_path.display()
+            ));
+        }
     }
+    reason
 }
 
 fn project_delta_summary(block: &mut PostWriteBlock, delta: &PostWriteDeltaArtifact) {

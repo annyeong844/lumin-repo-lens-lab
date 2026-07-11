@@ -13,85 +13,74 @@ fn cli_symbol_graph_artifact_writes_result_file() -> Result<()> {
     fs::write(
         &input,
         serde_json::to_vec(&json!({
-            "schemaVersion": "lumin-symbol-graph-producer-request.v1",
-            "generated": "2026-07-05T00:00:00.000Z",
-            "root": "C:/repo",
-            "files": ["C:/repo/src/a.ts", "C:/repo/src/b.ts"],
-            "defIndex": [
-                {
-                    "filePath": "C:/repo/src/a.ts",
+            "schemaVersion": "lumin-symbol-graph-producer-request.v2",
+            "context": {
+                "generated": "2026-07-05T00:00:00.000Z",
+                "root": "C:/repo",
+                "includeTests": true,
+                "exclude": [],
+                "generatedArtifactsMode": "default",
+                "languageSupport": { "ts": { "enabled": true, "reason": null } },
+                "warnings": [],
+                "incremental": null
+            },
+            "extraction": {
+                "pathTable": ["src/a.ts", "src/b.ts"],
+                "fileIds": [0, 1],
+                "defIndex": [{
+                    "filePathId": 0,
                     "definitions": {
-                        "alpha": { "name": "alpha", "kind": "FunctionDeclaration", "line": 1 }
+                        "alpha": { "name": "alpha", "kind": "FunctionDeclaration", "line": 1 },
+                        "beta": { "name": "beta", "kind": "FunctionDeclaration", "line": 2 }
                     }
-                }
-            ],
-            "fileData": [
-                {
-                    "filePath": "C:/repo/src/a.ts",
+                }],
+                "fileData": [{
+                    "filePathId": 0,
+                    "pyDunderAll": null,
                     "reExports": [{ "source": "./b", "line": 2 }],
                     "classMethods": [],
                     "localOperations": [],
+                    "typeEscapes": [],
                     "dynamicImportOpacity": [],
                     "cjsExportSurface": null,
                     "cjsRequireOpacity": []
-                }
-            ],
-            "parseErrors": 0,
-            "warnings": [],
-            "nextCacheEntries": {},
-            "unresolvedInternalByPrefix": [{ "key": "@/missing", "count": 1 }],
-            "prefixExamples": { "@/missing": "@/missing/foo" },
-            "unresolvedInternalSpecifiers": ["@/missing/foo"],
-            "unresolvedInternalSpecifierRecords": [
-                {
-                    "specifier": "@/missing/foo",
-                    "consumerFile": "src/b.ts",
+                }],
+                "parseErrorFileIds": []
+            },
+            "sourceUseAssembly": {
+                "schemaVersion": "lumin-source-use-assembly-request.v1",
+                "root": "C:/repo",
+                "records": [{
+                    "recordId": "resolved",
+                    "consumerFileId": 1,
+                    "resolvedFileId": 0,
+                    "fromSpec": "./a",
+                    "name": "alpha",
                     "kind": "import",
                     "typeOnly": false,
-                    "reason": "alias-miss"
+                    "typeOnlyPresent": true,
+                    "resolverStage": "resolved-internal"
+                }, {
+                    "recordId": "missing",
+                    "consumerFileId": 1,
+                    "fromSpec": "@/missing/foo",
+                    "name": "missing",
+                    "kind": "import",
+                    "resolverStage": "unresolved-internal",
+                    "unresolvedEvidence": { "reason": "alias-miss" }
+                }]
+            },
+            "graph": {
+                "fanIn": { "consumerEntries": [], "namespaceUserEntries": [] },
+                "deadCandidates": { "barrelFiles": [], "testLikeFiles": [] },
+                "sfc": {
+                    "styleAssetReferences": [],
+                    "templateComponentRefs": [],
+                    "globalComponentRegistrations": [],
+                    "generatedComponentManifests": [],
+                    "generatedManifestExternalUses": 0,
+                    "frameworkConventionComponents": []
                 }
-            ],
-            "languageSupport": { "ts": { "enabled": true, "reason": null } },
-            "totalUses": 1,
-            "unresolvedUses": 1,
-            "resolvedInternalUses": 1,
-            "resolvedGeneratedVirtualUses": 0,
-            "nonSourceAssetUses": 0,
-            "externalUses": 0,
-            "dependencyImportConsumers": [],
-            "resolvedInternalEdges": [
-                { "from": "src/b.ts", "to": "src/a.ts", "kind": "import", "source": "./a", "typeOnly": false }
-            ],
-            "generatedConsumerBlindZones": [],
-            "generatedVirtualSurfaces": [],
-            "generatedVirtualImportConsumers": [],
-            "unresolvedInternalUses": 1,
-            "mdxConsumerUses": 0,
-            "sfcScriptConsumerUses": 0,
-            "sfcScriptSrcReachabilityUses": 0,
-            "sfcStyleAssetReferenceUses": 0,
-            "sfcTemplateComponentRefUses": 0,
-            "sfcGlobalComponentRegistrationUses": 0,
-            "sfcGeneratedComponentManifestUses": 0,
-            "sfcFrameworkConventionComponentUses": 0,
-            "sfcStyleAssetReferences": [],
-            "sfcTemplateComponentRefs": [],
-            "sfcGlobalComponentRegistrations": [],
-            "sfcGeneratedComponentManifests": [],
-            "sfcFrameworkConventionComponents": [],
-            "dead": [{ "file": "src/a.ts", "symbol": "alpha", "line": 1 }],
-            "trulyDead": [{ "file": "src/a.ts", "symbol": "alpha", "line": 1 }],
-            "deadInProd": [{ "file": "src/a.ts", "symbol": "alpha", "line": 1 }],
-            "deadInTest": [],
-            "symbolFanIn": [
-                { "defFile": "src/a.ts", "symbol": "alpha", "count": 0, "kind": "FunctionDeclaration" }
-            ],
-            "fanInByIdentity": { "src/a.ts::alpha": 0 },
-            "fanInByIdentitySpace": { "src/a.ts::alpha": { "value": 0, "type": 0, "broad": 0 } },
-            "namespaceReExportDiagnostics": [],
-            "anyContaminationFacts": {
-                "helperOwnersByIdentity": {},
-                "typeOwnersByIdentity": {}
             }
         }))?,
     )?;
@@ -115,8 +104,8 @@ fn cli_symbol_graph_artifact_writes_result_file() -> Result<()> {
     assert_eq!(artifact["meta"]["schemaVersion"], 3);
     assert_eq!(artifact["files"], 2);
     assert_eq!(artifact["uses"]["unresolvedInternalRatio"], 0.5);
-    assert_eq!(artifact["fanInByIdentity"]["src/a.ts::alpha"], 0);
-    assert_eq!(artifact["deadProdList"][0]["symbol"], "alpha");
+    assert_eq!(artifact["fanInByIdentity"]["src/a.ts::alpha"], 1);
+    assert_eq!(artifact["deadProdList"][0]["symbol"], "beta");
     Ok(())
 }
 
@@ -136,78 +125,61 @@ fn cli_symbol_graph_resolves_sfc_style_asset_inputs() -> Result<()> {
     fs::write(
         &input,
         serde_json::to_vec(&json!({
-            "schemaVersion": "lumin-symbol-graph-producer-request.v1",
-            "generated": "2026-07-05T00:00:00.000Z",
-            "root": root.to_string_lossy(),
-            "files": [app.to_string_lossy()],
-            "defIndex": [],
-            "fileData": [],
-            "parseErrors": 0,
-            "warnings": [],
-            "nextCacheEntries": {},
-            "unresolvedInternalByPrefix": [],
-            "prefixExamples": {},
-            "unresolvedInternalSpecifiers": [],
-            "unresolvedInternalSpecifierRecords": [],
-            "languageSupport": { "ts": { "enabled": true, "reason": null } },
-            "totalUses": 0,
-            "unresolvedUses": 0,
-            "resolvedInternalUses": 0,
-            "resolvedGeneratedVirtualUses": 0,
-            "nonSourceAssetUses": 0,
-            "externalUses": 0,
-            "dependencyImportConsumers": [],
-            "resolvedInternalEdges": [],
-            "generatedConsumerBlindZones": [],
-            "generatedVirtualSurfaces": [],
-            "generatedVirtualImportConsumers": [],
-            "unresolvedInternalUses": 0,
-            "mdxConsumerUses": 0,
-            "sfcScriptConsumerUses": 0,
-            "sfcScriptSrcReachabilityUses": 0,
-            "sfcStyleAssetReferenceUses": 0,
-            "sfcTemplateComponentRefUses": 0,
-            "sfcGlobalComponentRegistrationUses": 0,
-            "sfcGeneratedComponentManifestUses": 0,
-            "sfcFrameworkConventionComponentUses": 0,
-            "sfcStyleAssetReferences": [],
-            "sfcStyleAssetReferenceInputs": [{
-                "consumerFile": app.to_string_lossy(),
-                "fromSpec": "./App.css?inline",
-                "source": "sfc-style-import",
-                "kind": "sfc-style-import",
-                "styleKind": "import",
-                "confidence": "grounded-asset-reference",
-                "importSyntax": "src",
-                "line": 1,
-                "sfcBlockKind": "vue-style",
-                "sfcLanguage": "vue"
-            }, {
-                "consumerFile": app.to_string_lossy(),
-                "fromSpec": "./missing.css",
-                "source": "sfc-style-url",
-                "kind": "sfc-style-url",
-                "styleKind": "url",
-                "confidence": "grounded-asset-reference",
-                "line": 2,
-                "sfcBlockKind": "vue-style",
-                "sfcLanguage": "vue"
-            }],
-            "sfcTemplateComponentRefs": [],
-            "sfcGlobalComponentRegistrations": [],
-            "sfcGeneratedComponentManifests": [],
-            "sfcFrameworkConventionComponents": [],
-            "dead": [],
-            "trulyDead": [],
-            "deadInProd": [],
-            "deadInTest": [],
-            "symbolFanIn": [],
-            "fanInByIdentity": {},
-            "fanInByIdentitySpace": {},
-            "namespaceReExportDiagnostics": [],
-            "anyContaminationFacts": {
-                "helperOwnersByIdentity": {},
-                "typeOwnersByIdentity": {}
+            "schemaVersion": "lumin-symbol-graph-producer-request.v2",
+            "context": {
+                "generated": "2026-07-05T00:00:00.000Z",
+                "root": root.to_string_lossy(),
+                "includeTests": true,
+                "exclude": [],
+                "generatedArtifactsMode": "default",
+                "languageSupport": { "ts": { "enabled": true, "reason": null } },
+                "warnings": [],
+                "incremental": null
+            },
+            "extraction": {
+                "pathTable": [app.to_string_lossy()],
+                "fileIds": [0],
+                "defIndex": [],
+                "fileData": [],
+                "parseErrorFileIds": []
+            },
+            "sourceUseAssembly": {
+                "schemaVersion": "lumin-source-use-assembly-request.v1",
+                "root": root.to_string_lossy(),
+                "records": []
+            },
+            "graph": {
+                "fanIn": { "consumerEntries": [], "namespaceUserEntries": [] },
+                "deadCandidates": { "barrelFiles": [], "testLikeFiles": [] },
+                "sfc": {
+                    "styleAssetReferences": [{
+                        "consumerFile": app.to_string_lossy(),
+                        "fromSpec": "./App.css?inline",
+                        "source": "sfc-style-import",
+                        "kind": "sfc-style-import",
+                        "styleKind": "import",
+                        "confidence": "grounded-asset-reference",
+                        "importSyntax": "src",
+                        "line": 1,
+                        "sfcBlockKind": "vue-style",
+                        "sfcLanguage": "vue"
+                    }, {
+                        "consumerFile": app.to_string_lossy(),
+                        "fromSpec": "./missing.css",
+                        "source": "sfc-style-url",
+                        "kind": "sfc-style-url",
+                        "styleKind": "url",
+                        "confidence": "grounded-asset-reference",
+                        "line": 2,
+                        "sfcBlockKind": "vue-style",
+                        "sfcLanguage": "vue"
+                    }],
+                    "templateComponentRefs": [],
+                    "globalComponentRegistrations": [],
+                    "generatedComponentManifests": [],
+                    "generatedManifestExternalUses": 0,
+                    "frameworkConventionComponents": []
+                }
             }
         }))?,
     )?;

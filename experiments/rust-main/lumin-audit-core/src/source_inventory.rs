@@ -1,3 +1,4 @@
+use crate::scan_scope::is_test_like_path;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -43,7 +44,6 @@ struct SourceInventoryAnalysisScope {
 pub(crate) struct ValidatedSourceInventory {
     path: PathBuf,
     files: Vec<String>,
-    counts_by_language: BTreeMap<String, usize>,
 }
 
 impl ValidatedSourceInventory {
@@ -59,11 +59,8 @@ impl ValidatedSourceInventory {
     }
 
     pub(crate) fn is_rust_only(&self) -> bool {
-        self.counts_by_language.get("rs").copied().unwrap_or(0) > 0
-            && self
-                .counts_by_language
-                .iter()
-                .all(|(language, count)| language == "rs" || *count == 0)
+        self.files.iter().any(|file| file.ends_with(".rs"))
+            && self.files.iter().all(|file| file.ends_with(".rs"))
     }
 }
 
@@ -168,10 +165,16 @@ pub(crate) fn load_source_inventory(
         &artifact.files,
     )?;
 
+    let include_tests = artifact.analysis_scope.include_tests;
+    let files = artifact
+        .files
+        .into_iter()
+        .filter(|file| include_tests || !is_test_like_path(file))
+        .collect();
+
     Ok(ValidatedSourceInventory {
         path: path.to_path_buf(),
-        files: artifact.files,
-        counts_by_language: artifact.counts_by_language,
+        files,
     })
 }
 

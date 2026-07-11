@@ -353,7 +353,7 @@ fn bounded_relative_path(root: &Path, full: &Path, directory: bool) -> String {
     normalized
 }
 
-fn is_test_like_path(path: &str) -> bool {
+pub(crate) fn is_test_like_path(path: &str) -> bool {
     let base = path.rsplit('/').next().unwrap_or(path);
     if is_js_test_file(base) || is_test_support_file(base) {
         return true;

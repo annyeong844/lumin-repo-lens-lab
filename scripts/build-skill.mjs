@@ -22,11 +22,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { symbolGraphContractProbeRequest } from '../_lib/audit-core-contract-fixtures.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v35';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v36';
 const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -54,30 +56,10 @@ const AUDIT_CORE_REQUIRED_FEATURES = [
   'sourceUseAssemblyRecordRows',
   'sourceUseAssemblyNameTable',
   'sourceUseAssemblyTypeOnlyState',
-  'symbolGraphTypedFinalization',
-  'symbolGraphCoreTypedFinalization',
-  'symbolGraphTypedInputFinalization',
-  'symbolGraphPathTable',
-  'symbolGraphExternalDependencyInputFinalization',
-  'symbolGraphExternalSourceUseAssemblyFinalization',
-  'symbolGraphFanInInputFinalization',
-  'symbolGraphDeadCandidateInputFinalization',
+  'symbolGraphStrictRequestV2',
   'generatedVirtualSourceUseAssembly',
   'importMetaGlobSourceUseAssembly',
   'sfcScriptSrcSourceUseAssembly',
-  'symbolGraphEmbeddedSourceUseFinalization',
-  'symbolGraphEmbeddedRelativeMissingEvidence',
-  'symbolGraphEmbeddedSourceUseParentPathTable',
-  'symbolGraphSfcStyleAssetFinalization',
-  'symbolGraphSfcTemplateComponentFinalization',
-  'symbolGraphSfcGlobalComponentFinalization',
-  'symbolGraphSfcGeneratedManifestFinalization',
-  'symbolGraphSfcGeneratedManifestExternalCountOnly',
-  'symbolGraphSfcFrameworkConventionFinalization',
-  'symbolGraphSfcComponentSourceUseRecordFinalization',
-  'symbolGraphSfcExternalSourceUseRecordProjection',
-  'symbolGraphGeneratedConsumerBlindZoneFinalization',
-  'symbolGraphAnyContaminationInputFinalization',
   'sharedSourceInventory',
   'sourceInventoryRunBinding',
   'failClosedLifecycleArtifacts',
@@ -268,10 +250,6 @@ function auditCoreExecutableNameFor(platform) {
 
 function auditCorePlatformKey(platform = process.platform, arch = process.arch) {
   return `${platform}-${arch}`;
-}
-
-function auditCoreBinaryEnvName(platform = process.platform, arch = process.arch) {
-  return `LUMIN_AUDIT_CORE_BIN_${platform}_${arch}`.replace(/[^A-Z0-9_]/gi, '_').toUpperCase();
 }
 
 function cargoBuildAuditCore() {
@@ -938,376 +916,10 @@ writeFileSync(latest, JSON.stringify(advisory));
         source: jsTsExtractProbeSource,
       }],
     }));
-    writeFileSync(symbolGraphInputPath, JSON.stringify({
-      schemaVersion: 'lumin-symbol-graph-producer-request.v1',
-      generated: '2026-07-02T00:00:00.000Z',
-      root: rootDir,
-      pathTable: ['src/App.vue'],
-      files: [
-        path.join(rootDir, 'src', 'a.ts'),
-        path.join(rootDir, 'src', 'b.ts'),
-        path.join(rootDir, 'src', 'c.ts'),
-      ],
-      defIndex: [
-        {
-          filePath: path.join(rootDir, 'src', 'a.ts'),
-          definitions: {
-            alpha: { name: 'alpha', kind: 'FunctionDeclaration', line: 1 },
-            beta: { name: 'beta', kind: 'FunctionDeclaration', line: 2 },
-            gamma: { name: 'gamma', kind: 'FunctionDeclaration', line: 3 },
-          },
-        },
-      ],
-      fileData: [
-        {
-          filePath: path.join(rootDir, 'src', 'a.ts'),
-          reExports: [{ source: './b', line: 2 }],
-          classMethods: [],
-          localOperations: [],
-          typeEscapes: [{
-            file: 'src/a.ts',
-            line: 1,
-            escapeKind: 'explicit-any',
-            insideExportedIdentity: 'src/a.ts::alpha',
-          }],
-          dynamicImportOpacity: [],
-          cjsExportSurface: null,
-          cjsRequireOpacity: [],
-        },
-      ],
-      parseErrors: 0,
-      warnings: [],
-      nextCacheEntries: {},
-      unresolvedInternalByPrefix: [{ key: '@/missing', count: 1 }],
-      prefixExamples: { '@/missing': '@/missing/foo' },
-      unresolvedInternalSpecifiers: ['@/missing/foo'],
-      unresolvedInternalSpecifierRecords: [
-        {
-          specifier: '@/missing/foo',
-          consumerFile: 'src/b.ts',
-          kind: 'import',
-          typeOnly: false,
-          reason: 'alias-miss',
-        },
-      ],
-      languageSupport: { ts: { enabled: true, reason: null } },
-      totalUses: 1,
-      unresolvedUses: 1,
-      resolvedInternalUses: 1,
-      resolvedGeneratedVirtualUses: 0,
-      nonSourceAssetUses: 0,
-      externalUses: 0,
-      dependencyImportConsumers: [],
-      resolvedInternalEdges: [
-        { from: 'src/b.ts', to: 'src/a.ts', kind: 'import', source: './a', typeOnly: false },
-      ],
-      generatedConsumerBlindZones: [],
-      generatedConsumerBlindZoneInputs: [{
-        specifier: '@scope/generated-client',
-        consumerFile: 'src/c.ts',
-        kind: 'import',
-        reason: 'workspace-generated-artifact-missing',
-        targetCandidates: ['packages/api/generated/client.ts'],
-        generatedArtifact: {
-          matchedPackage: '@scope/api',
-          targetSubpath: 'packages/api/generated/client.ts',
-          generatorFamily: 'path-segment',
-          confidence: 'supporting',
-          packageRoot: 'packages/api',
-        },
-      }],
-      generatedVirtualSurfaces: [],
-      generatedVirtualImportConsumers: [],
-      unresolvedInternalUses: 1,
-      mdxConsumerUses: 0,
-      sfcScriptConsumerUses: 0,
-      sfcScriptSrcReachabilityUses: 0,
-      sfcStyleAssetReferenceUses: 0,
-      sfcTemplateComponentRefUses: 0,
-      sfcGlobalComponentRegistrationUses: 0,
-      sfcGeneratedComponentManifestUses: 0,
-      sfcFrameworkConventionComponentUses: 0,
-      sfcStyleAssetReferences: [],
-      sfcStyleAssetReferenceInputs: [{
-        consumerFile: path.join(rootDir, 'src', 'App.vue'),
-        fromSpec: './App.css?inline',
-        source: 'sfc-style',
-        kind: 'sfc-style-asset-reference',
-        styleKind: 'css',
-        confidence: 'path-evidence',
-        resolvedFile: path.join(rootDir, 'src', 'App.css'),
-        importSyntax: 'style-src',
-        line: 7,
-        sfcBlockKind: 'style',
-        sfcLanguage: 'vue',
-      }, {
-        consumerFile: path.join(rootDir, 'src', 'App.vue'),
-        fromSpec: './missing.css',
-        source: 'sfc-style',
-        kind: 'sfc-style-asset-reference',
-        styleKind: 'css',
-        confidence: 'path-evidence',
-        line: 9,
-        sfcBlockKind: 'style',
-        sfcLanguage: 'vue',
-      }],
-      sfcTemplateComponentRefs: [],
-      sfcTemplateComponentRefInputs: [{
-        consumerFile: path.join(rootDir, 'src', 'App.vue'),
-        tagName: 'UiButton',
-        normalizedTagName: 'ui-button',
-        bindingName: 'UiButton',
-        bindingSource: './UiButton',
-        source: 'sfc-template',
-        language: 'vue',
-        templateKind: 'template',
-        confidence: 'component-binding',
-        sourceUseRecordId: 'r0',
-        bindingKind: 'import',
-        importedName: 'default',
-        line: 12,
-        sfcBlockKind: 'template',
-      }, {
-        consumerFile: path.join(rootDir, 'src', 'App.vue'),
-        tagName: 'ExternalWidget',
-        normalizedTagName: 'external-widget',
-        bindingName: 'ExternalWidget',
-        bindingSource: '@pkg/widgets',
-        source: 'sfc-template',
-        language: 'vue',
-        templateKind: 'template',
-        confidence: 'component-binding',
-        status: 'external',
-        reason: 'sfc-template-component-external-binding',
-        bindingKind: 'import',
-        importedName: 'ExternalWidget',
-        line: 16,
-        sfcBlockKind: 'template',
-      }],
-      sfcGlobalComponentRegistrations: [],
-      sfcGlobalComponentRegistrationInputs: [{
-        registrationFile: path.join(rootDir, 'src', 'main.ts'),
-        framework: 'vue',
-        api: 'app.component',
-        componentName: 'RegisteredSource',
-        normalizedTagNames: ['registered-source'],
-        bindingName: 'RegisteredSource',
-        bindingSource: './registered-source',
-        source: 'sfc-global-component-registration',
-        sourceUseRecordId: 'r1',
-        bindingKind: 'import',
-        importedName: 'default',
-        line: 20,
-      }, {
-        registrationFile: path.join(rootDir, 'src', 'main.ts'),
-        framework: 'vue',
-        api: 'app.component',
-        componentName: 'AsyncGlobal',
-        normalizedTagNames: ['async-global'],
-        fromSpec: './AsyncGlobal.vue',
-        source: 'sfc-global-component-registration',
-        status: 'muted',
-        resolvedFile: path.join(rootDir, 'src', 'AsyncGlobal.vue'),
-        reason: 'sfc-global-component-async-factory',
-        factoryKind: 'defineAsyncComponent',
-        line: 24,
-      }],
-      sfcGeneratedComponentManifests: [],
-      sfcGeneratedComponentManifestInputs: [{
-        manifestFile: path.join(rootDir, 'components.d.ts'),
-        manifestKind: 'unplugin-vue-components-dts',
-        componentName: 'ManifestSource',
-        normalizedTagNames: ['manifest-source'],
-        bindingSource: './src/ManifestSource.ts',
-        fromSpec: './src/ManifestSource.ts',
-        source: 'sfc-framework-generated-manifest',
-        confidence: 'generated-manifest-availability',
-        sourceUseRecordId: 'r2',
-        line: 30,
-      }, {
-        manifestFile: path.join(rootDir, 'components.d.ts'),
-        manifestKind: 'unplugin-vue-components-dts',
-        componentName: 'ManifestButton',
-        normalizedTagNames: ['manifest-button'],
-        bindingSource: './components/ManifestButton.vue',
-        fromSpec: './components/ManifestButton.vue',
-        source: 'sfc-framework-generated-manifest',
-        confidence: 'generated-manifest-availability',
-        status: 'muted',
-        resolvedFile: path.join(rootDir, 'components', 'ManifestButton.vue'),
-        reason: 'sfc-framework-generated-manifest-non-source-binding',
-        line: 31,
-      }, {
-        manifestFile: path.join(rootDir, 'components.d.ts'),
-        manifestKind: 'unplugin-vue-components-dts',
-        componentName: 'DynamicManifest',
-        normalizedTagNames: ['dynamic-manifest'],
-        bindingSource: './components/DynamicManifest.vue',
-        fromSpec: './components/DynamicManifest.vue',
-        computedKeySource: "prefix + 'Manifest'",
-        source: 'sfc-framework-generated-manifest',
-        confidence: 'generated-manifest-availability',
-        status: 'skipped',
-        reason: 'sfc-framework-generated-manifest-nonliteral',
-        line: 32,
-      }, {
-        manifestFile: path.join(rootDir, 'components.d.ts'),
-        manifestKind: 'unplugin-vue-components-dts',
-        componentName: 'ExternalManifest',
-        normalizedTagNames: ['external-manifest'],
-        bindingSource: '@scope/external-components',
-        fromSpec: '@scope/external-components',
-        source: 'sfc-framework-generated-manifest',
-        confidence: 'generated-manifest-availability',
-        sourceUseRecordId: 'generated-manifest-external#0',
-        line: 34,
-      }],
-      sfcFrameworkConventionComponents: [],
-      sfcFrameworkConventionComponentInputs: [{
-        framework: 'nuxt',
-        conventionKind: 'components-dir',
-        consumerFile: path.join(rootDir, 'src', 'App.vue'),
-        componentName: 'ConventionCard',
-        normalizedTagNames: ['convention-card'],
-        sourceFile: path.join(rootDir, 'components', 'ConventionCard.vue'),
-        resolvedDir: path.join(rootDir, 'components'),
-        pathPrefix: true,
-        global: true,
-        resolvedFile: path.join(rootDir, 'components', 'ConventionCard.vue'),
-        bindingSource: path.join(rootDir, 'components', 'ConventionCard.vue'),
-        fromSpec: './ignored.vue',
-        source: 'sfc-framework-convention-component',
-        confidence: 'framework-convention',
-        status: 'resolved',
-        bindingKind: 'filesystem',
-        componentPathSegments: ['components', 'ConventionCard.vue'],
-        line: 33,
-      }],
-      dead: [],
-      trulyDead: [],
-      deadInProd: [],
-      deadInTest: [],
-      symbolFanIn: [],
-      fanInByIdentity: {},
-      fanInByIdentitySpace: {},
-      fanInInputs: {
-        consumerEntries: [{
-          defFile: path.join(rootDir, 'src', 'a.ts'),
-          symbol: 'alpha',
-          consumerFile: path.join(rootDir, 'src', 'b.ts'),
-          space: 'value',
-        }],
-        namespaceUserEntries: [],
-      },
-      deadCandidateInputs: {
-        barrelFiles: [],
-        testLikeFiles: [],
-      },
-      sourceUseAssembly: {
-        schemaVersion: 'lumin-source-use-assembly-request.v1',
-        root: rootDir,
-        sourceFiles: [
-          'src/UiButton.ts',
-          'src/registered-source.ts',
-          'src/ManifestSource.ts',
-        ],
-        namespaceReExports: [],
-        namedReExports: [],
-        records: [{
-          consumerFileId: 0,
-          fromSpec: './UiButton',
-          name: '*',
-          kind: 'sfc-template-component-ref',
-          consumerSource: 'sfc-template-component-ref',
-          resolverStage: 'relative',
-        }, {
-          consumerFile: path.join(rootDir, 'src', 'main.ts'),
-          fromSpec: './registered-source',
-          name: '*',
-          kind: 'sfc-global-component-registration',
-          consumerSource: 'sfc-global-component-registration',
-          resolverStage: 'relative',
-        }, {
-          consumerFile: path.join(rootDir, 'components.d.ts'),
-          fromSpec: './src/ManifestSource.ts',
-          name: '*',
-          kind: 'sfc-generated-component-manifest',
-          consumerSource: 'sfc-generated-component-manifest',
-          resolverStage: 'relative',
-        }, {
-          recordId: 'generated-manifest-external#0',
-          consumerFile: path.join(rootDir, 'components.d.ts'),
-          fromSpec: '@scope/external-components',
-          name: '*',
-          kind: 'sfc-generated-component-manifest',
-          consumerSource: 'sfc-generated-component-manifest',
-          resolverStage: 'external',
-        }, {
-          recordId: 'src/c.ts#0',
-          consumerFile: path.join(rootDir, 'src', 'c.ts'),
-          resolvedFile: path.join(rootDir, 'src', 'a.ts'),
-          fromSpec: '@/a',
-          name: 'gamma',
-          kind: 'import',
-          typeOnly: false,
-          resolverStage: 'resolved-internal',
-        }, {
-          recordId: 'src/c.ts#1',
-          consumerFile: path.join(rootDir, 'src', 'c.ts'),
-          fromSpec: 'react/jsx-runtime',
-          kind: 'import',
-          typeOnly: false,
-          typeOnlyPresent: true,
-          resolverStage: 'external',
-          consumerSource: 'source-import',
-        }, {
-          recordId: 'src/c.ts#2',
-          consumerFile: path.join(rootDir, 'src', 'c.ts'),
-          fromSpec: '@/assembly-missing',
-          kind: 'import',
-          typeOnly: false,
-          typeOnlyPresent: true,
-          resolverStage: 'unresolved-internal',
-          unresolvedEvidence: {
-            reason: 'tsconfig-path-target-missing',
-            resolverStage: 'tsconfig-paths',
-            matchedPattern: '@/*',
-            targetCandidates: ['src/assembly-missing.ts'],
-            hint: 'check-tsconfig-paths',
-          },
-        }, {
-          recordId: 'src/c.ts#3',
-          consumerFile: path.join(rootDir, 'src', 'c.ts'),
-          fromSpec: '@pkg/db/enums',
-          name: 'Role',
-          kind: 'import',
-          typeOnly: false,
-          typeOnlyPresent: true,
-          resolverStage: 'generated-virtual',
-          generatedVirtualSurface: {
-            id: 'generated-virtual:prisma-enums:@pkg/db:enums',
-            source: 'generated-virtual',
-            mode: 'virtual',
-            virtual: true,
-            exports: [{
-              name: 'Role',
-              kind: 'prisma-enum',
-              spaces: ['value', 'type'],
-            }],
-          },
-        }, {
-          recordId: 'sfc-script-src:0:src/App.vue:./setup',
-          consumerFile: path.join(rootDir, 'src', 'App.vue'),
-          resolvedFile: path.join(rootDir, 'src', 'setup.ts'),
-          fromSpec: './setup',
-          kind: 'sfc-script-src',
-          sfcLanguage: 'vue',
-          resolverStage: 'relative',
-          consumerSource: 'sfc-script-src',
-        }],
-      },
-      namespaceReExportDiagnostics: [],
-    }));
+    writeFileSync(
+      symbolGraphInputPath,
+      JSON.stringify(symbolGraphContractProbeRequest(rootDir)),
+    );
     writeFileSync(checklistFactsInputPath, JSON.stringify({
       schemaVersion: 'lumin-checklist-facts-producer-request.v1',
       generated: '2026-07-02T00:00:00.000Z',
@@ -2145,106 +1757,15 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.supports?.identityFanIn === true &&
       json.files === 3 &&
       json.totalDefs === 3 &&
-      json.totalUsesResolved === 4 &&
+      json.totalUsesResolved === 2 &&
       json.unresolvedUses === 3 &&
-      json.uses?.resolvedInternal === 4 &&
-      json.uses?.resolvedGeneratedVirtual === 1 &&
+      json.uses?.resolvedInternal === 2 &&
       json.uses?.external === 1 &&
       json.uses?.unresolvedInternal === 2 &&
-      json.uses?.sfcScriptSrcReachability === 1 &&
-      json.uses?.sfcStyleAssetReferences === 1 &&
-      json.uses?.sfcTemplateComponentRefs === 2 &&
-      json.uses?.sfcGlobalComponentRegistrations === 2 &&
-      json.uses?.sfcGeneratedComponentManifests === 4 &&
-      json.uses?.sfcFrameworkConventionComponents === 1 &&
-      json.uses?.unresolvedInternalRatio === 0.3333 &&
+      json.uses?.unresolvedInternalRatio === 0.5 &&
       json.dependencyImportConsumers?.some((consumer) =>
         consumer?.depRoot === 'react' &&
         consumer?.fromSpec === 'react/jsx-runtime'
-      ) &&
-      json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
-      json.generatedVirtualImportConsumers?.[0]?.surfaceId === 'generated-virtual:prisma-enums:@pkg/db:enums' &&
-      json.resolvedInternalEdges?.some((edge) =>
-        edge?.from === 'src/App.vue' &&
-        edge?.to === 'src/setup.ts' &&
-        edge?.kind === 'sfc-script-src' &&
-        edge?.sfcLanguage === 'vue'
-      ) &&
-      json.sfcStyleAssetReferences?.some((reference) =>
-        reference?.consumerFile === 'src/App.vue' &&
-        reference?.fromSpec === './App.css?inline' &&
-        reference?.resolvedFile === 'src/App.css' &&
-        reference?.status === 'resolved' &&
-        reference?.sfcLanguage === 'vue'
-      ) &&
-      json.sfcStyleAssetReferences?.some((reference) =>
-        reference?.consumerFile === 'src/App.vue' &&
-        reference?.fromSpec === './missing.css' &&
-        reference?.status === 'unresolved' &&
-        reference?.reason === 'sfc-style-asset-unresolved'
-      ) &&
-      json.sfcTemplateComponentRefs?.some((reference) =>
-        reference?.consumerFile === 'src/App.vue' &&
-        reference?.bindingName === 'UiButton' &&
-        reference?.resolvedFile === 'src/UiButton.ts' &&
-        reference?.status === 'resolved' &&
-        reference?.eligibleForSafeFix === false
-      ) &&
-      json.sfcTemplateComponentRefs?.some((reference) =>
-        reference?.consumerFile === 'src/App.vue' &&
-        reference?.bindingName === 'ExternalWidget' &&
-        reference?.status === 'external' &&
-        reference?.reason === 'sfc-template-component-external-binding'
-      ) &&
-      json.sfcGlobalComponentRegistrations?.some((registration) =>
-        registration?.registrationFile === 'src/main.ts' &&
-        registration?.componentName === 'RegisteredSource' &&
-        registration?.resolvedFile === 'src/registered-source.ts' &&
-        registration?.fromSpec === './registered-source' &&
-        registration?.confidence === 'registration-review'
-      ) &&
-      json.sfcGlobalComponentRegistrations?.some((registration) =>
-        registration?.registrationFile === 'src/main.ts' &&
-        registration?.componentName === 'AsyncGlobal' &&
-        registration?.resolvedFile === 'src/AsyncGlobal.vue' &&
-        registration?.fromSpec === './AsyncGlobal.vue' &&
-        registration?.confidence === 'muted-review' &&
-        registration?.reason === 'sfc-global-component-async-factory'
-      ) &&
-      json.sfcGeneratedComponentManifests?.some((manifest) =>
-        manifest?.manifestFile === 'components.d.ts' &&
-        manifest?.componentName === 'ManifestSource' &&
-        manifest?.resolvedFile === 'src/ManifestSource.ts' &&
-        manifest?.status === 'resolved'
-      ) &&
-      json.sfcGeneratedComponentManifests?.some((manifest) =>
-        manifest?.manifestFile === 'components.d.ts' &&
-        manifest?.componentName === 'ManifestButton' &&
-        manifest?.resolvedFile === 'components/ManifestButton.vue' &&
-        manifest?.reason === 'sfc-framework-generated-manifest-non-source-binding'
-      ) &&
-      json.sfcGeneratedComponentManifests?.some((manifest) =>
-        manifest?.manifestFile === 'components.d.ts' &&
-        manifest?.componentName === 'DynamicManifest' &&
-        manifest?.computedKeySource === "prefix + 'Manifest'" &&
-        manifest?.status === 'skipped'
-      ) &&
-      !json.sfcGeneratedComponentManifests?.some((manifest) =>
-        manifest?.componentName === 'ExternalManifest'
-      ) &&
-      json.sfcFrameworkConventionComponents?.some((component) =>
-        component?.framework === 'nuxt' &&
-        component?.conventionKind === 'components-dir' &&
-        component?.consumerFile === 'src/App.vue' &&
-        component?.componentName === 'ConventionCard' &&
-        component?.sourceFile === 'components/ConventionCard.vue' &&
-        component?.resolvedFile === 'components/ConventionCard.vue' &&
-        component?.bindingSource === 'components/ConventionCard.vue' &&
-        component?.fromSpec === './ignored.vue' &&
-        component?.pathPrefix === true &&
-        component?.global === true &&
-        component?.eligibleForFanIn === false &&
-        component?.eligibleForSafeFix === false
       ) &&
       json.generatedConsumerBlindZones?.some((zone) =>
         zone?.reason === 'generated-consumer-blind-zone' &&
@@ -2252,8 +1773,7 @@ function resultPayloadMatchesProbe(json, probe) {
         zone?.specifier === '@scope/generated-client' &&
         zone?.consumerFile === 'src/c.ts' &&
         zone?.candidatePath === 'packages/api/generated/client.ts' &&
-        zone?.scopePackageRoot === 'packages/api' &&
-        zone?.mode === 'default'
+        zone?.scopePackageRoot === 'packages/api'
       ) &&
       json.artifactSummary?.generatedConsumerBlindZoneCount === 1 &&
       json.defIndex?.['src/a.ts']?.alpha?.name === 'alpha' &&
@@ -2262,13 +1782,10 @@ function resultPayloadMatchesProbe(json, probe) {
       json.fanInByIdentity?.['src/a.ts::alpha'] === 1 &&
       json.fanInByIdentity?.['src/a.ts::beta'] === 0 &&
       json.fanInByIdentity?.['src/a.ts::gamma'] === 1 &&
-      json.fanInByIdentitySpace?.['src/a.ts::alpha']?.value === 1 &&
-      json.fanInByIdentitySpace?.['src/a.ts::gamma']?.value === 1 &&
       json.deadProdList?.[0]?.symbol === 'beta' &&
       json.unresolvedInternalSummaryByReason?.['alias-miss']?.count === 1 &&
-      json.unresolvedInternalSummaryByReason?.['tsconfig-path-target-missing']?.count === 1;
-  }
-  if (probe.subcommand === 'js-ts-extract-artifact') {
+      json.unresolvedInternalSummaryByReason?.['workspace-generated-artifact-missing']?.count === 1;
+  }  if (probe.subcommand === 'js-ts-extract-artifact') {
     const file = json.files?.[0];
     const uses = Array.isArray(file?.uses) ? file.uses : [];
     const localOperations = Array.isArray(file?.localOperations) ? file.localOperations : [];

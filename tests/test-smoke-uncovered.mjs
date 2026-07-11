@@ -307,16 +307,17 @@ writeFileSync(path.join(FX, 'src/index.ts'),
   //       reports the lockfile as the offender.
   //
   // We drive scripts/check-drift.mjs against a synthetic repo whose
-  // package.json / emit-sarif / CHANGELOG / package-lock all match or
+  // package.json / Rust SARIF owner / CHANGELOG / package-lock all match or
   // don't match as specified.
   const FXroot = '/tmp/fx-check-drift-lock';
   rmSync(FXroot, { recursive: true, force: true });
   mkdirSync(path.join(FXroot, 'scripts'), { recursive: true });
+  mkdirSync(path.join(FXroot, 'experiments/rust-main/lumin-audit-core/src'), { recursive: true });
   const writeFixture = (lockVersion, version = '9.9.9') => {
     writeFileSync(path.join(FXroot, 'package.json'),
       JSON.stringify({ name: 'x', version, type: 'module' }));
-    writeFileSync(path.join(FXroot, 'emit-sarif.mjs'),
-      `const TOOL_VERSION = '${version}';\n`);
+    writeFileSync(path.join(FXroot, 'experiments/rust-main/lumin-audit-core/src/sarif.rs'),
+      `const TOOL_VERSION: &str = "${version}";\n`);
     writeFileSync(path.join(FXroot, 'CHANGELOG.md'),
       `# Changelog\n\n## ${version} — 2026-04-19\n\nSynthetic.\n`);
     writeFileSync(path.join(FXroot, 'package-lock.json'),

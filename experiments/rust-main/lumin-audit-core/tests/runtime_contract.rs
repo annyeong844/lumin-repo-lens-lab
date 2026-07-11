@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v35"
+        "audit-core-js-runtime-bridge.v36"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -66,23 +66,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         contract["features"]["sourceUseAssemblySyntheticRecordIds"],
         true
     );
-    assert_eq!(contract["features"]["symbolGraphTypedFinalization"], true);
-    assert_eq!(
-        contract["features"]["symbolGraphCoreTypedFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphTypedInputFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphFanInInputFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphDeadCandidateInputFinalization"],
-        true
-    );
+    assert_eq!(contract["features"]["symbolGraphStrictRequestV2"], true);
     assert_eq!(
         contract["features"]["generatedVirtualSourceUseAssembly"],
         true
@@ -92,46 +76,6 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         true
     );
     assert_eq!(contract["features"]["sfcScriptSrcSourceUseAssembly"], true);
-    assert_eq!(
-        contract["features"]["symbolGraphEmbeddedSourceUseFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphEmbeddedSourceUseParentPathTable"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphSfcStyleAssetFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphSfcTemplateComponentFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphSfcGlobalComponentFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphSfcGeneratedManifestFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphSfcFrameworkConventionFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphSfcComponentSourceUseRecordFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphGeneratedConsumerBlindZoneFinalization"],
-        true
-    );
-    assert_eq!(
-        contract["features"]["symbolGraphAnyContaminationInputFinalization"],
-        true
-    );
     assert_eq!(contract["features"]["sharedSourceInventory"], true);
     assert_eq!(contract["features"]["sourceInventoryRunBinding"], true);
     assert_eq!(contract["features"]["failClosedLifecycleArtifacts"], true);
