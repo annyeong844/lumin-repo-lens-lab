@@ -943,6 +943,18 @@ mod tests {
             cold["anyInventory"]["meta"]["incremental"]["reusedFiles"],
             0
         );
+        assert_eq!(
+            cold["anyInventory"]["meta"]["incremental"]["identityMode"],
+            "sha256"
+        );
+        assert_eq!(
+            cold["anyInventory"]["meta"]["incremental"]["contentHashFiles"],
+            2
+        );
+        assert_eq!(
+            cold["anyInventory"]["meta"]["incremental"]["gitBlobFiles"],
+            0
+        );
 
         let warm = build()?;
         assert_eq!(
@@ -986,15 +998,13 @@ mod tests {
     }
 
     #[test]
-    fn strict_cache_keys_git_identity_by_source_path_not_artifact_alias() -> Result<()> {
+    fn strict_cache_keys_identity_by_source_bytes_not_artifact_alias() -> Result<()> {
         let temp = tempdir()?;
         let root = temp.path();
         let cache_root = root.join(".cache");
         fs::create_dir_all(root.join("src"))?;
         fs::write(root.join("src/real.ts"), "export const before = 1;\n")?;
         fs::write(root.join("alias.ts"), "export const unrelated = 1;\n")?;
-        cache::initialize_git_fixture(root)?;
-
         let build = || {
             build_js_ts_pre_write_evidence(JsTsPreWriteEvidenceRequest {
                 schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),

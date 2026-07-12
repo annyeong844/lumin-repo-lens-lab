@@ -47,10 +47,10 @@ The checked recursive directory-job implementation was measured with the same
 | warm strict cache, all facts reused | 8.67s | 5.17-5.22s |
 
 The old and new no-cache results had identical `files`, `symbols`, and
-`topology` projections. The v45 strict cache also keys clean Git identities by
-the actual source path and parses the exact selected Git blob bytes on cache
-misses; dirty, untracked, or failed Git-blob reads use a content SHA over the
-same worktree bytes sent to OXC.
+`topology` projections. The v45 cache attempted to avoid mounted-worktree reads
+by using clean Git blob identities and bytes. That optimization was retired in
+v46 because Git filters, LFS, and working-tree encodings can make repository
+blob bytes differ from the file the user is reviewing.
 
 The regenerated packaged skill was then dogfooded on the same WSL checkout with
 `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1`, proving that no Cargo/source fallback was
@@ -91,3 +91,34 @@ The returned evidence restored `root`, inventory root, cache root, and cache
 file paths to WSL spelling. Temporary host result directories were removed
 after each command, and the paired post-write completed without a silent-new-
 any delta.
+
+## Worktree-byte correction
+
+The v46 cache reads every scoped file from the current worktree, computes
+SHA-256 over those exact bytes, and passes the same buffer to OXC on a miss.
+It does not consult Git status, index entries, or blob content for identity.
+The WSL bridge keeps this affordable by running the evidence command through
+the exact-contract Windows release helper, where the reads use native NTFS.
+
+Dogfood with Cargo auto-build disabled and both packaged-platform contracts
+held at v46 produced:
+
+| Lifecycle route | Elapsed |
+| --- | ---: |
+| cold pre-write | 2.10s |
+| warm pre-write, 564/564 facts reused | 1.79s |
+| paired post-write, 564/564 facts reused | 1.73s |
+
+All three passes reported `identityMode: "sha256"`,
+`contentHashFiles: 564`, and `gitBlobFiles: 0`. The post-write result reported
+`No silent new any in the scan range.`
+
+The package builder now rebuilds the current-platform helper with Cargo's
+release profile. A regenerated skill was then run with Cargo absent from
+`PATH`, auto-build disabled, and no binary overrides. Its packaged Linux and
+Windows helpers alone completed cold pre-write in 3.46s and repeated warm
+pre-write in 3.07-3.62s; packaged post-write completed in 2.87s with no silent
+new any. The remaining gap from the source measurement is the
+cost of launching lifecycle-control calls from the packaged Linux binary on
+the mounted `/mnt/c` tree; the repository discovery/read/hash pass itself still
+uses the packaged Windows release helper.

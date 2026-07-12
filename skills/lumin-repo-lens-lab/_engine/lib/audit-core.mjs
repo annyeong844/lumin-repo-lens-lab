@@ -226,7 +226,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v45';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v46';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -425,7 +425,7 @@ function auditCoreBinaryReportsCurrentContract(command) {
   if (contract?.features?.jsTsPreWriteEvidence !== true) return false;
   if (contract?.features?.jsTsPreWriteDiscovery !== true) return false;
   if (contract?.features?.jsTsPreWriteIncrementalCache !== true) return false;
-  if (contract?.features?.jsTsPreWriteExactGitBlobCache !== true) return false;
+  if (contract?.features?.jsTsPreWriteExactWorktreeByteCache !== true) return false;
   if (contract?.features?.sourceUseAssembly !== true) return false;
   if (contract?.features?.sourceUseAssemblyResolvedRecordTargets !== true) return false;
   if (contract?.features?.sourceUseAssemblyExternalRecordIds !== true) return false;

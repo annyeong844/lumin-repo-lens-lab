@@ -11,13 +11,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const CACHE_PROFILE_VERSION: &str =
-    "js-ts-pre-write-oxc-facts.v2+oxc-0.139.0+audit-core-bridge-v45";
+    "js-ts-pre-write-oxc-facts.v3+oxc-0.139.0+audit-core-bridge-v46";
 const CACHE_FILE_NAME: &str = "facts.json";
-const GIT_BATCH_WRITER_STACK_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -76,8 +74,7 @@ struct CurrentFile {
     absolute_path: String,
     artifact_path: String,
     identity: FileIdentity,
-    source: Option<String>,
-    git_blob_identity: Option<String>,
+    bytes: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -86,7 +83,6 @@ struct CacheObservations {
     reused_files: usize,
     dropped_files: usize,
     invalidated_files: usize,
-    git_blob_files: usize,
     content_hash_files: usize,
     load_status: String,
     write_status: String,
@@ -132,12 +128,6 @@ pub(super) fn extract_with_cache(
     }
 
     let root_fingerprint = root_fingerprint(root)?;
-    let canonical_root = fs::canonicalize(root).with_context(|| {
-        format!(
-            "js-ts-pre-write-evidence: failed to canonicalize root {}",
-            root.display()
-        )
-    })?;
     let source_set_fingerprint = source_set_fingerprint(&files);
     let scan_context_fingerprint = scan_context_fingerprint(include_tests, excludes);
     let cache_path = cache_path(cache_root, &root_fingerprint);
@@ -156,11 +146,6 @@ pub(super) fn extract_with_cache(
     if prior.is_some() && !compatible {
         load_status = "ignored-incompatible".to_string();
     }
-    let requested_source_paths = files
-        .iter()
-        .map(|file| source_repo_path(root, &canonical_root, &file.file_path))
-        .collect::<Result<BTreeSet<_>>>()?;
-    let clean_git_blobs = clean_git_blob_ids(root, &requested_source_paths);
     let mut observations = CacheObservations {
         load_status,
         write_status: "pending".to_string(),
@@ -170,40 +155,19 @@ pub(super) fn extract_with_cache(
     for file in files {
         let artifact_path = normalize_slashes(&file.artifact_file_path);
         let absolute_path = file.file_path.to_string_lossy().to_string();
-        let source_path = source_repo_path(root, &canonical_root, &file.file_path)?;
-        let (identity, source, git_blob_identity) = if let Some(blob) = clean_git_blobs
-            .as_ref()
-            .and_then(|blobs| blobs.identities.get(&source_path))
-        {
-            observations.git_blob_files += 1;
-            (
-                FileIdentity {
-                    mode: "git-blob".to_string(),
-                    value: blob.clone(),
-                },
-                None,
-                Some(blob.clone()),
-            )
-        } else {
-            let bytes = fs::read(&file.file_path).with_context(|| {
-                format!("js-ts-pre-write-evidence: failed to read required source {artifact_path}")
-            })?;
-            let identity = FileIdentity {
-                mode: "sha256".to_string(),
-                value: sha256_bytes(&bytes),
-            };
-            let source = String::from_utf8(bytes).with_context(|| {
-                format!("js-ts-pre-write-evidence: required source is not UTF-8: {artifact_path}")
-            })?;
-            observations.content_hash_files += 1;
-            (identity, Some(source), None)
+        let bytes = fs::read(&file.file_path).with_context(|| {
+            format!("js-ts-pre-write-evidence: failed to read required source {artifact_path}")
+        })?;
+        let identity = FileIdentity {
+            mode: "sha256".to_string(),
+            value: sha256_bytes(&bytes),
         };
+        observations.content_hash_files += 1;
         current.push(CurrentFile {
             absolute_path,
             artifact_path,
             identity,
-            source,
-            git_blob_identity,
+            bytes,
         });
     }
 
@@ -241,7 +205,6 @@ pub(super) fn extract_with_cache(
 
     let mut results = BTreeMap::<String, JsTsExtractFileResult>::new();
     let mut pending = Vec::new();
-    let mut pending_git_blobs = BTreeMap::new();
     let mut identities = BTreeMap::new();
     let mut absolute_to_artifact = BTreeMap::new();
     for file in current {
@@ -267,55 +230,17 @@ pub(super) fn extract_with_cache(
             observations.invalidated_files += 1;
         }
         identities.insert(file.artifact_path.clone(), file.identity);
-        if let Some(identity) = file.git_blob_identity {
-            pending_git_blobs.insert(file.artifact_path.clone(), identity);
-        }
+        let source = String::from_utf8(file.bytes).with_context(|| {
+            format!(
+                "js-ts-pre-write-evidence: required source is not UTF-8: {}",
+                file.artifact_path
+            )
+        })?;
         pending.push(JsTsExtractInputFile {
             file_path: file.absolute_path,
             artifact_file_path: Some(file.artifact_path),
-            source: file.source,
+            source: Some(source),
         });
-    }
-
-    if !pending_git_blobs.is_empty() {
-        let requested_identities = pending_git_blobs.values().cloned().collect::<BTreeSet<_>>();
-        let blob_sources = clean_git_blobs
-            .as_ref()
-            .and_then(|blobs| read_git_blob_sources(&blobs.invocation, &requested_identities));
-        for input in &mut pending {
-            let artifact_path = input
-                .artifact_file_path
-                .as_deref()
-                .context("js-ts-pre-write-evidence: pending input has no artifact path")?;
-            let Some(blob_identity) = pending_git_blobs.get(artifact_path) else {
-                continue;
-            };
-            if let Some(bytes) = blob_sources
-                .as_ref()
-                .and_then(|sources| sources.get(blob_identity))
-            {
-                input.source = Some(String::from_utf8(bytes.clone()).with_context(|| {
-                    format!(
-                        "js-ts-pre-write-evidence: required Git blob is not UTF-8: {artifact_path}"
-                    )
-                })?);
-                continue;
-            }
-
-            let bytes = fs::read(&input.file_path).with_context(|| {
-                format!("js-ts-pre-write-evidence: failed to read required source {artifact_path}")
-            })?;
-            let identity = FileIdentity {
-                mode: "sha256".to_string(),
-                value: sha256_bytes(&bytes),
-            };
-            input.source = Some(String::from_utf8(bytes).with_context(|| {
-                format!("js-ts-pre-write-evidence: required source is not UTF-8: {artifact_path}")
-            })?);
-            identities.insert(artifact_path.to_string(), identity);
-            observations.git_blob_files = observations.git_blob_files.saturating_sub(1);
-            observations.content_hash_files += 1;
-        }
     }
 
     for result in extract_inputs(pending, source_files)? {
@@ -489,315 +414,15 @@ fn scan_context_fingerprint(include_tests: bool, excludes: &[String]) -> String 
     sha256_text(&text)
 }
 
-struct CleanGitBlobIds {
-    invocation: GitInvocation,
-    identities: BTreeMap<String, String>,
-}
-
-fn clean_git_blob_ids(root: &Path, requested_paths: &BTreeSet<String>) -> Option<CleanGitBlobIds> {
-    for invocation in git_invocations(root) {
-        if let Some(mut identities) = clean_git_blob_ids_with(root, &invocation) {
-            identities.retain(|path, _| requested_paths.contains(path));
-            return Some(CleanGitBlobIds {
-                invocation,
-                identities,
-            });
-        }
-    }
-    None
-}
-
-struct GitInvocation {
-    program: PathBuf,
-    root_arg: String,
-    expected_host_root: Option<String>,
-}
-
-fn git_invocations(root: &Path) -> Vec<GitInvocation> {
-    let mut invocations = Vec::new();
-    if let Some(host_root) = wsl_mount_to_windows_path(root) {
-        invocations.push(GitInvocation {
-            program: PathBuf::from("git.exe"),
-            root_arg: host_root.clone(),
-            expected_host_root: Some(host_root.clone()),
-        });
-        for program in [
-            "/mnt/c/Program Files/Git/cmd/git.exe",
-            "/mnt/c/Program Files/Git/bin/git.exe",
-            "/mnt/c/Program Files (x86)/Git/cmd/git.exe",
-        ] {
-            let program = PathBuf::from(program);
-            if program.is_file() {
-                invocations.push(GitInvocation {
-                    program,
-                    root_arg: host_root.clone(),
-                    expected_host_root: Some(host_root.clone()),
-                });
-            }
-        }
-    }
-    invocations.push(GitInvocation {
-        program: PathBuf::from("git"),
-        root_arg: root.to_string_lossy().to_string(),
-        expected_host_root: None,
-    });
-    invocations
-}
-
-fn clean_git_blob_ids_with(
-    root: &Path,
-    invocation: &GitInvocation,
-) -> Option<BTreeMap<String, String>> {
-    if !git_root_matches(root, invocation) {
-        return None;
-    }
-    let status = git_output(
-        invocation,
-        [
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            "--ignored=no",
-            "--",
-        ],
-    )?;
-    let dirty = parse_dirty_paths(&status)?;
-    let staged = git_output(invocation, ["ls-files", "-v", "--stage", "-z", "--"])?;
-    parse_stage_zero_blobs(&staged, &dirty)
-}
-
-fn read_git_blob_sources(
-    invocation: &GitInvocation,
-    identities: &BTreeSet<String>,
-) -> Option<BTreeMap<String, Vec<u8>>> {
-    let mut child = Command::new(&invocation.program)
-        .args([
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-        ])
-        .arg("-C")
-        .arg(&invocation.root_arg)
-        .args(["cat-file", "--batch"])
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .ok()?;
-    let mut stdin = child.stdin.take()?;
-    let requested = identities.iter().cloned().collect::<Vec<_>>();
-    let writer = std::thread::Builder::new()
-        .name("lumin-git-blob-input".to_string())
-        .stack_size(GIT_BATCH_WRITER_STACK_BYTES)
-        .spawn(move || -> std::io::Result<()> {
-            for identity in requested {
-                let oid = identity.strip_prefix("git:").ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "Git blob identity is missing the git: prefix",
-                    )
-                })?;
-                stdin.write_all(oid.as_bytes())?;
-                stdin.write_all(b"\n")?;
-            }
-            Ok(())
-        })
-        .ok()?;
-    let output = child.wait_with_output().ok()?;
-    if writer.join().ok()?.is_err() {
-        return None;
-    }
-    if !output.status.success() {
-        return None;
-    }
-    parse_git_blob_batch(&output.stdout, identities)
-}
-
-fn parse_git_blob_batch(
-    bytes: &[u8],
-    identities: &BTreeSet<String>,
-) -> Option<BTreeMap<String, Vec<u8>>> {
-    let mut cursor = 0usize;
-    let mut sources = BTreeMap::new();
-    for identity in identities {
-        let oid = identity.strip_prefix("git:")?;
-        let header_end = bytes[cursor..].iter().position(|byte| *byte == b'\n')? + cursor;
-        let header = std::str::from_utf8(&bytes[cursor..header_end]).ok()?;
-        let mut fields = header.split_whitespace();
-        if fields.next()? != oid || fields.next()? != "blob" {
-            return None;
-        }
-        let size = fields.next()?.parse::<usize>().ok()?;
-        if fields.next().is_some() {
-            return None;
-        }
-        let source_start = header_end.checked_add(1)?;
-        let source_end = source_start.checked_add(size)?;
-        if source_end >= bytes.len() || bytes[source_end] != b'\n' {
-            return None;
-        }
-        sources.insert(identity.clone(), bytes[source_start..source_end].to_vec());
-        cursor = source_end + 1;
-    }
-    (cursor == bytes.len()).then_some(sources)
-}
-
-fn source_repo_path(root: &Path, canonical_root: &Path, file_path: &Path) -> Result<String> {
-    let relative = if let Ok(relative) = file_path.strip_prefix(root) {
-        relative.to_path_buf()
-    } else if let Ok(relative) = file_path.strip_prefix(canonical_root) {
-        relative.to_path_buf()
-    } else {
-        let canonical_file = fs::canonicalize(file_path).with_context(|| {
-            format!(
-                "js-ts-pre-write-evidence: failed to canonicalize source file {}",
-                file_path.display()
-            )
-        })?;
-        canonical_file
-            .strip_prefix(canonical_root)
-            .with_context(|| {
-                format!(
-                    "js-ts-pre-write-evidence: source file escaped root: {}",
-                    file_path.display()
-                )
-            })?
-            .to_path_buf()
-    };
-    let normalized = normalize_slashes(&relative.to_string_lossy());
-    if normalized.is_empty() {
-        bail!("js-ts-pre-write-evidence: source file path must not equal root");
-    }
-    Ok(normalized)
-}
-
-fn git_root_matches(root: &Path, invocation: &GitInvocation) -> bool {
-    let Some(output) = git_output(invocation, ["rev-parse", "--show-toplevel"]) else {
-        return false;
-    };
-    let Ok(text) = String::from_utf8(output) else {
-        return false;
-    };
-    if let Some(expected) = invocation.expected_host_root.as_deref() {
-        return normalized_host_path(text.trim()) == normalized_host_path(expected);
-    }
-    let Ok(git_root) = fs::canonicalize(text.trim()) else {
-        return false;
-    };
-    let Ok(root) = fs::canonicalize(root) else {
-        return false;
-    };
-    git_root == root
-}
-
-fn git_output<const N: usize>(invocation: &GitInvocation, args: [&str; N]) -> Option<Vec<u8>> {
-    let output = Command::new(&invocation.program)
-        .args([
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-        ])
-        .arg("-C")
-        .arg(&invocation.root_arg)
-        .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .output()
-        .ok()?;
-    output.status.success().then_some(output.stdout)
-}
-
-fn wsl_mount_to_windows_path(root: &Path) -> Option<String> {
-    let text = normalize_slashes(&root.to_string_lossy());
-    let rest = text.strip_prefix("/mnt/")?;
-    let mut chars = rest.chars();
-    let drive = chars.next()?;
-    if !drive.is_ascii_alphabetic() || chars.next()? != '/' {
-        return None;
-    }
-    Some(format!(
-        "{}:/{}",
-        drive.to_ascii_uppercase(),
-        chars.as_str()
-    ))
-}
-
-fn normalized_host_path(value: &str) -> String {
-    normalize_slashes(value)
-        .trim_end_matches('/')
-        .to_ascii_lowercase()
-}
-
-fn parse_dirty_paths(bytes: &[u8]) -> Option<BTreeSet<String>> {
-    let entries = bytes
-        .split(|byte| *byte == 0)
-        .filter(|entry| !entry.is_empty())
-        .collect::<Vec<_>>();
-    let mut dirty = BTreeSet::new();
-    let mut index = 0;
-    while index < entries.len() {
-        let entry = entries[index];
-        if entry.len() < 4 || entry[2] != b' ' {
-            return None;
-        }
-        let status = &entry[..2];
-        let path = std::str::from_utf8(&entry[3..]).ok()?;
-        dirty.insert(normalize_slashes(path));
-        if status.iter().any(|code| matches!(*code, b'R' | b'C')) {
-            index += 1;
-            let old_path = std::str::from_utf8(entries.get(index)?).ok()?;
-            dirty.insert(normalize_slashes(old_path));
-        }
-        index += 1;
-    }
-    Some(dirty)
-}
-
-fn parse_stage_zero_blobs(
-    bytes: &[u8],
-    dirty: &BTreeSet<String>,
-) -> Option<BTreeMap<String, String>> {
-    let mut blobs = BTreeMap::new();
-    for entry in bytes
-        .split(|byte| *byte == 0)
-        .filter(|entry| !entry.is_empty())
-    {
-        let tab = entry.iter().position(|byte| *byte == b'\t')?;
-        let metadata = std::str::from_utf8(&entry[..tab]).ok()?;
-        let mut fields = metadata.split_whitespace();
-        let tag = fields.next()?;
-        let mode = fields.next()?;
-        let oid = fields.next()?;
-        let stage = fields.next()?;
-        if fields.next().is_some() || tag != "H" || stage != "0" || !mode.starts_with("100") {
-            continue;
-        }
-        if !oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return None;
-        }
-        let path = normalize_slashes(std::str::from_utf8(&entry[tab + 1..]).ok()?);
-        if !dirty.contains(&path) {
-            blobs.insert(path, format!("git:{oid}"));
-        }
-    }
-    Some(blobs)
-}
-
 fn incremental_json(
     request: &JsTsPreWriteIncrementalRequest,
     cache_path: Option<&Path>,
     observations: CacheObservations,
 ) -> Value {
-    let identity_mode = match (
-        observations.git_blob_files > 0,
-        observations.content_hash_files > 0,
-    ) {
-        (true, true) => json!("git-blob+sha256"),
-        (true, false) => json!("git-blob"),
-        (false, true) => json!("sha256"),
-        (false, false) => Value::Null,
+    let identity_mode = if observations.content_hash_files > 0 {
+        json!("sha256")
+    } else {
+        Value::Null
     };
     json!({
         "enabled": request.enabled,
@@ -810,7 +435,7 @@ fn incremental_json(
         "reusedFiles": observations.reused_files,
         "droppedFiles": observations.dropped_files,
         "invalidatedFiles": observations.invalidated_files,
-        "gitBlobFiles": observations.git_blob_files,
+        "gitBlobFiles": 0,
         "contentHashFiles": observations.content_hash_files,
         "loadStatus": observations.load_status,
         "writeStatus": observations.write_status,
@@ -820,115 +445,4 @@ fn incremental_json(
 
 fn normalize_slashes(value: &str) -> String {
     value.replace('\\', "/")
-}
-
-#[cfg(test)]
-pub(super) fn initialize_git_fixture(root: &Path) -> Result<()> {
-    run_git_fixture_command(root, &["init", "--quiet"])?;
-    run_git_fixture_command(root, &["config", "user.email", "lumin@example.invalid"])?;
-    run_git_fixture_command(root, &["config", "user.name", "Lumin Fixture"])?;
-    run_git_fixture_command(root, &["add", "."])?;
-    run_git_fixture_command(root, &["commit", "--quiet", "-m", "fixture"])
-}
-
-#[cfg(test)]
-fn run_git_fixture_command(root: &Path, args: &[&str]) -> Result<()> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()?;
-    if !output.status.success() {
-        bail!(
-            "git fixture command failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn parses_clean_stage_zero_git_blobs() -> Result<()> {
-        let dirty = BTreeSet::from(["src/dirty.ts".to_string()]);
-        let rows = b"H 100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/clean.ts\0\
-H 100644 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0\tsrc/dirty.ts\0";
-        let blobs = parse_stage_zero_blobs(rows, &dirty).context("valid rows")?;
-        assert_eq!(
-            blobs.get("src/clean.ts").map(String::as_str),
-            Some("git:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-        );
-        assert!(!blobs.contains_key("src/dirty.ts"));
-        Ok(())
-    }
-
-    #[test]
-    fn excludes_skip_worktree_and_assume_unchanged_paths() -> Result<()> {
-        let rows = b"H 100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/clean.ts\0\
-S 100644 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0\tsrc/skip.ts\0\
-h 100644 cccccccccccccccccccccccccccccccccccccccc 0\tsrc/assumed.ts\0";
-        let blobs = parse_stage_zero_blobs(rows, &BTreeSet::new()).context("valid rows")?;
-        assert_eq!(
-            blobs.keys().cloned().collect::<Vec<_>>(),
-            ["src/clean.ts".to_string()]
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn rename_status_marks_both_paths_dirty() -> Result<()> {
-        let rows = b"R  src/new.ts\0src/old.ts\0?? src/untracked.ts\0";
-        let dirty = parse_dirty_paths(rows).context("valid status")?;
-        assert_eq!(
-            dirty,
-            BTreeSet::from([
-                "src/new.ts".to_string(),
-                "src/old.ts".to_string(),
-                "src/untracked.ts".to_string(),
-            ])
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn translates_wsl_drive_mounts_for_host_git() {
-        assert_eq!(
-            wsl_mount_to_windows_path(Path::new("/mnt/c/Users/name/repo")),
-            Some("C:/Users/name/repo".to_string())
-        );
-        assert_eq!(
-            wsl_mount_to_windows_path(Path::new("/home/name/repo")),
-            None
-        );
-    }
-
-    #[test]
-    fn reads_the_blob_bytes_named_by_the_clean_git_identity() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let root = temp.path();
-        fs::create_dir_all(root.join("src"))?;
-        fs::write(root.join("src/value.ts"), "export const before = 1;\n")?;
-        super::initialize_git_fixture(root)?;
-
-        let requested = BTreeSet::from(["src/value.ts".to_string()]);
-        let clean = clean_git_blob_ids(root, &requested).context("clean Git source")?;
-        let identity = clean
-            .identities
-            .get("src/value.ts")
-            .cloned()
-            .context("clean blob identity")?;
-
-        fs::write(root.join("src/value.ts"), "export const after = 2;\n")?;
-        let sources = read_git_blob_sources(&clean.invocation, &BTreeSet::from([identity.clone()]))
-            .context("Git blob source")?;
-        assert_eq!(
-            sources.get(&identity).map(Vec::as_slice),
-            Some(b"export const before = 1;\n".as_slice())
-        );
-        Ok(())
-    }
 }

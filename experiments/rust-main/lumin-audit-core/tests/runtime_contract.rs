@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v45"
+        "audit-core-js-runtime-bridge.v46"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -43,7 +43,10 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     assert_eq!(contract["features"]["jsTsPreWriteEvidence"], true);
     assert_eq!(contract["features"]["jsTsPreWriteDiscovery"], true);
     assert_eq!(contract["features"]["jsTsPreWriteIncrementalCache"], true);
-    assert_eq!(contract["features"]["jsTsPreWriteExactGitBlobCache"], true);
+    assert_eq!(
+        contract["features"]["jsTsPreWriteExactWorktreeByteCache"],
+        true
+    );
     assert_eq!(contract["features"]["sourceUseAssembly"], true);
     assert_eq!(
         contract["features"]["sourceUseAssemblyResolvedRecordTargets"],

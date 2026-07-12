@@ -28,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v45';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v46';
 const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -43,7 +43,7 @@ const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsPreWriteEvidence',
   'jsTsPreWriteDiscovery',
   'jsTsPreWriteIncrementalCache',
-  'jsTsPreWriteExactGitBlobCache',
+  'jsTsPreWriteExactWorktreeByteCache',
   'sourceUseAssembly',
   'sourceUseAssemblyResolvedRecordTargets',
   'sourceUseAssemblyExternalRecordIds',
@@ -273,6 +273,7 @@ function cargoBuildAuditCore() {
     '-p',
     'lumin-audit-core',
     '--locked',
+    '--release',
     '--target-dir',
     targetDir,
   ], {
@@ -285,7 +286,7 @@ function cargoBuildAuditCore() {
   if (result.status !== 0) {
     throw new Error(`cargo build failed while building lumin-audit-core (exit ${result.status ?? 'unknown'})`);
   }
-  return path.join(targetDir, 'debug', exe);
+  return path.join(targetDir, 'release', exe);
 }
 
 function validateRunnableAuditCoreBinary(binaryPath) {

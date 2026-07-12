@@ -202,13 +202,11 @@ directory-entry crossings on WSL while preserving the checked JS scan policy.
 The shared Rust pass may skip OXC parsing for files whose exact current content
 and extraction context match its strict per-file cache. It still discovers the
 current scoped file set and rebuilds the complete before or after evidence
-artifact every time. Clean tracked files may be identified by a Git index blob
-OID after Git confirms the working-tree path is clean; dirty, untracked,
-ignored, non-Git, and ambiguous files are read and identified by SHA-256.
-For a WSL-mounted Windows checkout, the Rust pass may use host `git.exe` for
-the clean-blob proof so the identity follows the Git implementation that
-created the checkout and its line-ending policy. Missing or mismatched host Git
-falls back to current-byte SHA-256.
+artifact every time. Every scoped file is read from the current worktree and
+identified by SHA-256 of those exact bytes. Cache misses parse that same byte
+buffer. Git index/blob bytes are never used as source identity or parser input
+because clean/smudge filters, Git LFS, and working-tree encodings can make them
+different from the file being reviewed.
 For the same mounted-checkout case, the JS audit-core bridge may execute the
 packaged `win32-x64/lumin-audit-core.exe` for `js-ts-pre-write-evidence` so
 repository discovery and source reads use native NTFS instead of DrvFS. This
