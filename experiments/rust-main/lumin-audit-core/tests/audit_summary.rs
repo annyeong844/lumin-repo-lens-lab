@@ -247,6 +247,12 @@ fn cli_audit_summary_separates_lifecycle_scope_from_lifecycle_status() -> Result
                     "status": "not-refreshed",
                     "reason": "pre-write-only mode uses intent-shaped evidence"
                 },
+                "unusedDependencies": {
+                    "status": "unavailable"
+                },
+                "rustAnalysis": {
+                    "status": "unavailable"
+                },
                 "blindZones": [{
                     "area": "base-audit",
                     "severity": "scan-gap",
@@ -284,6 +290,8 @@ fn cli_audit_summary_separates_lifecycle_scope_from_lifecycle_status() -> Result
     ));
     assert!(markdown.contains("- Pre-write ran and wrote an advisory."));
     assert!(markdown.contains("- Lifecycle scope: base audit not refreshed;"));
+    assert!(!markdown.contains("Dependency hygiene:"));
+    assert!(!markdown.contains("Rust analyzer:"));
     assert!(!markdown.contains("- Blind zones: 1."));
     Ok(())
 }

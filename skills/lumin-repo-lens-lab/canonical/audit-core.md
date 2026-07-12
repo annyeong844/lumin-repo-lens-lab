@@ -454,7 +454,9 @@ removes this artifact cache together with per-file facts.
   entry as a base-evidence scope note, not as a failure or degradation of a
   current `preWrite` or `postWrite` block. Counts labelled as current analysis
   blind zones exclude this scope-only entry; the raw manifest remains the
-  authoritative complete list.
+  authoritative complete list. `audit-summary.latest.md` must also suppress
+  measured cues derived from unavailable or stale base artifacts; lifecycle
+  command evidence and the base-evidence scope note remain visible.
   The command may reuse strict per-file OXC facts, but it must discover the
   current scoped file set and rebuild every compact symbol, topology,
   type-escape, inventory, and summary projection on every invocation. A cache

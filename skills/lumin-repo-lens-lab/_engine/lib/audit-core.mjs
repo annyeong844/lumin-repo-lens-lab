@@ -34,6 +34,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'manifest-root-with-evidence: missing --input <path|->',
   ],
   [
+    ['manifest-evidence-refresh'],
+    'manifest-evidence-refresh: missing --root <repo>',
+  ],
+  [
     ['manifest-evidence-refresh-with-reads'],
     'manifest-evidence-refresh-with-reads: missing --root <repo>',
   ],
@@ -1223,6 +1227,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         {
           recordId: 'src/consumer.ts#6',
           consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          resolvedFile: path.join(rootDir, 'src', 'style.css'),
           fromSpec: './style.css',
           kind: 'import-side-effect',
           resolverStage: 'non-source-asset',
@@ -2016,6 +2021,12 @@ function resultPayloadMatchesProbe(json, probe) {
       json.branchCounts?.sfcScriptSrcReachability === 1 &&
       json.branchCounts?.directConsumer === 1 &&
       json.branchCounts?.broadNamespace === 2 &&
+      json.nonSourceAssetRecordIds?.includes('src/consumer.ts#6') &&
+      json.nonSourceAssetRecordTargets?.some((entry) =>
+        entry?.recordId === 'src/consumer.ts#6' &&
+        entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/style.css')
+      ) &&
+      json.generatedVirtualRecordIds?.includes('src/consumer.ts#3') &&
       json.resolvedRecordTargets?.filter((entry) =>
         entry?.recordId === 'src/consumer.ts#0' &&
         entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/dep.ts')

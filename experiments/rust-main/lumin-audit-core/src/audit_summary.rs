@@ -795,6 +795,10 @@ fn type_escape_total(discipline: &Value) -> i64 {
 }
 
 fn measured_cue_lines(request: &AuditSummaryRenderRequest) -> Vec<String> {
+    if base_evidence_not_refreshed(&request.manifest) {
+        return vec!["- Lifecycle scope: base audit not refreshed; this limits base-audit absence and freshness claims but does not degrade current lifecycle evidence.".to_string()];
+    }
+
     let mut lines = Vec::new();
 
     if get(&request.topology, "summary").is_some()
@@ -925,9 +929,6 @@ fn measured_cue_lines(request: &AuditSummaryRenderRequest) -> Vec<String> {
     }
 
     let blind_zones = arr(get(&request.manifest, "blindZones"));
-    if base_evidence_not_refreshed(&request.manifest) {
-        lines.push("- Lifecycle scope: base audit not refreshed; this limits base-audit absence and freshness claims but does not degrade current lifecycle evidence.".to_string());
-    }
     let analysis_blind_zone_count = blind_zones
         .iter()
         .filter(|zone| get(zone, "area").and_then(Value::as_str) != Some("base-audit"))
