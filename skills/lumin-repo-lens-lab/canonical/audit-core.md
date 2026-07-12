@@ -234,8 +234,10 @@ failed record conversion is not a resolver fallback lane and must hard-stop the
 producer.
 
 The strict v2 cutover is atomic. There is no v1 adapter or dual-schema window.
-The runtime bridge contract is `audit-core-js-runtime-bridge.v38` and requires
-`symbolGraphStrictRequestV2`, `sourceUseAssemblyDerivedReExportMaps`, and
+The current runtime bridge contract version and required feature set are owned
+by `_engine/lib/audit-core.mjs` and the Rust runtime-contract command. The strict
+contract requires `symbolGraphStrictRequestV2`,
+`sourceUseAssemblyDerivedReExportMaps`, and
 `sourceUseAssemblyTerminalRecordOutcomes`; an
 older helper or a helper missing either feature is rejected before execution.
 The contract probe must prove namespace-member fan-in through a re-export record
@@ -302,6 +304,11 @@ contract version and required feature set match the bridge source. Adding a
 required feature is a contract change even when the CLI schema remains
 backward-compatible. That change must bump the bridge contract version in the
 JS resolver, Rust runtime contract, package builder, and contract tests.
+
+`_engine/lib/audit-core.mjs` is the single JS owner of runtime-contract validation and
+the executable result-output fixture probe. `scripts/build-skill.mjs` must call
+that owner before copying the current-platform helper; it must not maintain a
+second subcommand list, feature list, fixture builder, or payload matcher.
 
 Every checked-in platform binary advertised by
 `_engine/bin/audit-core-platforms.json` must be rebuilt from that same contract
