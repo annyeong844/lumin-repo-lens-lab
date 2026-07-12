@@ -94,9 +94,10 @@ For a normal fresh JS/TS run, verify `preWrite.rustEvidencePath` and
 not a successful fresh run; follow `references/write-gate-runtime.md` instead
 of repeating a legacy full scan or silently using stale artifacts.
 
-In parallel work, the main controller runs one pre-write for the combined wave
-intent and one post-write after all workers and background repository-scale
-commands finish. Subagents must not launch overlapping write-gate scans.
+In parallel work, the main controller runs one pair per same-language evidence
+owner. It preserves the complete intent transport, including `language` and
+`refactorSources`, and runs post-write after workers finish but before broad
+tests, builds, or generators. Subagents must not launch overlapping scans.
 
 Planned file paths may be grounded `NEW_FILE` and still carry
 `DOMAIN_CLUSTER_DETECTED` when the same directory already has a matching

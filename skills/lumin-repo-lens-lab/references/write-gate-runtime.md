@@ -78,11 +78,25 @@ deliberate cold measurement or cache-compatibility diagnosis.
 The main controller owns the write-gate pair. Subagents and parallel workers do
 not launch their own pre-write or post-write commands.
 
-Before a parallel work wave, the controller collects the union of planned
-names, shapes, files, dependencies, and type escapes from every worker. It runs
-one pre-write for that combined intent and gives every worker the same
-invocation-specific advisory. After all workers finish and all background
-test/build commands have exited, the controller runs one matching post-write.
+Partition planned work by evidence owner before creating a wave. A JS/TS wave
+and a Rust wave are separate, non-overlapping transactions because one intent
+has one top-level `language` selector and one pre-write owner. Do not combine
+them into a mixed-language parallel wave. An all-Rust intent must preserve
+`language: "rust"`; an explicit JS/TS selector remains `language: "js-ts"`.
+
+Within one same-owner wave, merge the complete checked intent transport from
+every worker, not only the five required arrays. This includes `language`,
+`names` and their declarations, `shapes`, `files`, `dependencies`,
+`plannedTypeEscapes`, `refactorSources`, and any supported transport metadata.
+Run one pre-write for that merged intent and give every worker in the wave the
+same invocation-specific advisory.
+
+After all workers finish, run the matching post-write before starting broad
+tests, builds, generators, installs, or another audit. A generator that creates
+source-like files inside the scan range would otherwise appear as
+`fileDelta.unexpectedNew`. If generated outputs are intentionally part of the
+change, declare them in `intent.files` or apply an existing repository-owned
+scan exclusion; do not invent a timing-only exclusion.
 
 If a later worker needs files or intent lanes outside that transaction, finish
 or stop the current wave and begin a new write-gate pair. Do not start an
