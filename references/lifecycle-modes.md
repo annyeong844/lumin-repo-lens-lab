@@ -49,13 +49,20 @@ examples. Missing top-level arrays default to `[]` with an
 
 Pre-write is advisory. It informs the edit; it does not veto the edit.
 When `--pre-write` is the only lifecycle mode requested through the
-orchestrator, it does not run the base quick audit first. Its cold-cache
-preflight is intent-shaped: name lookups build `symbols.json`,
-dependency package lookups build `symbols.json` for static package-import
-consumer counts, file lookups build `symbols.json`, `topology.json`, and
-`triage.json`, and shape lookups build `shape-index.json`. With
-`--no-fresh-audit`, missing dependency import counts are reported as
-unavailable rather than `0 observed consumers`.
+orchestrator, it does not run the base quick audit first. For a normal fresh
+JS/TS run, the JS lifecycle owner calls Rust `js-ts-pre-write-evidence` once to
+discover and parse the scoped files and return compact name, file,
+dependency-consumer, topology, and type-escape evidence. It does not build or
+load repository-sized `symbols.json`, `topology.json`, or `triage.json` for
+those lanes. The invocation-specific advisory must contain
+`preWrite.rustEvidencePath`; read `references/write-gate-runtime.md` for the
+operational verification and stale-runtime procedure.
+
+Exact JS/TS shape requests, function-signature requests, and inline refactor
+patterns still materialize their checked legacy artifacts when requested until
+the corresponding Rust parity migrations land. With `--no-fresh-audit`, the
+caller explicitly opts into existing compatible artifacts; missing evidence is
+reported unavailable rather than converted to a clean absence claim.
 `shape-index.json` is JS/TS shape evidence. Rust shape, signature, clone, and
 file lookup evidence comes from the Rust pre-write artifact when the intent
 declares `"language": "rust"`.

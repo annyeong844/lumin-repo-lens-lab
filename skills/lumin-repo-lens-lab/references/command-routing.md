@@ -287,6 +287,13 @@ If `--intent` is provided, pass the arguments through. Run:
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --pre-write-engine auto $ARGUMENTS
 ```
 
+Read `references/write-gate-runtime.md` before invoking this mode. The JS
+lifecycle owner uses Rust `js-ts-pre-write-evidence` for a normal fresh JS/TS
+run. Verify the invocation-specific advisory contains
+`preWrite.rustEvidencePath` and a complete evidence summary before coding.
+Missing compact Rust evidence on that route is a stale/incompatible runtime,
+not permission to repeat a legacy full scan or use old artifacts.
+
 The auto route keeps JS/TS as the default owner when the intent omits
 `language`, and routes to `lumin-rust-analyzer pre-write` only when the intent
 JSON explicitly contains `"language": "rust"`. Do not infer Rust from filenames,
@@ -359,6 +366,11 @@ before closing the task. Use plain language first: "one new any-like
 escape appeared" or "one unplanned file appeared" is better than a raw
 delta dump. Do not say the whole change is clean unless every relevant
 lane you checked supports that claim; name the remaining limits.
+
+Measure post-write from command start to process exit. Do not include the human
+editing interval after pre-write in its runtime. For a slow or degraded pair,
+follow `references/write-gate-runtime.md` and report the exact advisory, delta,
+entrypoint, platform, and evidence/cache summaries.
 
 Rust pre-write advisories are valid inputs here, but Rust has no TS `any`
 equivalent. In that route, post-write's language-neutral file delta remains
