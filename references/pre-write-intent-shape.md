@@ -42,12 +42,15 @@ surface. It is not passed through to `lumin-rust-analyzer pre-write`.
 | `files`              | Planned file paths, relative to the `--root` passed to pre-write. Pre-write checks exact paths and sibling domain clusters by basename prefix or repeated domain token.                                                                                                                                                                                                                                                                                                                         |
 | `dependencies`       | Package dependencies the change expects to import, such as `date-fns` or `@scope/pkg`. This lane checks package.json declaration buckets plus observed static package-import consumers. Use `files` or `names` for internal modules, relative imports, or API surfaces. Entries may be strings or `{ "specifier": "...", "why": "..." }`.                                                                                                                                                       |
 | `plannedTypeEscapes` | Intentional `any`, `as any`, `as unknown as T`, JSDoc `{any}`, `@ts-ignore`, or lint-disable escapes planned before writing.                                                                                                                                                                                                                                                                                                                                                                    |
+| `refactorSources`    | Optional source hints for inline extraction review. Preserve and union these entries when aggregating a same-owner parallel wave; dropping them can suppress repeated inline-pattern evidence.                                                                                                                                                                                                                                                                                                  |
 
 Structured `names` and `dependencies` normalize to string arrays for
 lookup compatibility. Their `why` fields are preserved in the advisory
 JSON as self-declaration evidence. Structured `names` also preserve
 `ownerFile`; if absent, `file` or then `targetFile` fill the downstream
 `ownerFile` locality field while the original alias remains visible.
+`refactorSources` is optional rather than one of the five defaulted arrays, but
+it remains part of the checked transport whenever present.
 
 ## Example
 

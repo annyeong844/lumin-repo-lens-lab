@@ -73,6 +73,41 @@ from the current worktree and identified from its exact bytes; reusable parse
 facts do not make the inventory stale. Clear or disable the cache only for a
 deliberate cold measurement or cache-compatibility diagnosis.
 
+## Parallel Agent Ownership
+
+The main controller owns the write-gate pair. Subagents and parallel workers do
+not launch their own pre-write or post-write commands.
+
+Partition planned work by evidence owner before creating a wave. A JS/TS wave
+and a Rust wave are separate, non-overlapping transactions because one intent
+has one top-level `language` selector and one pre-write owner. Do not combine
+them into a mixed-language parallel wave. An all-Rust intent must preserve
+`language: "rust"`; an explicit JS/TS selector remains `language: "js-ts"`.
+
+Within one same-owner wave, merge the complete checked intent transport from
+every worker, not only the five required arrays. This includes `language`,
+`names` and their declarations, `shapes`, `files`, `dependencies`,
+`plannedTypeEscapes`, `refactorSources`, and any supported transport metadata.
+Run one pre-write for that merged intent and give every worker in the wave the
+same invocation-specific advisory.
+
+After all workers finish, run the matching post-write before starting broad
+tests, builds, generators, installs, or another audit. A generator that creates
+source-like files inside the scan range would otherwise appear as
+`fileDelta.unexpectedNew`. If generated outputs are intentionally part of the
+change, declare them in `intent.files` or apply an existing repository-owned
+scan exclusion; do not invent a timing-only exclusion.
+
+If a later worker needs files or intent lanes outside that transaction, finish
+or stop the current wave and begin a new write-gate pair. Do not start an
+overlapping pre-write against the same root/output/cache.
+
+Treat pre-write and post-write as repository-scale I/O jobs. Do not overlap
+them with another Lumin audit, package install, TypeScript build, Cargo build,
+or broad test process over the same checkout. This scheduling rule is required
+on WSL mounted worktrees, where competing directory walks and content reads can
+turn a roughly ten-second compact scan into a minute-scale run.
+
 ## Timing Interpretation
 
 Measure each command from process start to process exit. Time between the
@@ -127,6 +162,8 @@ For post-write, also verify `baselineStatus`, `scanRangeParity`,
 - Do not raise a timeout, cap the repository, mute evidence, or switch to a JS
   fallback to make the command finish.
 - Do not call the pair slow based on the human editing interval.
+- Do not let each subagent run its own write-gate pair or overlap the gate with
+  another repository-scale reader.
 - Do not claim clean evidence when Rust evidence is absent or incomplete.
 
 ## Diagnostic Handoff
