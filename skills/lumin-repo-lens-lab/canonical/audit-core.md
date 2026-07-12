@@ -461,10 +461,19 @@ removes this artifact cache together with per-file facts.
   cache root. On an x64 WSL-mounted Windows worktree, the JS bridge may route
   this command through the exact-contract packaged Windows helper so discovery,
   worktree reads, and hashing use native NTFS. That transport optimization must
-  not change the current-worktree-byte identity or artifact semantics.
+  not change the current-worktree-byte identity or artifact semantics. Host
+  route unavailability is distinct from an executed helper returning null or
+  malformed evidence: only the former may select the Linux helper. With
+  incremental reuse disabled, host result transport uses a shared Windows temp
+  directory and must not create or require the configured cache root. Explicit
+  source requests are canonicalized at the request boundary and rejected when
+  they escape the canonical root. Warm cache hits release their worktree byte
+  buffers immediately after hashing and identity comparison.
 - Deployable audit-core platform binaries are rebuilt with Cargo's release
   profile before packaging. Debug-profile helpers remain valid for source
-  development but must not be shipped as the runtime performance path.
+  development but must not be shipped as the runtime performance path. Every
+  packaged platform helper, including a Windows PE selected from WSL, carries
+  executable mode so Linux-hosted package installs can probe and run it.
 - Audit-core may own orchestration routing separately from execution. The plan
   is declarative profile/lifecycle evidence; `lifecycle_request.rs` owns only
   request-level hard-stop blocks before intent reading or child execution;

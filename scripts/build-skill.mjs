@@ -28,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUT = path.join(ROOT, 'skills', 'lumin-repo-lens-lab');
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v46';
+const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v47';
 const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -44,6 +44,7 @@ const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsPreWriteDiscovery',
   'jsTsPreWriteIncrementalCache',
   'jsTsPreWriteExactWorktreeByteCache',
+  'jsTsPreWriteCanonicalSourceContainment',
   'sourceUseAssembly',
   'sourceUseAssemblyResolvedRecordTargets',
   'sourceUseAssemblyExternalRecordIds',
@@ -2371,10 +2372,8 @@ function copyDirRel(srcRel, destRel, outDir) {
   cpSync(src, dest, { recursive: true });
 }
 
-function ensurePackagedAuditCoreMode(dest, platform) {
-  if (platform !== 'win32') {
-    chmodSync(dest, 0o755);
-  }
+function ensurePackagedAuditCoreMode(dest) {
+  chmodSync(dest, 0o755);
 }
 
 function copyAuditCoreSourceFallback(outDir) {
@@ -2774,7 +2773,7 @@ function copyAuditCoreBinaries(outDir) {
     );
     ensureDir(dest);
     cpSync(source.path, dest);
-    ensurePackagedAuditCoreMode(dest, source.platform);
+    ensurePackagedAuditCoreMode(dest);
   }
   writeAuditCorePlatformManifest(outDir, sources);
   return sources;

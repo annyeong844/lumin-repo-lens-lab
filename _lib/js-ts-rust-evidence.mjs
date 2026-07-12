@@ -92,9 +92,11 @@ export function collectRustJsTsEvidence({
   };
   const args = ['js-ts-pre-write-evidence', '--input', '-'];
   const windowsRoot = wslPathToWindowsHost(request.root);
-  const windowsCacheRoot = wslPathToWindowsHost(request.incremental.cacheRoot);
-  let response = null;
-  if (windowsRoot && windowsCacheRoot) {
+  const windowsCacheRoot = request.incremental.enabled
+    ? wslPathToWindowsHost(request.incremental.cacheRoot)
+    : null;
+  let response;
+  if (windowsRoot && (!request.incremental.enabled || windowsCacheRoot)) {
     response = runWindowsHostAuditCoreJsonResultFile(
       args,
       label,
@@ -104,13 +106,15 @@ export function collectRustJsTsEvidence({
           root: windowsRoot,
           incremental: {
             ...request.incremental,
-            cacheRoot: windowsCacheRoot,
+            ...(request.incremental.enabled ? { cacheRoot: windowsCacheRoot } : {}),
           },
         }),
-        resultTempRoot: request.incremental.cacheRoot,
+        ...(request.incremental.enabled
+          ? { resultTempRoot: request.incremental.cacheRoot }
+          : {}),
       },
     );
-    if (response) {
+    if (isObject(response)) {
       response.root = request.root;
       if (isObject(response.anyInventory?.meta)) {
         response.anyInventory.meta.root = request.root;
@@ -128,10 +132,12 @@ export function collectRustJsTsEvidence({
       }
     }
   }
-  response ??= runAuditCoreJsonResultFile(
-    args,
-    label,
-    { input: JSON.stringify(request) },
-  );
+  if (response === undefined) {
+    response = runAuditCoreJsonResultFile(
+      args,
+      label,
+      { input: JSON.stringify(request) },
+    );
+  }
   return validateResponse(response, evidenceArtifact, anyInventoryArtifact);
 }

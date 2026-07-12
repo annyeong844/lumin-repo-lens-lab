@@ -14,6 +14,7 @@ import { symbolGraphContractProbeRequest } from './audit-core-contract-fixtures.
 let auditCoreAutoBuildFailure = null;
 let auditCoreBinaryCache = null;
 const auditCoreContractCache = new Map();
+let windowsHostTempRootCache;
 
 const AUDIT_CORE_CONTRACT_PROBES = [
   [
@@ -226,7 +227,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v46';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v47';
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -426,6 +427,7 @@ function auditCoreBinaryReportsCurrentContract(command) {
   if (contract?.features?.jsTsPreWriteDiscovery !== true) return false;
   if (contract?.features?.jsTsPreWriteIncrementalCache !== true) return false;
   if (contract?.features?.jsTsPreWriteExactWorktreeByteCache !== true) return false;
+  if (contract?.features?.jsTsPreWriteCanonicalSourceContainment !== true) return false;
   if (contract?.features?.sourceUseAssembly !== true) return false;
   if (contract?.features?.sourceUseAssemblyResolvedRecordTargets !== true) return false;
   if (contract?.features?.sourceUseAssemblyExternalRecordIds !== true) return false;
@@ -2357,20 +2359,56 @@ function windowsHostAuditCoreBinary() {
   return null;
 }
 
+function windowsHostTempRoot() {
+  if (windowsHostTempRootCache !== undefined) return windowsHostTempRootCache;
+  const commands = [
+    process.env.COMSPEC
+      ? windowsHostPathToWsl(process.env.COMSPEC) ?? process.env.COMSPEC
+      : null,
+    '/mnt/c/Windows/System32/cmd.exe',
+    'cmd.exe',
+  ].filter(Boolean);
+  for (const command of [...new Set(commands)]) {
+    const result = spawnSync(command, ['/d', '/s', '/c', 'echo %TEMP%'], {
+      encoding: 'utf8',
+    });
+    if (result.error || result.status !== 0) continue;
+    const windowsRoot = (result.stdout ?? '').trim();
+    const wslRoot = windowsHostPathToWsl(windowsRoot);
+    if (!wslRoot) continue;
+    windowsHostTempRootCache = { windowsRoot, wslRoot };
+    return windowsHostTempRootCache;
+  }
+  return null;
+}
+
 export function runWindowsHostAuditCoreJsonResultFile(
   args,
   label,
   { input, resultTempRoot } = {},
 ) {
   const command = windowsHostAuditCoreBinary();
-  if (!command) return null;
-  const windowsResultRoot = wslPathToWindowsHost(resultTempRoot);
-  if (!windowsResultRoot) return null;
+  if (!command) return undefined;
+  let sharedResultRoot = resultTempRoot;
+  let windowsResultRoot = wslPathToWindowsHost(sharedResultRoot);
+  if (!windowsResultRoot && resultTempRoot === undefined) {
+    const hostTemp = windowsHostTempRoot();
+    if (!hostTemp) return undefined;
+    sharedResultRoot = hostTemp.wslRoot;
+    windowsResultRoot = hostTemp.windowsRoot;
+  }
+  if (!windowsResultRoot) return undefined;
 
-  mkdirSync(resultTempRoot, { recursive: true });
-  const tempDir = mkdtempSync(path.join(resultTempRoot, 'lumin-audit-core-host-'));
+  let tempDir;
+  try {
+    mkdirSync(sharedResultRoot, { recursive: true });
+    tempDir = mkdtempSync(path.join(sharedResultRoot, 'lumin-audit-core-host-'));
+  } catch (error) {
+    if (resultTempRoot === undefined) return undefined;
+    throw error;
+  }
   const resultPath = path.join(tempDir, 'result.json');
-  const relativeResultPath = path.relative(resultTempRoot, resultPath).replaceAll('\\', '/');
+  const relativeResultPath = path.relative(sharedResultRoot, resultPath).replaceAll('\\', '/');
   const windowsResultPath = `${windowsResultRoot.replace(/\/$/, '')}/${relativeResultPath}`;
   try {
     const childOptions = {
@@ -2382,7 +2420,11 @@ export function runWindowsHostAuditCoreJsonResultFile(
     if (!existsSync(resultPath)) {
       throw new Error(`${label}: Windows host audit-core did not write ${resultPath}`);
     }
-    return JSON.parse(readFileSync(resultPath, 'utf8'));
+    const result = JSON.parse(readFileSync(resultPath, 'utf8'));
+    if (result === null) {
+      throw new Error(`${label}: Windows host audit-core wrote JSON null`);
+    }
+    return result;
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

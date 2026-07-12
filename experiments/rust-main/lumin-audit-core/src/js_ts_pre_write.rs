@@ -9,6 +9,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use cache::{extract_with_cache, JsTsPreWriteIncrementalRequest};
@@ -102,6 +103,8 @@ pub fn build_js_ts_pre_write_evidence(request: JsTsPreWriteEvidenceRequest) -> R
     let dependency_roots = dependency_roots.into_iter().collect::<BTreeSet<_>>();
     if discover_files {
         files = discover_js_ts_source_files(&root, include_tests, &excludes)?;
+    } else {
+        canonicalize_explicit_source_files(&root, &mut files)?;
     }
 
     let path_map = files
@@ -237,6 +240,34 @@ fn validate_request(request: &JsTsPreWriteEvidenceRequest) -> Result<()> {
                 file.file_path.display()
             );
         }
+    }
+    Ok(())
+}
+
+fn canonicalize_explicit_source_files(
+    root: &Path,
+    files: &mut [JsTsPreWriteSourceFile],
+) -> Result<()> {
+    let canonical_root = fs::canonicalize(root).with_context(|| {
+        format!(
+            "js-ts-pre-write-evidence: failed to canonicalize root {}",
+            root.display()
+        )
+    })?;
+    for file in files {
+        let canonical_file = fs::canonicalize(&file.file_path).with_context(|| {
+            format!(
+                "js-ts-pre-write-evidence: failed to read required source {}",
+                file.artifact_file_path
+            )
+        })?;
+        if !canonical_file.starts_with(&canonical_root) {
+            bail!(
+                "js-ts-pre-write-evidence: filePath must stay inside root: {}",
+                file.file_path.display()
+            );
+        }
+        file.file_path = canonical_file;
     }
     Ok(())
 }
@@ -867,6 +898,43 @@ mod tests {
         let result = build_js_ts_pre_write_evidence(request);
         let Err(error) = result else {
             bail!("outside path did not fail");
+        };
+        assert!(error.to_string().contains("inside root"));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_lexically_nested_path_that_canonicalizes_outside_root() -> Result<()> {
+        let temp = tempdir()?;
+        let root = temp.path().join("repo");
+        fs::create_dir_all(&root)?;
+        fs::write(
+            temp.path().join("outside.ts"),
+            "export const outside = true;\n",
+        )?;
+        let request = JsTsPreWriteEvidenceRequest {
+            schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
+            root: root.clone(),
+            evidence_artifact: "pre-write-evidence.PROBE.json".to_string(),
+            any_inventory_artifact: "any-inventory.pre.PROBE.json".to_string(),
+            generated: "2026-07-11T00:00:00.000Z".to_string(),
+            include_tests: true,
+            excludes: Vec::new(),
+            dependency_roots: Vec::new(),
+            discover_files: false,
+            files: vec![JsTsPreWriteSourceFile {
+                file_path: root.join("../outside.ts"),
+                artifact_file_path: "outside.ts".to_string(),
+            }],
+            incremental: JsTsPreWriteIncrementalRequest {
+                enabled: true,
+                cache_root: Some(temp.path().join("cache")),
+                clear: false,
+            },
+        };
+        let result = build_js_ts_pre_write_evidence(request);
+        let Err(error) = result else {
+            bail!("canonical path escape did not fail");
         };
         assert!(error.to_string().contains("inside root"));
         Ok(())

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const CACHE_PROFILE_VERSION: &str =
-    "js-ts-pre-write-oxc-facts.v3+oxc-0.139.0+audit-core-bridge-v46";
+    "js-ts-pre-write-oxc-facts.v4+oxc-0.139.0+audit-core-bridge-v47";
 const CACHE_FILE_NAME: &str = "facts.json";
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -68,13 +68,6 @@ struct CacheFileRef<'a> {
 struct CacheEntryRef<'a> {
     identity: &'a FileIdentity,
     result: &'a JsTsExtractFileResult,
-}
-
-struct CurrentFile {
-    absolute_path: String,
-    artifact_path: String,
-    identity: FileIdentity,
-    bytes: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -151,29 +144,9 @@ pub(super) fn extract_with_cache(
         write_status: "pending".to_string(),
         ..CacheObservations::default()
     };
-    let mut current = Vec::with_capacity(files.len());
-    for file in files {
-        let artifact_path = normalize_slashes(&file.artifact_file_path);
-        let absolute_path = file.file_path.to_string_lossy().to_string();
-        let bytes = fs::read(&file.file_path).with_context(|| {
-            format!("js-ts-pre-write-evidence: failed to read required source {artifact_path}")
-        })?;
-        let identity = FileIdentity {
-            mode: "sha256".to_string(),
-            value: sha256_bytes(&bytes),
-        };
-        observations.content_hash_files += 1;
-        current.push(CurrentFile {
-            absolute_path,
-            artifact_path,
-            identity,
-            bytes,
-        });
-    }
-
-    let current_paths = current
+    let current_paths = files
         .iter()
-        .map(|file| file.artifact_path.as_str())
+        .map(|file| normalize_slashes(&file.artifact_file_path))
         .collect::<BTreeSet<_>>();
     observations.dropped_files = prior
         .as_ref()
@@ -207,38 +180,41 @@ pub(super) fn extract_with_cache(
     let mut pending = Vec::new();
     let mut identities = BTreeMap::new();
     let mut absolute_to_artifact = BTreeMap::new();
-    for file in current {
-        let prior_entry = prior_entries.remove(&file.artifact_path);
+    for file in files {
+        let artifact_path = normalize_slashes(&file.artifact_file_path);
+        let absolute_path = file.file_path.to_string_lossy().to_string();
+        let bytes = fs::read(&file.file_path).with_context(|| {
+            format!("js-ts-pre-write-evidence: failed to read required source {artifact_path}")
+        })?;
+        let identity = FileIdentity {
+            mode: "sha256".to_string(),
+            value: sha256_bytes(&bytes),
+        };
+        observations.content_hash_files += 1;
+        let prior_entry = prior_entries.remove(&artifact_path);
         let had_prior_entry = prior_entry.is_some();
         let reusable = prior_entry.filter(|entry| {
-            entry.identity == file.identity
-                && normalize_slashes(&entry.result.file_path)
-                    == normalize_slashes(&file.absolute_path)
+            entry.identity == identity
+                && normalize_slashes(&entry.result.file_path) == normalize_slashes(&absolute_path)
         });
-        absolute_to_artifact.insert(
-            normalize_slashes(&file.absolute_path),
-            file.artifact_path.clone(),
-        );
+        absolute_to_artifact.insert(normalize_slashes(&absolute_path), artifact_path.clone());
         if let Some(entry) = reusable {
             observations.reused_files += 1;
-            identities.insert(file.artifact_path.clone(), file.identity);
-            results.insert(file.artifact_path, entry.result);
+            identities.insert(artifact_path.clone(), identity);
+            results.insert(artifact_path, entry.result);
             continue;
         }
         observations.changed_files += 1;
         if compatible && had_prior_entry {
             observations.invalidated_files += 1;
         }
-        identities.insert(file.artifact_path.clone(), file.identity);
-        let source = String::from_utf8(file.bytes).with_context(|| {
-            format!(
-                "js-ts-pre-write-evidence: required source is not UTF-8: {}",
-                file.artifact_path
-            )
+        identities.insert(artifact_path.clone(), identity);
+        let source = String::from_utf8(bytes).with_context(|| {
+            format!("js-ts-pre-write-evidence: required source is not UTF-8: {artifact_path}")
         })?;
         pending.push(JsTsExtractInputFile {
-            file_path: file.absolute_path,
-            artifact_file_path: Some(file.artifact_path),
+            file_path: absolute_path,
+            artifact_file_path: Some(artifact_path),
             source: Some(source),
         });
     }
