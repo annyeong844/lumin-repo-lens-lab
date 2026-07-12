@@ -231,7 +231,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v47';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v48';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -248,6 +248,8 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsPreWriteIncrementalCache',
   'jsTsPreWriteExactWorktreeByteCache',
   'jsTsPreWriteCanonicalSourceContainment',
+  'jsTsPreWriteSingleFlight',
+  'jsTsPreWritePhaseTiming',
   'sourceUseAssembly',
   'sourceUseAssemblyResolvedRecordTargets',
   'sourceUseAssemblyExternalRecordIds',
@@ -1765,6 +1767,15 @@ function resultPayloadMatchesProbe(json, probe) {
   }
   if (probe.subcommand === 'js-ts-pre-write-evidence') {
     return json.schemaVersion === 'lumin-js-ts-pre-write-evidence-response.v1' &&
+      json.summary?.runtime?.singleFlight?.status === 'acquired' &&
+      json.summary?.runtime?.singleFlight?.scope === 'canonical-root' &&
+      typeof json.summary?.runtime?.timing?.lockWaitMs === 'number' &&
+      typeof json.summary?.runtime?.timing?.discoveryMs === 'number' &&
+      typeof json.summary?.runtime?.timing?.sourceReadHashMs === 'number' &&
+      typeof json.summary?.runtime?.timing?.parseMs === 'number' &&
+      typeof json.summary?.runtime?.timing?.cacheWriteMs === 'number' &&
+      typeof json.summary?.runtime?.timing?.projectionMs === 'number' &&
+      typeof json.summary?.runtime?.timing?.scanHeldMs === 'number' &&
       json.symbols?.meta?.supports?.identityFanIn === true &&
       json.symbols?.meta?.supports?.dependencyImportConsumers === true &&
       json.symbols?.defIndex?.['src/dep.ts']?.api?.name === 'api' &&

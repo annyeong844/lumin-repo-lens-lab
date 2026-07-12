@@ -562,6 +562,11 @@ fn cli_js_ts_pre_write_writes_shared_evidence_to_result_file() -> Result<()> {
         result["anyInventory"]["typeEscapes"][0]["escapeKind"],
         "as-any"
     );
+    assert_eq!(
+        result["summary"]["runtime"]["singleFlight"]["status"],
+        "acquired"
+    );
+    assert!(result["summary"]["runtime"]["timing"]["scanHeldMs"].is_u64());
     Ok(())
 }
 

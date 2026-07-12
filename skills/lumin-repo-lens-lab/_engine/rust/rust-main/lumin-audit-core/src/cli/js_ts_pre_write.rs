@@ -6,7 +6,7 @@ use super::io_support::{
 };
 use super::usage::USAGE;
 use lumin_audit_core::js_ts_pre_write::{
-    build_js_ts_pre_write_evidence, JsTsPreWriteEvidenceRequest,
+    start_js_ts_pre_write_evidence, JsTsPreWriteEvidenceRequest,
 };
 
 pub(super) fn run_js_ts_pre_write_evidence(args: Vec<String>) -> Result<()> {
@@ -25,10 +25,10 @@ pub(super) fn run_js_ts_pre_write_evidence(args: Vec<String>) -> Result<()> {
     let json = read_json_input(&input, "js-ts-pre-write-evidence")?;
     let request = serde_json::from_value::<JsTsPreWriteEvidenceRequest>(json)
         .context("js-ts-pre-write-evidence: invalid request shape")?;
-    let evidence = build_js_ts_pre_write_evidence(request)?;
+    let run = start_js_ts_pre_write_evidence(request)?;
     if let Some(path) = result_output {
-        write_json_file(&path, &evidence)
+        write_json_file(&path, run.evidence())
     } else {
-        write_stdout_json(&evidence)
+        write_stdout_json(run.evidence())
     }
 }

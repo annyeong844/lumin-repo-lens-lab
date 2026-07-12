@@ -130,6 +130,23 @@ This is an observation, not a universal SLA. Historical legacy JS full-scan
 pre-write runs over the same class of repository took 149-280 seconds and did
 not contain `preWrite.rustEvidencePath`.
 
+Fresh JS/TS evidence publishes contention and phase timings at
+`preWrite.rustEvidence.summary.runtime` and mirrors them under
+`anyInventory.meta.incremental`:
+
+- `singleFlight.waitMs` / `timing.lockWaitMs` is time spent waiting for another
+  current scan of the same canonical root to finish. A non-zero value proves
+  overlapping callers were serialized; it is not parser time.
+- `discoveryMs`, `sourceReadHashMs`, `parseMs`, `cacheWriteMs`, and
+  `projectionMs` identify the owned scan phase that consumed time.
+- `scanHeldMs` is the current invocation's admitted scan time after lock
+  acquisition. `totalRuntimeMs` adds lock wait to that admitted scan time.
+
+If process wall time is much larger than `totalRuntimeMs`, inspect wrapper
+startup, binary contract probes, lifecycle rendering, and result transport.
+If `lockWaitMs` is large, fix caller scheduling or the competing repository
+reader; do not attribute the wait to OXC or weaken evidence collection.
+
 ## Diagnosis Order
 
 1. Record the exact command, checkout commit or package provenance, root,
