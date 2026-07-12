@@ -294,6 +294,11 @@ run. Verify the invocation-specific advisory contains
 Missing compact Rust evidence on that route is a stale/incompatible runtime,
 not permission to repeat a legacy full scan or use old artifacts.
 
+For parallel agent work, the main controller must aggregate the wave intent and
+run this mode once. Subagents do not invoke their own pre-write. Do not overlap
+the command with another audit, install, build, or broad test over the same
+checkout; read `references/write-gate-runtime.md` for the transaction rule.
+
 The auto route keeps JS/TS as the default owner when the intent omits
 `language`, and routes to `lumin-rust-analyzer pre-write` only when the intent
 JSON explicitly contains `"language": "rust"`. Do not infer Rust from filenames,

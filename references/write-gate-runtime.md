@@ -73,6 +73,27 @@ from the current worktree and identified from its exact bytes; reusable parse
 facts do not make the inventory stale. Clear or disable the cache only for a
 deliberate cold measurement or cache-compatibility diagnosis.
 
+## Parallel Agent Ownership
+
+The main controller owns the write-gate pair. Subagents and parallel workers do
+not launch their own pre-write or post-write commands.
+
+Before a parallel work wave, the controller collects the union of planned
+names, shapes, files, dependencies, and type escapes from every worker. It runs
+one pre-write for that combined intent and gives every worker the same
+invocation-specific advisory. After all workers finish and all background
+test/build commands have exited, the controller runs one matching post-write.
+
+If a later worker needs files or intent lanes outside that transaction, finish
+or stop the current wave and begin a new write-gate pair. Do not start an
+overlapping pre-write against the same root/output/cache.
+
+Treat pre-write and post-write as repository-scale I/O jobs. Do not overlap
+them with another Lumin audit, package install, TypeScript build, Cargo build,
+or broad test process over the same checkout. This scheduling rule is required
+on WSL mounted worktrees, where competing directory walks and content reads can
+turn a roughly ten-second compact scan into a minute-scale run.
+
 ## Timing Interpretation
 
 Measure each command from process start to process exit. Time between the
@@ -127,6 +148,8 @@ For post-write, also verify `baselineStatus`, `scanRangeParity`,
 - Do not raise a timeout, cap the repository, mute evidence, or switch to a JS
   fallback to make the command finish.
 - Do not call the pair slow based on the human editing interval.
+- Do not let each subagent run its own write-gate pair or overlap the gate with
+  another repository-scale reader.
 - Do not claim clean evidence when Rust evidence is absent or incomplete.
 
 ## Diagnostic Handoff
