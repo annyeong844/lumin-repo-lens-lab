@@ -60,6 +60,9 @@ This surface owns `/lumin-repo-lens-lab:pre-write` and
   contaminated reuse demotion, and post-write escape deltas.
 - Read `<SKILL_ROOT>/references/lifecycle-modes.md` when exact flags, exit codes, or
   artifact names matter.
+- Read `<SKILL_ROOT>/references/write-gate-runtime.md` before running or
+  diagnosing pre-write/post-write. It owns current Rust evidence verification,
+  cache use, timing interpretation, and stale-runtime handling.
 - Read `<SKILL_ROOT>/references/glossary.md` and
   `<SKILL_ROOT>/references/false-positive-index.md` when advisory output
   surfaces FP/tier terms that need explanation. The long FP case ledger
@@ -85,6 +88,11 @@ as `manifest.preWrite.advisoryPath` when run through the orchestrator.
 `pre-write-advisory.latest.json` is only a convenience pointer; use the
 explicit `pre-write-advisory.<invocationId>.json` path for post-write
 across session or task boundaries.
+
+For a normal fresh JS/TS run, verify `preWrite.rustEvidencePath` and
+`preWrite.rustEvidence.summary` before coding. Missing compact Rust evidence is
+not a successful fresh run; follow `references/write-gate-runtime.md` instead
+of repeating a legacy full scan or silently using stale artifacts.
 
 Planned file paths may be grounded `NEW_FILE` and still carry
 `DOMAIN_CLUSTER_DETECTED` when the same directory already has a matching
