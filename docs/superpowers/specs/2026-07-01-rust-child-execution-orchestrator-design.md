@@ -80,7 +80,7 @@ script entrypoint and arguments. Rust is the runner, not the producer.
 Add a CLI:
 
 ```text
-lumin-audit-core execute-base-plan --input <request.json|-> 
+lumin-audit-core execute-base-plan --input <request.json|->
 ```
 
 The request should include the current JS runner values that are not analysis

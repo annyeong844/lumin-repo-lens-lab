@@ -288,4 +288,3 @@ This slice is complete when:
 - Cargo tests cover the migrated producer behavior;
 - the checked Node wrapper test passes without restoring the 16-minute legacy
   umbrella as a default gate.
-

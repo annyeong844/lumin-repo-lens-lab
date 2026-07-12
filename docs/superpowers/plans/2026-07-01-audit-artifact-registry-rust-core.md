@@ -21,34 +21,34 @@ red/green TDD.
 
 Create:
 
-- `canonical/audit-core.md`  
+- `canonical/audit-core.md`
   Canonical owner map for `lumin-audit-core`.
-- `experiments/rust-main/lumin-audit-core/Cargo.toml`  
+- `experiments/rust-main/lumin-audit-core/Cargo.toml`
   New product-domain crate manifest.
-- `experiments/rust-main/lumin-audit-core/src/lib.rs`  
+- `experiments/rust-main/lumin-audit-core/src/lib.rs`
   Public library entrypoints.
-- `experiments/rust-main/lumin-audit-core/src/artifact_registry.rs`  
+- `experiments/rust-main/lumin-audit-core/src/artifact_registry.rs`
   Static/dynamic artifact registry and produced-artifact enumeration.
-- `experiments/rust-main/lumin-audit-core/src/rust_analysis.rs`  
+- `experiments/rust-main/lumin-audit-core/src/rust_analysis.rs`
   Typed Rust analyzer artifact summary projection.
-- `experiments/rust-main/lumin-audit-core/src/cli.rs`  
+- `experiments/rust-main/lumin-audit-core/src/cli.rs`
   CLI argument parsing and JSON command dispatch.
-- `experiments/rust-main/lumin-audit-core/src/main.rs`  
+- `experiments/rust-main/lumin-audit-core/src/main.rs`
   Thin binary entrypoint.
-- `experiments/rust-main/lumin-audit-core/tests/integration.rs`  
+- `experiments/rust-main/lumin-audit-core/tests/integration.rs`
   Product behavior tests for registry and Rust analyzer summary.
 
 Modify:
 
-- `experiments/Cargo.toml`  
+- `experiments/Cargo.toml`
   Add workspace member and workspace dependency for `lumin-audit-core`.
-- `scripts/build-skill.mjs`  
+- `scripts/build-skill.mjs`
   Add `audit-core.md` to `RUNTIME_CANON_FILES`.
-- `skills/lumin-repo-lens-lab/canonical/audit-core.md`  
+- `skills/lumin-repo-lens-lab/canonical/audit-core.md`
   Mirror canonical file after the package copy step or direct mirror update.
-- `_lib/audit-manifest.mjs`  
+- `_lib/audit-manifest.mjs`
   Later task only: delegate migrated behavior to Rust core while preserving public exports.
-- `skills/lumin-repo-lens-lab/_engine/lib/audit-manifest.mjs`  
+- `skills/lumin-repo-lens-lab/_engine/lib/audit-manifest.mjs`
   Mirror `_lib/audit-manifest.mjs`.
 
 Do not modify:

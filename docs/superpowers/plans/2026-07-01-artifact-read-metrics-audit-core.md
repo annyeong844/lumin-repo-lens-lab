@@ -918,4 +918,3 @@ before committing and confirm the only `lib.rs` line added for this task is
 - Dirty worktree safety: The plan explicitly preserves unrelated
   `pre_write_routing` work.
 - Placeholder scan: no TBD/TODO/fill-in placeholders remain.
-

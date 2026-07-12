@@ -138,4 +138,3 @@ Product behavior tests should prove:
 - phase sidecar reads still merge into an existing ordinary-read summary;
 - malformed request schema hard-stops;
 - the JS wrapper no longer computes the summary math itself.
-
