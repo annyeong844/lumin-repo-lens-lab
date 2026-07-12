@@ -441,6 +441,13 @@ removes this artifact cache together with per-file facts.
   row, result-file failure, or audit-core contract mismatch is a hard failure
   rather than a request to run the legacy JS extractor. Parser failures remain
   artifact-visible incomplete evidence and must prevent absence claims.
+- A lifecycle-only run keeps the `base-audit` / `scan-gap` entry in
+  `manifest.json.blindZones` because base-audit absence and freshness claims
+  are unavailable. Human summaries and terminal closeout must present that
+  entry as a base-evidence scope note, not as a failure or degradation of a
+  current `preWrite` or `postWrite` block. Counts labelled as current analysis
+  blind zones exclude this scope-only entry; the raw manifest remains the
+  authoritative complete list.
   The command may reuse strict per-file OXC facts, but it must discover the
   current scoped file set and rebuild every compact symbol, topology,
   type-escape, inventory, and summary projection on every invocation. A cache

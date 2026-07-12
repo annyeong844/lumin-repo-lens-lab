@@ -721,6 +721,10 @@ fn summarize_lifecycle_command(manifest: &Value) -> Vec<String> {
 }
 
 fn summarize_scan_range(manifest: &Value) -> String {
+    if base_evidence_not_refreshed(manifest) {
+        return "base audit not refreshed (lifecycle-only); use lifecycle evidence for this command"
+            .to_string();
+    }
     let empty = Value::Object(Default::default());
     let scan_range = get(manifest, "scanRange").unwrap_or(&empty);
     let langs = arr(get(scan_range, "languages"))
@@ -757,13 +761,26 @@ fn summarize_scan_range(manifest: &Value) -> String {
 }
 
 fn summarize_confidence(manifest: &Value) -> String {
+    if base_evidence_not_refreshed(manifest) {
+        return "base audit not evaluated; lifecycle evidence status is independent".to_string();
+    }
     let confidence = get(manifest, "confidence").unwrap_or(&Value::Null);
-    let blind_count = arr(get(manifest, "blindZones")).len();
+    let blind_count = arr(get(manifest, "blindZones"))
+        .iter()
+        .filter(|zone| get(zone, "area").and_then(Value::as_str) != Some("base-audit"))
+        .count();
     format!(
         "parse errors {}, unresolved internal {}, blind zones {blind_count}",
         value_to_string(get(confidence, "parseErrors"), "unknown"),
         pct(get(confidence, "unresolvedInternalRatio"))
     )
+}
+
+fn base_evidence_not_refreshed(manifest: &Value) -> bool {
+    manifest
+        .pointer("/baseEvidence/status")
+        .and_then(Value::as_str)
+        == Some("not-refreshed")
 }
 
 fn type_escape_total(discipline: &Value) -> i64 {
@@ -908,10 +925,16 @@ fn measured_cue_lines(request: &AuditSummaryRenderRequest) -> Vec<String> {
     }
 
     let blind_zones = arr(get(&request.manifest, "blindZones"));
-    if !blind_zones.is_empty() {
+    if base_evidence_not_refreshed(&request.manifest) {
+        lines.push("- Lifecycle scope: base audit not refreshed; this limits base-audit absence and freshness claims but does not degrade current lifecycle evidence.".to_string());
+    }
+    let analysis_blind_zone_count = blind_zones
+        .iter()
+        .filter(|zone| get(zone, "area").and_then(Value::as_str) != Some("base-audit"))
+        .count();
+    if analysis_blind_zone_count > 0 {
         lines.push(format!(
-            "- Blind zones: {}. Read `manifest.json.blindZones` before any absence or removal claim.",
-            blind_zones.len()
+            "- Blind zones: {analysis_blind_zone_count}. Read `manifest.json.blindZones` before any absence or removal claim."
         ));
         let resolver_zone = blind_zones
             .iter()
@@ -1304,6 +1327,57 @@ fn is_list_item(line: &str) -> bool {
         chars.next();
     }
     saw_digit && chars.next() == Some('.') && chars.next() == Some(' ')
+}
+
+pub fn format_blind_zones_console_summary(zones: &[Value]) -> Option<String> {
+    if zones.is_empty() {
+        return None;
+    }
+    let base_scope_count = zones
+        .iter()
+        .filter(|zone| get(zone, "area").and_then(Value::as_str) == Some("base-audit"))
+        .count();
+    let analysis_zone_count = zones.len().saturating_sub(base_scope_count);
+    let mut parts = Vec::new();
+    for (severity, label) in [
+        ("scan-gap", "scan-gap"),
+        ("precision-gap", "precision-gap"),
+        ("confidence-gap", "confidence-gap"),
+    ] {
+        let count = zones
+            .iter()
+            .filter(|zone| {
+                get(zone, "area").and_then(Value::as_str) != Some("base-audit")
+                    && get(zone, "severity").and_then(Value::as_str) == Some(severity)
+            })
+            .count();
+        if count > 0 {
+            parts.push(format!("{count} {label}"));
+        }
+    }
+    let analysis_summary = if analysis_zone_count == 0 {
+        "blindZones: none in current lifecycle evidence".to_string()
+    } else if parts.is_empty() {
+        format!("blindZones: {analysis_zone_count} unclassified")
+    } else {
+        format!("blindZones: {}", parts.join(", "))
+    };
+    let resolver_summary = zones
+        .iter()
+        .find(|zone| get(zone, "area").and_then(Value::as_str) == Some("resolver"))
+        .and_then(|zone| {
+            format_unresolved_reason_counts(zone.pointer("/details/topUnresolvedReasons"), 3)
+        })
+        .map(|reasons| format!("; resolver reasons: {reasons}"))
+        .unwrap_or_default();
+    let base_summary = if base_scope_count > 0 {
+        "; baseEvidence: not refreshed (lifecycle-only)"
+    } else {
+        ""
+    };
+    Some(format!(
+        "{analysis_summary}{resolver_summary}{base_summary}"
+    ))
 }
 
 pub fn render_summary_console_preview(markdown: &str) -> Option<String> {

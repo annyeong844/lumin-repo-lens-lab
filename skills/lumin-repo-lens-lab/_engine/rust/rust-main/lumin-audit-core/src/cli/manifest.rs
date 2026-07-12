@@ -20,7 +20,7 @@ use lumin_audit_core::audit_review_pack::{
     AUDIT_REVIEW_PACK_RENDER_REQUEST_SCHEMA_VERSION,
 };
 use lumin_audit_core::audit_summary::{
-    render_audit_summary_request, AuditSummaryRenderRequest,
+    format_blind_zones_console_summary, render_audit_summary_request, AuditSummaryRenderRequest,
     AUDIT_SUMMARY_RENDER_REQUEST_SCHEMA_VERSION,
 };
 use lumin_audit_core::generated_artifacts::GeneratedArtifactsMode;
@@ -801,7 +801,7 @@ pub(super) fn run_finalize_audit_run_with_companions(args: Vec<String>) -> Resul
         review_pack_path,
         audit_summary_preview,
         artifacts_produced_count,
-        blind_zones_summary: format_blind_zones_summary(&blind_zones).unwrap_or_default(),
+        blind_zones_summary: format_blind_zones_console_summary(&blind_zones).unwrap_or_default(),
         blind_zones,
         closeout_update: update,
     };
@@ -1519,70 +1519,6 @@ fn apply_artifacts_produced_update(
             .context("finalize-audit-run-with-companions: invalid artifactsProduced update")?,
     );
     Ok(())
-}
-
-fn format_blind_zones_summary(zones: &[serde_json::Value]) -> Option<String> {
-    if zones.is_empty() {
-        return None;
-    }
-    let scan_gap = severity_count(zones, "scan-gap");
-    let precision_gap = severity_count(zones, "precision-gap");
-    let confidence_gap = severity_count(zones, "confidence-gap");
-    let mut parts = Vec::new();
-    if scan_gap > 0 {
-        parts.push(format!("{scan_gap} scan-gap"));
-    }
-    if precision_gap > 0 {
-        parts.push(format!("{precision_gap} precision-gap"));
-    }
-    if confidence_gap > 0 {
-        parts.push(format!("{confidence_gap} confidence-gap"));
-    }
-    let resolver_reasons = zones
-        .iter()
-        .find(|zone| {
-            zone.get("area")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|area| area == "resolver")
-        })
-        .and_then(|zone| zone.pointer("/details/topUnresolvedReasons"))
-        .and_then(format_unresolved_reason_counts);
-    Some(format!(
-        "blindZones: {}{}",
-        parts.join(", "),
-        resolver_reasons
-            .map(|reasons| format!("; resolver reasons: {reasons}"))
-            .unwrap_or_default()
-    ))
-}
-
-fn severity_count(zones: &[serde_json::Value], severity: &str) -> usize {
-    zones
-        .iter()
-        .filter(|zone| {
-            zone.get("severity")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|value| value == severity)
-        })
-        .count()
-}
-
-fn format_unresolved_reason_counts(reasons: &serde_json::Value) -> Option<String> {
-    let reasons = reasons.as_array()?;
-    let parts = reasons
-        .iter()
-        .take(3)
-        .filter_map(|item| {
-            let reason = item.get("reason")?.as_str()?;
-            let count = item.get("count")?.as_i64()?;
-            Some(format!("{reason} {count}"))
-        })
-        .collect::<Vec<_>>();
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join(", "))
-    }
 }
 
 fn artifact_value(

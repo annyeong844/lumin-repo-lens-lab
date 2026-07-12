@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use lumin_audit_core::audit_summary::format_blind_zones_console_summary;
 use serde_json::{json, Value};
 use std::fs;
 use std::process::Command;
@@ -219,6 +220,100 @@ fn cli_audit_summary_render_writes_markdown_preview_and_small_result() -> Result
     assert!(preview.contains("[audit-repo]   Living Audit Tracking:"));
     assert!(preview.contains("[audit-repo]   Guardrails:"));
     Ok(())
+}
+
+#[test]
+fn cli_audit_summary_separates_lifecycle_scope_from_lifecycle_status() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("request.json");
+    let output_path = temp.path().join("audit-summary.latest.md");
+    let result = temp.path().join("result.json");
+    fs::write(
+        &input,
+        serde_json::to_vec(&json!({
+            "schemaVersion": "lumin-audit-summary-render-request.v1",
+            "outputPath": output_path,
+            "manifest": {
+                "meta": { "generated": "2026-07-12T00:00:00.000Z" },
+                "profile": "quick",
+                "scanRange": {
+                    "status": "unavailable",
+                    "reason": "pre-write-only mode uses intent-shaped evidence"
+                },
+                "confidence": {
+                    "status": "unavailable"
+                },
+                "baseEvidence": {
+                    "status": "not-refreshed",
+                    "reason": "pre-write-only mode uses intent-shaped evidence"
+                },
+                "blindZones": [{
+                    "area": "base-audit",
+                    "severity": "scan-gap",
+                    "effect": "Base audit evidence was not refreshed"
+                }],
+                "preWrite": {
+                    "requested": true,
+                    "ran": true,
+                    "advisoryPath": "C:/repo/.audit/pre-write-advisory.PRE.json",
+                    "latestAdvisoryPath": "C:/repo/.audit/pre-write-advisory.latest.json"
+                }
+            }
+        }))?,
+    )?;
+
+    let output = Command::new(audit_core_bin())
+        .arg("audit-summary-render")
+        .arg("--input")
+        .arg(&input)
+        .arg("--result-output")
+        .arg(&result)
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let markdown = fs::read_to_string(&output_path)?;
+    assert!(markdown.contains(
+        "Scan range: base audit not refreshed (lifecycle-only); use lifecycle evidence for this command"
+    ));
+    assert!(markdown.contains(
+        "Confidence: base audit not evaluated; lifecycle evidence status is independent"
+    ));
+    assert!(markdown.contains("- Pre-write ran and wrote an advisory."));
+    assert!(markdown.contains("- Lifecycle scope: base audit not refreshed;"));
+    assert!(!markdown.contains("- Blind zones: 1."));
+    Ok(())
+}
+
+#[test]
+fn console_summary_separates_base_scope_from_analysis_blind_zones() {
+    let base_only = vec![json!({
+        "area": "base-audit",
+        "severity": "scan-gap",
+        "effect": "Base audit was not refreshed"
+    })];
+    assert_eq!(
+        format_blind_zones_console_summary(&base_only).as_deref(),
+        Some(
+            "blindZones: none in current lifecycle evidence; baseEvidence: not refreshed (lifecycle-only)"
+        )
+    );
+
+    let mixed = vec![
+        base_only[0].clone(),
+        json!({
+            "area": "resolver",
+            "severity": "precision-gap",
+            "effect": "Resolver evidence is incomplete"
+        }),
+    ];
+    assert_eq!(
+        format_blind_zones_console_summary(&mixed).as_deref(),
+        Some("blindZones: 1 precision-gap; baseEvidence: not refreshed (lifecycle-only)")
+    );
 }
 
 fn audit_core_bin() -> &'static str {
