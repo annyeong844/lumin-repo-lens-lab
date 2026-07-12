@@ -66,8 +66,38 @@ Boundary:
 - within-package plain references are not fully tracked
 - `main` entry functions can appear unconsumed, similar to TS entry files
 
+## Rust
+
+Rust files are counted by triage and surfaced in manifest language and
+blind-zone evidence. The JS/TS symbol graph does not own Rust absence
+claims.
+
+Supported in the generic audit route:
+
+- `.rs` file counting in `triage.json.shape.rustFiles`
+- `byLanguage.rs` and manifest language preservation
+- Cargo root detection through `triage.json.buildSystem.rust`
+- `manifest.json.blindZones[]` entry with `area: "rs"` when the Rust
+  analyzer artifact is not registered for that audit run
+- opt-in `audit-repo.mjs --rust-analyzer`, which writes
+  `rust-analyzer-health.latest.json` and records `manifest.rustAnalysis`,
+  including `manifest.rustAnalysis.scanScope` copied from the native Rust
+  artifact's source-health input metadata
+
+Boundary:
+
+- read the unified `lumin-rust-analyzer` artifact before making Rust
+  syntax, semantic, dead-definition, clone, or absence claims
+- use `manifest.rustAnalysis.scanScope` as the quick range cue, but use the
+  native Rust artifact for exact Rust evidence
+- do not use JS/TS `symbols.json` absence as Rust evidence
+- do not register `.rs` in the JS tree-sitter fallback; Rust syntax evidence
+  belongs to `lumin-rust-analyzer`
+- if `manifest.rustAnalysis.status !== "complete"`, keep Rust claims at
+  scan-range/blind-zone level
+
 ## Other Languages
 
-Rust, Java, C#, Ruby, PHP, C++, and Bash grammars may exist through
-tree-sitter packages, but extractors are not registered. Treat these
-as scan gaps unless a project-specific extractor has been added.
+Java, C#, Ruby, PHP, C++, and Bash grammars may exist through tree-sitter
+packages, but extractors are not registered. Treat these as scan gaps unless
+a project-specific extractor has been added.

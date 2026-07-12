@@ -114,6 +114,29 @@ function formatDependencyHygieneCue(summary) {
   return `Dependency hygiene: ${reviewUnused} review-only dependency ${plural(reviewUnused, 'declaration')} ${reviewVerb} inspection; ${muted} muted ${plural(muted, 'explanation')}${confidenceText}. Read \`manifest.json.unusedDependencies\` and \`unused-deps.json\` before changing package manifests.`;
 }
 
+function formatRustAnalysisCue(summary) {
+  if (!summary || typeof summary !== 'object') return null;
+  if (summary.status !== 'complete' || summary.available !== true) {
+    if (summary.requested) {
+      return `Rust analyzer: ${summary.status ?? 'not-run'}${summary.reason ? ` (${summary.reason})` : ''}. Do not use JS/TS artifacts for Rust absence claims.`;
+    }
+    return null;
+  }
+  const scope = summary.scanScope && typeof summary.scanScope === 'object'
+    ? summary.scanScope
+    : null;
+  const scopeText = scope
+    ? ` (${scope.includeTests === false ? 'production files only' : 'including tests'}${Array.isArray(scope.exclude) && scope.exclude.length > 0 ? `, ${scope.exclude.length} exclude ${plural(scope.exclude.length, 'pattern')}` : ''})`
+    : '';
+  const cloneParts = [
+    `exact ${n(summary.syntaxFunctionCloneExactBodyGroups)}`,
+    `structure ${n(summary.syntaxFunctionCloneStructureGroups)}`,
+    `signature ${n(summary.syntaxFunctionCloneSignatureGroups)}`,
+    `near ${n(summary.syntaxFunctionCloneNearCandidates)}`,
+  ].join(', ');
+  return `Rust analyzer: ${n(summary.files)} files${scopeText}, review signals ${n(summary.syntaxReviewSignals)}, opaque surfaces ${n(summary.syntaxReviewOpaqueSurfaces)}, clone cues ${cloneParts}. Read \`rust-analyzer-health.latest.json\` before making Rust findings.`;
+}
+
 function formatSfcEvidenceCue(summary) {
   if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return null;
   const byLane = summary.byLane && typeof summary.byLane === 'object'
@@ -333,7 +356,7 @@ function measuredCueLines({ manifest, checklistFacts, fixPlan, topology, discipl
     const structure = n(b1.structureGroupCandidates, n(functionClones?.meta?.structureGroupCount));
     const signature = n(b1.signatureGroupCandidates, n(functionClones?.meta?.signatureGroupCount));
     const near = n(b1.nearFunctionCandidates, n(functionClones?.meta?.nearFunctionCandidateCount));
-    lines.push(`- Function clone cues: exact body groups ${exact}, same-structure groups ${structure}, same-signature groups ${signature}, near-function cues ${near}. Read \`function-clones.json\` and source file:line evidence before calling helpers duplicated.`);
+    lines.push(`- JS/TS function clone cues: exact body groups ${exact}, same-structure groups ${structure}, same-signature groups ${signature}, near-function cues ${near}. Read \`function-clones.json\` and source file:line evidence before calling JS/TS helpers duplicated; use Rust analyzer evidence for Rust files.`);
   }
 
   if (fixPlan?.summary) {
@@ -377,6 +400,11 @@ function measuredCueLines({ manifest, checklistFacts, fixPlan, topology, discipl
   const sfcEvidenceCue = formatSfcEvidenceCue(manifest?.sfcEvidence);
   if (sfcEvidenceCue) {
     lines.push(`- ${sfcEvidenceCue}`);
+  }
+
+  const rustAnalysisCue = formatRustAnalysisCue(manifest?.rustAnalysis);
+  if (rustAnalysisCue) {
+    lines.push(`- ${rustAnalysisCue}`);
   }
 
   if (callGraph?.summary) {
@@ -460,10 +488,13 @@ function artifactMapLines({ manifest, checklistFacts, fixPlan, topology, discipl
     lines.push('- `call-graph.json`: call graph and semi-dead import evidence from full profile.');
   }
   if (produced.has('shape-index.json')) {
-    lines.push('- `shape-index.json`: exact shape-hash facts for full-profile B1/B2 review.');
+    lines.push('- `shape-index.json`: JS/TS exact shape-hash facts for full-profile B1/B2 review; use Rust analyzer shape/signature evidence for Rust files.');
   }
   if (functionClones || produced.has('function-clones.json')) {
-    lines.push('- `function-clones.json`: top-level exported and file-local function-body clone cues; candidates require source review before merge advice.');
+    lines.push('- `function-clones.json`: JS/TS top-level exported and file-local function-body clone cues; candidates require source review before merge advice and are not Rust evidence.');
+  }
+  if (manifest?.rustAnalysis?.status === 'complete' && manifest?.rustAnalysis?.available === true) {
+    lines.push('- `rust-analyzer-health.latest.json`: Rust-owned syntax, clone, unused-definition, and Cargo metadata evidence; use this for Rust files instead of JS/TS graph absence.');
   }
   if (produced.has('barrels.json')) {
     lines.push('- `barrels.json`: barrel discipline evidence for full-profile C7 review.');

@@ -41,9 +41,18 @@
 // reasons, so this costs zero new packages.
 
 import { readdirSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import ts from 'typescript';
 import { buildExcludeRules, isExcludedPath } from './scan-excludes.mjs';
+
+const require = createRequire(import.meta.url);
+let typescript = null;
+
+function loadTypeScript() {
+  if (typescript) return typescript;
+  typescript = require('typescript');
+  return typescript;
+}
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next',
@@ -77,6 +86,7 @@ function walk(root, acc, options = {}) {
  */
 function loadTsconfig(configPath) {
   if (!existsSync(configPath)) return null;
+  const ts = loadTypeScript();
   let readResult;
   try {
     readResult = ts.readConfigFile(configPath, ts.sys.readFile);

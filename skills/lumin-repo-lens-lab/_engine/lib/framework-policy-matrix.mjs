@@ -147,7 +147,7 @@ function collectCloudflareWorkerConfigs(files) {
       configs.push({ dir: dirnameOf(file), file });
     }
   }
-  return configs.toSorted((a, b) => {
+  return [...configs].sort((a, b) => {
     const depth = (value) => value === '.' ? 0 : value.split('/').length;
     return depth(b.dir) - depth(a.dir) || a.file.localeCompare(b.file);
   });

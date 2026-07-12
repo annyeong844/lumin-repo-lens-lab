@@ -66,3 +66,28 @@ fn unified_cli_invalid_cargo_target_dir_mode_exits_2_before_writing_artifact() -
         .contains("invalid --cargo-target-dir-mode value: repo-target"));
     Ok(())
 }
+
+#[test]
+fn unified_cli_invalid_source_health_profile_exits_2_before_writing_artifact() -> Result<()> {
+    let temp = TempDir::new()?;
+    let output_path = temp.path().join("rust-analyzer.json");
+
+    let output = unified_analyzer_command()
+        .arg("--root")
+        .arg(temp.path())
+        .arg("--output")
+        .arg(&output_path)
+        .arg("--source-commit")
+        .arg("test-source")
+        .arg("--source-health-profile")
+        .arg("raw")
+        .output()
+        .context("run unified rust analyzer")?;
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(!output_path.exists());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("invalid --source-health-profile value: raw"));
+    Ok(())
+}

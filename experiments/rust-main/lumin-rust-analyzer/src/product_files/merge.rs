@@ -1,13 +1,12 @@
-use lumin_rust_source_health::protocol::HealthResponse;
-
 use crate::policy::{CoverageEvidence, OracleBridge};
+use crate::syntax_phase::SyntaxPhase;
 
 use super::model::{ProductFiles, ProductFilesProjection, SemanticRefCounts};
 use super::semantic_diagnostics::ProductSemanticDiagnostics;
 use super::semantic_findings::ProductSemanticFindings;
 
 pub(crate) fn merged_files<'a>(
-    syntax_phase: &'a HealthResponse,
+    syntax_phase: SyntaxPhase<'a>,
     semantic_diagnostics: &ProductSemanticDiagnostics,
     semantic_findings: &ProductSemanticFindings,
     oracle_bridge: &OracleBridge<'_>,
@@ -18,7 +17,7 @@ pub(crate) fn merged_files<'a>(
         .unlinked_refs()
         .plus(semantic_diagnostics.unlinked_refs());
 
-    for (path, file) in &syntax_phase.files {
+    for (path, file) in syntax_phase.files() {
         files.insert_syntax(path, file);
     }
 

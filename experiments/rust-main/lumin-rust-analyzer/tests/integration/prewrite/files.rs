@@ -83,6 +83,48 @@ fn prewrite_file_lane_reports_existing_new_and_unavailable_rust_files() -> Resul
     Ok(())
 }
 
+#[test]
+fn prewrite_file_lane_honors_rust_scan_scope_flags() -> Result<()> {
+    let repo = PreWriteRepo::new()?;
+    let artifact = repo.run_json_with_args(
+        r#"{
+  "names": [],
+  "shapes": [],
+  "files": [
+    "src/lib.rs",
+    "tests/helper.rs",
+    "src/contest.rs"
+  ],
+  "dependencies": [],
+  "plannedTypeEscapes": []
+}"#,
+        &["--production", "--exclude", "./src/lib.rs"],
+    )?;
+
+    let input = &artifact["meta"]["sourceHealth"]["input"];
+    assert_eq!(input["includeTests"], false);
+    assert_eq!(input["exclude"], serde_json::json!(["src/lib.rs"]));
+    assert_eq!(
+        input["pathPolicy"]["exclude"],
+        serde_json::json!(["**/target/**", "**/vendor/**", "src/lib.rs"])
+    );
+
+    let explicitly_excluded = file_lookup(&artifact, "src/lib.rs")?;
+    assert_eq!(explicitly_excluded["result"], "FILE_STATUS_UNKNOWN");
+    assert!(citations(explicitly_excluded)
+        .any(|citation| citation.contains("exclude contains 'src/lib.rs'")));
+
+    let excluded_test = file_lookup(&artifact, "tests/helper.rs")?;
+    assert_eq!(excluded_test["result"], "FILE_STATUS_UNKNOWN");
+    assert!(citations(excluded_test).any(|citation| citation.contains("includeTests=false")));
+
+    let substring_non_test = file_lookup(&artifact, "src/contest.rs")?;
+    assert_eq!(substring_non_test["result"], "NEW_FILE");
+    assert!(citations(substring_non_test)
+        .any(|citation| citation.contains("rust-source-health.files does not contain")));
+    Ok(())
+}
+
 fn file_lookup<'a>(artifact: &'a Value, intent_file: &str) -> Result<&'a Value> {
     artifact["fileLookups"]
         .as_array()

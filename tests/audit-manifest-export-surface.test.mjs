@@ -28,18 +28,543 @@ describe("audit-manifest public surface", () => {
   it("AMES1. exposes manifest builders, not living-audit internals", () => {
     expect(typeof auditManifest.buildManifestEvidence).toBe("function");
     expect(typeof auditManifest.refreshManifestEvidence).toBe("function");
-    expect(typeof auditManifest.collectProducedArtifacts).toBe("function");
+    expect(typeof auditManifest.buildManifestArtifactsProducedUpdate).toBe(
+      "function",
+    );
+    expect(typeof auditManifest.buildManifestRootWithEvidence).toBe("function");
+    expect(typeof auditManifest.buildManifestCloseoutUpdate).toBe("function");
+    expect(typeof auditManifest.buildManifestLifecycleUpdate).toBe("function");
+    expect(typeof auditManifest.writeManifestFile).toBe("function");
+    expect(typeof auditManifest.finalizeAuditRun).toBe("function");
+    expect(typeof auditManifest.applyLifecycleAndRefreshManifestEvidence).toBe(
+      "function",
+    );
+    expect(typeof auditManifest.executeBaseRuntime).toBe("function");
 
     for (const symbol of [
       "LIVING_AUDIT_DOC_CANDIDATES",
       "detectLivingAuditDocs",
+      "mergeRustAnalysisRun",
+      "buildArtifactSizeSummary",
+      "buildArtifactReadMetricsSummary",
+      "buildProducerPerformanceArtifactFromRuntime",
+      "buildProducerPerformanceArtifactForAuditRun",
+      "buildManifestMeta",
+      "buildManifestEvidenceUpdate",
+      "buildManifestRoot",
+      "buildManifestFinalSummaryUpdate",
+      "buildManifestCompanionUpdate",
+      "closeoutAndWriteManifest",
+      "collectProducedArtifacts",
+      "executeBasePlan",
+      "buildOrchestrationPlan",
+      "ARTIFACT_READ_EVENTS_SCHEMA_VERSION",
+      "buildLifecycleSummary",
     ]) {
       expect(Object.hasOwn(auditManifest, symbol)).toBe(false);
     }
   });
+
+  it("AMES1i. ignores stale external audit-core binaries and falls back to current contract", () => {
+    const previous = process.env.LUMIN_AUDIT_CORE_BIN;
+    process.env.LUMIN_AUDIT_CORE_BIN = process.execPath;
+    try {
+      const update = auditManifest.buildManifestLifecycleUpdate({
+        preWrite: {
+          requested: true,
+          ran: false,
+          reason: "stale-env-fallback-smoke",
+        },
+      });
+      expect(update.lifecycle).toMatchObject({
+        summaryOwner: "lumin-audit-core",
+        requestedCount: 1,
+        notRunCount: 1,
+      });
+    } finally {
+      if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;
+      else process.env.LUMIN_AUDIT_CORE_BIN = previous;
+    }
+  }, 30000);
+
+  it("AMES1g. lifecycle update wrapper leaves raw block placement and summary in audit-core", () => {
+    const update = auditManifest.buildManifestLifecycleUpdate({
+      preWrite: {
+        requested: true,
+        ran: true,
+        engine: "rust",
+        language: "rust",
+        producer: "lumin-rust-analyzer",
+      },
+      postWrite: null,
+      canonDraft: {
+        requested: true,
+        ran: false,
+        reason: "unknown source",
+      },
+      checkCanon: null,
+    });
+
+    expect(update.preWrite).toMatchObject({
+      requested: true,
+      ran: true,
+      engine: "rust",
+    });
+    expect(Object.hasOwn(update, "postWrite")).toBe(false);
+    expect(update.canonDraft).toMatchObject({
+      requested: true,
+      ran: false,
+      reason: "unknown source",
+    });
+    expect(Object.hasOwn(update, "checkCanon")).toBe(false);
+    expect(update.lifecycle).toMatchObject({
+      summaryOwner: "lumin-audit-core",
+      executionOwner: "audit-repo.mjs",
+      requestedCount: 2,
+      ranCount: 1,
+      notRunCount: 1,
+    });
+    expect(update.lifecycle.preWrite.status).toBe("complete");
+    expect(update.lifecycle.canonDraft.status).toBe("not-run");
+  });
+
+  it("AMES1m. lifecycle evidence refresh wrapper applies Rust-owned patches together", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "triage.json",
+        {
+          shape: { totalFiles: 2, tsFiles: 1, rsFiles: 1 },
+          byLanguage: { rs: 1 },
+        },
+        { to: "output" },
+      );
+      fixture.writeJson(
+        "symbols.json",
+        {
+          uses: {
+            external: 0,
+            resolvedInternal: 0,
+            unresolvedInternal: 0,
+            unresolvedInternalRatio: 0,
+          },
+        },
+        { to: "output" },
+      );
+      const reads = [];
+      const manifest = auditManifest.applyLifecycleAndRefreshManifestEvidence({
+        manifest: {
+          meta: { generated: "2026-07-02T00:00:00.000Z" },
+          artifactsProduced: [],
+        },
+        lifecycle: {
+          preWrite: {
+            requested: true,
+            ran: true,
+            engine: "rust",
+            language: "rust",
+          },
+        },
+        root: fixture.root,
+        outDir: fixture.output,
+        includeTests: false,
+        production: true,
+        onArtifactRead: (read) => reads.push(read),
+      });
+
+      expect(manifest.preWrite.engine).toBe("rust");
+      expect(manifest.lifecycle.ranCount).toBe(1);
+      expect(manifest.scanRange.files).toBe(2);
+      expect(manifest.scanRange.includeTests).toBe(false);
+      expect(manifest.scanRange.production).toBe(true);
+      expect(reads.some((read) => read.filePath.endsWith("triage.json"))).toBe(
+        true,
+      );
+    }));
+
+  it("AMES1n. root-with-evidence wrapper leaves initial manifest assembly in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "triage.json",
+        {
+          shape: {
+            totalFiles: 3,
+            tsFiles: 2,
+            rsFiles: 1,
+          },
+          byLanguage: {
+            ts: 2,
+            rs: 1,
+          },
+        },
+        { to: "output" },
+      );
+      fixture.writeJson(
+        "symbols.json",
+        {
+          uses: {
+            external: 1,
+            resolvedInternal: 2,
+            unresolvedInternal: 0,
+            unresolvedInternalRatio: 0,
+          },
+        },
+        { to: "output" },
+      );
+
+      const reads = [];
+      const manifest = auditManifest.buildManifestRootWithEvidence({
+        generated: "2026-07-02T00:00:00.000Z",
+        profile: "quick",
+        root: fixture.root,
+        outDir: fixture.output,
+        commandsRun: [{ step: "triage", status: "ok", ms: 12 }],
+        skipped: [{ step: "shape", reason: "quick-profile" }],
+        includeTests: false,
+        production: true,
+        onArtifactRead: (read) => reads.push(read),
+      });
+
+      expect(manifest.meta.generated).toBe("2026-07-02T00:00:00.000Z");
+      expect(manifest.profile).toBe("quick");
+      expect(manifest.commandsRun).toEqual([
+        { step: "triage", status: "ok", ms: 12 },
+      ]);
+      expect(manifest.skipped).toEqual([
+        { step: "shape", reason: "quick-profile" },
+      ]);
+      expect(manifest.scanRange.files).toBe(3);
+      expect(manifest.scanRange.includeTests).toBe(false);
+      expect(manifest.scanRange.production).toBe(true);
+      expect(manifest.confidence.externalImports).toBe(1);
+      expect(manifest.blindZones.some((zone) => zone.area === "rs")).toBe(true);
+      expect(reads.some((read) => read.filePath.endsWith("triage.json"))).toBe(
+        true,
+      );
+      expect(reads.some((read) => read.filePath.endsWith("symbols.json"))).toBe(
+        true,
+      );
+    }));
+
+  it("AMES1h. artifacts-produced wrapper leaves manifest patch shape in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson("triage.json", {}, { to: "output" });
+      fixture.writeJson(
+        "rust-analyzer-health.latest.json",
+        {
+          schemaVersion: "lumin-rust-analyzer-health.v1",
+        },
+        { to: "output" },
+      );
+
+      expect(
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output, {
+          rustAnalysis: {
+            status: "unavailable",
+            available: false,
+          },
+        }),
+      ).toEqual({
+        artifactsProduced: ["triage.json"],
+      });
+
+      expect(
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output, {
+          rustAnalysis: {
+            status: "complete",
+            available: true,
+          },
+        }).artifactsProduced,
+      ).toEqual(["rust-analyzer-health.latest.json", "triage.json"]);
+    }));
+
+  it("AMES1j. closeout wrapper leaves final summary and companion patch in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "producer-performance.json",
+        {
+          schemaVersion: "producer-performance.v1",
+          summary: {
+            producerCount: 1,
+            okCount: 1,
+            failedCount: 0,
+            skippedCount: 0,
+          },
+          producers: [{ name: "triage-repo.mjs", status: "ok" }],
+          skipped: [],
+        },
+        { to: "output" },
+      );
+      fixture.write("audit-summary.latest.md", "# Summary\n", { to: "output" });
+      fixture.write("audit-review-pack.latest.md", "# Review\n", { to: "output" });
+
+      const update = auditManifest.buildManifestCloseoutUpdate({
+        outDir: fixture.output,
+        producerPerformancePath: fixture.outputPath("producer-performance.json"),
+        rustAnalysis: {
+          status: "unavailable",
+          available: false,
+        },
+        auditSummaryPath: "C:/repo/.audit/audit-summary.latest.md",
+        reviewPackPath: "C:/repo/.audit/audit-review-pack.latest.md",
+      });
+
+      expect(update.performance.producerCount).toBe(1);
+      expect(update.orchestration.status).toBe("complete");
+      expect(update.artifactsProduced).toEqual([
+        "audit-review-pack.latest.md",
+        "audit-summary.latest.md",
+        "producer-performance.json",
+      ]);
+      expect(update.auditSummary).toEqual({
+        path: "C:/repo/.audit/audit-summary.latest.md",
+        format: "markdown",
+      });
+      expect(update.reviewPack.format).toBe("markdown");
+    }));
+
+  it("AMES1f. artifactsProduced patch uses typed rustAnalysis block instead of JS usability fallback", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "rust-analyzer-health.latest.json",
+        {
+          schemaVersion: "lumin-rust-analyzer-health.v1",
+          status: "complete",
+          available: true,
+        },
+        { to: "output" },
+      );
+
+      expect(
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output)
+          .artifactsProduced,
+      ).not.toContain("rust-analyzer-health.latest.json");
+      expect(
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output, {
+          rustAnalysis: {
+            status: "complete",
+            available: true,
+          },
+        }).artifactsProduced,
+      ).toContain("rust-analyzer-health.latest.json");
+      expect(
+        auditManifest.buildManifestArtifactsProducedUpdate(fixture.output, {
+          rustAnalysis: {
+            status: "unavailable",
+            available: false,
+          },
+        }).artifactsProduced,
+      ).not.toContain("rust-analyzer-health.latest.json");
+    }));
+
+  it("AMES1k. writeManifestFile leaves the final manifest write in audit-core", () =>
+    withManifestFixture((fixture) => {
+      const result = auditManifest.writeManifestFile(fixture.output, {
+        meta: {
+          generated: "2026-07-02T00:00:00.000Z",
+        },
+        profile: "quick",
+        artifactsProduced: [],
+      });
+
+      expect(result.manifestPath.endsWith("manifest.json")).toBe(true);
+      expect(fixture.readJson("manifest.json", { from: "output" })).toMatchObject({
+        profile: "quick",
+        meta: {
+          generated: "2026-07-02T00:00:00.000Z",
+        },
+      });
+    }));
+
+  it("AMES1l. finalizeAuditRun writes producer performance and final manifest in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.write("triage.json", "{}", { to: "output" });
+      fixture.write("audit-summary.latest.md", "# Summary\n", { to: "output" });
+
+      const result = auditManifest.finalizeAuditRun({
+        manifest: {
+          meta: {
+            generated: "2026-07-02T00:00:00.000Z",
+          },
+          profile: "quick",
+          artifactsProduced: [],
+        },
+        generated: "2026-07-02T00:00:00.000Z",
+        root: fixture.root,
+        outDir: fixture.output,
+        profile: "quick",
+        includeTests: true,
+        production: false,
+        excludes: ["dist"],
+        autoExcludes: [".audit"],
+        noIncremental: true,
+        cacheRoot: fixture.path(".audit/.cache"),
+        clearIncrementalCache: false,
+        generatedArtifactsMode: "default",
+        artifactReads: {
+          schemaVersion: "artifact-read-metrics.v1",
+          measurement: "audit-repo-orchestrator-json-reads",
+          totalReadCount: 0,
+          totalReadBytes: 0,
+          totalReadMs: 0,
+          totalJsonParseMs: 0,
+          parseFailureCount: 0,
+          byName: {},
+        },
+        rustAnalysis: {
+          status: "unavailable",
+          available: false,
+        },
+        commandsRun: [{ step: "triage-repo.mjs", status: "ok", ms: 3 }],
+        skipped: [{ step: "emit-sarif.mjs", reason: "not in --sarif mode" }],
+        auditSummaryPath: "C:/repo/.audit/audit-summary.latest.md",
+      });
+
+      expect(result.producerPerformancePath.endsWith("producer-performance.json")).toBe(
+        true,
+      );
+      expect(result.manifestPath.endsWith("manifest.json")).toBe(true);
+      expect(result.manifest).toBeUndefined();
+      expect(result.closeoutUpdate.performance.producerCount).toBe(1);
+      expect(result.closeoutUpdate.orchestration.status).toBe("complete");
+      expect(result.closeoutUpdate.artifactsProduced).toContain("producer-performance.json");
+      expect(result.closeoutUpdate.auditSummary.format).toBe("markdown");
+      expect(fixture.readJson("producer-performance.json", { from: "output" })).toMatchObject({
+        schemaVersion: "producer-performance.v1",
+        scanRange: {
+          excludes: ["dist"],
+        },
+      });
+      expect(fixture.readJson("manifest.json", { from: "output" })).toMatchObject({
+        performance: {
+          producerCount: 1,
+        },
+        orchestration: {
+          status: "complete",
+        },
+        auditSummary: {
+          format: "markdown",
+        },
+      });
+    }));
+
+  it("AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "triage.json",
+        {
+          shape: {
+            totalFiles: 2,
+            tsFiles: 1,
+            rsFiles: 1,
+          },
+        },
+        { to: "output" },
+      );
+      fixture.writeJson(
+        "symbols.json",
+        {
+          uses: {
+            external: 0,
+            resolvedInternal: 0,
+            unresolvedInternal: 0,
+            unresolvedInternalRatio: 0,
+          },
+        },
+        { to: "output" },
+      );
+      fixture.write("framework-resource-surfaces.json", "{not-json", {
+        to: "output",
+      });
+      fixture.write(
+        "rust-analyzer-health.latest.json",
+        JSON.stringify({
+          schemaVersion: "lumin-rust-analyzer-health.v1",
+        }),
+        { to: "output" },
+      );
+
+      const reads = [];
+      const manifest = {};
+      auditManifest.refreshManifestEvidence(manifest, {
+        root: fixture.root,
+        outDir: fixture.output,
+        includeTests: false,
+        production: true,
+        onArtifactRead: (read) => reads.push(read),
+      });
+
+      expect(manifest.scanRange.files).toBe(2);
+      expect(manifest.scanRange.includeTests).toBe(false);
+      expect(manifest.scanRange.production).toBe(true);
+      expect(manifest.blindZones).toEqual(expect.any(Array));
+      expect(manifest.frameworkResourceSurfaces?.status).toBe("unavailable");
+      expect(manifest.frameworkResourceSurfaces?.reason?.kind).toBe(
+        "malformed-json",
+      );
+      expect(manifest.frameworkResourceSurfaces?.totalFilesWithSurfaces).toBeNull();
+      expect(manifest.frameworkResourceSurfaces?.totalSurfaceLanes).toBeNull();
+      expect(reads.some((read) => read.filePath.endsWith("triage.json"))).toBe(
+        true,
+      );
+      expect(reads.some((read) => read.filePath.endsWith("symbols.json"))).toBe(
+        true,
+      );
+      expect(
+        reads.some((read) =>
+          read.filePath.endsWith("rust-analyzer-health.latest.json"),
+        ),
+      ).toBe(true);
+      expect(
+        reads.some(
+          (read) =>
+            read.filePath.endsWith("framework-resource-surfaces.json") &&
+            read.ok === false &&
+            read.bytes > 0,
+        ),
+      ).toBe(true);
+    }));
+
 });
 
 describe("audit-manifest evidence summaries", () => {
+  it("AMES1b. buildManifestEvidence can merge rustAnalysis run state in audit-core", () =>
+    withManifestFixture((fixture) => {
+      fixture.writeJson(
+        "rust-analyzer-health.latest.json",
+        {
+          schemaVersion: "lumin-rust-analyzer.v1",
+          policyVersion: "lumin-rust-analyzer-policy.v1",
+          meta: {
+            producer: "lumin-rust-analyzer",
+            mode: "rust-main",
+            input: { root: fixture.root },
+          },
+          summary: { files: 1, syntaxReviewSignals: 0 },
+        },
+        { to: "output" },
+      );
+
+      const evidence = buildManifestEvidence(fixture, {
+        rustAnalysisRun: {
+          requested: true,
+          ran: true,
+          status: "complete",
+          rustFiles: 1,
+          sourceCommit: "abc123",
+        },
+        mergeRustAnalysisRun: true,
+      });
+
+      expect(evidence.rustAnalysis).toMatchObject({
+        requested: true,
+        ran: true,
+        status: "complete",
+        available: true,
+        files: 1,
+        sourceCommit: "abc123",
+      });
+    }));
+
   it("AMES2. buildManifestEvidence summarizes generated artifact misses", () =>
     withManifestFixture((fixture) => {
       fixture.writeJson(

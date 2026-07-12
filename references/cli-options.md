@@ -28,6 +28,11 @@ Exclude patterns are conservative by default: `--exclude build` prunes a
 explicit path or basename such as `--exclude src/a.ts` or
 `--exclude skip-me.js` to exclude files.
 
+The Rust-owned unified analyzer route (`--rust-analyzer`) and Rust pre-write
+route receive the same scan-scope flags. Native Rust artifacts expose the
+effective Rust source-health scope in `phases.syntax.meta.input`; pre-write
+artifacts expose it in their source-health input metadata.
+
 ## Topology Lenses
 
 `measure-topology.mjs` defaults to the runtime lens: type-only imports

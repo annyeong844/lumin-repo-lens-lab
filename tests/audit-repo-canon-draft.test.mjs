@@ -650,9 +650,10 @@ function readManifest(out) {
   );
 
   assert(
-    "C1b. audit-repo.mjs delegates canon-draft lifecycle to helper",
-    /runCanonDraftLifecycle/.test(stripped) &&
-      /audit-canon-draft\.mjs/.test(stripped),
+    "C1b. audit-repo.mjs delegates canon-draft lifecycle to Rust audit-core",
+    /executeCanonDraftLifecycle/.test(stripped) &&
+      !/runCanonDraftLifecycle/.test(stripped) &&
+      !/audit-canon-draft\.mjs/.test(stripped),
   );
 
   // Must NOT locally define the 4-element source array.

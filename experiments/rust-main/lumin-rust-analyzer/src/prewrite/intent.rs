@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{self, Read};
 use std::path::Path;
 
 use anyhow::Result;
@@ -13,12 +14,20 @@ pub(super) use model::{
 };
 
 pub(super) fn load(path: &Path) -> Result<LoadedIntent> {
-    let bytes = fs::read(path).map_err(|error| {
-        usage_error(format!(
-            "invalid --intent {}: failed to read: {error}",
-            path.display()
-        ))
-    })?;
+    let bytes = if path == Path::new("-") {
+        let mut bytes = Vec::new();
+        io::stdin()
+            .read_to_end(&mut bytes)
+            .map_err(|error| usage_error(format!("invalid --intent -: failed to read: {error}")))?;
+        bytes
+    } else {
+        fs::read(path).map_err(|error| {
+            usage_error(format!(
+                "invalid --intent {}: failed to read: {error}",
+                path.display()
+            ))
+        })?
+    };
     let raw: input::RawIntent = serde_json::from_slice(&bytes)
         .map_err(|error| usage_error(format!("invalid --intent {}: {error}", path.display())))?;
     normalize::normalize(raw)

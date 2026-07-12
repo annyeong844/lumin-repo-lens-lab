@@ -9,7 +9,6 @@ on:
 
 jobs:
   changes:
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Detect changed surfaces
     runs-on: ubuntu-latest
     outputs:
@@ -64,7 +63,7 @@ jobs:
               .github/workflows/ci.yml)
                 rust=true
                 ;;
-              experiments/Cargo.toml|experiments/Cargo.lock|experiments/.cargo/*|experiments/rust-common/*|experiments/rust-main/*|experiments/rust-sidecar/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
+              experiments/Cargo.toml|experiments/Cargo.lock|experiments/.cargo/*|experiments/rust-common/*|experiments/rust-main/*|experiments/rust-sidecar/*|_lib/audit-core.mjs|_lib/audit-manifest.mjs|_lib/cli.mjs|_lib/collect-files.mjs|_lib/source-inventory.mjs|audit-repo.mjs|triage-repo.mjs|package.json|package-lock.json|scripts/build-skill.mjs|scripts/run-tests.mjs|scripts/run-tests-grouped.mjs|scripts/update-test-doc.mjs|skills/lumin-repo-lens-lab/_engine/rust/*|tests/README.md|tests/fixtures/audit-core-blind-zones/*|tests/fixtures/m7-cargo-json-diagnostic-capture-v4/*|tests/test-maintainer-scripts.mjs|tests/test-run-tests-grouped.mjs|tests/test-update-test-doc.mjs|canonical/audit-core.md|canonical/evidence-ladder.md|canonical/oracle-registry.json|canonical/rust-*)
                 rust=true
                 ;;
             esac
@@ -74,7 +73,7 @@ jobs:
 
   rust:
     needs: changes
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     name: Test (Rust)
     runs-on: ubuntu-latest
     env:
@@ -94,3 +93,5 @@ jobs:
       - name: Test unified Rust analyzer
         working-directory: experiments
         run: cargo lumin-test
+      - name: Check packaged audit-core source fallback
+        run: cargo check --manifest-path skills/lumin-repo-lens-lab/_engine/rust/Cargo.toml --locked -p lumin-audit-core

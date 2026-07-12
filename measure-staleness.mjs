@@ -1,38 +1,17 @@
-// measure-staleness.mjs — Temporal evidence layer via git history.
+#!/usr/bin/env node
+// measure-staleness.mjs — git temporal evidence wrapper.
 //
-// For every dead-export candidate in symbols.json, measure:
-//   - when was the file last touched?           (git log -1 --follow)
-//   - when was the symbol's definition line last touched? (git blame -L)
-//   - when did the symbol name last appear in ANY commit's diff? (git log -S pickaxe)
-//
-// Produces a staleness tier (fossil / stale / recent / unknown) and a grounding
-// label. Fused with static AST evidence, the strongest removal-safety signal is:
-//
-//   fossil  + mention-age ≥ stale threshold  →  grounded, high   (safe)
-//   fossil  + mention-age < stale threshold  →  degraded, medium (name reused elsewhere)
-//   stale                                    →  degraded, medium
-//   recent                                   →  degraded, low    (active dev — risky)
-//   unknown (not a git repo, untracked)      →  blind
-//
-// Requires: symbols.json from build-symbol-graph.mjs in --output dir.
-// Requires: the target repo to be a git working tree.
-//
-// Usage:
-//   node measure-staleness.mjs --root <repo> --output <dir> \
-//        [--max-age-days 365] [--stale-age-days 90] \
-//        [--since "5 years ago"] [--skip-pickaxe] \
-//        [--cache-root <dir>] [--no-incremental] [--clear-incremental-cache]
+// JS owns CLI compatibility, symbols.json loading, artifact I/O, and console
+// summary. lumin-audit-core owns git evidence collection, incremental cache
+// behavior, tier classification, and staleness.json construction.
 
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { atomicWrite } from './_lib/atomic-write.mjs';
+
+import { runAuditCoreJsonResultFile } from './_lib/audit-core.mjs';
 import { parseCliArgs } from './_lib/cli.mjs';
-import {
-  clearIncrementalCache,
-  openIncrementalCacheStore,
-} from './_lib/incremental-cache-store.mjs';
+
+const STALENESS_REQUEST_SCHEMA_VERSION = 'lumin-staleness-producer-request.v1';
 
 const cli = parseCliArgs({
   'max-age-days': { type: 'string', default: '365' },
@@ -43,444 +22,78 @@ const cli = parseCliArgs({
   'cache-root': { type: 'string' },
   'clear-incremental-cache': { type: 'boolean', default: false },
 });
-const { root: ROOT, output, verbose } = cli;
+
+const { root: ROOT, output: OUTPUT } = cli;
 const maxAgeDays = Number(cli.raw['max-age-days'] ?? 365);
 const staleAgeDays = Number(cli.raw['stale-age-days'] ?? 90);
-const sinceArg = cli.raw.since ?? '5 years ago';
-const skipPickaxe = !!cli.raw['skip-pickaxe'];
-const isIncremental = cli.raw['no-incremental'] !== true;
-const cacheStore = openIncrementalCacheStore({
-  root: ROOT,
-  cacheRoot: cli.raw['cache-root'],
-});
-if (cli.raw['clear-incremental-cache'] === true) {
-  clearIncrementalCache(cacheStore);
-}
-const stalenessCacheDir = path.join(cacheStore.repoCacheDir, 'staleness');
-const stalenessCachePath = path.join(stalenessCacheDir, 'staleness.cache.json');
-const STALENESS_CACHE_SCHEMA_VERSION = 1;
+const since = cli.raw.since ?? '5 years ago';
+const skipPickaxe = cli.raw['skip-pickaxe'] === true;
+const incrementalEnabled = cli.raw['no-incremental'] !== true;
 
-// ─── git sanity ──────────────────────────────────────────
-function isGitRepo() {
-  try {
-    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
-      cwd: ROOT,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-if (!isGitRepo()) {
-  console.error('[staleness] not a git repository — cannot measure temporal evidence.');
-  process.exit(2);
-}
-
-// ─── load symbols ────────────────────────────────────────
-const symbolsPath = path.join(output, 'symbols.json');
+const symbolsPath = path.join(OUTPUT, 'symbols.json');
 if (!existsSync(symbolsPath)) {
   console.error(`[staleness] missing ${symbolsPath} — run build-symbol-graph.mjs first.`);
   process.exit(2);
 }
-const symbolsData = JSON.parse(readFileSync(symbolsPath, 'utf8'));
-const deadList = symbolsData.deadProdList ?? [];
-const deadCandidatesByFile = new Map();
-for (const entry of deadList) {
-  if (!entry?.file) continue;
-  deadCandidatesByFile.set(entry.file, (deadCandidatesByFile.get(entry.file) ?? 0) + 1);
-}
 
-// ─── git helpers ─────────────────────────────────────────
-// v0.6.8 Issue 7 fix: argv-array invocation avoids shell parsing entirely.
-// Previous `execSync(\`git ${args}\`)` with string interpolation of relFile /
-// symbol paths broke on any filename containing shell metacharacters
-// (`$`, backticks, `;`, ...) — the shell expanded `$name` to empty string
-// and git received a wrong path, silently returning null timestamps and
-// wrong staleness tiers. execFile passes argv directly, no expansion.
-function git(argv) {
-  try {
-    return execFileSync('git', argv, {
-      cwd: ROOT,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      maxBuffer: 1024 * 1024 * 16,
-    });
-  } catch {
-    return '';
-  }
-}
-
-const gitHead = git(['rev-parse', 'HEAD']).trim() || null;
-
-function sha256(value) {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
-}
-
-function stalenessCacheKey() {
-  const observedDate = new Date().toISOString().slice(0, 10);
-  return sha256(JSON.stringify({
-    schemaVersion: STALENESS_CACHE_SCHEMA_VERSION,
-    gitHead,
-    observedDate,
-    thresholds: { maxAgeDays, staleAgeDays, since: sinceArg },
-    skipPickaxe,
-    deadList: deadList.map((entry) => ({
-      file: entry.file ?? null,
-      line: entry.line ?? null,
-      symbol: entry.symbol ?? null,
-      identity: entry.identity ?? null,
-    })),
-  }));
-}
-
-function emptyStalenessCache(loadStatus = 'empty') {
-  return {
-    schemaVersion: STALENESS_CACHE_SCHEMA_VERSION,
-    meta: { loadStatus },
-    entries: {},
-  };
-}
-
-function loadStalenessCache() {
-  if (!existsSync(stalenessCachePath)) return emptyStalenessCache();
-  try {
-    const parsed = JSON.parse(readFileSync(stalenessCachePath, 'utf8'));
-    if (
-      parsed?.schemaVersion !== STALENESS_CACHE_SCHEMA_VERSION ||
-      !parsed.entries ||
-      typeof parsed.entries !== 'object'
-    ) {
-      return emptyStalenessCache('ignored-incompatible');
-    }
-    return {
-      schemaVersion: STALENESS_CACHE_SCHEMA_VERSION,
-      meta: { loadStatus: 'ok' },
-      entries: parsed.entries,
-    };
-  } catch {
-    return emptyStalenessCache('ignored-malformed');
-  }
-}
-
-function saveStalenessCache(cache) {
-  mkdirSync(stalenessCacheDir, { recursive: true });
-  const stableEntries = Object.fromEntries(
-    Object.entries(cache.entries ?? {}).sort(([a], [b]) => a.localeCompare(b))
-  );
-  atomicWrite(stalenessCachePath, `${JSON.stringify({
-    schemaVersion: STALENESS_CACHE_SCHEMA_VERSION,
-    entries: stableEntries,
-  }, null, 2)}\n`);
-}
-
-function zeroPerformanceCounters() {
-  return {
-    deadCandidatesProcessed: 0,
-    fileTouchGitCalls: 0,
-    lineBlameGitCalls: 0,
-    lineBlameCacheHits: 0,
-    lineBlameCacheMisses: 0,
-    symbolPickaxeGitCalls: 0,
-  };
-}
-
-const performance = zeroPerformanceCounters();
-
-function incrementalMeta({ reusedResult, reason, cacheKey }) {
-  return {
-    enabled: isIncremental,
-    reusedResult,
-    reason,
-    cacheRoot: cacheStore.cacheRoot,
-    repoFingerprint: cacheStore.repoFingerprint,
-    cacheSchemaVersion: STALENESS_CACHE_SCHEMA_VERSION,
-    cacheKey,
-  };
-}
-
-const cacheKey = isIncremental ? stalenessCacheKey() : null;
-const stalenessCache = isIncremental ? loadStalenessCache() : emptyStalenessCache('disabled');
-if (isIncremental) {
-  const cached = stalenessCache.entries?.[cacheKey]?.artifact;
-  if (cached) {
-    const artifact = {
-      ...cached,
-      meta: {
-        ...(cached.meta ?? {}),
-        generated: new Date().toISOString(),
-        root: ROOT,
-        gitHead,
-        symbolsSource: symbolsPath,
-        incremental: incrementalMeta({
-          reusedResult: true,
-          reason: 'cache-hit',
-          cacheKey,
-        }),
-      },
-      summary: {
-        ...(cached.summary ?? {}),
-        performance: zeroPerformanceCounters(),
-      },
-    };
-    const outPath = path.join(output, 'staleness.json');
-    writeFileSync(outPath, JSON.stringify(artifact, null, 2));
-    console.log(`[staleness] reused cached result → ${outPath}`);
-    process.exit(0);
-  }
-}
-
+const symbols = JSON.parse(readFileSync(symbolsPath, 'utf8'));
+const deadList = symbols.deadProdList ?? [];
 console.log(`[staleness] ${deadList.length} dead candidates — measuring git history ...`);
-if (verbose) console.error(`[staleness] thresholds: max=${maxAgeDays}d stale=${staleAgeDays}d since="${sinceArg}"`);
 
-const now = Math.floor(Date.now() / 1000);
-const daysSince = (ts) => (ts ? Math.floor((now - ts) / 86400) : null);
+const artifact = runAuditCoreJsonResultFile(
+  ['staleness-artifact', '--input', '-'],
+  'staleness-artifact',
+  {
+    input: JSON.stringify({
+      schemaVersion: STALENESS_REQUEST_SCHEMA_VERSION,
+      root: ROOT,
+      generated: new Date().toISOString(),
+      symbolsSource: symbolsPath,
+      symbols,
+      maxAgeDays,
+      staleAgeDays,
+      since,
+      skipPickaxe,
+      incrementalEnabled,
+      cacheRoot: cli.raw['cache-root'] ? path.resolve(cli.raw['cache-root']) : undefined,
+      clearIncrementalCache: cli.raw['clear-incremental-cache'] === true,
+    }),
+  },
+);
 
-// Safe identifier predicate — avoid shell expansion on non-ident symbols.
-const isSafeIdent = (s) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(s);
-
-// ─── per-file last touched (cached, --follow for renames) ─
-const fileTouchCache = new Map();
-function fileLastTouched(relFile) {
-  if (fileTouchCache.has(relFile)) return fileTouchCache.get(relFile);
-  performance.fileTouchGitCalls++;
-  const out = git(['log', '-1', '--format=%at', '--follow', '--', relFile]).trim();
-  const ts = out ? Number(out) : null;
-  fileTouchCache.set(relFile, ts);
-  return ts;
-}
-
-// ─── per-line blame ──────────────────────────────────────
-const lineBlameCache = new Map();
-function parseLineBlameTimes(out) {
-  const times = new Map();
-  let currentFinalLine = null;
-  let currentAuthorTime = null;
-  for (const line of out.split(/\r?\n/)) {
-    const header = line.match(/^[0-9a-f^]{7,64}\s+\d+\s+(\d+)(?:\s+\d+)?$/);
-    if (header) {
-      currentFinalLine = Number(header[1]);
-      currentAuthorTime = null;
-      continue;
-    }
-    const authorTime = line.match(/^author-time (\d+)$/);
-    if (authorTime) {
-      currentAuthorTime = Number(authorTime[1]);
-      continue;
-    }
-    if (line.startsWith('\t')) {
-      if (Number.isFinite(currentFinalLine) && Number.isFinite(currentAuthorTime)) {
-        times.set(currentFinalLine, currentAuthorTime);
-      }
-      currentFinalLine = null;
-      currentAuthorTime = null;
-    }
-  }
-  return times;
-}
-
-function lineBlameTimes(relFile) {
-  if (lineBlameCache.has(relFile)) {
-    performance.lineBlameCacheHits++;
-    return lineBlameCache.get(relFile);
-  }
-  performance.lineBlameCacheMisses++;
-  performance.lineBlameGitCalls++;
-  const out = git(['blame', '--line-porcelain', '--', relFile]);
-  const times = parseLineBlameTimes(out);
-  lineBlameCache.set(relFile, times);
-  return times;
-}
-
-function lineLastTouched(relFile, line) {
-  // v1.3.0: defensive coercion — symbols.json is generated by our own
-  // scripts but a damaged artifact shouldn't blow up staleness. Fall back
-  // to line 1 if the input is non-numeric.
-  const safeLine = Number.isFinite(Number(line)) ? Number(line) : 1;
-  if ((deadCandidatesByFile.get(relFile) ?? 0) <= 1) {
-    performance.lineBlameGitCalls++;
-    const out = git(['blame', '--porcelain', '-L', `${safeLine},${safeLine}`, '--', relFile]);
-    const m = out.match(/^author-time (\d+)/m);
-    return m ? Number(m[1]) : null;
-  }
-  return lineBlameTimes(relFile).get(safeLine) ?? null;
-}
-
-// ─── symbol name global last-mention (pickaxe) ───────────
-// Returns one of:
-//   { status: 'skipped' }           — short, unsafe, or --skip-pickaxe
-//   { status: 'cold',  ts: null }   — ran but no commits within --since window
-//   { status: 'warm',  ts: <num> }  — last pickaxe-match author-time
-//
-// Cached by symbol name across candidates. Short / unsafe names are skipped
-// because pickaxe over-matches common tokens ("do", "is", "id" etc.).
-const MIN_LEN = 4;
-const symbolMentionCache = new Map();
-function symbolLastMention(symbol) {
-  if (skipPickaxe) return { status: 'skipped' };
-  if (symbol.length < MIN_LEN) return { status: 'skipped' };
-  if (!isSafeIdent(symbol)) return { status: 'skipped' };
-  if (symbolMentionCache.has(symbol)) return symbolMentionCache.get(symbol);
-
-  const argv = ['log'];
-  if (sinceArg) argv.push(`--since=${sinceArg}`);
-  argv.push(`-S${symbol}`, '--format=%at', '-1');
-  performance.symbolPickaxeGitCalls++;
-  const out = git(argv).trim();
-  const result = out ? { status: 'warm', ts: Number(out) } : { status: 'cold', ts: null };
-  symbolMentionCache.set(symbol, result);
-  return result;
-}
-
-// ─── tier classification ─────────────────────────────────
-function stalenessTier(lineTs, fileTs) {
-  const best = lineTs ?? fileTs;
-  const age = daysSince(best);
-  if (age === null) return 'unknown';
-  if (age >= maxAgeDays) return 'fossil';
-  if (age >= staleAgeDays) return 'stale';
-  return 'recent';
-}
-
-function groundingFor(tier, mention) {
-  // mention: { status: 'skipped' | 'cold' | 'warm', ts?: number }
-  const mentionAge =
-    mention.status === 'warm' ? daysSince(mention.ts) : null;
-  const mentionCold = mention.status === 'cold'; // ran but no hits within --since
-  const mentionWarmOld =
-    mention.status === 'warm' && mentionAge !== null && mentionAge >= staleAgeDays;
-  const mentionWarmRecent =
-    mention.status === 'warm' && mentionAge !== null && mentionAge < staleAgeDays;
-
-  if (tier === 'fossil' && (mentionCold || mentionWarmOld)) {
-    return { grounding: 'grounded', confidence: 'high',
-      note: mentionCold
-        ? 'Definition is ancient AND the name has no pickaxe hits in the scanned window. Strongest temporal signal for safe removal.'
-        : 'Definition is ancient AND the name has not been touched anywhere recently. Strong safe-to-remove signal.' };
-  }
-  if (tier === 'fossil' && mentionWarmRecent) {
-    return { grounding: 'grounded', confidence: 'medium',
-      note: 'Definition is ancient but the name is still being edited somewhere in the repo — inspect before removal (possible rename/resurrection).' };
-  }
-  if (tier === 'fossil') {
-    // pickaxe skipped (short / unsafe symbol)
-    return { grounding: 'grounded', confidence: 'medium',
-      note: 'Definition is ancient. Pickaxe mention-check was skipped (symbol too short or unsafe) — temporal evidence partial.' };
-  }
-  if (tier === 'stale') {
-    return { grounding: 'degraded', confidence: 'medium',
-      note: 'Definition has not been touched recently. Dead status plausible but not as defensible as fossil tier.' };
-  }
-  if (tier === 'recent') {
-    return { grounding: 'degraded', confidence: 'low',
-      note: 'Definition was touched recently — removing may collide with active development.' };
-  }
-  return { grounding: 'blind', confidence: 'low',
-    note: 'File not tracked by git or no commit history. No temporal evidence.' };
-}
-
-// ─── main loop ───────────────────────────────────────────
-const enriched = [];
-for (let i = 0; i < deadList.length; i++) {
-  const d = deadList[i];
-  if (verbose && (i + 1) % 50 === 0) {
-    console.error(`[staleness] ${i + 1}/${deadList.length}`);
-  }
-
-  performance.deadCandidatesProcessed++;
-  const fileTs = fileLastTouched(d.file);
-  const lineTs = lineLastTouched(d.file, d.line);
-  const mention = symbolLastMention(d.symbol);
-
-  const tier = stalenessTier(lineTs, fileTs);
-  const { grounding, confidence, note } = groundingFor(tier, mention);
-
-  enriched.push({
-    ...d,
-    fileLastTouchedAt: fileTs,
-    fileLastTouchedDaysAgo: daysSince(fileTs),
-    lineLastTouchedAt: lineTs,
-    lineLastTouchedDaysAgo: daysSince(lineTs),
-    symbolMentionStatus: mention.status,
-    symbolLastMentionedAt: mention.status === 'warm' ? mention.ts : null,
-    symbolLastMentionedDaysAgo: mention.status === 'warm' ? daysSince(mention.ts) : null,
-    stalenessTier: tier,
-    grounding,
-    confidence,
-    note,
-  });
-}
-
-// ─── stats ───────────────────────────────────────────────
-const byTier = { fossil: 0, stale: 0, recent: 0, unknown: 0 };
-const byGrounding = { grounded: 0, degraded: 0, blind: 0 };
-for (const e of enriched) {
-  byTier[e.stalenessTier]++;
-  byGrounding[e.grounding]++;
-}
-
+const byTier = artifact.summary?.byTier ?? {};
+const byGrounding = artifact.summary?.byGrounding ?? {};
 console.log('\n══════ staleness distribution ══════');
-console.log(`  fossil (≥${maxAgeDays}d untouched)  : ${byTier.fossil}`);
-console.log(`  stale  (≥${staleAgeDays}d untouched)   : ${byTier.stale}`);
-console.log(`  recent (<${staleAgeDays}d — active)    : ${byTier.recent}`);
-console.log(`  unknown (untracked / no history)    : ${byTier.unknown}`);
+console.log(`  fossil (>=${maxAgeDays}d untouched)  : ${byTier.fossil ?? 0}`);
+console.log(`  stale  (>=${staleAgeDays}d untouched)   : ${byTier.stale ?? 0}`);
+console.log(`  recent (<${staleAgeDays}d - active)    : ${byTier.recent ?? 0}`);
+console.log(`  unknown (untracked / no history)    : ${byTier.unknown ?? 0}`);
 console.log('');
-console.log(`  grounded : ${byGrounding.grounded}`);
-console.log(`  degraded : ${byGrounding.degraded}`);
-console.log(`  blind    : ${byGrounding.blind}`);
+console.log(`  grounded : ${byGrounding.grounded ?? 0}`);
+console.log(`  degraded : ${byGrounding.degraded ?? 0}`);
+console.log(`  blind    : ${byGrounding.blind ?? 0}`);
 
-const topFossils = enriched
-  .filter((e) => e.stalenessTier === 'fossil')
+const topFossils = (artifact.enriched ?? [])
+  .filter((entry) => entry.stalenessTier === 'fossil')
   .sort((a, b) => (b.lineLastTouchedDaysAgo ?? 0) - (a.lineLastTouchedDaysAgo ?? 0))
   .slice(0, 10);
 if (topFossils.length) {
   console.log('\n── oldest fossils (top 10) ──');
-  for (const e of topFossils) {
-    const age = e.lineLastTouchedDaysAgo ?? e.fileLastTouchedDaysAgo ?? '?';
-    console.log(`  ${e.file}:${e.line}  ${e.symbol}  (last touched ${age}d ago)`);
+  for (const entry of topFossils) {
+    const age = entry.lineLastTouchedDaysAgo ?? entry.fileLastTouchedDaysAgo ?? '?';
+    console.log(`  ${entry.file}:${entry.line}  ${entry.symbol}  (last touched ${age}d ago)`);
   }
 }
 
-const recentRisky = enriched.filter((e) => e.stalenessTier === 'recent');
+const recentRisky = (artifact.enriched ?? []).filter((entry) => entry.stalenessTier === 'recent');
 if (recentRisky.length) {
-  console.log(`\n⚠ ${recentRisky.length} dead candidates touched within ${staleAgeDays}d — verify before removal.`);
-  for (const e of recentRisky.slice(0, 5)) {
-    const age = e.lineLastTouchedDaysAgo ?? e.fileLastTouchedDaysAgo ?? '?';
-    console.log(`    ${e.file}:${e.line}  ${e.symbol}  (${age}d)`);
+  console.log(`\n! ${recentRisky.length} dead candidates touched within ${staleAgeDays}d — verify before removal.`);
+  for (const entry of recentRisky.slice(0, 5)) {
+    const age = entry.lineLastTouchedDaysAgo ?? entry.fileLastTouchedDaysAgo ?? '?';
+    console.log(`    ${entry.file}:${entry.line}  ${entry.symbol}  (${age}d)`);
   }
 }
 
-// ─── save artifact ───────────────────────────────────────
-const artifact = {
-  meta: {
-    generated: new Date().toISOString(),
-    root: ROOT,
-    tool: 'measure-staleness.mjs',
-    gitHead,
-    symbolsSource: symbolsPath,
-    thresholds: { maxAgeDays, staleAgeDays, since: sinceArg },
-    skipPickaxe,
-    incremental: incrementalMeta({
-      reusedResult: false,
-      reason: isIncremental ? 'cache-miss' : 'disabled',
-      cacheKey,
-    }),
-  },
-  summary: {
-    total: enriched.length,
-    byTier,
-    byGrounding,
-    pickaxeCacheSize: symbolMentionCache.size,
-    performance,
-  },
-  enriched,
-};
-
-if (isIncremental && cacheKey) {
-  stalenessCache.entries[cacheKey] = { artifact };
-  saveStalenessCache(stalenessCache);
-}
-
-const outPath = path.join(output, 'staleness.json');
+const outPath = path.join(OUTPUT, 'staleness.json');
 writeFileSync(outPath, JSON.stringify(artifact, null, 2));
 console.log(`\n[staleness] saved → ${outPath}`);

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Version drift guard. Checks that all these places agree on one version:
 //   - package.json        (authoritative source)
-//   - emit-sarif.mjs      (TOOL_VERSION constant — surfaces in SARIF)
+//   - Rust SARIF owner    (TOOL_VERSION constant — surfaces in SARIF)
 //   - CHANGELOG.md        (top entry version)
 //   - package-lock.json   (added v1.8.3 after four-release drift)
 //
@@ -29,15 +29,23 @@ function check(label, actual, expected, file) {
 const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const canonicalVersion = pkg.version;
 
-// ─── 2. emit-sarif.mjs TOOL_VERSION ──────────────────────
+// ─── 2. Rust SARIF TOOL_VERSION ───────────────────────────
 {
-  const src = readFileSync(path.join(ROOT, 'emit-sarif.mjs'), 'utf8');
-  const m = src.match(/TOOL_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  const sarifOwner = path.join(
+    ROOT,
+    'experiments',
+    'rust-main',
+    'lumin-audit-core',
+    'src',
+    'sarif.rs',
+  );
+  const src = readFileSync(sarifOwner, 'utf8');
+  const m = src.match(/TOOL_VERSION(?:\s*:\s*[^=]+)?\s*=\s*['"]([^'"]+)['"]/);
   check(
-    'emit-sarif.mjs TOOL_VERSION',
+    'sarif.rs TOOL_VERSION',
     m?.[1],
     canonicalVersion,
-    'emit-sarif.mjs',
+    'experiments/rust-main/lumin-audit-core/src/sarif.rs',
   );
 }
 

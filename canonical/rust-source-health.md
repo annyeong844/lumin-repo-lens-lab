@@ -30,9 +30,24 @@ Rust source health is now a syntax phase inside the unified Rust analyzer
 surface. Its compatibility CLI may still emit `rust-health.json`, but the
 product artifact is the unified Rust analyzer artifact. The compatibility CLI
 defaults to a compact artifact that keeps summary, skipped-file evidence,
-signals, parse status, file facts, and per-file AST counts while omitting raw
-AST fact arrays. Full raw AST facts are diagnostic evidence and require
-`--artifact-profile full`.
+per-file signal summaries, parse status, file facts, and per-file AST counts
+while omitting raw signal arrays and raw AST fact arrays. Full raw signal and
+AST facts are diagnostic evidence and require `--artifact-profile full`.
+`lumin-rust-analyzer` product mode consumes the compact Rust source-health
+library response by default. The full raw `HealthResponse` remains a diagnostic
+mode for compatibility and deep inspection only. Compact product mode must
+preserve product-visible syntax summaries, function clone summaries, unused
+definition summaries, parse/skipped evidence, signal summary evidence, and
+opaque-surface examples through typed Rust protocol fields. If a compact lane
+omits raw evidence, the product artifact must either expose the corresponding
+summary/example projection or mark the raw lane as available only through the
+compatibility CLI.
+Compact `AstSummary` also preserves an uncapped
+`compilerOracleOpaqueSurfaces` count. The unified analyzer uses that typed
+compact field to select targeted Cargo oracle paths, so Cargo semantic modes do
+not need to force the full raw AST lane merely to find macro/cfg opacity.
+Precise semantic-finding overlap with individual opaque surfaces remains a full
+diagnostic capability unless a compact typed overlap lane is added.
 
 ## 3. Naming Lowering
 
@@ -89,7 +104,9 @@ The protocol owns its names. The parser is an implementation detail.
 | `src/parallel.rs` | local Rayon `ThreadPool`, `RuntimeConfig`, stack/thread policy | AST storage, file analysis |
 | `src/analyzer.rs` / `src/analyzer/*.rs` | syntax traversal, file-level analysis, AST fact extraction, AST opaque surface detection | protocol schema changes, final artifact metadata |
 | `src/dead_exports.rs` / `src/dead_exports/*.rs` | Rust unused-definition and dead-export raw evidence aggregation, RUST-FP gate application, reachability summaries | syntax traversal, edit-action safety, product action tiers |
+| `src/function_clones/stream.rs` | Compact-cache clone lane streaming accumulation: exact/structure/signature group buckets, near-pruned clone facts, and final clone-group projection | syntax traversal, new clone policy, cache identity |
 | `src/lib.rs` / `src/driver/*.rs` | library phase entrypoint, stdin compatibility dispatch, request validation, pool install, exit behavior | parser traversal |
+| `src/driver/cache.rs` | compact Rust source-health file-fact cache, strict content-hash identity, parser/policy/profile invalidation, cache reuse metadata | parser traversal, signal construction, absence claims |
 | `src/main.rs` | thin compatibility CLI entrypoint that delegates to `src/lib.rs` | parser traversal, request validation |
 | `src/wrapper.rs` / `src/wrapper/*.rs` | Rust-main file discovery, path policy, hashing, UTF-8 decode, skipped-file evidence, final metadata, artifact write | parser traversal, signal construction |
 
@@ -102,6 +119,8 @@ Rust source health does not own a JavaScript wrapper surface anymore. It is a
 Rust library phase with a thin compatibility CLI. The product execution surface
 is the unified Rust analyzer. New `rust-source-health` `.mjs` wrappers are
 forbidden unless this canonical file is amended with a migration reason.
+The generic JS tree-sitter fallback must not register `.rs`; Rust syntax
+belongs to `lumin-rust-analyzer` / `rust-source-health`, not a JS parser lane.
 
 ## 7. Canonical Constructors And Helpers
 
@@ -120,9 +139,12 @@ forbidden unless this canonical file is amended with a migration reason.
 | Rust record shape hash extraction | `collect_struct_shape_hash(...)` | `src/analyzer/syntax/items/shapes.rs` |
 | Rust function body fingerprint extraction | `collect_function_body_fingerprint(...)` | `src/analyzer/syntax/items/function_bodies.rs` |
 | Rust function clone group aggregation | `group_function_body_fingerprints(...)` | `src/function_clones.rs` |
-| Rust unused-definition analysis | `classify_unused_definitions(...)` | `src/dead_exports.rs` |
+| compact clone cache streaming aggregation | `FunctionCloneAccumulator` | `src/function_clones/stream.rs` |
+| Rust unused-definition analysis | `classify_unused_definitions_with_options(...)` | `src/dead_exports.rs` |
 | Rust inline statement pattern extraction | `collect_inline_patterns(...)` | `src/analyzer/syntax/items/inline_patterns.rs` |
 | artifact summary | `summarize(files)` | `src/summary.rs` |
+| Rust test-like path policy | `is_test_like_rust_path(path)` | `src/path_policy.rs` |
+| Rust wrapper scan scope | `RustFileScanScope` | `src/wrapper/files.rs` |
 | local Rayon pool | `build_pool(runtime_config)` | `src/parallel.rs` |
 | unsafe block syntax check | `is_unsafe_block_expr(node)` | `src/analyzer.rs` |
 | method call signal scan | `collect_method_call_signal(...)` | `src/analyzer.rs` |
@@ -145,6 +167,13 @@ its `src/function_clones/` submodules are implementation details of that
 owner. `src/function_clones/body.rs` owns exact/structure body-group
 orchestration; its `body/group.rs` submodule owns projection from grouped
 members into `AstFunctionCloneGroup`.
+`src/function_clones/stream.rs` owns the compact-cache streaming accumulator:
+warm compact runs may feed clone shard entries into this accumulator one file at
+a time, retain only group-member evidence plus near-pruned clone facts, and
+then call the same final projection path as the map-backed grouping. This is a
+storage/order optimization only. It must not change clone policy thresholds,
+candidate count semantics, group ordering, or the shared-token evidence used by
+near scoring.
 `src/analyzer/syntax/items/function_bodies.rs` owns function-body fingerprint
 orchestration; its `src/analyzer/syntax/items/function_bodies/` submodules are
 implementation details for body normalization, numeric literal canonicalization,
@@ -491,13 +520,19 @@ syntax scopes." The current supported local scope is
 `crate-local-name-qualified-path-and-token-refs`, combining serialized
 `ast.nameRefs[]`, qualified `ast.pathRefs[]`, and internal per-file token refs
 for supported Rust-only syntax. The internal token refs cover identifier tokens
-inside macro inputs, named format captures such as `format!("{MESSAGE}")`, and
+inside macro inputs, named format captures such as `format!("{MESSAGE}")`,
+format named width/precision captures such as `format!("{:<NAME_WIDTH$}")`,
 attribute string paths for reference-bearing slots such as
-`#[serde(default = "fallback")]`. They are intentionally not serialized into
-`ast.nameRefs[]`, because dumping every macro token identifier into the public
-artifact is too noisy and too expensive for large repositories. Counts are not
-grounded absence claims for external crates, unobserved macro expansion output,
-cfg branches, skipped files, or unresolved package scopes.
+`#[serde(default = "fallback")]` and
+`#[schemars(schema_with = "schema_fn")]`, and screaming-snake identifiers in
+pattern position that may be private const references. The pattern-position
+case is intentionally conservative because syntax alone cannot always prove
+whether a bare identifier pattern is a binding or a const path. These internal
+refs are intentionally not serialized into `ast.nameRefs[]`, because dumping
+every macro token identifier into the public artifact is too noisy and too
+expensive for large repositories. Counts are not grounded absence claims for
+external crates, unobserved macro expansion output, cfg branches, skipped files,
+or unresolved package scopes.
 The first private positive candidate scope is intentionally limited to
 module-owned functions, consts, and statics. Module, trait, impl, type, struct,
 and enum cleanup require later owner-specific proof instead of silent widening.
@@ -887,7 +922,10 @@ Rust source health uses a local Rayon pool.
 - Use `ThreadPoolBuilder::build()`, not `build_global()`.
 - Runtime request fields are `threadCount` and `workerStackBytes`.
 - Rust fields are `thread_count` and `worker_stack_bytes`.
-- Default worker stack is `DEFAULT_WORKER_STACK_BYTES = 16 * 1024 * 1024`.
+- Default worker stack is `DEFAULT_WORKER_STACK_BYTES = 4 * 1024 * 1024`.
+- Minimum accepted worker stack is `MIN_WORKER_STACK_BYTES = 1024 * 1024`;
+  callers may raise the stack for pathologically deep syntax, but the compact
+  CLI default must not reserve 16 MiB per worker for ordinary repositories.
 - AST nodes and `ra_ap_syntax` syntax trees do not cross worker boundaries as
   shared long-lived state.
 - Analyze independent files in parallel, then reassemble results into a
@@ -904,13 +942,14 @@ Final artifacts must satisfy these counts:
 - `summary.skippedFiles === skippedFiles.length`
 - `summary.parseErrorFiles === count(files where parse.ok === false)`
 - `summary.parseErrors === sum(files[*].parse.errors.length)`
-- `summary.signals === sum(files[*].signals.length)`
-- `summary.signalsByKind[kind] === count(signals where signal.kind === kind)`
-- `summary.reviewSignals === count(signals where signal.visibility === "review")`
-- `summary.mutedSignals === count(signals where signal.visibility === "muted")`
-- `summary.signalsByVisibility[visibility] === count(signals where signal.visibility === visibility)`
-- `summary.reviewSignalsByKind[kind] === count(signals where signal.kind === kind and signal.visibility === "review")`
-- `summary.mutedSignalsByReason[reason] === count(signals where signal.visibility === "muted" and signal.muteReason === reason)`
+- Full artifacts: `summary.signals === sum(files[*].signals.length)`.
+- Compact artifacts: `summary.signals === sum(files[*].signalSummary.total)`.
+- `summary.signalsByKind`, `summary.signalsByVisibility`,
+  `summary.reviewSignalsByKind`, and `summary.mutedSignalsByReason` are
+  computed from the internal per-file signal summary so compact artifacts do
+  not need to retain every raw signal object.
+- `summary.reviewSignals === sum(file signal review counts)`.
+- `summary.mutedSignals === sum(file signal muted counts)`.
 - `summary.unsafeBlocks === sum(files[*].facts.unsafeBlocks)`
 - `summary.unsafeFunctions === sum(files[*].facts.unsafeFunctions)`
 - `summary.definitions === sum(files[*].ast.definitions.length)`
@@ -940,6 +979,59 @@ Final artifacts must satisfy these counts:
 Rust-main wrapper mode recomputes summary after adding skipped-file evidence.
 stdin compatibility mode emits no skipped-file evidence.
 
+Rust source-health compact wrapper mode may reuse a strict per-file cache for
+compact syntax facts. The owner is `src/driver/cache.rs`. A cache hit is valid
+only when all of these match the current run: repository-root fingerprint,
+relative path, file sha256, parser kind/version/edition policy, source-health
+policy and signal-policy versions, and the compact cache profile version. Cache
+reuse is a parser skip only; clone groups, unused-definition summaries, skipped
+file evidence, and product summaries are rebuilt for every run from the current
+set of cached-or-parsed file facts. Cache misses, malformed entries, stale
+entries, and dropped prior entries must be visible in `meta.incremental`.
+The standalone compact CLI accepts `--cache-root`, `--no-incremental`, and
+`--clear-incremental-cache`, mirroring the checked TS/JS producer control
+surface. The serialized `meta.incremental.cacheFile` field is kept for TS/JS
+shape compatibility, but for Rust compact mode it points at the compact
+producer cache directory rather than one monolithic cache JSON file. Shard
+storage keeps warm-run RSS bounded without creating thousands of tiny
+cache-entry files on Windows/WSL mounts. The shard shape is storage-only:
+entries remain per-file and strict-content-addressed, and changing shard
+packing must not change cache hit semantics. Compact storage is physically
+split into `summary`, `clone`, and `dead` lane shard directories under the
+producer cache directory. A cache hit is valid only when every required lane has
+a matching entry; a missing or malformed lane entry invalidates that file and
+must be rebuilt from source rather than treated as a grounded zero. Warm runs
+must check cache identity from shard metadata before deserializing cached
+analysis payloads. The compact driver then loads only the lane needed for the
+current phase: clone facts for function clone grouping, dead-definition facts
+for unused-definition analysis, then summary facts for final compact `files`
+output and top-level summaries. This mirrors the checked TS/JS producer
+discipline: do not keep raw-ish per-file lanes alive after the phase that
+consumes them. Compact cache clone facts must also be cache-specific slim
+facts, not the full JSON protocol `AstFunctionBodyFingerprint` /
+`AstFunctionSignature` structs. The clone phase needs names, owners, hashes,
+line numbers, counts, qualifiers, visibility, and call/type-token text; it must
+not retain JSON-only fields such as protocol kind tags, normalizer strings that
+are already exposed through group policy, or unused body-location spans in the
+cache payload.
+The summary lane owns `CompactFileHealth` plus the detailed signal summary used
+to rebuild compact `files` and top-level summary counts. The dead-definition
+lane follows the same rule: compact cache entries store
+dead-export-specific definition and trait-impl facts, not the full raw
+`AstDefinition` / `AstImplBlock` protocol structs. The classifier needs
+definition kind/name/visibility/owner/test context, attributes, locations,
+local reference-name sets, trait-impl methods, path classifications, and a
+single review-opaque-surface blocker. In compact cache storage, local
+reference-name sets are serialized as sorted, duplicate-free slim string lists;
+the set contract belongs to the analyzer, not to a tree-backed cache
+container. It must not retain JSON-only raw AST wrappers, tree/set
+implementation details, or impl-block fields that are not consumed by
+unused-definition classification.
+Compact cache storage is an implementation detail and must not create absence
+claims, elapsed-time limits, repository-size caps, or permission to skip large
+repositories. Full raw artifacts do not use this cache unless this section is
+amended with a separate raw-fact cache contract.
+
 ## 12. Path And Artifact Ordering
 
 - Root-relative paths use POSIX slash.
@@ -956,6 +1048,11 @@ stdin compatibility mode emits no skipped-file evidence.
   Rust module files `tests.rs`, `test.rs`, `*.test.rs`, `*.spec.rs`,
   `*_test.rs`, and `*_tests.rs` are also test-like. Substrings are not enough:
   `contest.rs` remains source.
+- `lumin-rust-analyzer` product mode and `lumin-rust-analyzer pre-write` pass
+  scan-scope flags into Rust source-health instead of filtering Rust files in
+  JS. Effective scope is artifact-visible in the Rust source-health input
+  metadata; omitted files are unavailable/absent because the Rust owner did
+  not enumerate them, not because JS screening hid them.
 - Rust source health also mutes signals in explicit Rust test-only AST context
   without dropping raw evidence. Signals inside a direct `#[cfg(test)]` module,
   impl, or function carry `muteReason: "cfg-test"`. Signals inside a direct
@@ -967,16 +1064,19 @@ stdin compatibility mode emits no skipped-file evidence.
   counts, and capped review examples instead of embedding full raw AST lanes.
 - The standalone Rust source health CLI follows the same size discipline:
   `--artifact-profile compact` is the default and emits `astSummary` per file
-  plus capped `reviewOpaqueSurfaceExamples`; `--artifact-profile full` preserves
-  the raw compatibility shape with full `files[*].ast` arrays. The compact
-  `astSummary` must publish `reviewOpaqueSurfaceSampleLimit` beside the capped
-  example array so the artifact shows that truncation is a projection choice,
-  not an analysis cap.
-  `src/wrapper/cli/compact.rs` owns compact artifact orchestration. Its
-  `compact/` submodules are implementation details: `file.rs` projects
-  per-file compact health, `ast_summary.rs` projects per-file AST counts and
-  review opaque examples, and `function_clone_groups.rs` projects compact
-  clone-group counts and examples.
+  plus capped `reviewOpaqueSurfaceExamples` and `signalSummary`; it does not
+  emit `files[*].signals`. `--artifact-profile full` preserves the raw
+  compatibility shape with full `files[*].signals` and `files[*].ast` arrays.
+  The compact `astSummary` must publish `reviewOpaqueSurfaceSampleLimit` beside
+  the capped example array so the artifact shows that truncation is a
+  projection choice, not an analysis cap. `unusedDefinitionAnalysis` keeps
+  uncapped summary counts while compact artifacts retain only capped
+  `excludedCandidates` examples and publish `excludedCandidateProjection`.
+  `src/wrapper/cli/compact.rs` owns compact artifact orchestration. Protocol
+  compact file shapes are owned by `src/protocol/compact.rs`; the wrapper must
+  not rebuild compact per-file JSON from full `FileHealth` in compact mode.
+  `compact/function_clone_groups.rs` projects compact clone-group counts and
+  examples.
 - Output `files` keys are sorted by path.
 - `signals` are sorted by `location.byteStart`, then `kind`.
 - `parse.errors` are sorted by `location.byteStart`, then `message`.

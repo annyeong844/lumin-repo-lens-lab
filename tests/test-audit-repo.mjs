@@ -200,8 +200,33 @@ function assert(label, ok, detail = '') {
   });
   assert('A0f. review pack Lane 2 reminds reviewer to inspect anyContamination owner maps',
     reviewPack.includes('Identity-level anyContamination: 0 severe type owners, 1 severe helper owner') &&
-    reviewPack.includes('Inspect symbols.json owner maps'),
+    reviewPack.includes('Inspect symbols.json owner maps') &&
+    reviewPack.includes('Rust analyzer evidence is not available for this run; JS/TS clone and shape artifacts are not Rust evidence.') &&
+    reviewPack.includes('Rust analyzer artifact not available in this run') &&
+    !reviewPack.includes('Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.'),
     reviewPack);
+  const reviewPackWithRustEvidence = renderAuditReviewPack({
+    manifest: {
+      scanRange: { files: 10, languages: ['ts', 'rs'], includeTests: true },
+      rustAnalysis: {
+        status: 'complete',
+        available: true,
+        files: 2,
+        scanScope: { includeTests: false, exclude: ['generated'] },
+      },
+    },
+    discipline: { totals: { ':any': 41 } },
+    symbols: {
+      meta: { supports: { anyContamination: true } },
+      helperOwnersByIdentity: {},
+      typeOwnersByIdentity: {},
+    },
+  });
+  assert('A0f2. review pack only lists Rust analyzer artifact when manifest marks it available',
+    reviewPackWithRustEvidence.includes('Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.') &&
+    reviewPackWithRustEvidence.includes('Artifacts for the controller to inspect first: discipline.json, shape-index.json, function-clones.json, checklist-facts.json, symbols.json, rust-analyzer-health.latest.json') &&
+    reviewPackWithRustEvidence.includes('Rust analyzer artifact available for 2 file(s) (production files only, 1 exclude pattern)'),
+    reviewPackWithRustEvidence);
   const reviewPackWithResolverHints = renderAuditReviewPack({
     manifest: {
       scanRange: { files: 10, languages: ['ts'], includeTests: true },
@@ -1767,10 +1792,10 @@ function assert(label, ok, detail = '') {
     assert('O10d2. full profile artifact brief maps function clone cues without ranking them',
       typeof checklist.B1_duplicate_implementation?.structureGroupCandidates === 'number' &&
       typeof checklist.B1_duplicate_implementation?.nearFunctionCandidates === 'number' &&
-      summaryMd.includes('Function clone cues:') &&
+      summaryMd.includes('JS/TS function clone cues:') &&
       summaryMd.includes('near-function cues') &&
       summaryMd.includes('function-clones.json') &&
-      reviewPackMd.includes('Function clone cues:') &&
+      reviewPackMd.includes('JS/TS function clone cues:') &&
       reviewPackMd.includes('near-function cues'),
       `${summaryMd}\n---\n${reviewPackMd}`);
     assert('O10e. full profile summary and review pack expose symbols anyContamination lane',

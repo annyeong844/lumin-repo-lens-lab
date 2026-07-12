@@ -26,6 +26,17 @@ describe('maintainer scripts guards', () => {
     expect(source).toContain('if (result.error)');
     expect(source).toContain('failed to start test suite');
     expect(source).toContain('result.error.message');
+    expect(source).toContain('LEGACY_NODE_SUITES');
+    expect(source).toContain('test-audit-repo.mjs');
+    expect(source).toContain('skipping legacy umbrella suite');
+  });
+
+  it('grouped Node test runner uses the same default-suite legacy exclusion', () => {
+    const source = readRepoFile('scripts/run-tests-grouped.mjs');
+
+    expect(source).toContain('LEGACY_NODE_SUITES');
+    expect(source).toContain('test-audit-repo.mjs');
+    expect(source).toContain('!LEGACY_NODE_SUITES.has(file)');
   });
 
   it('publish-public-plugin uses try/catch optional JSON reads', () => {

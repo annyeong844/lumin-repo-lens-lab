@@ -14,6 +14,7 @@ import { it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   writeFileSync,
+  chmodSync,
   readFileSync,
   mkdirSync,
   mkdtempSync,
@@ -59,6 +60,37 @@ function buildFixture(fxDir) {
     "src/utils/mime.ts",
     "export function getMimeType(path) { return path.endsWith('.json') ? 'application/json' : 'text/plain'; }\n",
   );
+}
+
+function writeFakeRustAnalyzer(dir) {
+  const script = path.join(dir, "fake-rust-analyzer.mjs");
+  writeFileSync(
+    script,
+    `#!/usr/bin/env node
+import { readFileSync, writeFileSync } from 'node:fs';
+const outIndex = process.argv.indexOf('--output');
+const output = outIndex >= 0 ? process.argv[outIndex + 1] : null;
+if (process.argv.includes('--intent')) readFileSync(0, 'utf8');
+if (!output) process.exit(2);
+writeFileSync(output, JSON.stringify({
+  schemaVersion: 'rust-pre-write.v1',
+  policyVersion: 'rust-pre-write-policy.v1',
+  intent: { files: ['src/lib.rs'] },
+  meta: { producer: 'lumin-rust-analyzer' },
+  coverage: { files: 'ran' },
+  lookups: [],
+  cueCards: []
+}, null, 2));
+console.log('## rust pre-write');
+`,
+  );
+  if (process.platform === "win32") {
+    const cmd = path.join(dir, "fake-rust-analyzer.cmd");
+    writeFileSync(cmd, `@echo off\r\n"${NODE}" "${script}" %*\r\n`);
+    return cmd;
+  }
+  chmodSync(script, 0o755);
+  return script;
 }
 
 // ═══ T1. --pre-write without --intent → exit 2 ═══
@@ -645,6 +677,77 @@ function buildFixture(fxDir) {
       !existsSync(path.join(out, "triage.json")) &&
         !existsSync(path.join(out, "topology.json")),
       JSON.stringify(manifest.artifactsProduced),
+    );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+}
+
+// ═══ T6. Rust pre-write advisory inventory includes Rust files ═══
+
+{
+  const fx = mkdtempSync(path.join(tmpdir(), "au-pre-rust-inventory-"));
+  const out = mkdtempSync(path.join(tmpdir(), "au-pre-rust-inventory-out-"));
+  try {
+    write(
+      fx,
+      "package.json",
+      JSON.stringify({ name: "au-pre-rust-inventory", type: "module" }),
+    );
+    write(fx, "src/lib.rs", "pub fn existing_rust() {}\n");
+    write(fx, "src/app.ts", "export const existingTs = 1;\n");
+    const analyzer = writeFakeRustAnalyzer(out);
+    const intent = {
+      language: "rust",
+      files: ["src/lib.rs"],
+      names: [],
+      shapes: [],
+      dependencies: [],
+      plannedTypeEscapes: [],
+    };
+    const intentPath = path.join(out, "intent.json");
+    writeFileSync(intentPath, JSON.stringify(intent));
+
+    const res = spawnSync(
+      NODE,
+      [
+        AUDIT_REPO,
+        "--root",
+        fx,
+        "--output",
+        out,
+        "--pre-write",
+        "--pre-write-engine",
+        "rust",
+        "--intent",
+        intentPath,
+        "--profile",
+        "quick",
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, LUMIN_RUST_ANALYZER_BIN: analyzer },
+      },
+    );
+
+    assert(
+      "T6. rust pre-write exits 0 with fake analyzer",
+      res.status === 0,
+      `status=${res.status}, stderr=${res.stderr.slice(0, 500)}`,
+    );
+    const advisory = JSON.parse(
+      readFileSync(path.join(out, "pre-write-advisory.latest.json"), "utf8"),
+    );
+    assert(
+      "T6b. rust pre-write inventory includes existing Rust file",
+      advisory.preWrite?.fileInventory?.files?.includes("src/lib.rs"),
+      JSON.stringify(advisory.preWrite?.fileInventory),
+    );
+    assert(
+      "T6c. rust pre-write inventory keeps JS/TS files for mixed repo deltas",
+      advisory.preWrite?.fileInventory?.files?.includes("src/app.ts"),
+      JSON.stringify(advisory.preWrite?.fileInventory),
     );
   } finally {
     rmSync(fx, { recursive: true, force: true });

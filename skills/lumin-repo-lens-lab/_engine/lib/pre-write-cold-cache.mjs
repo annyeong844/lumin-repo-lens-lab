@@ -49,12 +49,6 @@ const PRODUCERS = [
     failKind: 'cold-cache-topology-failed',
     timeoutKind: 'cold-cache-topology-timeout',
   },
-  {
-    artifact: 'triage.json',
-    script: 'triage-repo.mjs',
-    failKind: 'cold-cache-triage-failed',
-    timeoutKind: 'cold-cache-triage-timeout',
-  },
 ];
 
 const SHAPE_INDEX_PRODUCER = {
@@ -107,23 +101,8 @@ function selectProducers({ intent, includeShapeIndex }) {
 
   const needed = new Set();
 
-  if (hasEntries(intent.names)) {
-    needed.add('symbols.json');
-  }
-
-  if (hasEntries(intent.files)) {
-    // File lookup needs topology + triage for neighboring/cluster evidence
-    // and symbols for parse-error honesty and file-local definition facts.
-    needed.add('symbols.json');
-    needed.add('topology.json');
-    needed.add('triage.json');
-  }
-
-  if (hasEntries(intent.dependencies)) {
-    // package.json is read directly, but symbols lets the advisory report
-    // observed import consumers without running a full audit.
-    needed.add('symbols.json');
-  }
+  // Name, file, and dependency evidence comes from the Rust compact
+  // pre-write pass. Do not materialize symbols.json or topology.json here.
 
   if (hasEntries(intent.shapes) || includeShapeIndex) {
     needed.add('shape-index.json');

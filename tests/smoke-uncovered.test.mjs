@@ -327,7 +327,10 @@ describe("smoke coverage for previously uncovered scripts", () => {
           version,
           type: "module",
         });
-        fixture.write("emit-sarif.mjs", `const TOOL_VERSION = '${version}';\n`);
+        fixture.write(
+          "experiments/rust-main/lumin-audit-core/src/sarif.rs",
+          `const TOOL_VERSION: &str = "${version}";\n`,
+        );
         fixture.write(
           "CHANGELOG.md",
           [

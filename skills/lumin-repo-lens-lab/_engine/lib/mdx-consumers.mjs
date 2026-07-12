@@ -128,15 +128,22 @@ export function parseMdxImportConsumers(src, filePath = '<mdx>') {
   return out;
 }
 
-export function collectMdxImportConsumers({ root, includeTests = true, exclude = [] }) {
+export function collectMdxImportConsumers({
+  root,
+  includeTests = true,
+  exclude = [],
+  files = null,
+}) {
   const out = [];
-  const files = collectFiles(root, {
-    includeTests,
-    exclude,
-    languages: ['mdx'],
-  });
+  const mdxFiles = Array.isArray(files)
+    ? files.filter((filePath) => filePath.toLowerCase().endsWith('.mdx'))
+    : collectFiles(root, {
+        includeTests,
+        exclude,
+        languages: ['mdx'],
+      });
 
-  for (const filePath of files) {
+  for (const filePath of mdxFiles) {
     let src;
     try { src = readFileSync(filePath, 'utf8'); } catch { continue; }
     out.push(...parseMdxImportConsumers(src, filePath));

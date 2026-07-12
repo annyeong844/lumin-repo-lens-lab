@@ -1,40 +1,39 @@
 use std::collections::BTreeMap;
 
 use crate::protocol::{
-    AstFunctionBodyFingerprint, AstFunctionCloneGroup, AstFunctionCloneGroupKind, FileHealth,
-    PathClassification, RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC,
+    AstFunctionCloneGroup, AstFunctionCloneGroupKind, RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC,
     RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS, RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC,
     RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS,
 };
 
 mod group;
 
-use group::group_from_members;
+pub(super) use group::group_from_members;
 
-use super::common::GroupMember;
+use super::common::{FunctionBodyFactView, FunctionCloneFileView, GroupMember};
 
-pub(super) fn group_exact_body_groups(
-    files: &BTreeMap<String, FileHealth>,
+pub(super) fn group_exact_body_groups<F: FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
 ) -> Vec<AstFunctionCloneGroup> {
     group_by_hash(
         files,
         AstFunctionCloneGroupKind::ExactFunctionBodyGroup,
         RUST_FUNCTION_CLONE_EXACT_MIN_BODY_LOC,
         RUST_FUNCTION_CLONE_EXACT_MIN_STATEMENTS,
-        |fact| &fact.normalized_exact_hash,
+        FunctionBodyFactView::normalized_exact_hash,
         "same normalized function body; verify domain ownership before merging",
     )
 }
 
-pub(super) fn group_structure_groups(
-    files: &BTreeMap<String, FileHealth>,
+pub(super) fn group_structure_groups<F: FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
 ) -> Vec<AstFunctionCloneGroup> {
     group_by_hash(
         files,
         AstFunctionCloneGroupKind::FunctionBodyStructureGroup,
         RUST_FUNCTION_CLONE_STRUCTURE_MIN_BODY_LOC,
         RUST_FUNCTION_CLONE_STRUCTURE_MIN_STATEMENTS,
-        |fact| &fact.normalized_structure_hash,
+        FunctionBodyFactView::normalized_structure_hash,
         "same anonymized function-body structure; review cue only, not proof of semantic equivalence",
     )
 }
@@ -43,26 +42,23 @@ pub(super) fn review_visible_group_count(groups: &[AstFunctionCloneGroup]) -> us
     groups.iter().filter(|group| !group.generated_only).count()
 }
 
-fn group_by_hash(
-    files: &BTreeMap<String, FileHealth>,
+fn group_by_hash<F: FunctionCloneFileView>(
+    files: &BTreeMap<String, F>,
     kind: AstFunctionCloneGroupKind,
     min_body_loc: usize,
     min_statements: usize,
-    hash_for: fn(&AstFunctionBodyFingerprint) -> &String,
+    hash_for: fn(&F::BodyFact) -> &str,
     reason: &'static str,
 ) -> Vec<AstFunctionCloneGroup> {
-    let mut by_hash = BTreeMap::<String, Vec<GroupMember<'_>>>::new();
+    let mut by_hash = BTreeMap::<&str, Vec<GroupMember<'_, F::BodyFact>>>::new();
     for (file, health) in files {
-        let generated = health
-            .path
-            .classifications
-            .contains(&PathClassification::Generated);
-        for fact in &health.ast.function_body_fingerprints {
-            if fact.body_loc < min_body_loc || fact.statement_count < min_statements {
+        let generated = health.generated();
+        for fact in health.function_body_fingerprints() {
+            if fact.body_loc() < min_body_loc || fact.statement_count() < min_statements {
                 continue;
             }
             by_hash
-                .entry(hash_for(fact).clone())
+                .entry(hash_for(fact))
                 .or_default()
                 .push(GroupMember {
                     file: file.as_str(),
@@ -74,7 +70,7 @@ fn group_by_hash(
 
     let mut groups = by_hash
         .into_iter()
-        .filter_map(|(hash, members)| group_from_members(kind, hash, members, reason))
+        .filter_map(|(hash, members)| group_from_members(kind, hash.to_string(), members, reason))
         .collect::<Vec<_>>();
     groups.sort_by(|left, right| {
         left.generated_only

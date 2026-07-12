@@ -1,8 +1,10 @@
 use lumin_rust_source_health::protocol::{
     AstNearFunctionCandidateGenerationPolicy, AstNearFunctionCandidateGenerationSummary,
-    AstSkippedLowDiscriminationBucket, HealthResponse,
+    AstSkippedLowDiscriminationBucket,
 };
 use serde::Serialize;
+
+use crate::syntax_phase::SyntaxPhase;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,9 +45,9 @@ pub(super) struct SyntaxPhaseSummaryBrief<'a> {
 }
 
 impl<'a> SyntaxPhaseSummaryBrief<'a> {
-    pub(super) fn from_syntax(syntax: &'a HealthResponse) -> Self {
-        let summary = &syntax.summary;
-        let function_clone_groups = &syntax.function_clone_groups;
+    pub(super) fn from_syntax(syntax: SyntaxPhase<'a>) -> Self {
+        let summary = syntax.summary();
+        let function_clone_groups = syntax.function_clone_groups();
         Self {
             files: summary.files,
             skipped_files: summary.skipped_files,

@@ -1,5 +1,5 @@
 use lumin_rust_source_health::protocol::{
-    HealthResponse, ParserMeta, PolicyMeta, RuntimeMeta, SidecarMeta,
+    HealthResponse, InputMeta, ParserMeta, PolicyMeta, RuntimeMeta, SidecarMeta,
 };
 use serde::Serialize;
 
@@ -28,6 +28,7 @@ impl PreWriteMeta {
                 policy: syntax.meta.policy.clone(),
                 runtime: syntax.meta.runtime.clone(),
                 sidecar: syntax.meta.sidecar.clone(),
+                input: syntax.meta.input.clone(),
             },
             token_policy: TokenPolicyMeta {
                 tokenizer_version: TOKENIZER_VERSION,
@@ -54,6 +55,8 @@ struct SourceHealthProvenance {
     runtime: RuntimeMeta,
     #[serde(skip_serializing_if = "Option::is_none")]
     sidecar: Option<SidecarMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<InputMeta>,
 }
 
 #[derive(Debug, Serialize)]

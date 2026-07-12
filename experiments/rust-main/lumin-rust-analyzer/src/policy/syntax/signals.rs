@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lumin_rust_source_health::protocol::{
-    HealthResponse, Severity, Signal, SignalKind, SignalMuteReason, SignalVisibilityState,
+    CompactSignalExample, CompactSignalSummary, Severity, Signal, SignalKind, SignalMuteReason,
+    SignalVisibilityState,
 };
 use serde::Serialize;
 
 use crate::policy::SIGNAL_SAMPLE_LIMIT;
+use crate::syntax_phase::{SyntaxFile, SyntaxPhase};
 
 use super::ProductLocation;
 
@@ -42,6 +44,28 @@ pub(super) fn signals_for_product(signals: &[&Signal], limit: usize) -> Vec<Prod
             location: ProductLocation::from(&signal.location),
         })
         .collect()
+}
+
+pub(super) fn compact_signals_for_product(
+    signals: &[CompactSignalExample],
+    limit: usize,
+) -> Vec<ProductSignalExample> {
+    signals
+        .iter()
+        .take(limit)
+        .map(ProductSignalExample::from_compact)
+        .collect()
+}
+
+impl ProductSignalExample {
+    fn from_compact(signal: &CompactSignalExample) -> Self {
+        Self {
+            kind: signal.kind,
+            severity: signal.severity,
+            mute_reason: signal.mute_reason,
+            location: ProductLocation::from(&signal.location),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -90,6 +114,15 @@ pub(super) fn signal_summary(
     }
 }
 
+pub(super) fn signal_summary_from_compact(summary: &CompactSignalSummary) -> SignalSummary {
+    SignalSummary {
+        review: (summary.review > 0).then_some(summary.review),
+        muted: (summary.muted > 0).then_some(summary.muted),
+        by_kind: summary.by_kind.clone(),
+        muted_by_reason: summary.muted_by_reason.clone(),
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SyntaxReviewSignalExample<'a> {
@@ -101,23 +134,39 @@ pub(crate) struct SyntaxReviewSignalExample<'a> {
 }
 
 pub(crate) fn syntax_review_signal_examples(
-    response: &HealthResponse,
+    syntax: SyntaxPhase<'_>,
 ) -> Vec<SyntaxReviewSignalExample<'_>> {
-    let mut examples = response
-        .files
-        .iter()
-        .flat_map(|(path, file)| {
-            file.signals
-                .iter()
-                .filter(|signal| signal.visibility == SignalVisibilityState::Review)
-                .map(|signal| SyntaxReviewSignalExample {
-                    file: path,
-                    kind: signal.kind,
-                    location: ProductLocation::from(&signal.location),
-                    byte_start: signal.location.byte_start,
-                })
-        })
-        .collect::<Vec<_>>();
+    let mut examples = Vec::new();
+    for (path, file) in syntax.files() {
+        match file {
+            SyntaxFile::Full(file) => {
+                examples.extend(
+                    file.signals
+                        .iter()
+                        .filter(|signal| signal.visibility == SignalVisibilityState::Review)
+                        .map(|signal| SyntaxReviewSignalExample {
+                            file: path,
+                            kind: signal.kind,
+                            location: ProductLocation::from(&signal.location),
+                            byte_start: signal.location.byte_start,
+                        }),
+                );
+            }
+            SyntaxFile::Compact(file) => {
+                examples.extend(
+                    file.signal_summary
+                        .review_signal_examples
+                        .iter()
+                        .map(|signal| SyntaxReviewSignalExample {
+                            file: path,
+                            kind: signal.kind,
+                            location: ProductLocation::from(&signal.location),
+                            byte_start: signal.location.byte_start,
+                        }),
+                );
+            }
+        }
+    }
     examples.sort_by(|left, right| {
         signal_example_priority(left.kind)
             .cmp(&signal_example_priority(right.kind))

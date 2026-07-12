@@ -1,5 +1,18 @@
 # Lumin Wiki Log
 
+## [2026-07-03] test-gate | Audit runtime gate moves to Cargo
+
+Retired `tests/test-audit-repo.mjs` from the default `npm test` runner while
+keeping it available as `npm run test:node:legacy-audit-repo` for manual
+archaeology. The migrated audit-runtime gate is now
+`npm run test:audit-runtime-gate`, backed by `lumin-audit-core` Cargo tests.
+
+Updated the parked-suite and Vitest mirror tracker pages to record that the
+known audit-repo split tracks remain reference coverage while Rust-owned
+manifest evidence contracts move under the Cargo gate. Default focused Node
+suites remain in `npm run ci`; the removed scope is the broad legacy umbrella,
+not the focused suite set.
+
 ## [2026-06-02] implementation | WT-SFC Svelte store auto-subscription evidence
 
 Recorded Svelte `$store` auto-subscription evidence as muted review-only SFC

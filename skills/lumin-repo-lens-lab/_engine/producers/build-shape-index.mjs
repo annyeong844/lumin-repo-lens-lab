@@ -11,8 +11,8 @@ import path from 'node:path';
 import { parseCliArgs } from '../lib/cli.mjs';
 import { JS_FAMILY_LANGS } from '../lib/lang.mjs';
 import { producerMetaBase } from '../lib/artifacts.mjs';
+import { runAuditCoreJsonResultFile } from '../lib/audit-core.mjs';
 import {
-  assembleShapeIndexArtifact,
   extractShapeIndexFilePayload,
   shapeIndexReadErrorPayload,
 } from '../lib/shape-index-artifact.mjs';
@@ -172,25 +172,33 @@ if (incrementalEnabled) {
   saveProducerCache(cacheStore, PRODUCER_ID, nextCache);
 }
 
-const artifact = assembleShapeIndexArtifact({
-  metaBase,
-  includeTests: cli.includeTests,
-  exclude: cli.exclude,
-  scope,
-  observedAt: metaBase.generated,
-  fileCount: snapshotEntries.length,
-  ...aggregate,
-  incremental: {
-    enabled: incrementalEnabled,
-    identityMode: incrementalEnabled ? STRICT_IDENTITY_MODE : null,
-    cacheVersion: 1,
-    cacheRoot: incrementalEnabled ? cacheStore.cacheRoot : null,
-    changedFiles,
-    reusedFiles,
-    droppedFiles,
-    invalidatedFiles,
-    reason: incrementalEnabled ? null : 'disabled-by-flag',
-  },
+const artifact = runAuditCoreJsonResultFile([
+  'shape-index-artifact',
+  '--input',
+  '-',
+], 'shape-index-artifact', {
+  input: JSON.stringify({
+    schemaVersion: 'lumin-shape-index-producer-request.v1',
+    generated: metaBase.generated,
+    root: metaBase.root,
+    includeTests: cli.includeTests,
+    exclude: cli.exclude ?? [],
+    scope,
+    observedAt: metaBase.generated,
+    fileCount: snapshotEntries.length,
+    ...aggregate,
+    incremental: {
+      enabled: incrementalEnabled,
+      identityMode: incrementalEnabled ? STRICT_IDENTITY_MODE : null,
+      cacheVersion: 1,
+      cacheRoot: incrementalEnabled ? cacheStore.cacheRoot : null,
+      changedFiles,
+      reusedFiles,
+      droppedFiles,
+      invalidatedFiles,
+      reason: incrementalEnabled ? null : 'disabled-by-flag',
+    },
+  }),
 });
 
 const outPath = path.join(OUTPUT, 'shape-index.json');

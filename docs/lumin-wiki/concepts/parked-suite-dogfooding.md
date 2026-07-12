@@ -1,9 +1,9 @@
 # Parked Suite Dogfooding
 
 > **Date:** 2026-05-16.
-> **Last refreshed:** 2026-05-24.
-> **Scope:** the 2 Node-authoritative umbrella suites left after the WT-24
-> Vitest mirror closure audit refresh.
+> **Last refreshed:** 2026-07-03.
+> **Scope:** the remaining Node-authoritative umbrella suite left after the
+> audit-repo legacy umbrella retirement.
 
 This page defines how Lumin dogfoods its own structure-review and test-reform
 rules before touching the parked remainder. It does not authorize more direct
@@ -32,8 +32,14 @@ exists and the preserved Node command still passes.
 
 | Lane                  | Parked Suites                        | Why Node Stays Authoritative                                                                                                  | Next Safe Dogfood Question                                                                                     |
 | --------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `audit-repo umbrella` | `tests/test-audit-repo.mjs`          | Known split mirrors are complete, but the direct umbrella still mixes product-pass contracts across audit lifecycle surfaces. | Is there a new audit-repo product-pass cluster that is not already covered by a focused split review?          |
 | `cue-tier policy`     | `tests/test-pre-write-cue-tiers.mjs` | Known T1-T10 split mirrors are complete, but the direct umbrella still protects cross-lane cue policy boundaries.             | Is there new cue-tier behavior with corpus evidence that needs a fresh split review before any focused mirror? |
+
+`tests/test-audit-repo.mjs` is no longer part of the parked Node-authoritative
+set or the default `npm test` gate. Its known product-pass contracts are covered
+by Rust audit-core cargo tests through `npm run test:audit-runtime-gate`; focused
+Vitest mirrors remain reference coverage while JS/TS producers are being retired.
+The legacy umbrella remains available only through
+`npm run test:node:legacy-audit-repo` for manual archaeology.
 
 ## Completed Former Parked Lanes
 
@@ -91,12 +97,7 @@ test that would fail if the helper masked analyzer semantics.
 
 Start with review work, not runner work:
 
-1. `tests/test-audit-repo.mjs`: the split-track dogfooding review now maps the
-   parked umbrella into focused tracks. Add another split only when a new
-   audit-repo product-pass cluster is not already covered by the current
-   artifact brief, manifest/performance, blind-zone confidence, scan-range,
-   lifecycle, full-profile, or incremental-forwarding mirrors.
-2. `tests/test-pre-write-cue-tiers.mjs`: keep the broad Node suite
+1. `tests/test-pre-write-cue-tiers.mjs`: keep the broad Node suite
    authoritative. Add another split only when new cue-tier behavior has corpus
    evidence and a review page; do not mirror the umbrella to chase a coverage
    count.

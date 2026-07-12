@@ -1,0 +1,351 @@
+[
+  {
+    "name": "clean-ts-js",
+    "input": {
+      "triage": { "byLanguage": { "ts": 100, "tsx": 50 } },
+      "symbols": {
+        "uses": { "unresolvedInternalRatio": 0.02 },
+        "meta": { "warnings": [] }
+      }
+    },
+    "expectedZones": [],
+    "absentAreas": ["rs", "resolver", "parser", "sfc-scan-gap"]
+  },
+  {
+    "name": "rust-scan-gap-without-current-rust-analysis",
+    "input": {
+      "triage": { "byLanguage": { "ts": 3, "rs": 2 } }
+    },
+    "expectedZones": [
+      { "area": "rs", "severity": "scan-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "rs", "path": ["details", "files"], "equals": 2 },
+      {
+        "area": "rs",
+        "path": ["details", "reason"],
+        "equals": "rust-owned-analysis-not-registered-in-this-audit-run"
+      }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "rust-analysis-clears-rust-scan-gap",
+    "input": {
+      "triage": { "byLanguage": { "ts": 3, "rs": 2 } },
+      "rustAnalysis": { "status": "complete", "available": true }
+    },
+    "expectedZones": [],
+    "absentAreas": ["rs"]
+  },
+  {
+    "name": "grouped-sfc-scan-gap",
+    "input": {
+      "triage": {
+        "shape": {
+          "totalFiles": 4,
+          "tsFiles": 1,
+          "jsFiles": 0,
+          "pyFiles": 0,
+          "goFiles": 0,
+          "sfcFiles": 3
+        },
+        "byLanguage": { "ts": 1, "vue": 1, "svelte": 1, "astro": 1 }
+      }
+    },
+    "expectedZones": [
+      { "area": "sfc-scan-gap", "severity": "scan-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "sfc-scan-gap", "path": ["details", "files"], "equals": 3 },
+      { "area": "sfc-scan-gap", "path": ["details", "languages", "vue"], "equals": 1 },
+      { "area": "sfc-scan-gap", "path": ["details", "languages", "svelte"], "equals": 1 },
+      { "area": "sfc-scan-gap", "path": ["details", "languages", "astro"], "equals": 1 },
+      {
+        "area": "sfc-scan-gap",
+        "path": ["details", "reason"],
+        "equals": "sfc-extractor-not-registered"
+      }
+    ],
+    "absentAreas": ["vue", "svelte", "astro"]
+  },
+  {
+    "name": "python-go-unavailable-scan-gaps",
+    "input": {
+      "triage": {
+        "shape": {
+          "totalFiles": 4,
+          "tsFiles": 2,
+          "jsFiles": 0,
+          "pyFiles": 1,
+          "goFiles": 1
+        }
+      },
+      "symbols": {
+        "meta": {
+          "languageSupport": {
+            "python": { "enabled": false, "reason": "python executable unavailable" },
+            "go": { "enabled": false, "reason": "tree-sitter unavailable" }
+          }
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "python-scan-gap", "severity": "scan-gap" },
+      { "area": "go-scan-gap", "severity": "scan-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "python-scan-gap", "path": ["details", "files"], "equals": 1 },
+      {
+        "area": "python-scan-gap",
+        "path": ["details", "reason"],
+        "equals": "python executable unavailable"
+      },
+      { "area": "go-scan-gap", "path": ["details", "files"], "equals": 1 },
+      {
+        "area": "go-scan-gap",
+        "path": ["details", "reason"],
+        "equals": "tree-sitter unavailable"
+      }
+    ],
+    "absentAreas": ["python-method-resolution", "go-method-resolution"]
+  },
+  {
+    "name": "python-go-enabled-precision-gaps",
+    "input": {
+      "triage": {
+        "shape": {
+          "totalFiles": 4,
+          "tsFiles": 2,
+          "jsFiles": 0,
+          "pyFiles": 1,
+          "goFiles": 1
+        }
+      },
+      "symbols": {
+        "meta": {
+          "languageSupport": {
+            "python": { "enabled": true },
+            "go": { "enabled": true }
+          }
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "python-method-resolution", "severity": "precision-gap" },
+      { "area": "go-method-resolution", "severity": "precision-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "python-method-resolution", "path": ["details", "files"], "equals": 1 },
+      { "area": "go-method-resolution", "path": ["details", "files"], "equals": 1 }
+    ],
+    "absentAreas": ["python-scan-gap", "go-scan-gap"]
+  },
+  {
+    "name": "unclassified-files-from-shape-unknown-share",
+    "input": {
+      "triage": {
+        "shape": {
+          "totalFiles": 10,
+          "tsFiles": 6,
+          "jsFiles": 2,
+          "pyFiles": 0,
+          "goFiles": 0,
+          "sfcFiles": 0
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "unclassified-files", "severity": "scan-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "unclassified-files", "path": ["details", "unknownFiles"], "equals": 2 },
+      { "area": "unclassified-files", "path": ["details", "totalFiles"], "equals": 10 }
+    ],
+    "absentAreas": ["rs", "python-method-resolution", "go-method-resolution"]
+  },
+  {
+    "name": "resolver-absolute-count-with-grouped-reasons",
+    "input": {
+      "symbols": {
+        "uses": { "unresolvedInternalRatio": 0.06, "unresolvedInternal": 1300 },
+        "topUnresolvedSpecifiers": [{ "specifierPrefix": "@workspace/", "count": 800 }],
+        "unresolvedInternalSummaryByReason": {
+          "workspace-package-subpath-target-missing": {
+            "count": 12,
+            "spaces": { "type": 12, "value": 0, "unknown": 0 },
+            "resolverStages": { "workspacePackageSubpath": 12 }
+          },
+          "tsconfig-path-target-missing": {
+            "count": 4,
+            "spaces": { "type": 1, "value": 3, "unknown": 0 },
+            "hints": { "generated-artifact-missing": 4 }
+          }
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "resolver", "severity": "confidence-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "resolver", "path": ["details", "sourceArtifact"], "equals": "symbols.json" },
+      { "area": "resolver", "path": ["details", "trigger"], "equals": "absolute-count" },
+      { "area": "resolver", "path": ["details", "unresolvedInternal"], "equals": 1300 },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "reason"],
+        "equals": "workspace-package-subpath-target-missing"
+      },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "spaces", "type"],
+        "equals": 12
+      }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "resolver-ratio-trigger-with-raw-specifier-reasons",
+    "input": {
+      "symbols": {
+        "uses": { "unresolvedInternalRatio": 0.16, "unresolvedInternal": 10 },
+        "topUnresolvedSpecifiers": [{ "specifierPrefix": "@ratio/", "count": 2 }],
+        "unresolvedInternalSpecifierRecords": [
+          { "specifier": "@ratio/a", "reason": "tsconfig-path-target-missing" },
+          { "specifier": "@ratio/b", "reason": "tsconfig-path-target-missing" },
+          { "specifier": "@ratio/c", "reason": "package-export-missing" }
+        ]
+      }
+    },
+    "expectedZones": [
+      { "area": "resolver", "severity": "confidence-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "resolver", "path": ["details", "sourceArtifact"], "equals": "symbols.json" },
+      { "area": "resolver", "path": ["details", "trigger"], "equals": "ratio" },
+      { "area": "resolver", "path": ["details", "unresolvedInternalRatio"], "equals": 0.16 },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "reason"],
+        "equals": "tsconfig-path-target-missing"
+      },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "count"],
+        "equals": 2
+      }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "resolver-prefix-trigger-prefers-diagnostics-reasons",
+    "input": {
+      "symbols": {
+        "unresolvedInternalSummaryByReason": {
+          "symbols-summary-should-not-win": { "count": 99 }
+        }
+      },
+      "resolverDiagnostics": {
+        "resolverVersion": "resolver-test-v1",
+        "summary": {
+          "unresolvedInternal": 200,
+          "unresolvedInternalRatio": 0.02,
+          "topUnresolvedSpecifiers": [{ "specifierPrefix": "@app/", "count": 180 }],
+          "topUnresolvedReasons": [
+            { "reason": "diagnostic-preferred", "count": 9 }
+          ],
+          "reasonCounts": { "diagnostic-preferred": 9 }
+        }
+      }
+    },
+    "expectedZones": [
+      { "area": "resolver", "severity": "confidence-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "resolver", "path": ["details", "sourceArtifact"], "equals": "resolver-diagnostics.json" },
+      { "area": "resolver", "path": ["details", "trigger"], "equals": "prefix-concentration" },
+      { "area": "resolver", "path": ["details", "resolverVersion"], "equals": "resolver-test-v1" },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedSpecifiers", "0"],
+        "equals": "@app/"
+      },
+      {
+        "area": "resolver",
+        "path": ["details", "topUnresolvedReasons", "0", "reason"],
+        "equals": "diagnostic-preferred"
+      }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "parser-cjs-html-precision-gaps",
+    "input": {
+      "symbols": {
+        "meta": {
+          "warnings": [{ "kind": "parse-errors", "count": 2, "message": "parse failed" }]
+        },
+        "cjsExportSurfaceByFile": {
+          "src/exact.cjs": { "exact": [{ "name": "foo" }], "opaque": [] },
+          "src/opaque.cjs": {
+            "exact": [],
+            "opaque": [{ "kind": "module-exports-assignment" }]
+          }
+        },
+        "cjsRequireOpacity": [
+          { "consumerFile": "src/consumer.js", "line": 2, "kind": "dynamic-require" }
+        ]
+      },
+      "entrySurface": {
+        "unresolvedHtmlEntrypoints": [
+          { "htmlFile": "index.html", "src": "./missing.js", "resolvedFile": "missing.js" }
+        ]
+      }
+    },
+    "expectedZones": [
+      { "area": "parser", "severity": "precision-gap" },
+      { "area": "commonjs-export-surface", "severity": "precision-gap" },
+      { "area": "commonjs-dynamic-require", "severity": "precision-gap" },
+      { "area": "html-entry-surface", "severity": "confidence-gap" }
+    ],
+    "expectedDetails": [
+      { "area": "parser", "path": ["details", "count"], "equals": 2 },
+      { "area": "parser", "path": ["details", "message"], "equals": "parse failed" },
+      { "area": "commonjs-export-surface", "path": ["details", "files"], "equals": 1 },
+      {
+        "area": "commonjs-export-surface",
+        "path": ["details", "opaqueForms", "0", "file"],
+        "equals": "src/opaque.cjs"
+      },
+      {
+        "area": "commonjs-export-surface",
+        "path": ["details", "opaqueForms", "0", "kinds", "0"],
+        "equals": "module-exports-assignment"
+      },
+      { "area": "commonjs-dynamic-require", "path": ["details", "calls"], "equals": 1 },
+      { "area": "commonjs-dynamic-require", "path": ["details", "files"], "equals": 1 },
+      {
+        "area": "commonjs-dynamic-require",
+        "path": ["details", "examples", "0", "consumerFile"],
+        "equals": "src/consumer.js"
+      },
+      {
+        "area": "html-entry-surface",
+        "path": ["details", "unresolvedHtmlEntrypoints"],
+        "equals": 1
+      },
+      {
+        "area": "html-entry-surface",
+        "path": ["details", "examples", "0", "reason"],
+        "equals": "html-module-script-target-missing"
+      }
+    ],
+    "absentAreas": []
+  },
+  {
+    "name": "missing-inputs-do-not-invent-zones",
+    "input": {},
+    "expectedZones": [],
+    "absentAreas": ["rs", "resolver", "parser", "python-scan-gap", "go-scan-gap"]
+  }
+]

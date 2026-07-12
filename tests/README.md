@@ -1,6 +1,6 @@
 <!--
   GENERATED FILE — do not edit by hand.
-  Source: CHANGELOG.md + tests/test-*.mjs files.
+  Source: CHANGELOG.md + default tests/test-*.mjs files.
   Regenerate with: npm run update-test-doc
   CI guard: npm run check:test-doc (exits non-zero if stale)
 -->
@@ -11,7 +11,7 @@ Regression guards built up across releases. Each change that could
 have broken a correctness property got a corresponding assertion so
 the next regression fails fast.
 
-The authoritative assertion count is the output of `npm test`. This
+The authoritative default Node assertion count is the output of `npm test`. This
 README intentionally avoids hardcoding a total — four consecutive
 releases (1.8.2 → 1.8.5) drifted the number in this file, so the
 number was removed and the file became generated.
@@ -21,7 +21,9 @@ number was removed and the file became generated.
 ```bash
 cd <skill-dir>
 npm install        # first run only
-npm test           # all suites, stops at first failing assertion
+npm run test:audit-runtime-gate
+                   # Rust audit-core cargo gate for migrated audit runtime
+npm test           # default focused Node suites, stops at first failing assertion
 ```
 
 ## Suite Map
@@ -37,7 +39,7 @@ npm test           # all suites, stops at first failing assertion
   false-positive, drift, and fixture-specific behavior. Run them when
   touching shared engine logic or before release.
 
-Or run individual suites:
+Or run individual default Node suites:
 
 ```bash
 node tests/test-alias.mjs                                # export alias misclassification
@@ -49,7 +51,6 @@ node tests/test-audit-repo-check-canon.mjs               # audit-repo.mjs --chec
 node tests/test-audit-repo-post-write.mjs                # audit-repo --post-write wiring + manifest summary fields (P2-2)
 node tests/test-audit-repo-pre-write.mjs                 # audit-repo --pre-write lifecycle wiring and missing-baseline evidence availability
 node tests/test-audit-repo-symbol-incremental.mjs        # audit-repo forwards strict incremental flags to build-symbol-graph
-node tests/test-audit-repo.mjs                           # orchestrator profiles + blindZones detection
 node tests/test-behavior-corpus-verifier.mjs             # saved-answer behavior verifier: offline no-jargon, caveat, and summary-order checks
 node tests/test-build-block-clone-index.mjs              # build-block-clone-index.mjs producer: repeated token/block clone review-only artifact
 node tests/test-build-framework-resource-surfaces.mjs    # build-framework-resource-surfaces.mjs producer and audit-repo artifact visibility
@@ -84,7 +85,6 @@ node tests/test-citation-verifier.mjs                    # Rule 1 grounded citat
 node tests/test-cjs-classification.mjs                   # PCEF P0 CJS consumer classification through symbol graph + dead-export pipeline
 node tests/test-cjs-export-surface-artifact.mjs          # CJS export surface facts survive into symbols.json for downstream blind-zone handling
 node tests/test-cjs-integration.mjs                      # CJS export surface, alias destructuring, and dynamic require opacity integration guard
-node tests/test-class-method-index-prototype-names.mjs   # class method index handles prototype method names as plain dictionary keys
 node tests/test-class-method-prewrite-surface.mjs        # WT-15 class method index remains separate from defIndex and feeds pre-write review cues
 node tests/test-classification-gates.mjs                 # canonical §3/§9/§10.3/§10.4/§11.4/§12.3 label-set + LOW_INFO + TOPOLOGY + NAMING mirrors drift-lock (P3-1..P3-4) + canon-drift.md §3 category/family mirror (P5-0)
 node tests/test-classification-label-emission-corpus.mjs # synthetic TS corpus proving canonical type classification labels emit through build-symbol-graph → canon-draft
@@ -209,14 +209,25 @@ node tests/test-wildcard.mjs                             # exports wildcard subp
 node tests/test-workspace-no-exports.mjs                 # FP-38: workspace packages without `exports` field
 ```
 
+## Legacy Umbrella Suites
+
+These suites remain runnable for manual archaeology, but are excluded
+from `npm test`. Their migrated runtime contracts are covered by
+Rust cargo tests; focused Vitest mirrors remain reference coverage
+while JS/TS producers are being retired.
+
+```bash
+npm run test:node:legacy-audit-repo # test-audit-repo.mjs — orchestrator profiles + blindZones detection
+```
+
 ## Fixtures
 
 Tests build their own fixtures under `/tmp/fx-*` on each run.
 Fixtures are disposable — every suite clears its own working dirs
 at start. No shared state between runs.
 
-Each test script exits non-zero on any failure. `npm test` stops
-at the first failing suite.
+Each default test script exits non-zero on any failure. `npm test`
+stops at the first failing default suite.
 
 ## What the tests cover by release
 
@@ -257,7 +268,9 @@ rails stop:
   `measure-topology`, `build-call-graph`, `check-barrel-discipline`
   currently re-parses from scratch). No suite exercises shared
   cache.
-- Rust source trees. No tree-sitter-rust extractor yet.
+- Rust source trees are owned by `lumin-rust-analyzer`; this JS test suite
+  covers routing, manifest, and blind-zone behavior only, not a JS
+  Rust parser fallback.
 - `__getattr__`-based lazy export maps in Python `__init__.py`
   files. Known residual FP source; no fixture.
 - Interactive `--focus-class` output beyond the smoke check that

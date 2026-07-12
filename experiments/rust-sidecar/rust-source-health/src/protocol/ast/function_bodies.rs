@@ -1,9 +1,9 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::super::Location;
 use super::{AstCallableKind, AstFunctionOwner, AstVisibility};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AstFunctionBodyFingerprint {
     pub kind: AstFunctionBodyFingerprintKind,
@@ -12,7 +12,7 @@ pub struct AstFunctionBodyFingerprint {
     pub callable_kind: AstCallableKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner: Option<AstFunctionOwner>,
-    pub normalized_version: &'static str,
+    pub normalized_version: String,
     pub exact_body_hash: String,
     pub normalized_exact_hash: String,
     pub normalized_structure_hash: String,
@@ -30,7 +30,7 @@ pub struct AstFunctionBodyFingerprint {
     pub body_location: Location,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AstFunctionBodyFingerprintKind {
     FunctionBodyFingerprint,

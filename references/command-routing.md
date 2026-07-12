@@ -139,6 +139,17 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --r
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --root . --output .audit --profile quick
 ```
 
+Do not add `--rust-analyzer` to default quick/full runs automatically. Add it
+only when the user explicitly asks for Rust-owned analyzer evidence or a Rust
+audit pass that needs syntax, clone, dead-definition, Cargo metadata, or Rust
+absence claims. When it runs successfully, read
+`.audit/rust-analyzer-health.latest.json` before making Rust findings. When it
+does not run or is unavailable, keep Rust claims limited to manifest blind-zone
+evidence. The orchestrator forwards the same scan-scope flags used by the
+JS/TS audit route (`--production`, `--exclude-tests`, and repeated
+`--exclude <pattern>`) to `lumin-rust-analyzer`, and Rust source-health records
+the effective syntax scope under `phases.syntax.meta.input`.
+
 Then answer with `templates/REVIEW_CHECKLIST_SHORT.md` unless the user
 asked for full checklist output: what is already stable, at most three
 things worth smoothing next, confidence/scan range, likely
@@ -273,8 +284,35 @@ profile entrypoint.
 If `--intent` is provided, pass the arguments through. Run:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write $ARGUMENTS
+node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --pre-write-engine auto $ARGUMENTS
 ```
+
+The auto route keeps JS/TS as the default owner when the intent omits
+`language`, and routes to `lumin-rust-analyzer pre-write` only when the intent
+JSON explicitly contains `"language": "rust"`. Do not infer Rust from filenames,
+dependencies, or repository shape. An explicit `--pre-write-engine js` request
+must still reject an intent that declares `"language": "rust"`; JS pre-write is
+not a Rust fallback. For maintainer-only explicit routing, `--rust-pre-write`
+remains an alias for `--pre-write-engine rust`:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --rust-pre-write $ARGUMENTS
+```
+
+This routes to `lumin-rust-analyzer pre-write` instead of the JS/TS
+`pre-write.mjs` owner. The generated package must have
+`LUMIN_RUST_ANALYZER_BIN` set to a built analyzer binary, or a maintainer
+checkout with `experiments/Cargo.toml` available. Do not silently
+fall back to JS/TS pre-write for Rust source intents.
+Rust pre-write writes the native Rust lookup artifact as
+`rust-pre-write-artifact.<invocationId>.json` and the orchestrator wraps it in
+the standard lifecycle advisory shape at
+`pre-write-advisory.<invocationId>.json`. Use `manifest.preWrite.advisoryPath`
+for post-write, not the native Rust artifact path.
+The orchestrator forwards JS audit scan-scope flags such as `--production`,
+`--exclude-tests`, and repeated `--exclude <pattern>` to Rust pre-write. Rust
+source-health applies those filters during Rust file enumeration and preserves
+the effective scope in the native artifact's source-health input metadata.
 
 Intent files must follow `references/pre-write-intent-shape.md`. `--intent -`
 streams that same JSON through stdin. Before
@@ -321,6 +359,12 @@ before closing the task. Use plain language first: "one new any-like
 escape appeared" or "one unplanned file appeared" is better than a raw
 delta dump. Do not say the whole change is clean unless every relevant
 lane you checked supports that claim; name the remaining limits.
+
+Rust pre-write advisories are valid inputs here, but Rust has no TS `any`
+equivalent. In that route, post-write's language-neutral file delta remains
+useful. The TS type-escape lane is skipped and reported as
+`typeEscapeDelta.status: "not-applicable"`; do not reinterpret missing
+`any-inventory` baselines as Rust source-health evidence.
 
 ### canon-draft
 

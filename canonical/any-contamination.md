@@ -286,7 +286,12 @@ Empty list case:
   Missing any of these 11 kinds is a producer defect, not a scope choice. "No silent new any" (invariants.md §9) depends on the occurrence set being complete — a missing kind is a silent escape hatch.
 
 - `build-symbol-graph.mjs` propagates the annotation into `symbols.json`.
-- A new artifact `any-inventory.json` holds the full `type-escape` fact list. Pre-write and post-write modes consume it.
+- `any-inventory.json` holds the full `type-escape` fact list. Normal fresh
+  pre-write and post-write obtain their before/after inventories from the
+  Rust-owned `js-ts-pre-write-evidence` OXC pass. Post-write must reuse the
+  returned Rust file inventory for file-delta input instead of walking the
+  repository again. `any-inventory.mjs` is a legacy/reference producer, not a
+  runtime fallback.
 - `measure-discipline.mjs` stays as a global aggregate; it does not replace the per-occurrence detail.
 
 If the producer cannot emit this measurement in a given run, it must set the

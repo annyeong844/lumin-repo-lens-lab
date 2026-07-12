@@ -17,6 +17,7 @@ valid, and missing top-level arrays are defaulted to `[]` with an
 
 ```json
 {
+  "language": "js-ts",
   "names": [],
   "shapes": [],
   "files": [],
@@ -27,10 +28,15 @@ valid, and missing top-level arrays are defaulted to `[]` with an
 
 `deps` is not accepted. Use `dependencies`.
 
+`language` is optional. It may be `"js-ts"` or `"rust"` and is used only by
+`audit-repo.mjs --pre-write --pre-write-engine auto` to select the execution
+surface. It is not passed through to `lumin-rust-analyzer pre-write`.
+
 ## Fields
 
 | Key                  | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `language`           | Optional route selector for `audit-repo.mjs --pre-write --pre-write-engine auto`. Use `"rust"` only for Rust source intents and `"js-ts"` for JS/TS intents. Absence keeps the JS/TS owner for compatibility. This is not a lookup lane.                                                                                                                                                                                                                                                        |
 | `names`              | Symbols, helpers, types, components, routes, or commands the model plans to introduce or modify. Entries may be strings or `{ "name": "...", "kind": "...", "why": "...", "ownerFile": "..." }`. `file` and `targetFile` are accepted as owner-locality aliases when `ownerFile` is absent. When exact and near-name lookup miss, `why` may produce degraded intent-token search hints such as `loadArtifactJson` → existing `loadIfExists` / `readJsonFile`; these hints are not reuse claims. |
 | `shapes`             | Exact structural shapes the model plans to introduce. Prefer `typeLiteral` or `hash`; field names alone are not equality evidence. `fields` is required only when neither `typeLiteral` nor `hash` is present.                                                                                                                                                                                                                                                                                  |
 | `files`              | Planned file paths, relative to the `--root` passed to pre-write. Pre-write checks exact paths and sibling domain clusters by basename prefix or repeated domain token.                                                                                                                                                                                                                                                                                                                         |
@@ -45,8 +51,11 @@ JSON as self-declaration evidence. Structured `names` also preserve
 
 ## Example
 
+JS/TS source intent:
+
 ```json
 {
+  "language": "js-ts",
   "names": [
     {
       "name": "formatTimestamp",
@@ -68,6 +77,37 @@ JSON as self-declaration evidence. Structured `names` also preserve
   ],
   "files": ["src/features/time/format-timestamp.ts"],
   "dependencies": [{ "specifier": "date-fns", "why": "timestamp formatting" }],
+  "plannedTypeEscapes": []
+}
+```
+
+Rust source intent:
+
+```json
+{
+  "language": "rust",
+  "names": [
+    {
+      "name": "FormatTimestamp",
+      "kind": "struct",
+      "why": "new display model",
+      "ownerFile": "src/features/time/format_timestamp.rs"
+    },
+    {
+      "name": "format_timestamp",
+      "kind": "function",
+      "why": "new display helper",
+      "ownerFile": "src/features/time/format_timestamp.rs"
+    }
+  ],
+  "shapes": [
+    {
+      "name": "FormatTimestamp",
+      "hash": "rust-shape-hash.normalized.v1:..."
+    }
+  ],
+  "files": ["src/features/time/format_timestamp.rs"],
+  "dependencies": [{ "specifier": "time", "why": "timestamp formatting" }],
   "plannedTypeEscapes": []
 }
 ```

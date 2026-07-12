@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -22,13 +22,424 @@ function check(label, fn) {
 check('AMES1. audit-manifest exposes manifest builders, not living-audit internals', () => {
   assert.equal(typeof auditManifest.buildManifestEvidence, 'function');
   assert.equal(typeof auditManifest.refreshManifestEvidence, 'function');
-  assert.equal(typeof auditManifest.collectProducedArtifacts, 'function');
+  assert.equal(typeof auditManifest.buildManifestArtifactsProducedUpdate, 'function');
+  assert.equal(typeof auditManifest.buildManifestRootWithEvidence, 'function');
+  assert.equal(typeof auditManifest.buildManifestCloseoutUpdate, 'function');
+  assert.equal(typeof auditManifest.buildManifestLifecycleUpdate, 'function');
+  assert.equal(typeof auditManifest.writeManifestFile, 'function');
+  assert.equal(typeof auditManifest.finalizeAuditRun, 'function');
+  assert.equal(typeof auditManifest.applyLifecycleAndRefreshManifestEvidence, 'function');
+  assert.equal(typeof auditManifest.executeBaseRuntime, 'function');
 
   for (const symbol of [
     'LIVING_AUDIT_DOC_CANDIDATES',
     'detectLivingAuditDocs',
+    'mergeRustAnalysisRun',
+    'buildArtifactSizeSummary',
+    'buildArtifactReadMetricsSummary',
+    'buildProducerPerformanceArtifactFromRuntime',
+    'buildProducerPerformanceArtifactForAuditRun',
+    'buildManifestMeta',
+    'buildManifestEvidenceUpdate',
+    'buildManifestRoot',
+    'buildManifestFinalSummaryUpdate',
+    'buildManifestCompanionUpdate',
+    'closeoutAndWriteManifest',
+    'collectProducedArtifacts',
+    'executeBasePlan',
+    'buildOrchestrationPlan',
+    'ARTIFACT_READ_EVENTS_SCHEMA_VERSION',
+    'buildLifecycleSummary',
   ]) {
     assert.equal(Object.hasOwn(auditManifest, symbol), false, symbol);
+  }
+});
+
+check('AMES1i. audit-core wrapper ignores stale external binaries and falls back to current contract', () => {
+  const previous = process.env.LUMIN_AUDIT_CORE_BIN;
+  process.env.LUMIN_AUDIT_CORE_BIN = process.execPath;
+  try {
+    const update = auditManifest.buildManifestLifecycleUpdate({
+      preWrite: {
+        requested: true,
+        ran: false,
+        reason: 'stale-env-fallback-smoke',
+      },
+    });
+    assert.equal(update.lifecycle.summaryOwner, 'lumin-audit-core');
+    assert.equal(update.lifecycle.requestedCount, 1);
+    assert.equal(update.lifecycle.notRunCount, 1);
+  } finally {
+    if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;
+    else process.env.LUMIN_AUDIT_CORE_BIN = previous;
+  }
+});
+
+check('AMES1g. lifecycle update wrapper leaves raw block placement and summary in audit-core', () => {
+  const update = auditManifest.buildManifestLifecycleUpdate({
+    preWrite: {
+      requested: true,
+      ran: true,
+      engine: 'rust',
+      language: 'rust',
+      producer: 'lumin-rust-analyzer',
+    },
+    postWrite: null,
+    canonDraft: {
+      requested: true,
+      ran: false,
+      reason: 'unknown source',
+    },
+    checkCanon: null,
+  });
+
+  assert.equal(update.preWrite.requested, true);
+  assert.equal(update.preWrite.ran, true);
+  assert.equal(update.preWrite.engine, 'rust');
+  assert.equal(Object.hasOwn(update, 'postWrite'), false);
+  assert.equal(update.canonDraft.requested, true);
+  assert.equal(update.canonDraft.ran, false);
+  assert.equal(update.canonDraft.reason, 'unknown source');
+  assert.equal(Object.hasOwn(update, 'checkCanon'), false);
+  assert.equal(update.lifecycle.summaryOwner, 'lumin-audit-core');
+  assert.equal(update.lifecycle.executionOwner, 'audit-repo.mjs');
+  assert.equal(update.lifecycle.requestedCount, 2);
+  assert.equal(update.lifecycle.ranCount, 1);
+  assert.equal(update.lifecycle.notRunCount, 1);
+  assert.equal(update.lifecycle.preWrite.status, 'complete');
+  assert.equal(update.lifecycle.canonDraft.status, 'not-run');
+});
+
+check('AMES1h. artifacts-produced wrapper leaves manifest patch shape in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-artifacts-produced-'));
+  const out = path.join(fx, 'out');
+  try {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(path.join(out, 'triage.json'), '{}');
+    writeFileSync(
+      path.join(out, 'rust-analyzer-health.latest.json'),
+      JSON.stringify({
+        schemaVersion: 'lumin-rust-analyzer-health.v1',
+      }),
+    );
+
+    assert.deepEqual(
+      auditManifest.buildManifestArtifactsProducedUpdate(out, {
+        rustAnalysis: {
+          status: 'unavailable',
+          available: false,
+        },
+      }),
+      {
+        artifactsProduced: ['triage.json'],
+      },
+    );
+    assert.deepEqual(
+      auditManifest.buildManifestArtifactsProducedUpdate(out, {
+        rustAnalysis: {
+          status: 'complete',
+          available: true,
+        },
+      }).artifactsProduced,
+      ['rust-analyzer-health.latest.json', 'triage.json'],
+    );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1j. closeout wrapper leaves final summary and companion patch in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-closeout-'));
+  const out = path.join(fx, 'out');
+  try {
+    mkdirSync(out, { recursive: true });
+    const performancePath = path.join(out, 'producer-performance.json');
+    writeFileSync(
+      performancePath,
+      JSON.stringify({
+        schemaVersion: 'producer-performance.v1',
+        summary: {
+          producerCount: 1,
+          okCount: 1,
+          failedCount: 0,
+          skippedCount: 0,
+        },
+        producers: [{ name: 'triage-repo.mjs', status: 'ok' }],
+        skipped: [],
+      }),
+    );
+    writeFileSync(path.join(out, 'audit-summary.latest.md'), '# Summary\n');
+    writeFileSync(path.join(out, 'audit-review-pack.latest.md'), '# Review\n');
+
+    const update = auditManifest.buildManifestCloseoutUpdate({
+      outDir: out,
+      producerPerformancePath: performancePath,
+      rustAnalysis: {
+        status: 'unavailable',
+        available: false,
+      },
+      auditSummaryPath: 'C:/repo/.audit/audit-summary.latest.md',
+      reviewPackPath: 'C:/repo/.audit/audit-review-pack.latest.md',
+    });
+
+    assert.equal(update.performance.producerCount, 1);
+    assert.equal(update.orchestration.status, 'complete');
+    assert.deepEqual(update.artifactsProduced, [
+      'audit-review-pack.latest.md',
+      'audit-summary.latest.md',
+      'producer-performance.json',
+    ]);
+    assert.deepEqual(update.auditSummary, {
+      path: 'C:/repo/.audit/audit-summary.latest.md',
+      format: 'markdown',
+    });
+    assert.equal(update.reviewPack.format, 'markdown');
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1f. artifactsProduced patch uses typed rustAnalysis block instead of JS usability fallback', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-produced-artifacts-'));
+  const out = path.join(fx, 'out');
+  try {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(
+      path.join(out, 'rust-analyzer-health.latest.json'),
+      JSON.stringify({
+        schemaVersion: 'lumin-rust-analyzer-health.v1',
+        status: 'complete',
+        available: true,
+      }),
+    );
+
+    assert.equal(
+      auditManifest
+        .buildManifestArtifactsProducedUpdate(out)
+        .artifactsProduced.includes('rust-analyzer-health.latest.json'),
+      false,
+    );
+    assert.equal(
+      auditManifest
+        .buildManifestArtifactsProducedUpdate(out, {
+          rustAnalysis: {
+            status: 'complete',
+            available: true,
+          },
+        })
+        .artifactsProduced
+        .includes('rust-analyzer-health.latest.json'),
+      true,
+    );
+    assert.equal(
+      auditManifest
+        .buildManifestArtifactsProducedUpdate(out, {
+          rustAnalysis: {
+            status: 'unavailable',
+            available: false,
+          },
+        })
+        .artifactsProduced
+        .includes('rust-analyzer-health.latest.json'),
+      false,
+    );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1k. writeManifestFile leaves the final manifest write in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-write-'));
+  const out = path.join(fx, 'out');
+  mkdirSync(out, { recursive: true });
+  try {
+    const result = auditManifest.writeManifestFile(out, {
+      meta: {
+        generated: '2026-07-02T00:00:00.000Z',
+      },
+      profile: 'quick',
+      artifactsProduced: [],
+    });
+
+    assert.match(result.manifestPath, /manifest\.json$/);
+    const manifest = JSON.parse(readFileSync(path.join(out, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.profile, 'quick');
+    assert.equal(manifest.meta.generated, '2026-07-02T00:00:00.000Z');
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1l. finalizeAuditRun writes producer performance and final manifest in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-finalize-'));
+  const out = path.join(fx, 'out');
+  mkdirSync(out, { recursive: true });
+  try {
+    writeFileSync(path.join(out, 'triage.json'), '{}');
+    writeFileSync(path.join(out, 'audit-summary.latest.md'), '# Summary\n');
+
+    const result = auditManifest.finalizeAuditRun({
+      manifest: {
+        meta: {
+          generated: '2026-07-02T00:00:00.000Z',
+        },
+        profile: 'quick',
+        artifactsProduced: [],
+      },
+      generated: '2026-07-02T00:00:00.000Z',
+      root: fx,
+      outDir: out,
+      profile: 'quick',
+      includeTests: true,
+      production: false,
+      excludes: ['dist'],
+      autoExcludes: ['.audit'],
+      noIncremental: true,
+      cacheRoot: path.join(out, '.cache'),
+      clearIncrementalCache: false,
+      generatedArtifactsMode: 'default',
+      artifactReads: {
+        schemaVersion: 'artifact-read-metrics.v1',
+        measurement: 'audit-repo-orchestrator-json-reads',
+        totalReadCount: 0,
+        totalReadBytes: 0,
+        totalReadMs: 0,
+        totalJsonParseMs: 0,
+        parseFailureCount: 0,
+        byName: {},
+      },
+      rustAnalysis: {
+        status: 'unavailable',
+        available: false,
+      },
+      commandsRun: [{ step: 'triage-repo.mjs', status: 'ok', ms: 3 }],
+      skipped: [{ step: 'emit-sarif.mjs', reason: 'not in --sarif mode' }],
+      auditSummaryPath: 'C:/repo/.audit/audit-summary.latest.md',
+    });
+
+    assert.match(result.producerPerformancePath, /producer-performance\.json$/);
+    assert.match(result.manifestPath, /manifest\.json$/);
+    assert.equal(result.manifest, undefined);
+    assert.equal(result.closeoutUpdate.performance.producerCount, 1);
+    assert.equal(result.closeoutUpdate.orchestration.status, 'complete');
+    assert.equal(result.closeoutUpdate.auditSummary.format, 'markdown');
+    assert.ok(result.closeoutUpdate.artifactsProduced.includes('producer-performance.json'));
+    const producerPerformance = JSON.parse(readFileSync(path.join(out, 'producer-performance.json'), 'utf8'));
+    assert.equal(producerPerformance.schemaVersion, 'producer-performance.v1');
+    assert.deepEqual(producerPerformance.scanRange.excludes, ['dist']);
+    const manifest = JSON.parse(readFileSync(path.join(out, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.performance.producerCount, 1);
+    assert.equal(manifest.orchestration.status, 'complete');
+    assert.equal(manifest.auditSummary.format, 'markdown');
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1e. refreshManifestEvidence applies the Rust-owned evidence patch', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-refresh-'));
+  const out = path.join(fx, 'out');
+  try {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(
+      path.join(out, 'triage.json'),
+      JSON.stringify({
+        shape: {
+          totalFiles: 2,
+          tsFiles: 1,
+          rsFiles: 1,
+        },
+      }),
+    );
+    writeFileSync(
+      path.join(out, 'symbols.json'),
+      JSON.stringify({
+        uses: {
+          external: 0,
+          resolvedInternal: 0,
+          unresolvedInternal: 0,
+          unresolvedInternalRatio: 0,
+        },
+      }),
+    );
+    writeFileSync(path.join(out, 'framework-resource-surfaces.json'), '{not-json');
+    writeFileSync(
+      path.join(out, 'rust-analyzer-health.latest.json'),
+      JSON.stringify({
+        schemaVersion: 'lumin-rust-analyzer-health.v1',
+      }),
+    );
+
+    const reads = [];
+    const manifest = {};
+    auditManifest.refreshManifestEvidence(manifest, {
+      root: fx,
+      outDir: out,
+      includeTests: false,
+      production: true,
+      onArtifactRead: (read) => reads.push(read),
+    });
+
+    assert.equal(manifest.scanRange.files, 2);
+    assert.equal(manifest.scanRange.includeTests, false);
+    assert.equal(manifest.scanRange.production, true);
+    assert.ok(Array.isArray(manifest.blindZones));
+    assert.equal(manifest.frameworkResourceSurfaces?.status, 'unavailable');
+    assert.equal(manifest.frameworkResourceSurfaces?.reason?.kind, 'malformed-json');
+    assert.equal(manifest.frameworkResourceSurfaces?.totalFilesWithSurfaces, null);
+    assert.equal(manifest.frameworkResourceSurfaces?.totalSurfaceLanes, null);
+    assert.ok(reads.some((read) => read.filePath.endsWith('triage.json')));
+    assert.ok(reads.some((read) => read.filePath.endsWith('symbols.json')));
+    assert.ok(reads.some((read) => read.filePath.endsWith('rust-analyzer-health.latest.json')));
+    assert.ok(reads.some((read) =>
+      read.filePath.endsWith('framework-resource-surfaces.json') &&
+      read.ok === false &&
+      read.bytes > 0
+    ));
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+  }
+});
+
+check('AMES1b. buildManifestEvidence can merge rustAnalysis run state in audit-core', () => {
+  const fx = mkdtempSync(path.join(tmpdir(), 'audit-manifest-rust-run-'));
+  const out = path.join(fx, 'out');
+  mkdirSync(out, { recursive: true });
+  try {
+    writeFileSync(path.join(out, 'rust-analyzer-health.latest.json'), JSON.stringify({
+      schemaVersion: 'lumin-rust-analyzer.v1',
+      policyVersion: 'lumin-rust-analyzer-policy.v1',
+      meta: {
+        producer: 'lumin-rust-analyzer',
+        mode: 'rust-main',
+        input: { root: fx },
+      },
+      summary: { files: 1, syntaxReviewSignals: 0 },
+    }));
+
+    const evidence = auditManifest.buildManifestEvidence({
+      root: fx,
+      outDir: out,
+      includeTests: true,
+      production: false,
+      rustAnalysisRun: {
+        requested: true,
+        ran: true,
+        status: 'complete',
+        rustFiles: 1,
+        sourceCommit: 'abc123',
+      },
+      mergeRustAnalysisRun: true,
+    });
+
+    assert.equal(evidence.rustAnalysis?.requested, true);
+    assert.equal(evidence.rustAnalysis?.ran, true);
+    assert.equal(evidence.rustAnalysis?.status, 'complete');
+    assert.equal(evidence.rustAnalysis?.available, true);
+    assert.equal(evidence.rustAnalysis?.files, 1);
+    assert.equal(evidence.rustAnalysis?.sourceCommit, 'abc123');
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
   }
 });
 

@@ -6,6 +6,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { runAuditCoreJsonResultFile } from '../lib/audit-core.mjs';
 import { canContainJsx } from '../lib/lang.mjs';
 import { parseOxcOrThrow } from '../lib/parse-oxc.mjs';
 import { parseCliArgs } from '../lib/cli.mjs';
@@ -47,17 +48,6 @@ function parseErrorRecord(filePath, error) {
     file: relPath(ROOT, filePath),
     message: String(error?.message ?? error ?? 'unknown parse error').split('\n')[0],
   };
-}
-
-function callGraphWarnings(parseErrorDetails) {
-  if (parseErrorDetails.length === 0) return [];
-  return [{
-    kind: 'parse-errors',
-    code: 'call-graph-parse-errors',
-    count: parseErrorDetails.length,
-    message: `${parseErrorDetails.length} file(s) failed to parse; call graph is partial`,
-    files: parseErrorDetails,
-  }];
 }
 
 function walk(node, visitor, parent = null) {
@@ -420,20 +410,12 @@ console.log(`[call edges] ${callEdges.length} unique (from, to, callee) triples`
 
 // ─── Top callees (가장 많이 호출되는 심볼) ───────────────
 const exportAliasMap = Object.create(null); // "relFile::exportedName" -> definitionId
-const callFanInByIdentity = Object.create(null);
-const callFanInByDefinitionId = Object.create(null);
-const callSiteFanInByDefinitionId = Object.create(null);
 
 for (const [absFile, info] of fileInfo) {
   const relFile = relPath(ROOT, absFile);
   for (const [exportedName, definitionId] of info.exportAliasMap ?? []) {
     const identity = `${relFile}::${exportedName}`;
     exportAliasMap[identity] = definitionId;
-    callFanInByIdentity[identity] = 0;
-    if (definitionId && callFanInByDefinitionId[definitionId] === undefined) {
-      callFanInByDefinitionId[definitionId] = 0;
-      callSiteFanInByDefinitionId[definitionId] = 0;
-    }
   }
 }
 
@@ -442,12 +424,6 @@ for (const e of callEdges) {
   const relTarget = relPath(ROOT, e.to);
   const k = `${relTarget}::${e.callee}`;
   calleeFreq.set(k, (calleeFreq.get(k) || 0) + e.count);
-  callFanInByIdentity[k] = (callFanInByIdentity[k] ?? 0) + e.count;
-  const definitionId = exportAliasMap[k];
-  if (definitionId) {
-    callFanInByDefinitionId[definitionId] = (callFanInByDefinitionId[definitionId] ?? 0) + e.count;
-    callSiteFanInByDefinitionId[definitionId] = (callSiteFanInByDefinitionId[definitionId] ?? 0) + e.count;
-  }
 }
 const topCallees = [...calleeFreq.entries()]
   .map(([k, n]) => {
@@ -576,11 +552,13 @@ for (const [k, n] of [...moduleCallCount.entries()].sort((a, b) => b[1] - a[1]).
 let totalProtoCalls = 0;
 const protoByFile = new Map();
 const protoByOwner = new Map();
+const prototypeCalls = [];
 for (const [f, info] of fileInfo) {
   if (info.prototypeCalls.length === 0) continue;
   totalProtoCalls += info.prototypeCalls.length;
   protoByFile.set(f, info.prototypeCalls.length);
   for (const p of info.prototypeCalls) {
+    prototypeCalls.push({ owner: p.owner, method: p.method });
     if (!protoByOwner.has(p.owner)) protoByOwner.set(p.owner, new Map());
     const m = protoByOwner.get(p.owner);
     m.set(p.method, (m.get(p.method) || 0) + 1);
@@ -608,50 +586,32 @@ phaseTimer.recordPhase('assemble-call-graph', Date.now() - assembleCallGraphStar
 // 저장
 const outPath = path.join(output, 'call-graph.json');
 const writeArtifactStarted = Date.now();
-writeFileSync(outPath, JSON.stringify({
-  meta: {
+const artifact = runAuditCoreJsonResultFile([
+  'call-graph-artifact',
+  '--input',
+  '-',
+], 'call-graph-artifact', {
+  input: JSON.stringify({
+    schemaVersion: 'lumin-call-graph-producer-request.v1',
     generated: new Date().toISOString(),
     root: ROOT,
-    tool: 'build-call-graph.mjs',
-    complete: parseErrors === 0,
+    fileCount: files.length,
     parseErrors,
-    filesWithParseErrors: parseErrorDetails,
-    warnings: callGraphWarnings(parseErrorDetails),
-    supports: {
-      callFanInByDefinitionId: true,
-      callFanInByIdentity: true,
-      callSiteFanInByDefinitionId: true,
-      exportAliasMap: true,
-      boundedMemberCallResolution: true,
-      topCalleesDisplaySlice: 100,
-      truncationFix: true,
-    },
-  },
-  summary: {
-    files: files.length,
+    parseErrorDetails,
     totalCallExpressions: [...fileInfo.values()].reduce((a, i) => a + i.totalCallExpressions, 0),
     totalDirectCalls,
-    resolvedCrossFileCalls: resolvedDirectCalls,
-    typeOnlySkipped: typeOnlyResolved,
-    callEdges: callEdges.length,
-    boundedOutMemberCalls: [...boundedOutMemberCallsByAbsFile.values()].reduce((a, n) => a + n, 0),
-    semiDead: semiDeadCount,
-    semiDeadReactFiltered: reactSkipCount, // FP-19
-    totalPrototypeCalls: totalProtoCalls,
-  },
-  topCallees: topCallees.slice(0, 100),
-  callFanInByDefinitionId,
-  callFanInByIdentity,
-  callSiteFanInByDefinitionId,
-  exportAliasMap,
-  boundedOutMemberCallsByFile,
-  memberCallsByFile,
-  moduleCallCount: [...moduleCallCount.entries()].map(([k, v]) => ({ edge: k, count: v })).sort((a, b) => b.count - a.count).slice(0, 50),
-  semiDeadList: semiDead,
-  prototypeOwners: [...protoByOwner.entries()].map(([owner, m]) => ({
-    owner, methods: Object.fromEntries(m), total: [...m.values()].reduce((x, y) => x + y, 0),
-  })),
-}, null, 2));
+    resolvedDirectCalls,
+    typeOnlyResolved,
+    callEdges,
+    exportAliasMap,
+    boundedOutMemberCallsByFile,
+    memberCallsByFile,
+    semiDeadList: semiDead,
+    semiDeadReactFiltered: reactSkipCount,
+    prototypeCalls,
+  }),
+});
+writeFileSync(outPath, JSON.stringify(artifact, null, 2));
 phaseTimer.recordPhase('write-artifact', Date.now() - writeArtifactStarted);
 phaseTimer.write();
 

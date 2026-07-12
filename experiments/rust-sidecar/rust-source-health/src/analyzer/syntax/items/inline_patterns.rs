@@ -38,15 +38,19 @@ pub(in crate::analyzer::syntax) fn collect_inline_patterns(
         normalized_statements.push(normalized);
     }
     let normalized_pattern = format!("block {{ {} }}", normalized_statements.join(" "));
-    syntax.ast.inline_patterns.push(AstInlinePattern {
-        kind: AstInlinePatternKind::StatementSequence,
-        pattern_hash: sha256_text(&normalized_pattern),
-        normalized_pattern,
-        normalized_version: RUST_INLINE_PATTERN_NORMALIZED_VERSION,
-        statement_count: normalized_statements.len(),
-        enclosing_function: enclosing_function_name(stmt_list.syntax()),
-        location: ast_location(line_index, stmt_list.syntax().text_range()),
-    });
+    if syntax.retain_raw_ast_lanes {
+        syntax.ast.inline_patterns.push(AstInlinePattern {
+            kind: AstInlinePatternKind::StatementSequence,
+            pattern_hash: sha256_text(&normalized_pattern),
+            normalized_pattern,
+            normalized_version: RUST_INLINE_PATTERN_NORMALIZED_VERSION,
+            statement_count: normalized_statements.len(),
+            enclosing_function: enclosing_function_name(stmt_list.syntax()),
+            location: ast_location(line_index, stmt_list.syntax().text_range()),
+        });
+    } else {
+        syntax.ast.counts.inline_patterns += 1;
+    }
 }
 
 fn enclosing_function_name(node: &SyntaxNode) -> String {

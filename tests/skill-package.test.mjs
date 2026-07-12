@@ -169,6 +169,8 @@ try {
       ) &&
       existsSync(path.join(OUT, "README.md")) &&
       existsSync(path.join(OUT, "canonical/index.md")) &&
+      existsSync(path.join(OUT, "canonical/evidence-ladder.md")) &&
+      existsSync(path.join(OUT, "canonical/oracle-registry.json")) &&
       existsSync(path.join(OUT, "templates/README.md")) &&
       existsSync(path.join(OUT, "templates/report-template.md")) &&
       existsSync(path.join(OUT, "templates/refactor-plan-template.md")) &&
@@ -419,8 +421,53 @@ try {
   assert(
     "SP4. generated skill moves implementation under _engine",
     existsSync(path.join(OUT, "_engine/_README.md")) &&
+      readFileSync(path.join(OUT, "_engine/_README.md"), "utf8").includes(
+        "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/_README.md"), "utf8").includes(
+        "`lumin-audit-core` / `lumin-audit-core.exe` on `PATH`",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/_README.md"), "utf8").includes(
+        "LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1",
+      ) &&
+      readFileSync(path.join(OUT, "README.md"), "utf8").includes(
+        "minimal packaged Cargo source fallback",
+      ) &&
+      readFileSync(path.join(OUT, "README.md"), "utf8").includes(
+        "_engine/rust/Cargo.toml",
+      ) &&
       existsSync(path.join(OUT, "_engine/lib/cli.mjs")) &&
+      existsSync(path.join(OUT, "_engine/lib/audit-core.mjs")) &&
       existsSync(path.join(OUT, "_engine/lib/dependency-guard.mjs")) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-core.mjs"), "utf8").includes(
+        "process.env.LUMIN_AUDIT_CORE_BIN",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-core.mjs"), "utf8").includes(
+        "executableOnPath",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-core.mjs"), "utf8").includes(
+        "LUMIN_AUDIT_CORE_BIN_",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-core.mjs"), "utf8").includes(
+        "LUMIN_AUDIT_CORE_NO_AUTO_BUILD",
+      ) &&
+      readFileSync(path.join(OUT, "_engine/lib/audit-manifest.mjs"), "utf8").includes(
+        "from './audit-core.mjs'",
+      ) &&
+      existsSync(
+        path.join(
+          OUT,
+          "_engine/bin",
+          `${process.platform}-${process.arch}`,
+          process.platform === "win32" ? "lumin-audit-core.exe" : "lumin-audit-core",
+        ),
+      ) &&
+      existsSync(path.join(OUT, "_engine/rust/Cargo.toml")) &&
+      existsSync(path.join(OUT, "_engine/rust/Cargo.lock")) &&
+      existsSync(path.join(OUT, "_engine/rust/rust-common/Cargo.toml")) &&
+      existsSync(
+        path.join(OUT, "_engine/rust/rust-main/lumin-audit-core/Cargo.toml"),
+      ) &&
       existsSync(path.join(OUT, "_engine/producers/audit-repo.mjs")) &&
       existsSync(
         path.join(
@@ -431,6 +478,66 @@ try {
       existsSync(path.join(OUT, "_engine/producers/build-symbol-graph.mjs")) &&
       existsSync(path.join(OUT, "_engine/producers/rank-fixes.mjs")),
     OUT,
+  );
+
+  const auditCorePlatformKey = `${process.platform}-${process.arch}`;
+  const auditCorePlatformManifest = JSON.parse(
+    readFileSync(
+      path.join(OUT, "_engine/bin/audit-core-platforms.json"),
+      "utf8",
+    ),
+  );
+  const packageJson = JSON.parse(readFileSync(path.join(OUT, "package.json"), "utf8"));
+  assert(
+    "SP4a. generated skill records packaged audit-core source fallback",
+    auditCorePlatformManifest.schemaVersion ===
+      "lumin-audit-core-packaged-platforms.v1" &&
+      auditCorePlatformManifest.packageScope ===
+        "current-platform-binary-with-source-fallback" &&
+      auditCorePlatformManifest.binaryPackageScope === auditCorePlatformKey &&
+      auditCorePlatformManifest.fallback?.kind === "packaged-source-build-env-or-path" &&
+      auditCorePlatformManifest.fallback?.requiredWhenRuntimePlatformMissing ===
+        true &&
+      auditCorePlatformManifest.runtimeResolution?.packageBinaryLayout ===
+        "_engine/bin/<platform>-<arch>/<executable>" &&
+      auditCorePlatformManifest.runtimeResolution?.missingPlatformBinaryBehavior ===
+        "build-packaged-source-with-cargo-or-use-env-or-path-override" &&
+      auditCorePlatformManifest.runtimeResolution
+        ?.requiresCargoWhenPackagedBinaryIsMissing === true &&
+      auditCorePlatformManifest.sourceFallback?.kind ===
+        "packaged-cargo-workspace" &&
+      auditCorePlatformManifest.sourceFallback?.manifest ===
+        "_engine/rust/Cargo.toml" &&
+      auditCorePlatformManifest.buildPolicy?.currentPlatformBinary ===
+        "rebuilt-before-copy" &&
+      auditCorePlatformManifest.buildPolicy?.contractValidation ===
+        "required-cli-commands-before-copy" &&
+      auditCorePlatformManifest.platforms.some(
+        (platform) =>
+          platform.key === auditCorePlatformKey &&
+          platform.executable ===
+            (process.platform === "win32"
+              ? "lumin-audit-core.exe"
+              : "lumin-audit-core"),
+      ) &&
+      packageJson.os === undefined &&
+      packageJson.cpu === undefined &&
+      packageJson.luminRepoLens?.auditCore?.packagedPlatforms?.includes(
+        auditCorePlatformKey,
+      ) &&
+      packageJson.luminRepoLens?.auditCore?.platformScope ===
+        "current-platform-binary-with-source-fallback" &&
+      packageJson.luminRepoLens?.auditCore?.binaryPlatformScope ===
+        auditCorePlatformKey &&
+      packageJson.luminRepoLens?.auditCore?.sourceFallback === true &&
+      packageJson.luminRepoLens?.auditCore?.sourceFallbackManifest ===
+        "_engine/rust/Cargo.toml" &&
+      packageJson.luminRepoLens?.auditCore?.platformOverrideEnv ===
+        "LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>" &&
+      packageJson.luminRepoLens?.auditCore?.genericOverrideEnv ===
+        "LUMIN_AUDIT_CORE_BIN" &&
+      packageJson.luminRepoLens?.auditCore?.pathFallback === true,
+    JSON.stringify({ auditCorePlatformManifest, packageJson }, null, 2),
   );
 
   const generatedDocs = collectMarkdownFiles(OUT);
@@ -448,6 +555,17 @@ try {
         "utf8",
       ).includes("_engine/lib/extract-ts.mjs"),
     JSON.stringify(staleLibRefs.slice(0, 20)),
+  );
+
+  const generatedLanguageSupport = readFileSync(
+    path.join(OUT, "references/language-support.md"),
+    "utf8",
+  );
+  assert(
+    "SP4c. generated language support documents Rust blind-zone area as rs",
+    generatedLanguageSupport.includes('area: "rs"') &&
+      !generatedLanguageSupport.includes('area: "rust"'),
+    generatedLanguageSupport,
   );
 
   assert(
@@ -475,7 +593,7 @@ try {
       !Object.hasOwn(pkg.bin ?? {}, "grounded-audit") &&
       pkg.scripts?.audit === "node scripts/audit-repo.mjs" &&
       pkg.scripts?.["pre-write"] ===
-        "node scripts/audit-repo.mjs --pre-write" &&
+        "node scripts/audit-repo.mjs --pre-write --pre-write-engine auto" &&
       pkg.scripts?.["post-write"] ===
         "node scripts/audit-repo.mjs --post-write" &&
       pkg.scripts?.["canon-draft"] ===
@@ -532,8 +650,10 @@ try {
     "SP7. generated producer imports are rewritten from ./_lib to ../lib",
     auditProducer.includes("from '../lib/blind-zones.mjs'") &&
       auditProducer.includes("from '../lib/dependency-guard.mjs'") &&
-      auditProducer.includes("from '../lib/audit-canon-draft.mjs'") &&
-      auditProducer.includes("from '../lib/audit-check-canon.mjs'") &&
+      auditProducer.includes("from '../lib/audit-manifest.mjs'") &&
+      auditProducer.includes("executeCanonDraftLifecycle") &&
+      auditProducer.includes("executeCheckCanonLifecycle") &&
+      !auditProducer.includes("audit-check-canon.mjs") &&
       !auditProducer.includes("from './_lib/") &&
       !auditProducer.includes("import('./_lib/"),
     auditProducer.slice(0, 1200),
@@ -620,6 +740,9 @@ try {
   const packagedCanonFiles = readdirSync(path.join(OUT, "canonical"))
     .filter((name) => name.endsWith(".md"))
     .sort();
+  const packagedCanonJsonFiles = readdirSync(path.join(OUT, "canonical"))
+    .filter((name) => name.endsWith(".json"))
+    .sort();
   const selfAuditCanonFacts = [
     "helper-registry.md",
     "naming.md",
@@ -628,18 +751,22 @@ try {
   ];
   assert(
     "SP9b. generated package excludes maintainer self-audit canonical fact snapshots",
-    packagedCanonFiles.length === 9 &&
+    packagedCanonFiles.length === 11 &&
       selfAuditCanonFacts.every((name) => !packagedCanonFiles.includes(name)) &&
+      packagedCanonFiles.includes("audit-core.md") &&
       packagedCanonFiles.includes("index.md") &&
       packagedCanonFiles.includes("invariants.md") &&
       packagedCanonFiles.includes("mode-contract.md") &&
       packagedCanonFiles.includes("pre-write-gate.md") &&
+      packagedCanonFiles.includes("evidence-ladder.md") &&
       packagedCanonFiles.includes("fact-model.md") &&
       packagedCanonFiles.includes("identity-and-alias.md") &&
       packagedCanonFiles.includes("classification-gates.md") &&
       packagedCanonFiles.includes("any-contamination.md") &&
-      packagedCanonFiles.includes("canon-drift.md"),
-    JSON.stringify(packagedCanonFiles, null, 2),
+      packagedCanonFiles.includes("canon-drift.md") &&
+      JSON.stringify(packagedCanonJsonFiles) ===
+        JSON.stringify(["oracle-registry.json"]),
+    JSON.stringify({ packagedCanonFiles, packagedCanonJsonFiles }, null, 2),
   );
 
   const selfAuditOut = path.join(TMP, "generated-self-audit");

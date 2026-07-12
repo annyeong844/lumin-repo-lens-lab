@@ -1,0 +1,79 @@
+[workspace]
+resolver = "2"
+members = [
+    "rust-common",
+    "rust-main/lumin-audit-core",
+]
+
+[workspace.package]
+version = "0.0.0-lab.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1"
+lumin-rust-common = { path = "rust-common", default-features = false }
+oxc_allocator = "0.139.0"
+oxc_ast = "0.139.0"
+oxc_ast_visit = "0.139.0"
+oxc_parser = "0.139.0"
+oxc_span = "0.139.0"
+oxc_syntax = "0.139.0"
+rayon = "1"
+serde = "1"
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+
+[workspace.lints]
+rust = {}
+
+[workspace.lints.clippy]
+await_holding_invalid_type = "deny"
+await_holding_lock = "deny"
+undocumented_unsafe_blocks = "deny"
+identity_op = "deny"
+manual_clamp = "deny"
+manual_filter = "deny"
+manual_find = "deny"
+manual_flatten = "deny"
+manual_map = "deny"
+manual_memcpy = "deny"
+manual_non_exhaustive = "deny"
+manual_ok_or = "deny"
+manual_range_contains = "deny"
+manual_retain = "deny"
+manual_strip = "deny"
+manual_try_fold = "deny"
+manual_unwrap_or = "deny"
+needless_borrow = "deny"
+needless_borrowed_reference = "deny"
+needless_collect = "deny"
+needless_late_init = "deny"
+needless_option_as_deref = "deny"
+needless_question_mark = "deny"
+needless_update = "deny"
+redundant_clone = "deny"
+redundant_closure = "deny"
+redundant_closure_for_method_calls = "deny"
+redundant_static_lifetimes = "deny"
+expect_used = "deny"
+trivially_copy_pass_by_ref = "deny"
+uninlined_format_args = "deny"
+unnecessary_filter_map = "deny"
+unnecessary_lazy_evaluations = "deny"
+unnecessary_sort_by = "deny"
+unnecessary_to_owned = "deny"
+unwrap_used = "deny"
+
+[profile.dev]
+debug = "none"
+incremental = false
+strip = "symbols"
+
+[profile.release]
+lto = "thin"
+debug = "none"
+split-debuginfo = "off"
+strip = "symbols"
+codegen-units = 4

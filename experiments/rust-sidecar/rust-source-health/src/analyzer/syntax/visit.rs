@@ -25,6 +25,8 @@ pub(super) fn collect_syntax_node(
         SyntaxKind::PATH_EXPR => refs::collect_path_ref(node, line_index, syntax),
         SyntaxKind::PATH_TYPE => refs::collect_type_path_ref(node, line_index, syntax),
         SyntaxKind::NAME_REF => refs::collect_name_ref(node, line_index, syntax),
+        SyntaxKind::IDENT_PAT => refs::collect_potential_const_pattern_ref(node, syntax),
+        SyntaxKind::PATH_PAT => refs::collect_path_pattern_ref(node, syntax),
         SyntaxKind::METHOD_CALL_EXPR => refs::collect_method_call(node, line_index, syntax),
         SyntaxKind::MACRO_CALL => {
             opaque_surfaces::collect_macro_call(node, line_index, classifications, syntax)

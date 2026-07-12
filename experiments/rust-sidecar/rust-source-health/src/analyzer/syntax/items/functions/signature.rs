@@ -63,7 +63,7 @@ pub(in crate::analyzer::syntax::items) fn function_signature(
         visibility: visibility_for(visibility),
         callable_kind,
         owner,
-        normalized_version: RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION,
+        normalized_version: RUST_FUNCTION_SIGNATURE_NORMALIZED_VERSION.to_string(),
         generics,
         receiver,
         params,

@@ -1,576 +1,539 @@
 // _lib/audit-manifest.mjs
 //
 // Helpers for audit-repo.mjs manifest evidence and artifact enumeration.
-// NO orchestration. NO child process execution.
+// NO producer orchestration. Migrated manifest contracts call lumin-audit-core.
 
-import { existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { detectBlindZones } from './blind-zones.mjs';
-import { loadIfExists as loadArtifact } from './artifacts.mjs';
-import { scanScopeStatusForPath } from './collect-files.mjs';
-import { normalizeGeneratedArtifactsMode } from './generated-artifact-mode.mjs';
-import {
-  GENERATED_ARTIFACT_MISSING_REASON,
-  GENERATED_ARTIFACT_POLICY_VERSION,
-} from './generated-artifact-evidence.mjs';
-import {
-  buildBlockedCandidateHintFamilyCounts,
-  buildBlockedCandidateHintReasonCounts,
-  sortCounterObject,
-} from './resolver-blocked-hints.mjs';
+import { runAuditCoreJson, runAuditCoreJsonResultFile } from './audit-core.mjs';
 
-const LIVING_AUDIT_DOC_CANDIDATES = [
-  'docs/current/audit/lumin-structural-audit.md',
-  'LUMIN_REPO_LENS.md',
-  'LUMIN_AUDIT.md',
-  'TECH_DEBT_AUDIT.md',
-];
-
-const ARTIFACT_CANDIDATES = [
-  'triage.json', 'topology.json', 'discipline.json',
-  'call-graph.json', 'barrels.json', 'shape-index.json',
-  'function-clones.json', 'block-clones.json',
-  'framework-resource-surfaces.json',
-  'resolver-capabilities.json', 'resolver-diagnostics.json',
-  'symbols.json', 'unused-deps.json', 'entry-surface.json', 'module-reachability.json',
-  'dead-classify.json', 'runtime-evidence.json',
-  'staleness.json', 'fix-plan.json', 'checklist-facts.json',
-  'producer-performance.json',
-  'canon-drift.json', 'topology.mermaid.md', 'audit-summary.latest.md',
-  'audit-review-pack.latest.md', 'lumin-repo-lens-lab.sarif',
-];
-
-const DYNAMIC_ARTIFACT_PATTERNS = [
-  /^canon-drift\..+\.md$/,
-  /^pre-write-advisory(?:\..+)?\.json$/,
-  /^post-write-delta(?:\..+)?\.json$/,
-  /^any-inventory\.pre\..+\.json$/,
-  /^any-inventory\.post\..+\.json$/,
-];
-
-const RESOLVER_BLOCKED_CANDIDATE_HINT_SAMPLE_LIMIT = 10;
-
-function languagesFromTriage(triage) {
-  const byLanguage = triage?.byLanguage ?? triage?.languages ?? triage?.summary?.byLanguage;
-  if (byLanguage && typeof byLanguage === 'object') return Object.keys(byLanguage);
-
-  const shape = triage?.shape ?? {};
-  const languages = [];
-  if ((shape.tsFiles ?? 0) > 0) languages.push('ts');
-  if ((shape.jsFiles ?? 0) > 0) languages.push('js');
-  if ((shape.pyFiles ?? 0) > 0) languages.push('py');
-  if ((shape.goFiles ?? 0) > 0) languages.push('go');
-  return languages.length > 0 ? languages : null;
-}
-
-function detectLivingAuditDocs(root) {
-  const docs = [];
-  for (const rel of LIVING_AUDIT_DOC_CANDIDATES) {
-    const abs = path.join(root, rel);
-    if (!existsSync(abs)) continue;
-    docs.push({
-      path: rel,
-      absolutePath: abs,
-    });
-  }
-  return {
-    preferredPath: LIVING_AUDIT_DOC_CANDIDATES[0],
-    existingDocs: docs,
-    action: docs.length > 0
-      ? 'read-and-update-before-final-answer'
-      : 'create-only-on-explicit-tracking-request',
-  };
-}
-
-function countObjectFromSummary(summary) {
-  if (!summary || typeof summary !== 'object') return null;
-  const out = [];
-  for (const [reason, value] of Object.entries(summary)) {
-    const count = typeof value?.count === 'number'
-      ? value.count
-      : typeof value === 'number'
-        ? value
-        : null;
-    if (count === null) continue;
-    out.push({ reason, count });
-  }
-  return out.length ? out : null;
-}
-
-function unresolvedSpecifierRoot(specifier) {
-  if (typeof specifier !== 'string' || specifier.length === 0) return null;
-  if (/^[@~#]\//.test(specifier)) return specifier.slice(0, 2);
-  if (specifier.startsWith('@')) {
-    const parts = specifier.split('/');
-    if (parts[0] && parts[1]) return `${parts[0]}/${parts[1]}`;
-  }
-  const first = specifier.split('/')[0];
-  return first || null;
-}
-
-function topUnresolvedReasons(symbols) {
-  const fromSummary = countObjectFromSummary(symbols?.unresolvedInternalSummaryByReason);
-  const reasons = fromSummary ?? (() => {
-    const counts = new Map();
-    for (const record of symbols?.unresolvedInternalSpecifierRecords ?? []) {
-      const reason = record?.reason ?? 'unknown-internal-resolution';
-      counts.set(reason, (counts.get(reason) ?? 0) + 1);
-    }
-    return [...counts.entries()].map(([reason, count]) => ({ reason, count }));
-  })();
-
-  return reasons
-    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
-    .slice(0, 10);
-}
-
-function buildTopSpecifierRoots(symbols) {
-  const groups = new Map();
-
-  for (const record of symbols?.unresolvedInternalSpecifierRecords ?? []) {
-    const specifierRoot = unresolvedSpecifierRoot(record?.specifier);
-    if (!specifierRoot) continue;
-    if (!groups.has(specifierRoot)) {
-      groups.set(specifierRoot, {
-        specifierRoot,
-        count: 0,
-        reasons: new Map(),
-        examples: [],
-      });
-    }
-    const group = groups.get(specifierRoot);
-    const reason = record?.reason ?? 'unknown-internal-resolution';
-    group.count++;
-    group.reasons.set(reason, (group.reasons.get(reason) ?? 0) + 1);
-    group.examples.push({
-      specifier: record.specifier,
-      consumerFile: record.consumerFile ?? null,
-    });
-  }
-
-  return [...groups.values()]
-    .map((group) => ({
-      specifierRoot: group.specifierRoot,
-      count: group.count,
-      reasons: sortCounterObject(group.reasons),
-      examples: group.examples
-        .sort((a, b) =>
-          `${a.consumerFile ?? ''}|${a.specifier ?? ''}`
-            .localeCompare(`${b.consumerFile ?? ''}|${b.specifier ?? ''}`))
-        .slice(0, 5),
-    }))
-    .sort((a, b) =>
-      b.count - a.count ||
-      a.specifierRoot.localeCompare(b.specifierRoot))
-    .slice(0, 20);
-}
-
-function buildResolverDiagnosticsSummary(symbols, {
-  resolverCapabilities = null,
-  resolverDiagnostics = null,
+function runManifestEvidenceCommand(command, label, root, outDir, {
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  generatedArtifactsMode = 'default',
+  rustAnalysisRun = null,
+  mergeRustAnalysisRun = false,
+  resultFile = false,
 } = {}) {
-  const blockedCandidateHints = Array.isArray(resolverDiagnostics?.blockedCandidateHints)
-    ? resolverDiagnostics.blockedCandidateHints.slice(0, RESOLVER_BLOCKED_CANDIDATE_HINT_SAMPLE_LIMIT)
-    : [];
-  return {
-    resolverVersion:
-      resolverDiagnostics?.resolverVersion ??
-      resolverCapabilities?.resolverVersion ??
-      null,
-    resolverCapabilityArtifact: resolverCapabilities ? 'resolver-capabilities.json' : null,
-    resolverDiagnosticsArtifact: resolverDiagnostics ? 'resolver-diagnostics.json' : null,
-    unresolvedInternal: symbols?.uses?.unresolvedInternal ?? null,
-    unresolvedInternalRatio: symbols?.uses?.unresolvedInternalRatio ?? null,
-    blindZoneCount: resolverDiagnostics?.summary?.blindZoneCount ?? null,
-    blockedCandidateHintCount: resolverDiagnostics?.summary?.blockedCandidateHintCount ?? null,
-    blockedCandidateHintSampleLimit: resolverDiagnostics ? RESOLVER_BLOCKED_CANDIDATE_HINT_SAMPLE_LIMIT : null,
-    blockedCandidateHints,
-    blockedCandidateHintReasonCounts: buildBlockedCandidateHintReasonCounts(
-      resolverDiagnostics?.blockedCandidateHints
-    ),
-    blockedCandidateHintFamilyCounts: buildBlockedCandidateHintFamilyCounts(
-      resolverDiagnostics?.blockedCandidateHints
-    ),
-    candidateTargetCount: resolverDiagnostics?.summary?.candidateTargetCount ?? null,
-    topFamilies: resolverDiagnostics?.summary?.topFamilies ?? [],
-    topAffectedPackageScopes:
-      resolverDiagnostics?.summary?.topAffectedPackageScopes ?? [],
-    topUnresolvedReasons:
-      resolverDiagnostics?.summary?.topUnresolvedReasons ?? topUnresolvedReasons(symbols),
-    topSpecifierRoots:
-      resolverDiagnostics?.summary?.topSpecifierRoots ?? buildTopSpecifierRoots(symbols),
-    topUnresolvedSpecifiers: (symbols?.topUnresolvedSpecifiers ?? []).slice(0, 20),
-  };
+  const args = [
+    command,
+    '--root', root,
+    '--output', outDir,
+    '--generated-artifacts', generatedArtifactsMode,
+    includeTests ? '--include-tests' : '--no-include-tests',
+    production ? '--production' : '--no-production',
+  ];
+  const runOptions = {};
+  if (mergeRustAnalysisRun && rustAnalysisRun) {
+    args.push('--rust-analysis-run-block', '-');
+    runOptions.input = JSON.stringify(rustAnalysisRun);
+  } else if (rustAnalysisRun?.ran === true) {
+    args.push('--rust-analysis-ran');
+  }
+  for (const exclude of excludes) {
+    args.push('--exclude', exclude);
+  }
+  for (const autoExclude of autoExcludes) {
+    args.push('--auto-exclude', autoExclude);
+  }
+  const runner = resultFile ? runAuditCoreJsonResultFile : runAuditCoreJson;
+  return runner(args, label, runOptions);
 }
 
-function toRepoRelative(root, candidate) {
-  const abs = path.isAbsolute(candidate)
-    ? path.resolve(candidate)
-    : path.resolve(root, candidate);
-  const rel = path.relative(path.resolve(root), abs);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
-  return rel.split(path.sep).join('/');
+function buildManifestEvidenceSummaryWithReadsFromFile(root, outDir, options = {}) {
+  return runManifestEvidenceCommand(
+    'manifest-evidence-summary-with-reads',
+    'buildManifestEvidenceSummary',
+    root,
+    outDir,
+    { ...options, resultFile: true },
+  );
 }
 
-function sortedGeneratedConsumerZoneExamples(zones) {
-  return [...zones]
-    .sort((a, b) =>
-      String(a.consumerFile ?? '').localeCompare(String(b.consumerFile ?? '')) ||
-      String(a.candidatePath ?? '').localeCompare(String(b.candidatePath ?? '')) ||
-      String(a.specifier ?? '').localeCompare(String(b.specifier ?? '')))
-    .slice(0, 5)
-    .map((zone) => ({
-      specifier: zone.specifier ?? null,
-      consumerFile: zone.consumerFile ?? null,
-      candidatePath: zone.candidatePath ?? null,
-      status: zone.status ?? null,
-      ...(zone.scanScopeReason ? { scanScopeReason: zone.scanScopeReason } : {}),
-      mode: zone.mode ?? null,
-    }));
+function buildManifestEvidenceRefreshWithReadsFromFile(root, outDir, options = {}) {
+  return runManifestEvidenceCommand(
+    'manifest-evidence-refresh-with-reads',
+    'refreshManifestEvidence',
+    root,
+    outDir,
+    { ...options, resultFile: true },
+  );
 }
 
-function buildGeneratedConsumerBlindZoneSummary(zones) {
-  const groups = new Map();
-  for (const zone of zones ?? []) {
-    if (!zone || typeof zone !== 'object') continue;
-    const scopePackageRoot = zone.scopePackageRoot ?? 'unknown';
-    if (!groups.has(scopePackageRoot)) {
-      groups.set(scopePackageRoot, {
-        scopePackageRoot,
-        count: 0,
-        statuses: new Map(),
-        specifiers: new Map(),
-        zones: [],
-      });
-    }
-    const group = groups.get(scopePackageRoot);
-    group.count++;
-    group.statuses.set(zone.status ?? 'unknown', (group.statuses.get(zone.status ?? 'unknown') ?? 0) + 1);
-    group.specifiers.set(zone.specifier ?? 'unknown', (group.specifiers.get(zone.specifier ?? 'unknown') ?? 0) + 1);
-    group.zones.push(zone);
+export function buildManifestArtifactsProducedUpdate(outDir, options = {}) {
+  const args = [
+    'manifest-artifacts-produced-update',
+    '--output', outDir,
+  ];
+  const runOptions = {};
+  if (Object.hasOwn(options, 'rustAnalysis')) {
+    args.push('--rust-analysis-block', '-');
+    runOptions.input = JSON.stringify(options.rustAnalysis ?? null);
   }
-
-  return [...groups.values()]
-    .map((group) => ({
-      scopePackageRoot: group.scopePackageRoot,
-      count: group.count,
-      statuses: sortCounterObject(group.statuses),
-      topSpecifiers: [...group.specifiers.entries()]
-        .map(([specifier, count]) => ({ specifier, count }))
-        .sort((a, b) => b.count - a.count || a.specifier.localeCompare(b.specifier))
-        .slice(0, 5),
-      examples: sortedGeneratedConsumerZoneExamples(group.zones),
-    }))
-    .sort((a, b) => b.count - a.count || a.scopePackageRoot.localeCompare(b.scopePackageRoot))
-    .slice(0, 20);
+  return runAuditCoreJson(args, 'buildManifestArtifactsProducedUpdate', runOptions);
 }
 
-function buildGeneratedArtifactsSummary(symbols, options = {}) {
-  const {
-    root = process.cwd(),
-    includeTests = true,
-    excludes = [],
-    generatedArtifactsMode = 'default',
-  } = options;
-  const mode = normalizeGeneratedArtifactsMode(generatedArtifactsMode);
-  const reasonSummary = new Map();
-  const misses = new Map();
-  const presentButOutOfScope = [];
-  const presentKeys = new Set();
-  const generatedConsumerBlindZones = Array.isArray(symbols?.generatedConsumerBlindZones)
-    ? symbols.generatedConsumerBlindZones
-    : [];
-
-  for (const record of symbols?.unresolvedInternalSpecifierRecords ?? []) {
-    if (record?.reason !== GENERATED_ARTIFACT_MISSING_REASON) continue;
-    reasonSummary.set(record.reason, (reasonSummary.get(record.reason) ?? 0) + 1);
-
-    const generatedArtifact = record.generatedArtifact ?? {};
-    const key = [
-      record.specifier ?? '',
-      generatedArtifact.matchedPackage ?? '',
-      generatedArtifact.targetSubpath ?? '',
-      generatedArtifact.generatorFamily ?? '',
-      generatedArtifact.confidence ?? '',
-    ].join('|');
-    if (!misses.has(key)) {
-      misses.set(key, {
-        specifier: record.specifier,
-        matchedPackage: generatedArtifact.matchedPackage ?? null,
-        targetSubpath: generatedArtifact.targetSubpath ?? null,
-        count: 0,
-        generatorFamily: generatedArtifact.generatorFamily ?? null,
-        confidence: generatedArtifact.confidence ?? null,
-      });
-    }
-    misses.get(key).count += 1;
-
-    if (mode !== 'default') {
-      for (const candidate of record.targetCandidates ?? []) {
-        const candidatePath = toRepoRelative(root, candidate);
-        if (!candidatePath) continue;
-        const absCandidate = path.resolve(root, candidatePath);
-        if (!existsSync(absCandidate)) continue;
-        const scope = scanScopeStatusForPath(root, absCandidate, { includeTests, exclude: excludes });
-        if (scope.included) continue;
-        const presentKey = [
-          record.specifier ?? '',
-          record.consumerFile ?? '',
-          candidatePath,
-          mode,
-        ].join('|');
-        if (presentKeys.has(presentKey)) continue;
-        presentKeys.add(presentKey);
-        const present = {
-          specifier: record.specifier,
-          consumerFile: record.consumerFile ?? null,
-          matchedPackage: generatedArtifact.matchedPackage ?? null,
-          targetSubpath: generatedArtifact.targetSubpath ?? null,
-          candidatePath,
-          reason: 'present-but-out-of-scope',
-          mode,
-        };
-        if (mode === 'prepared') {
-          present.staleStatus = 'unknown';
-          present.staleReason = 'generator-input-hash-not-recorded';
-        }
-        presentButOutOfScope.push(present);
-      }
-    }
-  }
-
-  const topGeneratedMisses = [...misses.values()]
-    .sort((a, b) =>
-      b.count - a.count ||
-      String(a.matchedPackage ?? '').localeCompare(String(b.matchedPackage ?? '')) ||
-      String(a.specifier ?? '').localeCompare(String(b.specifier ?? '')))
-    .slice(0, 20);
-
-  return {
-    mode,
-    generatedArtifactPolicyVersion: GENERATED_ARTIFACT_POLICY_VERSION,
-    executedGenerators: false,
-    reasonSummary: sortCounterObject(reasonSummary),
-    topGeneratedMisses,
-    generatedConsumerBlindZoneCount: generatedConsumerBlindZones.length,
-    topGeneratedConsumerBlindZones:
-      buildGeneratedConsumerBlindZoneSummary(generatedConsumerBlindZones),
-    presentButOutOfScopeCount: presentButOutOfScope.length,
-    presentButOutOfScope: presentButOutOfScope.sort((a, b) =>
-      String(a.candidatePath ?? '').localeCompare(String(b.candidatePath ?? '')) ||
-      String(a.specifier ?? '').localeCompare(String(b.specifier ?? '')) ||
-      String(a.consumerFile ?? '').localeCompare(String(b.consumerFile ?? ''))),
-    supportedGenerators: [],
-  };
+function buildArtifactReadMetricsSummary(input) {
+  return runJsonInputCommand(
+    'artifact-read-metrics-summary',
+    'buildArtifactReadMetricsSummary',
+    input ?? {},
+  );
 }
 
-function buildFrameworkResourceSurfacesSummary(artifact) {
-  if (!artifact || typeof artifact !== 'object') return null;
-  const files = Array.isArray(artifact.files) ? artifact.files : [];
-  const summary = artifact.summary ?? {};
-  const topExamples = Array.isArray(summary.topExamples)
-    ? summary.topExamples.slice(0, 10)
-    : files.slice(0, 10).map((entry) => ({
-        file: entry.file ?? null,
-        lanes: (entry.surfaceLanes ?? []).map((lane) => lane.lane).filter(Boolean),
-        capabilityPacks: (entry.surfaceLanes ?? []).map((lane) => lane.capabilityPack).filter(Boolean),
-        reasons: (entry.surfaceLanes ?? []).map((lane) => lane.reason).filter(Boolean),
-      }));
-  return {
-    artifact: 'framework-resource-surfaces.json',
-    schemaVersion: artifact.schemaVersion ?? null,
-    policyVersion: artifact.policyVersion ?? null,
-    totalFilesWithSurfaces: summary.totalFilesWithSurfaces ?? files.length,
-    totalSurfaceLanes: summary.totalSurfaceLanes ?? files.reduce(
-      (count, entry) => count + (Array.isArray(entry.surfaceLanes) ? entry.surfaceLanes.length : 0),
-      0,
-    ),
-    byLane: summary.byLane ?? {},
-    byCapabilityPack: summary.byCapabilityPack ?? {},
-    byConfidence: summary.byConfidence ?? {},
-    byReason: summary.byReason ?? {},
-    byFramework: summary.byFramework ?? {},
-    topExamples,
-  };
+const ARTIFACT_READ_EVENTS_SCHEMA_VERSION = 'lumin-audit-artifact-read-events.v1';
+
+function runJsonInputCommand(command, label, input, { args = [] } = {}) {
+  return runAuditCoreJson([command, '--input', '-', ...args], label, {
+    input: JSON.stringify(input ?? {}),
+  });
 }
 
-function buildUnusedDependenciesSummary(artifact) {
-  if (!artifact || typeof artifact !== 'object') return null;
-  const summary = artifact.summary ?? {};
-  const packages = Array.isArray(artifact.packages) ? artifact.packages : [];
-  const topReviewUnused = [];
-  for (const pkg of packages) {
-    const dependencies = Array.isArray(pkg?.dependencies) ? pkg.dependencies : [];
-    for (const dep of dependencies) {
-      if (dep?.status !== 'review-unused') continue;
-      topReviewUnused.push({
-        packageDir: pkg.packageDir ?? '.',
-        manifestPath: pkg.manifestPath ?? null,
-        name: dep.name ?? null,
-        field: dep.field ?? null,
-        reason: dep.reason ?? null,
-        confidence: dep.confidence ?? null,
-      });
-    }
-  }
-  topReviewUnused.sort((a, b) =>
-    String(a.packageDir ?? '').localeCompare(String(b.packageDir ?? '')) ||
-    String(a.name ?? '').localeCompare(String(b.name ?? '')) ||
-    String(a.field ?? '').localeCompare(String(b.field ?? '')));
-
-  return {
-    artifact: 'unused-deps.json',
-    schemaVersion: artifact.schemaVersion ?? null,
-    policyVersion: artifact.policyVersion ?? null,
-    status: artifact.status ?? null,
-    ...(artifact.reason ? { reason: artifact.reason } : {}),
-    packageCount: summary.packageCount ?? packages.length,
-    declaredDependencyCount: summary.declaredDependencyCount ?? 0,
-    usedCount: summary.usedCount ?? 0,
-    reviewUnusedCount: summary.reviewUnusedCount ?? 0,
-    mutedCount: summary.mutedCount ?? 0,
-    confidenceLimitedCount: summary.confidenceLimitedCount ?? 0,
-    unavailableCount: summary.unavailableCount ?? 0,
-    byReason: summary.byReason ?? {},
-    topReviewUnused: topReviewUnused.slice(0, 10),
-  };
+function runJsonInputResultFileCommand(command, label, input) {
+  return runAuditCoreJsonResultFile([command, '--input', '-'], label, {
+    input: JSON.stringify(input ?? {}),
+  });
 }
 
-function buildBlockClonesSummary(artifact) {
-  if (!artifact || typeof artifact !== 'object') return null;
-  const summary = artifact.summary ?? {};
-  const groups = Array.isArray(artifact.groups) ? artifact.groups : [];
-  const thresholds = artifact.thresholds && typeof artifact.thresholds === 'object'
-    ? artifact.thresholds
-    : {};
-  const normalization = artifact.normalization && typeof artifact.normalization === 'object'
-    ? artifact.normalization
-    : {};
-  const noisePolicy = artifact.noisePolicy && typeof artifact.noisePolicy === 'object'
-    ? artifact.noisePolicy
-    : {};
-  const groupCount = typeof summary.groupCount === 'number'
-    ? summary.groupCount
-    : groups.length;
-  const instanceCount = typeof summary.instanceCount === 'number'
-    ? summary.instanceCount
-    : groups.reduce((sum, group) =>
-        sum + (Array.isArray(group?.instances) ? group.instances.length : 0), 0);
-
-  const thresholdSummary = {
-    minTokens: thresholds.minTokens ?? null,
-    minLines: thresholds.minLines ?? null,
-    minOccurrences: thresholds.minOccurrences ?? null,
-    maxInstancesPerGroup: thresholds.maxInstancesPerGroup ?? null,
-    maxTokensPerFile: thresholds.maxTokensPerFile ?? null,
-  };
-  if (Object.hasOwn(thresholds, 'maxGroups')) {
-    thresholdSummary.maxGroups = thresholds.maxGroups ?? null;
-  }
-  if (Object.hasOwn(thresholds, 'maxCandidateGroups')) {
-    thresholdSummary.maxCandidateGroups = thresholds.maxCandidateGroups ?? null;
-  }
-  if (Object.hasOwn(thresholds, 'maxReviewGroups')) {
-    thresholdSummary.maxReviewGroups = thresholds.maxReviewGroups ?? null;
-  }
-  if (Object.hasOwn(thresholds, 'maxMutedGroups')) {
-    thresholdSummary.maxMutedGroups = thresholds.maxMutedGroups ?? null;
-  }
-
-  const blockClones = {
-    artifact: 'block-clones.json',
-    schemaVersion: artifact.schemaVersion ?? null,
-    policyVersion: artifact.policyVersion ?? null,
-    status: artifact.status ?? null,
-    ...(artifact.reason ? { reason: artifact.reason } : {}),
-    reviewOnly: true,
-    normalizationPolicyId: normalization.policyId ?? null,
-    normalizationMode: normalization.mode ?? null,
-    thresholdPolicyId: thresholds.policyId ?? null,
-    noisePolicyId: noisePolicy.policyId ?? null,
-    thresholds: thresholdSummary,
-    fileCount: summary.fileCount ?? 0,
-    tokenCount: summary.tokenCount ?? 0,
-    groupCount,
-    instanceCount,
-    reviewGroupCount: noisePolicy.reviewGroupCount ?? summary.reviewGroupCount ?? null,
-    mutedGroupCount: noisePolicy.mutedGroupCount ?? summary.mutedGroupCount ?? null,
-    mutedByReason: noisePolicy.mutedByReason ?? {},
-    skippedFileCount: summary.skippedFileCount ?? 0,
-    unavailableFileCount: summary.unavailableFileCount ?? 0,
-  };
-  if (Object.hasOwn(noisePolicy, 'capSaturated')) {
-    blockClones.capSaturated = noisePolicy.capSaturated ?? null;
-  }
-  if (Object.hasOwn(noisePolicy, 'candidateCapSaturated')) {
-    blockClones.candidateCapSaturated = noisePolicy.candidateCapSaturated ?? null;
-  }
-  if (Object.hasOwn(noisePolicy, 'reviewCapSaturated')) {
-    blockClones.reviewCapSaturated = noisePolicy.reviewCapSaturated ?? null;
-  }
-  if (Object.hasOwn(noisePolicy, 'mutedCapSaturated')) {
-    blockClones.mutedCapSaturated = noisePolicy.mutedCapSaturated ?? null;
-  }
-  return blockClones;
-}
-
-function numberOrZero(value) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-function buildSfcEvidenceSummary(symbols) {
-  if (!symbols || typeof symbols !== 'object') return null;
-  const uses = symbols.uses && typeof symbols.uses === 'object'
-    ? symbols.uses
-    : {};
-  const byLane = {
-    scriptImportConsumers: numberOrZero(uses.sfcScriptConsumers),
-    scriptSrcReachability: numberOrZero(uses.sfcScriptSrcReachability),
-    styleAssetReferences: numberOrZero(uses.sfcStyleAssetReferences),
-    templateComponentRefs: numberOrZero(uses.sfcTemplateComponentRefs),
-    globalComponentRegistrations: numberOrZero(uses.sfcGlobalComponentRegistrations),
-    generatedComponentManifests: numberOrZero(uses.sfcGeneratedComponentManifests),
-    frameworkConventionComponents: numberOrZero(uses.sfcFrameworkConventionComponents),
-  };
-  const totalEvidenceCount = Object.values(byLane)
-    .reduce((sum, count) => sum + count, 0);
-  if (totalEvidenceCount <= 0) return null;
-
-  return {
-    artifact: 'symbols.json',
-    status: 'complete',
-    scriptImportConsumerCount: byLane.scriptImportConsumers,
-    reachabilityOnlyCount: byLane.scriptSrcReachability,
-    reviewOnlyEvidenceCount:
-      byLane.styleAssetReferences +
-      byLane.templateComponentRefs +
-      byLane.globalComponentRegistrations +
-      byLane.generatedComponentManifests +
-      byLane.frameworkConventionComponents,
-    totalEvidenceCount,
-    byLane,
-    scanGapStillApplies: true,
-  };
-}
-
-export function collectProducedArtifacts(outDir) {
-  const produced = new Set();
-  for (const name of ARTIFACT_CANDIDATES) {
-    if (existsSync(path.join(outDir, name))) produced.add(name);
-  }
-  let entries = [];
+function runJsonFileInputResultFileCommand(command, label, input, options = {}) {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-input-'));
+  const inputPath = path.join(tempDir, 'input.json');
   try {
-    entries = readdirSync(outDir, { withFileTypes: true });
-  } catch {
-    return Array.from(produced).sort();
+    writeFileSync(inputPath, JSON.stringify(input ?? {}));
+    return runAuditCoreJsonResultFile([command, '--input', inputPath], label, options);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
   }
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (DYNAMIC_ARTIFACT_PATTERNS.some((pattern) => pattern.test(entry.name))) {
-      produced.add(entry.name);
-    }
+}
+
+function lifecycleRequestNeedsInheritedStdin(request) {
+  return request?.preWrite?.requested === true &&
+    request?.preWrite?.routingInput?.intentFlag === '-';
+}
+
+export function writeTopologyMermaidWithAuditCore({ topology, outputPath, options = {} }) {
+  return runJsonInputResultFileCommand(
+    'topology-mermaid-render',
+    'writeTopologyMermaid',
+    {
+      schemaVersion: 'lumin-topology-mermaid-render-request.v1',
+      topology,
+      outputPath,
+      options,
+    },
+  );
+}
+
+export function writeAuditSummaryWithAuditCore({
+  manifest,
+  checklistFacts = null,
+  fixPlan = null,
+  topology = null,
+  discipline = null,
+  callGraph = null,
+  functionClones = null,
+  symbols = null,
+  moduleReachability = null,
+  outputPath,
+}) {
+  return runJsonInputResultFileCommand(
+    'audit-summary-render',
+    'writeAuditSummary',
+    {
+      schemaVersion: 'lumin-audit-summary-render-request.v1',
+      manifest,
+      checklistFacts,
+      fixPlan,
+      topology,
+      discipline,
+      callGraph,
+      functionClones,
+      symbols,
+      moduleReachability,
+      outputPath,
+    },
+  );
+}
+
+export function writeAuditReviewPackWithAuditCore({
+  manifest,
+  checklistFacts = null,
+  fixPlan = null,
+  topology = null,
+  discipline = null,
+  callGraph = null,
+  functionClones = null,
+  barrels = null,
+  shapeIndex = null,
+  deadClassify = null,
+  symbols = null,
+  moduleReachability = null,
+  outputPath,
+}) {
+  return runJsonInputResultFileCommand(
+    'audit-review-pack-render',
+    'writeAuditReviewPack',
+    {
+      schemaVersion: 'lumin-audit-review-pack-render-request.v1',
+      manifest,
+      checklistFacts,
+      fixPlan,
+      topology,
+      discipline,
+      callGraph,
+      functionClones,
+      barrels,
+      shapeIndex,
+      deadClassify,
+      symbols,
+      moduleReachability,
+      outputPath,
+    },
+  );
+}
+
+export function createArtifactReadMetrics({ rootDir, largestLimit = 10 } = {}) {
+  const reads = [];
+
+  function observeRead(record) {
+    reads.push({
+      filePath: record?.filePath ?? 'unknown',
+      bytes: record?.bytes ?? 0,
+      readMs: record?.readMs ?? 0,
+      jsonParseMs: record?.jsonParseMs ?? 0,
+      ok: record?.ok !== false,
+    });
   }
-  return Array.from(produced).sort();
+
+  function summary() {
+    return buildArtifactReadMetricsSummary({
+      schemaVersion: ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
+      rootDir,
+      largestLimit,
+      reads,
+    });
+  }
+
+  function events() {
+    return {
+      schemaVersion: ARTIFACT_READ_EVENTS_SCHEMA_VERSION,
+      rootDir,
+      largestLimit,
+      reads: [...reads],
+    };
+  }
+
+  return { observeRead, summary, events };
+}
+
+export function finalizeAuditRun({
+  manifest,
+  generated,
+  root,
+  outDir,
+  profile,
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  noIncremental = false,
+  cacheRoot,
+  clearIncrementalCache = false,
+  generatedArtifactsMode = 'default',
+  artifactReads,
+  rustAnalysis = null,
+  commandsRun = [],
+  skipped = [],
+  topologyMermaidPath = null,
+  auditSummaryPath = null,
+  reviewPackPath = null,
+}) {
+  return runJsonInputCommand(
+    'finalize-audit-run',
+    'finalizeAuditRun',
+    {
+      manifest: manifest ?? null,
+      context: {
+        generated,
+        root,
+        output: outDir,
+        profile,
+        includeTests,
+        production,
+        excludes,
+        autoExcludes,
+        noIncremental,
+        cacheRoot,
+        clearIncrementalCache,
+        generatedArtifactsMode,
+      },
+      observations: {
+        artifactReads,
+        rustAnalysis,
+        commandsRun,
+        skipped,
+      },
+      rustAnalysis,
+      companion: {
+        topologyMermaidPath,
+        auditSummaryPath,
+        reviewPackPath,
+      },
+    },
+  );
+}
+
+export function finalizeAuditRunWithCompanions({
+  manifest,
+  root,
+  outDir,
+  profile,
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  noIncremental = false,
+  cacheRoot,
+  clearIncrementalCache = false,
+  generatedArtifactsMode = 'default',
+  artifactReadEvents,
+  rustAnalysis = null,
+  commandsRun = [],
+  skipped = [],
+  companions = {},
+  companionPolicy = null,
+}) {
+  return runJsonInputResultFileCommand(
+    'finalize-audit-run-with-companions',
+    'finalizeAuditRunWithCompanions',
+    {
+      manifest: manifest ?? null,
+      context: {
+        generated: manifest?.meta?.generated ?? new Date().toISOString(),
+        root,
+        output: outDir,
+        profile,
+        includeTests,
+        production,
+        excludes,
+        autoExcludes,
+        noIncremental,
+        cacheRoot,
+        clearIncrementalCache,
+        generatedArtifactsMode,
+      },
+      artifactReadEvents,
+      commandsRun,
+      skipped,
+      rustAnalysis,
+      companions,
+      companionPolicy,
+    },
+  );
+}
+
+export function executeBaseRuntime(request) {
+  return runJsonInputCommand('execute-base-runtime', 'executeBaseRuntime', request);
+}
+
+export function executeAuditLifecycle(request) {
+  if (lifecycleRequestNeedsInheritedStdin(request)) {
+    return runJsonFileInputResultFileCommand(
+      'execute-audit-lifecycle',
+      'executeAuditLifecycle',
+      request,
+      { inheritStdin: true },
+    );
+  }
+  return runJsonInputResultFileCommand(
+    'execute-audit-lifecycle',
+    'executeAuditLifecycle',
+    request,
+  );
+}
+
+export function executeCanonDraftLifecycle(request) {
+  return runJsonInputCommand('execute-canon-draft', 'executeCanonDraftLifecycle', request);
+}
+
+export function executeCheckCanonLifecycle(request) {
+  return runJsonInputCommand('execute-check-canon', 'executeCheckCanonLifecycle', request);
+}
+
+export function resolvePreWriteRoute(request) {
+  return runJsonInputCommand('pre-write-route', 'resolvePreWriteRoute', request);
+}
+
+export function executeRustPreWriteLifecycle(request) {
+  return runJsonInputResultFileCommand(
+    'execute-rust-pre-write',
+    'executeRustPreWriteLifecycle',
+    request,
+  );
+}
+
+export function executeJsPreWriteLifecycle(request) {
+  return runJsonInputResultFileCommand(
+    'execute-js-pre-write',
+    'executeJsPreWriteLifecycle',
+    request,
+  );
+}
+
+export function executePostWriteLifecycle(request) {
+  return runJsonInputResultFileCommand(
+    'execute-post-write',
+    'executePostWriteLifecycle',
+    request,
+  );
+}
+
+export function applyLifecycleExitPolicy(request) {
+  return runJsonInputCommand('lifecycle-exit-policy', 'applyLifecycleExitPolicy', request);
+}
+
+export function evaluateLifecycleRequestGuard(request) {
+  return runJsonInputCommand(
+    'lifecycle-request-guard',
+    'evaluateLifecycleRequestGuard',
+    request,
+  );
+}
+
+export function buildManifestCloseoutUpdate({
+  outDir,
+  producerPerformancePath,
+  rustAnalysis,
+  topologyMermaidPath,
+  auditSummaryPath,
+  reviewPackPath,
+}) {
+  return runJsonInputCommand(
+    'manifest-closeout-update',
+    'buildManifestCloseoutUpdate',
+    {
+      output: outDir,
+      producerPerformancePath,
+      rustAnalysis,
+      companion: {
+        topologyMermaidPath,
+        auditSummaryPath,
+        reviewPackPath,
+      },
+    },
+  );
+}
+
+export function buildManifestLifecycleUpdate(blocks) {
+  return runJsonInputCommand(
+    'manifest-lifecycle-update',
+    'buildManifestLifecycleUpdate',
+    blocks,
+  );
+}
+
+export function buildManifestRootWithEvidence({
+  generated,
+  profile,
+  root,
+  outDir,
+  commandsRun = [],
+  skipped = [],
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  generatedArtifactsMode = 'default',
+  rustAnalysisRun = null,
+  rustAnalysisRan = false,
+  onArtifactRead,
+  basePipelinePlanned = true,
+  basePipelineSkipReason = null,
+}) {
+  const result = runJsonInputResultFileCommand(
+    'manifest-root-with-evidence',
+    'buildManifestRootWithEvidence',
+    {
+      generated,
+      profile,
+      root,
+      output: outDir,
+      commandsRun,
+      skipped,
+      includeTests,
+      production,
+      excludes,
+      autoExcludes,
+      generatedArtifactsMode,
+      rustAnalysisRun,
+      rustAnalysisRan: rustAnalysisRun ? false : rustAnalysisRan,
+      basePipelinePlanned,
+      basePipelineSkipReason,
+    },
+  );
+  observeRustArtifactReads(result.artifactReads, onArtifactRead);
+  return result.manifest ?? {};
+}
+
+export function writeManifestFile(outDir, manifest) {
+  return runAuditCoreJson([
+    'manifest-write',
+    '--output', outDir,
+    '--input', '-',
+  ], 'writeManifestFile', {
+    input: JSON.stringify({ manifest: manifest ?? null }),
+  });
+}
+
+export function applyLifecycleAndRefreshManifestEvidence({
+  manifest,
+  lifecycle,
+  root,
+  outDir,
+  includeTests,
+  production,
+  excludes = [],
+  autoExcludes = [],
+  generatedArtifactsMode = 'default',
+  rustAnalysisRun = null,
+  rustAnalysisRan = false,
+  onArtifactRead,
+  basePipelinePlanned = true,
+  basePipelineSkipReason = null,
+}) {
+  const result = runJsonInputResultFileCommand(
+    'manifest-lifecycle-evidence-refresh',
+    'applyLifecycleAndRefreshManifestEvidence',
+    {
+      manifest: manifest ?? null,
+      lifecycle: lifecycle ?? {},
+      evidence: {
+        root,
+        output: outDir,
+        includeTests,
+        production,
+        excludes,
+        autoExcludes,
+        generatedArtifactsMode,
+        rustAnalysisRun,
+        rustAnalysisRan: rustAnalysisRun ? false : rustAnalysisRan,
+        basePipelinePlanned,
+        basePipelineSkipReason,
+      },
+    },
+  );
+  observeRustArtifactReads(result.artifactReads, onArtifactRead);
+  return result.manifest ?? manifest;
+}
+
+function observeRustArtifactReads(artifactReads, onArtifactRead) {
+  if (!onArtifactRead) return;
+  for (const read of artifactReads?.reads ?? []) {
+    onArtifactRead(read);
+  }
 }
 
 export function buildManifestEvidence({
@@ -581,70 +544,28 @@ export function buildManifestEvidence({
   excludes = [],
   autoExcludes = [],
   generatedArtifactsMode = 'default',
+  rustAnalysisRun = null,
+  mergeRustAnalysisRun = false,
   onArtifactRead,
 }) {
-  const triage = loadArtifact(outDir, 'triage.json', { onRead: onArtifactRead });
-  const symbols = loadArtifact(outDir, 'symbols.json', { onRead: onArtifactRead });
-  const resolverCapabilities = loadArtifact(outDir, 'resolver-capabilities.json', { onRead: onArtifactRead });
-  const resolverDiagnostics = loadArtifact(outDir, 'resolver-diagnostics.json', { onRead: onArtifactRead });
-  const frameworkResourceSurfaces = loadArtifact(outDir, 'framework-resource-surfaces.json', { onRead: onArtifactRead });
-  const unusedDeps = loadArtifact(outDir, 'unused-deps.json', { onRead: onArtifactRead });
-  const blockClones = loadArtifact(outDir, 'block-clones.json', { onRead: onArtifactRead });
-  const entrySurface = loadArtifact(outDir, 'entry-surface.json', { onRead: onArtifactRead });
-  const deadClassify = loadArtifact(outDir, 'dead-classify.json', { onRead: onArtifactRead });
-
-  const parseErrors = (() => {
-    const w = (symbols?.meta?.warnings ?? []).find((x) =>
-      x?.kind === 'parse-errors' || x?.type === 'parse-errors' || x?.code === 'parse-errors');
-    return w?.count ?? symbols?.filesWithParseErrors?.length ?? 0;
-  })();
-
-  return {
-    scanRange: {
-      root,
-      includeTests,
-      production,
-      excludes,
-      autoExcludes,
-      languages: languagesFromTriage(triage),
-      files: triage?.summary?.files ?? triage?.files ?? triage?.shape?.totalFiles ?? null,
-    },
-    confidence: {
-      parseErrors,
-      unresolvedInternalRatio: symbols?.uses?.unresolvedInternalRatio ?? null,
-      externalImports: symbols?.uses?.external ?? null,
-      resolvedInternal: symbols?.uses?.resolvedInternal ?? null,
-      unresolvedInternal: symbols?.uses?.unresolvedInternal ?? null,
-    },
-    resolverDiagnostics: buildResolverDiagnosticsSummary(symbols, {
-      resolverCapabilities,
-      resolverDiagnostics,
-    }),
-    blindZones: detectBlindZones({ triage, symbols, deadClassify, entrySurface, resolverDiagnostics }),
-    generatedArtifacts: buildGeneratedArtifactsSummary(symbols, {
-      root,
-      includeTests,
-      excludes,
-      generatedArtifactsMode,
-    }),
-    frameworkResourceSurfaces: buildFrameworkResourceSurfacesSummary(frameworkResourceSurfaces),
-    unusedDependencies: buildUnusedDependenciesSummary(unusedDeps),
-    blockClones: buildBlockClonesSummary(blockClones),
-    sfcEvidence: buildSfcEvidenceSummary(symbols),
-    livingAudit: detectLivingAuditDocs(root),
-  };
+  const manifestEvidence = buildManifestEvidenceSummaryWithReadsFromFile(root, outDir, {
+    includeTests,
+    production,
+    excludes,
+    autoExcludes,
+    generatedArtifactsMode,
+    rustAnalysisRun,
+    mergeRustAnalysisRun,
+  });
+  observeRustArtifactReads(manifestEvidence.artifactReads, onArtifactRead);
+  return manifestEvidence.evidence ?? {};
 }
 
 export function refreshManifestEvidence(manifest, options) {
-  const evidence = buildManifestEvidence(options);
-  manifest.scanRange = evidence.scanRange;
-  manifest.confidence = evidence.confidence;
-  manifest.resolverDiagnostics = evidence.resolverDiagnostics;
-  manifest.blindZones = evidence.blindZones;
-  manifest.generatedArtifacts = evidence.generatedArtifacts;
-  manifest.frameworkResourceSurfaces = evidence.frameworkResourceSurfaces;
-  manifest.unusedDependencies = evidence.unusedDependencies;
-  manifest.blockClones = evidence.blockClones;
-  manifest.sfcEvidence = evidence.sfcEvidence;
-  manifest.livingAudit = evidence.livingAudit;
+  const result = buildManifestEvidenceRefreshWithReadsFromFile(options.root, options.outDir, options);
+  observeRustArtifactReads(result.artifactReads, options.onArtifactRead);
+  Object.assign(
+    manifest,
+    result.evidence ?? {},
+  );
 }

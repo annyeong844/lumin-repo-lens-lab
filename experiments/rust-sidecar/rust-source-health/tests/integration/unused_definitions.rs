@@ -237,6 +237,105 @@ pub fn entry() {
 }
 
 #[test]
+fn private_references_inside_schema_with_attributes_block_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+fn hook_event_name_schema() -> usize {
+    1
+}
+
+struct HookWire {
+    #[schemars(schema_with = "hook_event_name_schema")]
+    name: String,
+}
+
+pub fn entry() {
+    let _ = core::mem::size_of::<HookWire>();
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+    assert!(analysis["excludedCandidates"]
+        .as_array()
+        .context("excludedCandidates")?
+        .iter()
+        .all(|candidate| candidate["definition"]["name"] != "hook_event_name_schema"));
+
+    Ok(())
+}
+
+#[test]
+fn private_references_inside_format_width_captures_block_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+const NAME_WIDTH: usize = 12;
+
+fn render(name: &str) -> String {
+    format!("{:<NAME_WIDTH$}", name)
+}
+
+pub fn entry() -> String {
+    render("network")
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+    assert!(analysis["excludedCandidates"]
+        .as_array()
+        .context("excludedCandidates")?
+        .iter()
+        .all(|candidate| candidate["definition"]["name"] != "NAME_WIDTH"));
+
+    Ok(())
+}
+
+#[test]
+fn private_const_pattern_references_block_remove_candidates() -> Result<()> {
+    let artifact = analyze_file(
+        "src/lib.rs",
+        r#"
+const ANSI_ALPHA_INDEX: u8 = 0x00;
+const ANSI_ALPHA_DEFAULT: u8 = 0x01;
+const OPAQUE_ALPHA: u8 = 0xFF;
+
+fn convert(alpha: u8) -> Option<u8> {
+    match alpha {
+        ANSI_ALPHA_INDEX => Some(0),
+        ANSI_ALPHA_DEFAULT => None,
+        OPAQUE_ALPHA => Some(255),
+        _ => Some(alpha),
+    }
+}
+
+pub fn entry() -> Option<u8> {
+    convert(0)
+}
+"#,
+    );
+
+    let analysis = &artifact["unusedDefinitionAnalysis"];
+    assert_eq!(analysis["summary"]["candidateCount"], 0);
+    assert!(analysis["findings"].as_array().is_some_and(Vec::is_empty));
+    for name in ["ANSI_ALPHA_INDEX", "ANSI_ALPHA_DEFAULT", "OPAQUE_ALPHA"] {
+        assert!(analysis["excludedCandidates"]
+            .as_array()
+            .context("excludedCandidates")?
+            .iter()
+            .all(|candidate| candidate["definition"]["name"] != name));
+    }
+
+    Ok(())
+}
+
+#[test]
 fn private_test_context_definitions_are_blocked_instead_of_remove_candidates() -> Result<()> {
     let artifact = analyze_file(
         "src/lib.rs",

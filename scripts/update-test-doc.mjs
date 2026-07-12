@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Generate tests/README.md deterministically from CHANGELOG.md + the
-// actual test file inventory.
+// default test file inventory.
 //
 // Motivation: four consecutive releases (1.8.2 → 1.8.5) drifted the
 // README number or per-release retrospective section. Each time the
@@ -11,16 +11,18 @@
 //
 // Design choices:
 //   - Top of file intentionally does NOT hardcode an assertion count.
-//     `npm test` output is authoritative. (Reviewer suggestion from
+//     default `npm test` output is authoritative. (Reviewer suggestion from
 //     the 1.8.3 review, finally taken.)
 //   - Per-release retrospective is extracted from CHANGELOG subject
 //     lines only. Assertion counts are not parsed from CHANGELOG at
 //     all (dead since 1.9.1, parse removed in 1.9.3). `npm test`
-//     is the only authoritative current count. Historical prose
+//     is the only authoritative current default Node count. Historical prose
 //     copied from subjects may incidentally contain counts — that's
 //     factual record from the release description, not drift.
-//   - Suite list is enumerated from the actual `tests/test-*.mjs`
-//     files on disk. New tests appear automatically next release.
+//   - Suite list is enumerated from default `tests/test-*.mjs` files on disk.
+//     New default suites appear automatically next release. Documented legacy
+//     umbrella suites stay runnable through explicit scripts, but are not part
+//     of the default `npm test` gate.
 //
 // Modes:
 //   update-test-doc.mjs              → write tests/README.md
@@ -37,6 +39,7 @@ const CHANGELOG = path.join(ROOT, "CHANGELOG.md");
 
 const args = process.argv.slice(2);
 const CHECK_MODE = args.includes("--check");
+const LEGACY_NODE_SUITES = new Set(["test-audit-repo.mjs"]);
 
 function normalizeLineEndings(text) {
   return text.replace(/\r\n/g, "\n");
@@ -76,9 +79,10 @@ function parseChangelog() {
 }
 
 // ─── Enumerate suites on disk ─────────────────────────────
-function listSuites() {
+function listSuites({ legacy = false } = {}) {
   return readdirSync(path.join(ROOT, "tests"))
     .filter((f) => f.startsWith("test-") && f.endsWith(".mjs"))
+    .filter((f) => LEGACY_NODE_SUITES.has(f) === legacy)
     .sort();
 }
 
@@ -106,8 +110,6 @@ const SUITE_DESCRIPTIONS = {
     "CJS export surface facts survive into symbols.json for downstream blind-zone handling",
   "test-class-method-prewrite-surface.mjs":
     "WT-15 class method index remains separate from defIndex and feeds pre-write review cues",
-  "test-class-method-index-prototype-names.mjs":
-    "class method index handles prototype method names as plain dictionary keys",
   "test-call-graph-bounded.mjs":
     "PCEF P3 bounded member-call resolution for exported object member calls",
   "test-call-graph-parse-errors.mjs":
@@ -409,6 +411,7 @@ const SUITE_DESCRIPTIONS = {
 function render() {
   const entries = parseChangelog();
   const suites = listSuites();
+  const legacySuites = listSuites({ legacy: true });
   const missingDescriptions = suites.filter((s) => !SUITE_DESCRIPTIONS[s]);
 
   const suiteWidth = Math.max(...suites.map((s) => s.length));
@@ -417,6 +420,13 @@ function render() {
       SUITE_DESCRIPTIONS[s] ??
       "(no description — add one to scripts/update-test-doc.mjs)";
     return `node tests/${s.padEnd(suiteWidth)} # ${desc}`;
+  });
+  const legacySuiteWidth = Math.max(1, ...legacySuites.map((s) => s.length));
+  const legacySuiteLines = legacySuites.map((s) => {
+    const desc =
+      SUITE_DESCRIPTIONS[s] ??
+      "(no description — add one to scripts/update-test-doc.mjs)";
+    return `npm run test:node:legacy-audit-repo # ${s.padEnd(legacySuiteWidth)} — ${desc}`;
   });
 
   const releaseBullets = entries
@@ -429,14 +439,14 @@ function render() {
       // into README without CI catching it. The 1.9.0 release claimed
       // "mechanically impossible to ship drift" but this was a
       // remaining vector. Now: bullets carry version + subject only;
-      // `npm test` is the only source of truth for counts.
+      // `npm test` is the only source of truth for default Node counts.
       return `- **v${e.version}**: ${e.subject}`;
     });
 
   return [
     "<!--",
     "  GENERATED FILE — do not edit by hand.",
-    "  Source: CHANGELOG.md + tests/test-*.mjs files.",
+    "  Source: CHANGELOG.md + default tests/test-*.mjs files.",
     "  Regenerate with: npm run update-test-doc",
     "  CI guard: npm run check:test-doc (exits non-zero if stale)",
     "-->",
@@ -447,7 +457,7 @@ function render() {
     "have broken a correctness property got a corresponding assertion so",
     "the next regression fails fast.",
     "",
-    "The authoritative assertion count is the output of `npm test`. This",
+    "The authoritative default Node assertion count is the output of `npm test`. This",
     "README intentionally avoids hardcoding a total — four consecutive",
     "releases (1.8.2 → 1.8.5) drifted the number in this file, so the",
     "number was removed and the file became generated.",
@@ -457,7 +467,9 @@ function render() {
     "```bash",
     "cd <skill-dir>",
     "npm install        # first run only",
-    "npm test           # all suites, stops at first failing assertion",
+    "npm run test:audit-runtime-gate",
+    "                   # Rust audit-core cargo gate for migrated audit runtime",
+    "npm test           # default focused Node suites, stops at first failing assertion",
     "```",
     "",
     "## Suite Map",
@@ -473,20 +485,35 @@ function render() {
     "  false-positive, drift, and fixture-specific behavior. Run them when",
     "  touching shared engine logic or before release.",
     "",
-    "Or run individual suites:",
+    "Or run individual default Node suites:",
     "",
     "```bash",
     ...suiteLines,
     "```",
     "",
+    ...(legacySuiteLines.length > 0
+      ? [
+          "## Legacy Umbrella Suites",
+          "",
+          "These suites remain runnable for manual archaeology, but are excluded",
+          "from `npm test`. Their migrated runtime contracts are covered by",
+          "Rust cargo tests; focused Vitest mirrors remain reference coverage",
+          "while JS/TS producers are being retired.",
+          "",
+          "```bash",
+          ...legacySuiteLines,
+          "```",
+          "",
+        ]
+      : []),
     "## Fixtures",
     "",
     "Tests build their own fixtures under `/tmp/fx-*` on each run.",
     "Fixtures are disposable — every suite clears its own working dirs",
     "at start. No shared state between runs.",
     "",
-    "Each test script exits non-zero on any failure. `npm test` stops",
-    "at the first failing suite.",
+    "Each default test script exits non-zero on any failure. `npm test`",
+    "stops at the first failing default suite.",
     "",
     "## What the tests cover by release",
     "",
@@ -501,7 +528,9 @@ function render() {
     "  `measure-topology`, `build-call-graph`, `check-barrel-discipline`",
     "  currently re-parses from scratch). No suite exercises shared",
     "  cache.",
-    "- Rust source trees. No tree-sitter-rust extractor yet.",
+    "- Rust source trees are owned by `lumin-rust-analyzer`; this JS test suite",
+    "  covers routing, manifest, and blind-zone behavior only, not a JS",
+    "  Rust parser fallback.",
     "- `__getattr__`-based lazy export maps in Python `__init__.py`",
     "  files. Known residual FP source; no fixture.",
     "- Interactive `--focus-class` output beyond the smoke check that",

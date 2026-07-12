@@ -1,8 +1,9 @@
-use lumin_rust_source_health::protocol::{HealthResponse, SkippedFile};
+use lumin_rust_source_health::protocol::SkippedFile;
 use serde::Serialize;
 
 use crate::policy::{RawLaneOmitted, SKIPPED_FILE_SAMPLE_LIMIT};
 use crate::product_artifact::meta::{ArtifactLane, EmbeddedLane};
+use crate::syntax_phase::SyntaxPhase;
 
 use meta::SyntaxPhaseMetaBrief;
 use summary::SyntaxPhaseSummaryBrief;
@@ -25,19 +26,19 @@ pub(in crate::product_artifact) struct SyntaxPhaseBrief<'a> {
 }
 
 pub(in crate::product_artifact) fn syntax_phase_brief<'a>(
-    syntax: &'a HealthResponse,
+    syntax: SyntaxPhase<'a>,
     elapsed_ms: u128,
 ) -> SyntaxPhaseBrief<'a> {
+    let skipped_files = syntax.skipped_files();
     SyntaxPhaseBrief {
         artifact: ArtifactLane::RustSourceHealth,
         embedded: EmbeddedLane::Brief,
         raw_embedded: RawLaneOmitted,
         elapsed_ms,
-        schema_version: syntax.schema_version,
-        meta: SyntaxPhaseMetaBrief::from_meta(&syntax.meta),
+        schema_version: syntax.schema_version(),
+        meta: SyntaxPhaseMetaBrief::from_meta(syntax.meta()),
         summary: SyntaxPhaseSummaryBrief::from_syntax(syntax),
-        skipped_file_count: syntax.skipped_files.len(),
-        skipped_file_examples: &syntax.skipped_files
-            [..syntax.skipped_files.len().min(SKIPPED_FILE_SAMPLE_LIMIT)],
+        skipped_file_count: skipped_files.len(),
+        skipped_file_examples: &skipped_files[..skipped_files.len().min(SKIPPED_FILE_SAMPLE_LIMIT)],
     }
 }

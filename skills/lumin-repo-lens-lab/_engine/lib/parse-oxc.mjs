@@ -20,11 +20,25 @@
 // first place (they should go through _lib/python.mjs or tree-sitter),
 // but the fallback keeps the helper defensively correct.
 
-import { parseSync } from 'oxc-parser';
+import { createRequire } from 'node:module';
+
 import { langForFile } from './lang.mjs';
 
+const require = createRequire(import.meta.url);
+let parseSync = null;
+
+function loadParseSync() {
+  if (parseSync) return parseSync;
+  const parser = require('oxc-parser');
+  if (typeof parser?.parseSync !== 'function') {
+    throw new Error('oxc-parser parseSync export unavailable');
+  }
+  parseSync = parser.parseSync;
+  return parseSync;
+}
+
 function parseWithLang(filePath, src, lang) {
-  return parseSync(filePath, src, {
+  return loadParseSync()(filePath, src, {
     sourceType: 'module',
     lang,
   });

@@ -22,9 +22,9 @@ pub(crate) use file::{
 pub(crate) use finding::{product_semantic_finding, ProductSemanticFindingProjection};
 pub(crate) use metadata::{policy_metadata, PolicyMetadata};
 pub(crate) use syntax::{
-    product_syntax_file, syntax_review_opaque_surface_examples, syntax_review_signal_examples,
-    ProductSyntaxFileProjection, ProductSyntaxFileSummary, SyntaxReviewOpaqueSurfaceExample,
-    SyntaxReviewSignalExample,
+    product_compact_syntax_file, product_syntax_file, syntax_review_opaque_surface_examples,
+    syntax_review_signal_examples, ProductSyntaxFileProjection, ProductSyntaxFileSummary,
+    SyntaxReviewOpaqueSurfaceExample, SyntaxReviewSignalExample,
 };
 pub(crate) use types::{
     normalize_candidate_file, ActionTier, CalibrationStatus, CleanupCandidate, CoverageRunStatus,

@@ -8,11 +8,10 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { runAuditCoreJsonResultFile } from './_lib/audit-core.mjs';
 import { parseCliArgs } from './_lib/cli.mjs';
 import { JS_FAMILY_LANGS } from './_lib/lang.mjs';
-import { producerMetaBase } from './_lib/artifacts.mjs';
 import {
-  assembleFunctionCloneArtifact,
   extractFunctionCloneFilePayload,
   functionCloneReadErrorPayload,
 } from './_lib/function-clone-artifact.mjs';
@@ -64,7 +63,7 @@ const snapshot = buildRepoSnapshot({
 });
 const snapshotEntries = Object.values(snapshot.files);
 
-const metaBase = producerMetaBase({ tool: 'build-function-clone-index.mjs', root: ROOT });
+const generated = new Date().toISOString();
 const scope = cli.includeTests
   ? 'TS/JS including tests, top-level exported and file-local functions'
   : 'TS/JS production files, top-level exported and file-local functions';
@@ -171,25 +170,33 @@ if (incrementalEnabled) {
   saveProducerCache(cacheStore, PRODUCER_ID, nextCache);
 }
 
-const artifact = assembleFunctionCloneArtifact({
-  metaBase,
-  includeTests: cli.includeTests,
-  exclude: cli.exclude,
-  scope,
-  observedAt: metaBase.generated,
-  fileCount: snapshotEntries.length,
-  ...aggregate,
-  incremental: {
-    enabled: incrementalEnabled,
-    identityMode: incrementalEnabled ? STRICT_IDENTITY_MODE : null,
-    cacheVersion: 1,
-    cacheRoot: incrementalEnabled ? cacheStore.cacheRoot : null,
-    changedFiles,
-    reusedFiles,
-    droppedFiles,
-    invalidatedFiles,
-    reason: incrementalEnabled ? null : 'disabled-by-flag',
-  },
+const artifact = runAuditCoreJsonResultFile([
+  'function-clones-artifact',
+  '--input',
+  '-',
+], 'function-clones-artifact', {
+  input: JSON.stringify({
+    schemaVersion: 'lumin-function-clones-producer-request.v1',
+    generated,
+    root: ROOT,
+    includeTests: cli.includeTests,
+    exclude: cli.exclude,
+    scope,
+    observedAt: generated,
+    fileCount: snapshotEntries.length,
+    ...aggregate,
+    incremental: {
+      enabled: incrementalEnabled,
+      identityMode: incrementalEnabled ? STRICT_IDENTITY_MODE : null,
+      cacheVersion: 1,
+      cacheRoot: incrementalEnabled ? cacheStore.cacheRoot : null,
+      changedFiles,
+      reusedFiles,
+      droppedFiles,
+      invalidatedFiles,
+      reason: incrementalEnabled ? null : 'disabled-by-flag',
+    },
+  }),
 });
 
 const outPath = path.join(OUTPUT, 'function-clones.json');

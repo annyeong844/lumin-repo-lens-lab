@@ -47,7 +47,10 @@ Closure audit:
 
 Runner shortcut:
 
-- `npm test` remains the authoritative serial Node lane.
+- `npm run test:audit-runtime-gate` is the Cargo-backed audit-runtime gate for
+  migrated Rust-owned manifest behavior.
+- `npm test` remains available as the serial default Node lane while remaining
+  JS/TS producers are being retired.
 - `npm run test:node:groups` is an opt-in maintainer shortcut implemented by
   [`scripts/run-tests-grouped.mjs`](../../scripts/run-tests-grouped.mjs) and
   covered by [`tests/test-run-tests-grouped.mjs`](../../tests/test-run-tests-grouped.mjs)
@@ -63,12 +66,12 @@ concrete.
 
 | Lane                         | Count | Parked Suites                  | Batch Rule                                                                            |
 | ---------------------------- | ----: | ------------------------------ | ------------------------------------------------------------------------------------- |
-| Audit-repo umbrella          |     1 | `test-audit-repo.mjs`          | Known split mirrors are complete; keep the direct umbrella Node suite authoritative.  |
+| Audit-repo umbrella          |     0 | none                           | Retired from the default Node gate; use Cargo-backed `npm run test:audit-runtime-gate`. |
 | Deadness/ranking             |     0 | none                           | Park until graph-lens and action-proof review pages exist.                            |
 | Deadness/ranking calibration |     0 | none                           | Require calibration-specific review before mirror work.                               |
 | Cue-tier policy              |     1 | `test-pre-write-cue-tiers.mjs` | Known T1-T10 split mirrors are complete; keep the direct umbrella Node-authoritative. |
 
-The parked lane total is 2. `test-pre-write-cue-tiers.mjs` is parked only as a
+The parked lane total is 1. `test-pre-write-cue-tiers.mjs` is parked only as a
 direct broad umbrella: its current T1-T10 contracts are covered by focused
 Vitest mirrors recorded in the
 [`vitest-pre-write-cue-tiers.md`](pilot-reviews/vitest-pre-write-cue-tiers.md)
@@ -722,17 +725,19 @@ node tests/test-python-conventions.mjs
 npm run test:vitest:python-conventions
 ```
 
-The `test-audit-repo.mjs` umbrella suite has a split/park review and remains
-Node-authoritative as a direct broad suite. Do not add a direct
-`test:vitest:audit-repo` mirror. The known focused split mirrors are complete;
-any future audit-repo product-pass behavior needs a fresh split review before a
-new mirror.
+The `test-audit-repo.mjs` umbrella suite has a split/park review and is retired
+from the default `npm test` gate. Do not add a direct `test:vitest:audit-repo`
+mirror. The known focused split mirrors are complete, and
+Cargo-backed `npm run test:audit-runtime-gate` is the migrated audit-repo runtime
+gate; focused Vitest mirrors remain reference coverage while JS/TS producers are
+being retired. Any future audit-repo product-pass behavior needs a fresh split
+review before a new mirror.
 
 The audit-repo blind-zone/confidence split track is complete and remains
 covered by:
 
 ```text
-node tests/test-audit-repo.mjs
+npm run test:node:legacy-audit-repo
 npm run test:vitest:audit-repo-blind-zones
 ```
 
@@ -740,7 +745,7 @@ The audit-repo scan range/self-audit exclusions split track is complete and
 remains covered by:
 
 ```text
-node tests/test-audit-repo.mjs
+npm run test:node:legacy-audit-repo
 npm run test:vitest:audit-repo-scan-range
 ```
 
@@ -748,7 +753,7 @@ The audit-repo lifecycle artifact collection split track is complete and
 remains covered by:
 
 ```text
-node tests/test-audit-repo.mjs
+npm run test:node:legacy-audit-repo
 npm run test:vitest:audit-repo-lifecycle-artifacts
 ```
 
@@ -756,7 +761,7 @@ The audit-repo full-profile staleness/artifacts split track is complete and
 remains covered by:
 
 ```text
-node tests/test-audit-repo.mjs
+npm run test:node:legacy-audit-repo
 npm run test:vitest:audit-repo-full-profile-staleness
 ```
 

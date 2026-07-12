@@ -75,14 +75,19 @@ pub(super) fn assert_phase_projection(artifact: &Value) -> Result<()> {
     assert_eq!(syntax_meta["producer"], "rust-source-health");
     assert_eq!(syntax_meta["parser"]["kind"], "ra_ap_syntax");
     assert_eq!(syntax_meta["parser"]["editionPolicy"], "fixed");
-    assert_eq!(syntax_meta["runtime"]["workerStackBytes"], 16 * 1024 * 1024);
+    assert_eq!(syntax_meta["runtime"]["workerStackBytes"], 4 * 1024 * 1024);
     assert_eq!(syntax_meta["sidecar"]["sourceCommit"], "test-source-commit");
     assert!(syntax_meta["sidecar"]["binarySha256"]
         .as_str()
         .context("syntax sidecar binary hash")?
         .starts_with("sha256:"));
     assert!(syntax_meta.get("generated").is_none());
-    assert!(syntax_meta.get("input").is_none());
+    assert_eq!(syntax_meta["input"]["includeTests"], true);
+    assert_eq!(
+        syntax_meta["input"]["pathPolicy"]["exclude"],
+        serde_json::json!(["**/target/**", "**/vendor/**"])
+    );
+    assert_eq!(syntax_meta["incremental"]["enabled"], true);
     assert_eq!(artifact["phases"]["semantic"]["rawEmbedded"], false);
     assert_eq!(artifact["phases"]["semantic"]["findingCount"], 1);
     assert!(artifact["phases"]["semantic"]["summary"]

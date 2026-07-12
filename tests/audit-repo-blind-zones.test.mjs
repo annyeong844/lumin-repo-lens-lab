@@ -11,10 +11,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import {
-  detectBlindZones,
-  formatBlindZonesSummary,
-} from "../_lib/blind-zones.mjs";
+import { runAuditCoreJson } from "../_lib/audit-core.mjs";
+import { formatBlindZonesSummary } from "../_lib/blind-zones.mjs";
 import { buildManifestEvidence } from "../_lib/audit-manifest.mjs";
 import { renderAuditSummary } from "../_lib/audit-summary.mjs";
 
@@ -40,30 +38,107 @@ function readJson(file) {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
+function rustBlindZones(input) {
+  const dir = mkdtempSync(path.join(tmpdir(), "lumin-rust-blind-zones-"));
+  const fixture = path.join(dir, "input.json");
+  try {
+    writeFileSync(fixture, JSON.stringify(input));
+    return runAuditCoreJson(
+      ["blind-zones-summary", "--input", fixture],
+      "rustBlindZones",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function rustBlindZoneCases(caseInputs) {
+  const dir = mkdtempSync(path.join(tmpdir(), "lumin-rust-blind-zone-cases-"));
+  const fixture = path.join(dir, "cases.json");
+  const cases = Object.entries(caseInputs).map(([name, input]) => ({
+    name,
+    input,
+  }));
+  try {
+    writeFileSync(fixture, JSON.stringify(cases));
+    return Object.fromEntries(
+      runAuditCoreJson(
+        ["blind-zones-summary", "--cases", fixture],
+        "rustBlindZoneCases",
+      ).map((result) => [result.name, result.blindZones]),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 describe("audit-repo blind-zone and confidence split track", () => {
   it("B1-B2c. creates language scan and precision gaps without fake absence claims", () => {
-    const rustZones = detectBlindZones({
-      triage: { byLanguage: { ts: 100, rs: 42 } },
+    const zones = rustBlindZoneCases({
+      rust: {
+        triage: { byLanguage: { ts: 100, rs: 42 } },
+      },
+      sfc: {
+        triage: {
+          shape: {
+            totalFiles: 4,
+            tsFiles: 1,
+            jsFiles: 0,
+            pyFiles: 0,
+            goFiles: 0,
+            sfcFiles: 3,
+          },
+          byLanguage: { ts: 1, vue: 1, svelte: 1, astro: 1 },
+        },
+      },
+      python: {
+        triage: { byLanguage: { py: 244 } },
+      },
+      unavailablePython: {
+        triage: {
+          shape: {
+            totalFiles: 3,
+            tsFiles: 2,
+            jsFiles: 0,
+            pyFiles: 1,
+            goFiles: 0,
+          },
+        },
+        symbols: {
+          meta: {
+            languageSupport: {
+              python: { enabled: false, reason: "python executable unavailable" },
+            },
+          },
+        },
+      },
+      unavailableGo: {
+        triage: {
+          shape: {
+            totalFiles: 3,
+            tsFiles: 2,
+            jsFiles: 0,
+            pyFiles: 0,
+            goFiles: 1,
+          },
+        },
+        symbols: {
+          meta: {
+            languageSupport: {
+              go: { enabled: false, reason: "tree-sitter unavailable" },
+            },
+          },
+        },
+      },
     });
+    const rustZones = zones.rust;
     const rust = rustZones.find((zone) => zone.area === "rs");
     expect(rust).toMatchObject({
       severity: "scan-gap",
     });
     expect(rust.effect).toContain("absence claims");
 
-    const sfcZones = detectBlindZones({
-      triage: {
-        shape: {
-          totalFiles: 4,
-          tsFiles: 1,
-          jsFiles: 0,
-          pyFiles: 0,
-          goFiles: 0,
-          sfcFiles: 3,
-        },
-        byLanguage: { ts: 1, vue: 1, svelte: 1, astro: 1 },
-      },
-    });
+    const sfcZones = zones.sfc;
     const sfc = sfcZones.find((zone) => zone.area === "sfc-scan-gap");
     expect(sfc).toMatchObject({
       severity: "scan-gap",
@@ -81,9 +156,7 @@ describe("audit-repo blind-zone and confidence split track", () => {
       sfcZones.some((zone) => ["vue", "svelte", "astro"].includes(zone.area)),
     ).toBe(false);
 
-    const pythonZones = detectBlindZones({
-      triage: { byLanguage: { py: 244 } },
-    });
+    const pythonZones = zones.python;
     const python = pythonZones.find(
       (zone) => zone.area === "python-method-resolution",
     );
@@ -92,24 +165,7 @@ describe("audit-repo blind-zone and confidence split track", () => {
     });
     expect(python.effect).toContain("Method-level");
 
-    const unavailablePythonZones = detectBlindZones({
-      triage: {
-        shape: {
-          totalFiles: 3,
-          tsFiles: 2,
-          jsFiles: 0,
-          pyFiles: 1,
-          goFiles: 0,
-        },
-      },
-      symbols: {
-        meta: {
-          languageSupport: {
-            python: { enabled: false, reason: "python executable unavailable" },
-          },
-        },
-      },
-    });
+    const unavailablePythonZones = zones.unavailablePython;
     const pythonScanGap = unavailablePythonZones.find(
       (zone) => zone.area === "python-scan-gap",
     );
@@ -118,24 +174,7 @@ describe("audit-repo blind-zone and confidence split track", () => {
     });
     expect(pythonScanGap.details.reason).toContain("python");
 
-    const unavailableGoZones = detectBlindZones({
-      triage: {
-        shape: {
-          totalFiles: 3,
-          tsFiles: 2,
-          jsFiles: 0,
-          pyFiles: 0,
-          goFiles: 1,
-        },
-      },
-      symbols: {
-        meta: {
-          languageSupport: {
-            go: { enabled: false, reason: "tree-sitter unavailable" },
-          },
-        },
-      },
-    });
+    const unavailableGoZones = zones.unavailableGo;
     const goScanGap = unavailableGoZones.find(
       (zone) => zone.area === "go-scan-gap",
     );
@@ -143,7 +182,181 @@ describe("audit-repo blind-zone and confidence split track", () => {
       severity: "scan-gap",
     });
     expect(goScanGap.details.reason).toContain("tree-sitter");
+  }, 30_000);
+
+  it("B2d. only the current valid Rust analyzer artifact clears Rust blind zones", () => {
+    const repo = mkdtempSync(path.join(tmpdir(), "lumin-rust-blind-zone-"));
+    const output = path.join(repo, "audit-out");
+    try {
+      mkdirSync(output, { recursive: true });
+      write(
+        output,
+        "triage.json",
+        JSON.stringify({
+          shape: { totalFiles: 1, rustFiles: 1 },
+          byLanguage: { rs: 1 },
+        }),
+      );
+
+      const validRustArtifact = {
+        schemaVersion: "lumin-rust-analyzer.v1",
+        policyVersion: "lumin-rust-analyzer-policy.v1",
+        meta: {
+          producer: "lumin-rust-analyzer",
+          mode: "rust-main",
+          input: {
+            root: repo,
+            effectiveSourceHealthProfile: "compact",
+            semanticMode: "metadata-only",
+            includeTests: false,
+            exclude: ["generated"],
+          },
+        },
+        phases: {
+          syntax: {
+            meta: {
+              input: {
+                includeTests: false,
+                exclude: ["generated"],
+                pathPolicy: {
+                  exclude: ["**/target/**", "**/vendor/**", "generated"],
+                },
+              },
+            },
+          },
+        },
+        summary: { files: 1, syntaxReviewSignals: 0 },
+      };
+
+      write(
+        output,
+        "rust-analyzer-health.latest.json",
+        JSON.stringify(validRustArtifact),
+      );
+      const staleEvidence = buildManifestEvidence({
+        root: repo,
+        outDir: output,
+        includeTests: false,
+        production: true,
+        rustAnalysisRun: { requested: false, ran: false, status: "not-requested" },
+      });
+      expect(staleEvidence.rustAnalysis).toMatchObject({
+        status: "complete",
+        available: true,
+      });
+      expect(staleEvidence.blindZones.some((zone) => zone.area === "rs")).toBe(true);
+
+      write(
+        output,
+        "rust-analyzer-health.latest.json",
+        JSON.stringify({
+          schemaVersion: "lumin-rust-analyzer.v1",
+          meta: validRustArtifact.meta,
+          summary: {},
+        }),
+      );
+      const malformedEvidence = buildManifestEvidence({
+        root: repo,
+        outDir: output,
+        includeTests: false,
+        production: true,
+        rustAnalysisRun: { requested: true, ran: true, status: "complete" },
+      });
+      expect(malformedEvidence.rustAnalysis).toMatchObject({
+        status: "invalid-shape",
+        available: false,
+      });
+      expect(malformedEvidence.blindZones.some((zone) => zone.area === "rs")).toBe(true);
+
+      write(
+        output,
+        "rust-analyzer-health.latest.json",
+        JSON.stringify(validRustArtifact),
+      );
+      const currentEvidence = buildManifestEvidence({
+        root: repo,
+        outDir: output,
+        includeTests: false,
+        production: true,
+        rustAnalysisRun: { requested: true, ran: true, status: "complete" },
+      });
+      expect(currentEvidence.rustAnalysis).toMatchObject({
+        status: "complete",
+        available: true,
+        files: 1,
+        scanScope: {
+          includeTests: false,
+          exclude: ["generated"],
+          pathPolicy: {
+            exclude: ["**/target/**", "**/vendor/**", "generated"],
+          },
+        },
+      });
+      expect(currentEvidence.blindZones.some((zone) => zone.area === "rs")).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
+
+  it("B2e. reused output dirs do not report stale Rust analyzer artifacts as produced", () => {
+    const repo = mkdtempSync(path.join(tmpdir(), "lumin-rust-stale-artifact-"));
+    const output = path.join(repo, ".audit");
+    try {
+      mkdirSync(output, { recursive: true });
+      write(
+        repo,
+        "package.json",
+        JSON.stringify({ name: "rust-stale-artifact-fixture", type: "module" }),
+      );
+      write(repo, "src/lib.rs", "pub fn live() {}\n");
+      write(
+        output,
+        "rust-analyzer-health.latest.json",
+        JSON.stringify({
+          schemaVersion: "lumin-rust-analyzer.v1",
+          policyVersion: "lumin-rust-analyzer-policy.v1",
+          meta: {
+            producer: "lumin-rust-analyzer",
+            mode: "rust-main",
+            input: { root: repo },
+          },
+          summary: { files: 1 },
+        }),
+      );
+
+      const result = runAudit([
+        "--root",
+        repo,
+        "--output",
+        output,
+        "--profile",
+        "quick",
+        "--production",
+      ]);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+
+      const manifest = readJson(path.join(output, "manifest.json"));
+      const summary = readFileSync(
+        path.join(output, "audit-summary.latest.md"),
+        "utf8",
+      );
+      expect(manifest.rustAnalysis).toMatchObject({
+        requested: false,
+        ran: false,
+        status: "not-requested",
+        artifact: "rust-analyzer-health.latest.json",
+        artifactStatus: "complete",
+      });
+      expect(manifest.artifactsProduced).not.toContain(
+        "rust-analyzer-health.latest.json",
+      );
+      expect(summary).not.toContain(
+        "`rust-analyzer-health.latest.json`: Rust-owned",
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   it("B2b. mirrors symbol parse-error warnings into manifest confidence", () => {
     const repo = mkdtempSync(path.join(tmpdir(), "lumin-parse-confidence-"));
@@ -186,13 +399,91 @@ describe("audit-repo blind-zone and confidence split track", () => {
   });
 
   it("B3-B4b. preserves resolver confidence policy, absolute counts, grouped reasons, and concentrated roots", () => {
-    const highRatioZones = detectBlindZones({
-      triage: { byLanguage: { ts: 100 } },
-      symbols: {
-        uses: { unresolvedInternalRatio: 0.22, unresolvedInternal: 50 },
-        topUnresolvedSpecifiers: [{ specifierPrefix: "@/" }],
+    const zones = rustBlindZoneCases({
+      highRatio: {
+        triage: { byLanguage: { ts: 100 } },
+        symbols: {
+          uses: { unresolvedInternalRatio: 0.22, unresolvedInternal: 50 },
+          topUnresolvedSpecifiers: [{ specifierPrefix: "@/" }],
+        },
+      },
+      lowRatio: {
+        triage: { byLanguage: { ts: 100 } },
+        symbols: {
+          uses: { unresolvedInternalRatio: 0.02, unresolvedInternal: 3 },
+        },
+      },
+      absoluteCount: {
+        triage: { byLanguage: { ts: 5000 } },
+        symbols: {
+          uses: { unresolvedInternalRatio: 0.07, unresolvedInternal: 1200 },
+          topUnresolvedSpecifiers: [
+            { specifierPrefix: "@workspace/pkg", count: 120 },
+          ],
+          unresolvedInternalSpecifierRecords: [
+            {
+              specifier: "@workspace/pkg/generated",
+              reason: "tsconfig-path-target-missing",
+            },
+            {
+              specifier: "@workspace/pkg/generated2",
+              reason: "tsconfig-path-target-missing",
+            },
+            {
+              specifier: "@workspace/pkg/subpath",
+              reason: "workspace-package-subpath-target-missing",
+            },
+          ],
+        },
+      },
+      groupedReason: {
+        triage: { byLanguage: { ts: 5000 } },
+        symbols: {
+          uses: { unresolvedInternalRatio: 0.06, unresolvedInternal: 1300 },
+          topUnresolvedSpecifiers: [
+            { specifierPrefix: "@workspace/", count: 800 },
+          ],
+          unresolvedInternalSummaryByReason: {
+            "workspace-package-subpath-target-missing": {
+              count: 12,
+              spaces: { type: 12, value: 0, unknown: 0 },
+              resolverStages: { workspacePackageSubpath: 12 },
+              examples: [
+                {
+                  specifier: "@workspace/types/foo",
+                  consumerFile: "apps/web/src/a.ts",
+                },
+              ],
+            },
+            "tsconfig-path-target-missing": {
+              count: 4,
+              spaces: { type: 1, value: 3, unknown: 0 },
+              hints: { "generated-artifact-missing": 4 },
+              examples: [
+                {
+                  specifier: "@/generated/client",
+                  consumerFile: "apps/web/src/b.ts",
+                },
+              ],
+            },
+          },
+          unresolvedInternalSpecifierRecords: [
+            { specifier: "@/legacy", reason: "legacy-record-only" },
+          ],
+        },
+      },
+      concentratedRoot: {
+        triage: { byLanguage: { ts: 5000 } },
+        symbols: {
+          uses: { unresolvedInternalRatio: 0.05, unresolvedInternal: 220 },
+          topUnresolvedSpecifiers: [
+            { specifierPrefix: "@workspace/", count: 190 },
+            { specifierPrefix: "#/", count: 12 },
+          ],
+        },
       },
     });
+    const highRatioZones = zones.highRatio;
     const highRatio = highRatioZones.find((zone) => zone.area === "resolver");
     expect(highRatio).toMatchObject({
       severity: "confidence-gap",
@@ -204,37 +495,10 @@ describe("audit-repo blind-zone and confidence split track", () => {
       thresholds: { unresolvedRatio: 0.15 },
     });
 
-    const lowRatioZones = detectBlindZones({
-      triage: { byLanguage: { ts: 100 } },
-      symbols: {
-        uses: { unresolvedInternalRatio: 0.02, unresolvedInternal: 3 },
-      },
-    });
+    const lowRatioZones = zones.lowRatio;
     expect(lowRatioZones.find((zone) => zone.area === "resolver")).toBeFalsy();
 
-    const absoluteCountZones = detectBlindZones({
-      triage: { byLanguage: { ts: 5000 } },
-      symbols: {
-        uses: { unresolvedInternalRatio: 0.07, unresolvedInternal: 1200 },
-        topUnresolvedSpecifiers: [
-          { specifierPrefix: "@workspace/pkg", count: 120 },
-        ],
-        unresolvedInternalSpecifierRecords: [
-          {
-            specifier: "@workspace/pkg/generated",
-            reason: "tsconfig-path-target-missing",
-          },
-          {
-            specifier: "@workspace/pkg/generated2",
-            reason: "tsconfig-path-target-missing",
-          },
-          {
-            specifier: "@workspace/pkg/subpath",
-            reason: "workspace-package-subpath-target-missing",
-          },
-        ],
-      },
-    });
+    const absoluteCountZones = zones.absoluteCount;
     const absoluteCount = absoluteCountZones.find(
       (zone) => zone.area === "resolver",
     );
@@ -250,42 +514,7 @@ describe("audit-repo blind-zone and confidence split track", () => {
       count: 2,
     });
 
-    const groupedReasonZones = detectBlindZones({
-      triage: { byLanguage: { ts: 5000 } },
-      symbols: {
-        uses: { unresolvedInternalRatio: 0.06, unresolvedInternal: 1300 },
-        topUnresolvedSpecifiers: [
-          { specifierPrefix: "@workspace/", count: 800 },
-        ],
-        unresolvedInternalSummaryByReason: {
-          "workspace-package-subpath-target-missing": {
-            count: 12,
-            spaces: { type: 12, value: 0, unknown: 0 },
-            resolverStages: { workspacePackageSubpath: 12 },
-            examples: [
-              {
-                specifier: "@workspace/types/foo",
-                consumerFile: "apps/web/src/a.ts",
-              },
-            ],
-          },
-          "tsconfig-path-target-missing": {
-            count: 4,
-            spaces: { type: 1, value: 3, unknown: 0 },
-            hints: { "generated-artifact-missing": 4 },
-            examples: [
-              {
-                specifier: "@/generated/client",
-                consumerFile: "apps/web/src/b.ts",
-              },
-            ],
-          },
-        },
-        unresolvedInternalSpecifierRecords: [
-          { specifier: "@/legacy", reason: "legacy-record-only" },
-        ],
-      },
-    });
+    const groupedReasonZones = zones.groupedReason;
     const groupedReason = groupedReasonZones.find(
       (zone) => zone.area === "resolver",
     );
@@ -304,16 +533,7 @@ describe("audit-repo blind-zone and confidence split track", () => {
       ),
     ).toBe(false);
 
-    const concentratedRootZones = detectBlindZones({
-      triage: { byLanguage: { ts: 5000 } },
-      symbols: {
-        uses: { unresolvedInternalRatio: 0.05, unresolvedInternal: 220 },
-        topUnresolvedSpecifiers: [
-          { specifierPrefix: "@workspace/", count: 190 },
-          { specifierPrefix: "#/", count: 12 },
-        ],
-      },
-    });
+    const concentratedRootZones = zones.concentratedRoot;
     const concentratedRoot = concentratedRootZones.find(
       (zone) => zone.area === "resolver",
     );
@@ -324,34 +544,45 @@ describe("audit-repo blind-zone and confidence split track", () => {
     expect(concentratedRoot.details.topUnresolvedSpecifiers).toContain(
       "@workspace/",
     );
-  });
+  }, 30_000);
 
   it("B5-B5c. degrades precision for parse errors, opaque CJS exports, and dynamic CJS require calls", () => {
-    const parseErrorZones = detectBlindZones({
-      symbols: {
-        meta: { warnings: [{ kind: "parse-errors", count: 3, message: "x" }] },
+    const zones = rustBlindZoneCases({
+      parseError: {
+        symbols: {
+          meta: { warnings: [{ kind: "parse-errors", count: 3, message: "x" }] },
+        },
+      },
+      cjsExport: {
+        symbols: {
+          cjsExportSurfaceByFile: {
+            "src/exact.cjs": {
+              exact: [{ name: "foo", kind: "exports-member", line: 1 }],
+              opaque: [],
+            },
+            "src/opaque.cjs": {
+              exact: [],
+              opaque: [{ kind: "module-exports-assignment", line: 3 }],
+            },
+          },
+        },
+      },
+      cjsRequire: {
+        symbols: {
+          cjsRequireOpacity: [
+            { consumerFile: "src/consumer.js", line: 2, kind: "dynamic-require" },
+          ],
+        },
       },
     });
+    const parseErrorZones = zones.parseError;
     expect(
       parseErrorZones.find((zone) => zone.area === "parser"),
     ).toMatchObject({
       severity: "precision-gap",
     });
 
-    const cjsExportZones = detectBlindZones({
-      symbols: {
-        cjsExportSurfaceByFile: {
-          "src/exact.cjs": {
-            exact: [{ name: "foo", kind: "exports-member", line: 1 }],
-            opaque: [],
-          },
-          "src/opaque.cjs": {
-            exact: [],
-            opaque: [{ kind: "module-exports-assignment", line: 3 }],
-          },
-        },
-      },
-    });
+    const cjsExportZones = zones.cjsExport;
     const cjsExport = cjsExportZones.find(
       (zone) => zone.area === "commonjs-export-surface",
     );
@@ -363,13 +594,7 @@ describe("audit-repo blind-zone and confidence split track", () => {
       },
     });
 
-    const cjsRequireZones = detectBlindZones({
-      symbols: {
-        cjsRequireOpacity: [
-          { consumerFile: "src/consumer.js", line: 2, kind: "dynamic-require" },
-        ],
-      },
-    });
+    const cjsRequireZones = zones.cjsRequire;
     const cjsRequire = cjsRequireZones.find(
       (zone) => zone.area === "commonjs-dynamic-require",
     );
@@ -381,10 +606,10 @@ describe("audit-repo blind-zone and confidence split track", () => {
         examples: [{ consumerFile: "src/consumer.js" }],
       },
     });
-  });
+  }, 30_000);
 
   it("B6-B9. keeps clean repos zone-free and formats blind-zone summaries deterministically", () => {
-    const cleanZones = detectBlindZones({
+    const cleanZones = rustBlindZones({
       triage: { byLanguage: { ts: 100, tsx: 50 } },
       symbols: {
         uses: { unresolvedInternalRatio: 0.02 },
@@ -419,7 +644,7 @@ describe("audit-repo blind-zone and confidence split track", () => {
     expect(resolverReasonSummary).toContain(
       "resolver reasons: workspace-package-subpath-target-missing 12, tsconfig-path-target-missing 4",
     );
-  });
+  }, 30_000);
 
   it("B10-B10e. surfaces resolver and generated-consumer confidence limits in the audit summary", () => {
     const reasonSummary = renderAuditSummary({

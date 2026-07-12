@@ -37,7 +37,7 @@
 //   commandsRun     scripts actually invoked, in order, with status
 //   scanRange       root, includeTests, languages, excludes
 //   confidence      parseErrors, unresolvedInternalRatio, externalImports
-//   blindZones      standardized blind-zone list (_lib/blind-zones.mjs)
+//   blindZones      standardized blind-zone list (lumin-audit-core)
 //   livingAudit     existing living audit docs that the model should read/update
 //   skipped         scripts that were intentionally skipped (with reason)
 //
@@ -45,39 +45,29 @@
 // step is a child process invocation of the existing .mjs. Failure of
 // any step is captured but never hidden.
 
-import { execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { formatBlindZonesSummary } from './_lib/blind-zones.mjs';
-import {
-  createArtifactReadMetrics,
-  loadIfExists as loadArtifact,
-} from './_lib/artifacts.mjs';
-import { atomicWrite } from './_lib/atomic-write.mjs';
 import { normalizeIncludeTests } from './_lib/cli.mjs';
-import { renderAuditSummary } from './_lib/audit-summary.mjs';
-import { renderAuditReviewPack } from './_lib/audit-review-pack.mjs';
-import { renderTopologyMermaid } from './_lib/topology-mermaid.mjs';
 import { assertRuntimeSetup, formatRuntimeSetupError } from './_lib/dependency-guard.mjs';
 import { detectMaintainerSelfAuditExcludes, mergeExcludes } from './_lib/self-audit-excludes.mjs';
-import { runCanonDraftLifecycle } from './_lib/audit-canon-draft.mjs';
-import { runCheckCanonLifecycle } from './_lib/audit-check-canon.mjs';
 import {
   clearIncrementalCache,
   openIncrementalCacheStore,
 } from './_lib/incremental-cache-store.mjs';
 import {
-  buildManifestEvidence,
-  collectProducedArtifacts,
-  refreshManifestEvidence,
+  createArtifactReadMetrics,
+  executeBaseRuntime,
+  executeAuditLifecycle,
+  buildManifestRootWithEvidence,
+  finalizeAuditRunWithCompanions,
+  applyLifecycleAndRefreshManifestEvidence,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
 import {
-  clearProducerPhaseTiming,
-  readProducerPhaseTiming,
-} from './_lib/producer-phase-timing.mjs';
+  generateInvocationId,
+} from './_lib/pre-write-artifact.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HELP_TEXT = `
@@ -93,7 +83,8 @@ Stable capabilities:
     lumin-repo-lens-lab --root <repo> --output <dir> --profile quick|full|ci
 
   pre-write
-    lumin-repo-lens-lab --root <repo> --output <dir> --pre-write --intent intent.json
+    lumin-repo-lens-lab --root <repo> --output <dir> --pre-write --pre-write-engine auto --intent intent.json
+    lumin-repo-lens-lab --root <repo> --output <dir> --pre-write --rust-pre-write --intent intent.json
 
   post-write
     lumin-repo-lens-lab --root <repo> --output <dir> --post-write --pre-write-advisory advisory.json
@@ -122,10 +113,15 @@ Flags:
                            clear this repo's incremental cache before supported producers run
   --generated-artifacts <mode>
                            default | present | prepared (diagnostic provenance only; does not run generators)
+  --rust-analyzer          opt in to the Rust-owned unified analyzer artifact when triage counts .rs files
   --no-self-audit-excludes do not auto-exclude maintainer lab/corpus mirrors
   --strict-post-write      exit 2 when post-write orchestration cannot run
   --strict-post-write-confidence
                            exit 2 when post-write delta confidence is limited
+  --pre-write-engine <js|rust|auto>
+                         pre-write owner selection (default: auto)
+                           pre-write execution surface
+  --rust-pre-write         alias for --pre-write-engine rust
   --strict-check-canon     escalate drift to exit 1, all-fail to exit 2
   --sources, --source      canon source CSV (alias; --sources wins)
   --canon-output <dir>     canon-draft proposal dir (default: <root>/canonical-draft)
@@ -170,6 +166,8 @@ const CLI_OPTIONS = {
   // P1-3: opt-in pre-write integration. Not in default profiles.
   'pre-write': { type: 'boolean', default: false },
   intent: { type: 'string' },
+  'pre-write-engine': { type: 'string', default: 'auto' },
+  'rust-pre-write': { type: 'boolean', default: false },
   // P2-2: opt-in post-write integration. Mutually exclusive with --pre-write.
   'post-write': { type: 'boolean', default: false },
   'pre-write-advisory': { type: 'string' },
@@ -181,6 +179,7 @@ const CLI_OPTIONS = {
   'cache-root': { type: 'string' },
   'clear-incremental-cache': { type: 'boolean', default: false },
   'generated-artifacts': { type: 'string', default: 'default' },
+  'rust-analyzer': { type: 'boolean', default: false },
   exclude: { type: 'string', multiple: true, default: [] },
   // P2-2 follow-up: strict mode converts manifest.postWrite.ran === false
   // into exit code 2. Closes the "silent CI green on unreadable advisory"
@@ -233,8 +232,22 @@ if (!values.root) {
   process.exit(1);
 }
 
+const PROFILE_EXPLICIT = process.argv.slice(2).some((arg) =>
+  arg === '--profile' || arg.startsWith('--profile='));
+const WRITE_LIFECYCLE_ONLY =
+  (values['pre-write'] === true || values['post-write'] === true) &&
+  !(values['pre-write'] === true && values['post-write'] === true) &&
+  values['canon-draft'] !== true &&
+  values['check-canon'] !== true &&
+  values.sarif !== true &&
+  values['rust-analyzer'] !== true &&
+  !PROFILE_EXPLICIT;
 try {
-  await assertRuntimeSetup({ startDir: __dirname, commandName: 'audit-repo' });
+  await assertRuntimeSetup({
+    startDir: __dirname,
+    commandName: 'audit-repo',
+    requireAnalysisDependencies: !WRITE_LIFECYCLE_ONLY,
+  });
 } catch (error) {
   console.error(formatRuntimeSetupError(error));
   process.exit(error?.exitCode ?? 2);
@@ -244,11 +257,10 @@ const ROOT = path.resolve(values.root);
 const OUT = path.resolve(values.output ?? path.join(ROOT, '.audit'));
 const OUTPUT_WAS_DEFAULT = !values.output;
 const PROFILE = values.profile;
+const AUDIT_RUN_ID = generateInvocationId();
 const SOURCES_VALUE = values.sources ?? values.source;
 const INCLUDE_TESTS = normalizeIncludeTests(values, process.argv.slice(2));
 const PRODUCTION = !INCLUDE_TESTS;
-const EMIT_SARIF = values.sarif || PROFILE === 'ci';
-const PRE_POST_MUTEX = values['pre-write'] && values['post-write'];
 let GENERATED_ARTIFACTS_MODE = 'default';
 try {
   GENERATED_ARTIFACTS_MODE = normalizeGeneratedArtifactsMode(values['generated-artifacts']);
@@ -256,13 +268,7 @@ try {
   console.error(`[audit-repo] ${error.message}`);
   process.exit(2);
 }
-const PRE_WRITE_ONLY =
-  values['pre-write'] &&
-  !values['post-write'] &&
-  !values['canon-draft'] &&
-  !values['check-canon'] &&
-  !EMIT_SARIF;
-const RUN_BASE_PIPELINE = !PRE_POST_MUTEX && !PRE_WRITE_ONLY;
+const REQUESTED_PRE_WRITE_ENGINE = values['rust-pre-write'] ? 'rust' : values['pre-write-engine'];
 const AUTO_EXCLUDES = values['no-self-audit-excludes']
   ? []
   : detectMaintainerSelfAuditExcludes(ROOT);
@@ -291,6 +297,11 @@ if (!['quick', 'full', 'ci'].includes(PROFILE)) {
   process.exit(1);
 }
 
+if (!['js', 'rust', 'auto'].includes(REQUESTED_PRE_WRITE_ENGINE)) {
+  console.error(`[audit-repo] unknown --pre-write-engine: ${REQUESTED_PRE_WRITE_ENGINE}. Use js|rust|auto.`);
+  process.exit(2);
+}
+
 if (values['clear-incremental-cache'] === true) {
   const cacheStore = openIncrementalCacheStore({
     root: ROOT,
@@ -301,19 +312,9 @@ if (values['clear-incremental-cache'] === true) {
 
 const commandsRun = [];
 const skipped = [];
-const INCREMENTAL_PRODUCER_STEPS = new Set([
-  'measure-topology.mjs',
-  'measure-staleness.mjs',
-  'build-block-clone-index.mjs',
-  'build-symbol-graph.mjs',
-  'build-shape-index.mjs',
-  'build-function-clone-index.mjs',
-]);
+let rustAnalysisRun = { requested: values['rust-analyzer'] === true, ran: false, status: 'not-requested' };
 
 const artifactReadMetrics = createArtifactReadMetrics({ rootDir: OUT });
-const loadIfExists = (name) => loadArtifact(OUT, name, {
-  onRead: artifactReadMetrics.observeRead,
-});
 
 function forwardedScanArgs() {
   const args = [];
@@ -326,13 +327,74 @@ function forwardedIncrementalArgs() {
   const args = [];
   if (values['no-incremental'] === true) args.push('--no-incremental');
   if (values['cache-root']) args.push('--cache-root', path.resolve(values['cache-root']));
+  if (values['clear-incremental-cache'] === true) args.push('--clear-incremental-cache');
   return args;
 }
 
-function forwardedGeneratedArtifactArgs(stepName) {
-  return stepName === 'build-symbol-graph.mjs'
-    ? ['--generated-artifacts', GENERATED_ARTIFACTS_MODE]
-    : [];
+function rustAnalyzerInvocation() {
+  const configuredBinary = process.env.LUMIN_RUST_ANALYZER_BIN?.trim();
+  if (configuredBinary) {
+    return {
+      command: configuredBinary,
+      prefixArgs: [],
+      source: 'env:LUMIN_RUST_ANALYZER_BIN',
+    };
+  }
+
+  const manifestCandidates = [
+    path.join(__dirname, 'experiments', 'Cargo.toml'),
+    path.join(__dirname, '..', 'experiments', 'Cargo.toml'),
+    path.join(__dirname, '..', '..', '..', '..', 'experiments', 'Cargo.toml'),
+  ];
+  const manifestPath = manifestCandidates.find((candidate) => existsSync(candidate));
+  if (!manifestPath) {
+    throw new Error(
+      'rust analyzer requested but no Rust analyzer was found; set LUMIN_RUST_ANALYZER_BIN or run from a maintainer checkout with experiments/Cargo.toml'
+    );
+  }
+
+  return {
+    command: 'cargo',
+    prefixArgs: [
+      'run',
+      '--quiet',
+      '--manifest-path',
+      manifestPath,
+      '--package',
+      'lumin-rust-analyzer',
+      '--',
+    ],
+    source: 'cargo:experiments',
+    manifestPath,
+  };
+}
+
+function forwardedRustAnalyzerArgs() {
+  const args = [];
+  if (!INCLUDE_TESTS) args.push('--production');
+  for (const exc of EFFECTIVE_EXCLUDES) args.push('--exclude', exc);
+  if (values['no-incremental'] === true) args.push('--no-incremental');
+  if (values['cache-root']) args.push('--cache-root', path.resolve(values['cache-root']));
+  if (values['clear-incremental-cache'] === true) args.push('--clear-incremental-cache');
+  return args;
+}
+
+function buildPreWriteRoutingInput(requestedEngine, intentFlag) {
+  return {
+    schemaVersion: 'lumin-pre-write-routing-input.v1',
+    requestedEngine,
+    intentFlag: intentFlag === '-' ? '-' : path.resolve(intentFlag),
+  };
+}
+
+function buildLifecycleRequestGuardRequest() {
+  return {
+    schemaVersion: 'lumin-lifecycle-request-guard.v1',
+    preWriteRequested: values['pre-write'] === true,
+    postWriteRequested: values['post-write'] === true,
+    preWriteIntentPresent: Boolean(values.intent),
+    requestedPreWriteEngine: REQUESTED_PRE_WRITE_ENGINE,
+  };
 }
 
 function manifestEvidenceOptions() {
@@ -344,119 +406,48 @@ function manifestEvidenceOptions() {
     excludes: EFFECTIVE_EXCLUDES,
     autoExcludes: AUTO_EXCLUDES,
     generatedArtifactsMode: GENERATED_ARTIFACTS_MODE,
+    rustAnalysisRun,
+    mergeRustAnalysisRun: true,
     onArtifactRead: artifactReadMetrics.observeRead,
+    basePipelinePlanned: RUN_BASE_PIPELINE,
+    basePipelineSkipReason: BASE_PIPELINE_SKIP_REASON,
   };
 }
-
-const PRODUCER_PERFORMANCE_SCHEMA_VERSION = 'producer-performance.v1';
-const PRODUCER_PERFORMANCE_LARGEST_ARTIFACT_LIMIT = 10;
 
 function performanceCacheRoot() {
   return path.resolve(values['cache-root'] ?? path.join(ROOT, '.audit', '.cache'));
 }
 
-function memorySnapshot() {
-  const usage = process.memoryUsage();
-  return {
-    rssBytes: usage.rss,
-    heapTotalBytes: usage.heapTotal,
-    heapUsedBytes: usage.heapUsed,
-    externalBytes: usage.external,
-    arrayBuffersBytes: usage.arrayBuffers ?? 0,
-  };
-}
-
-function memoryDelta(before, after) {
-  return {
-    rssBytes: after.rssBytes - before.rssBytes,
-    heapTotalBytes: after.heapTotalBytes - before.heapTotalBytes,
-    heapUsedBytes: after.heapUsedBytes - before.heapUsedBytes,
-    externalBytes: after.externalBytes - before.externalBytes,
-    arrayBuffersBytes: after.arrayBuffersBytes - before.arrayBuffersBytes,
-  };
-}
-
-function sumCommandWallMs(entries) {
-  return entries.reduce((sum, entry) => sum + (typeof entry.ms === 'number' ? entry.ms : 0), 0);
-}
-
-function statusCount(entries, predicate) {
-  return entries.filter(predicate).length;
-}
-
-function maxObservedRss(entries) {
-  let max = 0;
-  for (const entry of entries) {
-    const before = entry.memory?.before?.rssBytes ?? 0;
-    const after = entry.memory?.after?.rssBytes ?? 0;
-    max = Math.max(max, before, after);
-  }
-  return max;
-}
-
-function collectArtifactSizeSummary() {
-  const byName = Object.create(null);
-  let totalBytes = 0;
-
-  for (const name of collectProducedArtifacts(OUT)) {
-    const artifactPath = path.join(OUT, name);
-    try {
-      const stats = statSync(artifactPath);
-      if (!stats.isFile()) continue;
-      byName[name] = { bytes: stats.size };
-      totalBytes += stats.size;
-    } catch {
-      // Artifact enumeration is best-effort: disappearing files should not
-      // turn a completed audit into a failed one.
-    }
-  }
-
-  const largest = Object.entries(byName)
-    .map(([name, entry]) => ({ name, bytes: entry.bytes }))
-    .sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name))
-    .slice(0, PRODUCER_PERFORMANCE_LARGEST_ARTIFACT_LIMIT);
-
-  return {
-    producedCount: Object.keys(byName).length,
-    totalBytes,
-    largest,
-    byName,
-  };
-}
-
-function buildProducerPerformanceArtifact(generated) {
-  let phaseSupportCount = 0;
-  const producers = commandsRun.map((entry) => {
-    const phaseTiming = readProducerPhaseTiming(OUT, entry.step, {
-      onRead: artifactReadMetrics.observeRead,
-    });
-    if (phaseTiming?.phases?.length > 0) phaseSupportCount++;
+function rustAnalyzerInvocationOrNull() {
+  try {
+    const invocation = rustAnalyzerInvocation();
     return {
-      name: entry.step,
-      status: entry.status,
-      wallMs: typeof entry.ms === 'number' ? entry.ms : null,
-      ...(phaseTiming?.phases?.length > 0 ? { phases: phaseTiming.phases } : {}),
-      ...(phaseTiming?.counters ? { counters: phaseTiming.counters } : {}),
-      ...(entry.memory ? { memory: entry.memory } : {}),
-      ...(entry.stderr ? { stderrSnippet: entry.stderr } : {}),
+      command: invocation.command,
+      prefixArgs: invocation.prefixArgs,
+      source: invocation.source,
+      ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
     };
-  });
-  const skippedEntries = skipped.map((entry) => ({
-    name: entry.step,
-    status: 'skipped',
-    reason: entry.reason ?? null,
-  }));
-  const totalWallMs = sumCommandWallMs(commandsRun);
-  const artifacts = collectArtifactSizeSummary();
-  const artifactReads = artifactReadMetrics.summary();
-  const maxObservedOrchestratorRssBytes = maxObservedRss(commandsRun);
+  } catch {
+    return null;
+  }
+}
 
+function buildRuntimeExecutorRequest() {
   return {
-    schemaVersion: PRODUCER_PERFORMANCE_SCHEMA_VERSION,
-    generated,
+    schemaVersion: 'lumin-audit-runtime-executor-request.v2',
+    runId: AUDIT_RUN_ID,
+    profile: PROFILE,
+    profileExplicit: PROFILE_EXPLICIT,
+    sarif: values.sarif === true,
+    preWrite: values['pre-write'] === true,
+    postWrite: values['post-write'] === true,
+    canonDraft: values['canon-draft'] === true,
+    checkCanon: values['check-canon'] === true,
     root: ROOT,
     output: OUT,
-    profile: PROFILE,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    verbose: values.verbose === true,
     scanRange: {
       includeTests: INCLUDE_TESTS,
       production: PRODUCTION,
@@ -471,306 +462,118 @@ function buildProducerPerformanceArtifact(generated) {
     generatedArtifacts: {
       mode: GENERATED_ARTIFACTS_MODE,
     },
-    summary: {
-      producerCount: producers.length,
-      okCount: statusCount(commandsRun, (entry) => entry.status === 'ok'),
-      failedCount: statusCount(commandsRun, (entry) => String(entry.status ?? '').startsWith('failed')),
-      skippedCount: skippedEntries.length,
-      totalWallMs,
-      artifactCount: artifacts.producedCount,
-      totalArtifactBytes: artifacts.totalBytes,
-      artifactReadCount: artifactReads.totalReadCount,
-      totalArtifactReadBytes: artifactReads.totalReadBytes,
-      totalJsonParseMs: artifactReads.totalJsonParseMs,
-      maxObservedOrchestratorRssBytes,
-      phaseSupportCount,
+    rustAnalyzer: {
+      requested: values['rust-analyzer'] === true,
+      rustFiles: 0,
+      sourceCommit: null,
+      invocation: values['rust-analyzer'] === true ? rustAnalyzerInvocationOrNull() : null,
+      forwardedArgs: forwardedRustAnalyzerArgs(),
     },
-    memory: {
-      measurement: 'orchestrator-process-snapshots',
-      childPeakRssAvailable: false,
-      note: 'Memory snapshots are measured in the audit-repo orchestrator before and after each child producer; they do not measure child process peak RSS.',
-    },
-    artifacts,
-    artifactReads,
-    producers,
-    skipped: skippedEntries,
   };
 }
 
-function summarizeProducerPerformance(performanceArtifact) {
+function buildCanonDraftLifecycleRequest() {
   return {
-    artifact: 'producer-performance.json',
-    schemaVersion: performanceArtifact.schemaVersion,
-    producerCount: performanceArtifact.summary?.producerCount ?? 0,
-    okCount: performanceArtifact.summary?.okCount ?? 0,
-    failedCount: performanceArtifact.summary?.failedCount ?? 0,
-    skippedCount: performanceArtifact.summary?.skippedCount ?? 0,
-    totalWallMs: performanceArtifact.summary?.totalWallMs ?? 0,
-    artifactCount: performanceArtifact.summary?.artifactCount ?? 0,
-    totalArtifactBytes: performanceArtifact.summary?.totalArtifactBytes ?? 0,
-    artifactReadCount: performanceArtifact.summary?.artifactReadCount ?? 0,
-    totalArtifactReadBytes: performanceArtifact.summary?.totalArtifactReadBytes ?? 0,
-    totalJsonParseMs: performanceArtifact.summary?.totalJsonParseMs ?? 0,
-    phaseSupportCount: performanceArtifact.summary?.phaseSupportCount ?? 0,
-    largestArtifacts: performanceArtifact.artifacts?.largest ?? [],
-    maxObservedOrchestratorRssBytes:
-      performanceArtifact.summary?.maxObservedOrchestratorRssBytes ?? 0,
+    schemaVersion: 'lumin-canon-draft-lifecycle-request.v1',
+    sourcesValue: SOURCES_VALUE ?? null,
+    root: ROOT,
+    output: OUT,
+    canonOutput: values['canon-output'] ? path.resolve(values['canon-output']) : null,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    scanArgs: forwardedScanArgs(),
   };
 }
 
-function shortenConsoleLine(line, max = 150) {
-  const normalized = String(line ?? '').replace(/\s+/g, ' ').trim();
-  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
+function buildCheckCanonLifecycleRequest() {
+  return {
+    schemaVersion: 'lumin-check-canon-lifecycle-request.v1',
+    sourcesValue: SOURCES_VALUE ?? null,
+    strict: !!values['strict-check-canon'],
+    root: ROOT,
+    output: OUT,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    scanArgs: forwardedScanArgs(),
+  };
 }
 
-function collectSummarySectionLines(markdown, heading, limit) {
-  const lines = String(markdown ?? '').split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === heading);
-  if (start < 0) return [];
-  const out = [];
-  for (const line of lines.slice(start + 1)) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('## ')) break;
-    if (!trimmed) continue;
-    if (/^(?:-|\d+\.)\s+/.test(trimmed)) {
-      out.push(shortenConsoleLine(trimmed));
-      if (out.length >= limit) break;
-    }
-  }
-  return out;
+function buildPostWriteLifecycleRequest() {
+  return {
+    schemaVersion: 'lumin-post-write-lifecycle-request.v1',
+    root: ROOT,
+    output: OUT,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    advisoryPath: values['pre-write-advisory'] ? path.resolve(values['pre-write-advisory']) : null,
+    deltaOut: values['delta-out'] ? path.resolve(values['delta-out']) : null,
+    noFreshAudit: values['no-fresh-audit'] === true,
+    scanArgs: forwardedScanArgs(),
+    incrementalArgs: forwardedIncrementalArgs(),
+  };
 }
 
-function renderSummaryConsolePreview(markdown) {
-  const sections = [
-    ['Command Result', collectSummarySectionLines(markdown, '## Command Result', 3)],
-    ['Read First', collectSummarySectionLines(markdown, '## Read First', 2)],
-    ['Measured Cues', collectSummarySectionLines(markdown, '## Measured Cues (Unranked)', 3)],
-    ['Living Audit Tracking', collectSummarySectionLines(markdown, '## Living Audit Tracking', 2)],
-    ['Guardrails', collectSummarySectionLines(markdown, '## Guardrails', 2)],
-  ].filter(([, lines]) => lines.length > 0);
-  if (sections.length === 0) return null;
-
-  const out = ['[audit-repo] artifact brief preview:'];
-  for (const [label, lines] of sections) {
-    out.push(`[audit-repo]   ${label}:`);
-    for (const line of lines) out.push(`[audit-repo]     ${line}`);
-  }
-  return out.join('\n');
+function buildRustPreWriteLifecycleRequest({
+  invocation,
+  advisoryInvocationId,
+  rustNativePath,
+  rustNativeLatestPath,
+}) {
+  return {
+    schemaVersion: 'lumin-rust-pre-write-lifecycle-request.v1',
+    root: ROOT,
+    output: OUT,
+    invocationId: advisoryInvocationId,
+    rustNativeArtifactPath: rustNativePath,
+    rustNativeLatestPath,
+    analyzer: invocation ? {
+      command: invocation.command,
+      prefixArgs: invocation.prefixArgs,
+      source: invocation.source,
+      ...(invocation.manifestPath ? { manifestPath: invocation.manifestPath } : {}),
+    } : null,
+    includeTests: INCLUDE_TESTS,
+    production: INCLUDE_TESTS === false,
+    excludes: EFFECTIVE_EXCLUDES,
+    failures: [],
+  };
 }
 
-function runStep(scriptRelPath, { required = false, precondition = null, reason = '' } = {}) {
-  const name = path.basename(scriptRelPath);
-  if (precondition) {
-    const ok = precondition();
-    if (!ok) {
-      skipped.push({ step: name, reason });
-      console.log(`[audit-repo] skip  ${name}  (${reason})`);
-      return { status: 'skipped', reason };
-    }
-  }
-  // P1-3 shell-safety: spawn via argv array. Shell-string interpolation
-  // broke on paths with spaces / $ / parentheses. Keeping execSync's
-  // import for any future command-line composition outside of producer
-  // spawning.
-  const argv = [
-    path.join(__dirname, scriptRelPath),
-    '--root', ROOT,
-    '--output', OUT,
-    ...forwardedScanArgs(),
-    ...(INCREMENTAL_PRODUCER_STEPS.has(name) ? forwardedIncrementalArgs() : []),
-    ...forwardedGeneratedArtifactArgs(name),
-  ];
-  const t0 = Date.now();
-  const memoryBefore = memorySnapshot();
-  clearProducerPhaseTiming(OUT, name);
-  try {
-    const out = execFileSync(process.execPath, argv, {
-      stdio: values.verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    });
-    const ms = Date.now() - t0;
-    const memoryAfter = memorySnapshot();
-    commandsRun.push({
-      step: name,
-      status: 'ok',
-      ms,
-      memory: {
-        before: memoryBefore,
-        after: memoryAfter,
-        delta: memoryDelta(memoryBefore, memoryAfter),
-      },
-    });
-    console.log(`[audit-repo] ok    ${name}  (${ms}ms)`);
-    return { status: 'ok', out, ms };
-  } catch (e) {
-    const ms = Date.now() - t0;
-    const memoryAfter = memorySnapshot();
-    const status = required ? 'failed-required' : 'failed-optional';
-    commandsRun.push({
-      step: name, status, ms,
-      memory: {
-        before: memoryBefore,
-        after: memoryAfter,
-        delta: memoryDelta(memoryBefore, memoryAfter),
-      },
-      stderr: (e.stderr || e.message || '').toString().slice(0, 500),
-    });
-    console.log(`[audit-repo] ${required ? 'FAIL' : 'warn'}  ${name}  (${ms}ms) — ` +
-                `${required ? 'required, aborting' : 'optional, continuing'}`);
-    if (required) throw e;
-    return { status };
-  }
+function buildJsPreWriteLifecycleRequest() {
+  return {
+    schemaVersion: 'lumin-js-pre-write-lifecycle-request.v1',
+    root: ROOT,
+    output: OUT,
+    scriptsDir: __dirname,
+    nodeExecutable: process.execPath,
+    noFreshAudit: values['no-fresh-audit'] === true,
+    scanArgs: forwardedScanArgs(),
+    incrementalArgs: forwardedIncrementalArgs(),
+  };
 }
 
 console.log(`[audit-repo] profile=${PROFILE}  root=${ROOT}  output=${OUT}`);
 
-if (!RUN_BASE_PIPELINE) {
-  const baseSkipReason = PRE_POST_MUTEX
-    ? '--pre-write and --post-write are mutually exclusive'
-    : 'pre-write-only mode uses intent-shaped cold-cache instead of full quick audit';
-  skipped.push({
-    step: 'base-audit-profile',
-    reason: baseSkipReason,
-  });
-  console.log(`[audit-repo] skip  base audit profile  (${baseSkipReason})`);
-} else {
-  // ─── Step 1: triage (always) ──────────────────────────────
-  runStep('triage-repo.mjs', { required: true });
-
-  // ─── Step 1b: framework/resource surface inventory ─────────
-  runStep('build-framework-resource-surfaces.mjs', { required: false });
-
-  // ─── Step 2-3: measurement (quick+) ──────────────────────
-  runStep('measure-topology.mjs', { required: false });
-  runStep('measure-discipline.mjs', { required: false });
-
-  // ─── Step 4: optional structural evidence (full+) ───────────
-  if (PROFILE !== 'quick') {
-    runStep('build-call-graph.mjs', { required: false });
-    runStep('check-barrel-discipline.mjs', { required: false });
-    runStep('build-shape-index.mjs', { required: false });
-    runStep('build-function-clone-index.mjs', { required: false });
-    runStep('build-block-clone-index.mjs', { required: false });
-  }
-
-  // ─── Step 5: symbol graph (always, required for classify) ──
-  runStep('build-symbol-graph.mjs', { required: true });
-
-  // ─── Step 5a: review-only declared dependency hygiene ───
-  runStep('build-unused-deps.mjs', { required: false });
-
-  // ─── Step 5b: resolver capability + per-run diagnostics ───
-  runStep('build-resolver-diagnostics.mjs', {
-    required: false,
-    precondition: () => existsSync(path.join(OUT, 'symbols.json')),
-    reason: 'symbols.json missing (symbol graph step failed or was skipped)',
-  });
-
-  // ─── Step 6: PCEF entry surface evidence ────────────────
-  runStep('build-entry-surface.mjs', {
-    required: false,
-    precondition: () => existsSync(path.join(OUT, 'symbols.json')),
-    reason: 'symbols.json missing (symbol graph step failed or was skipped)',
-  });
-
-  // ─── Step 7: PCEF module reachability evidence ──────────
-  runStep('build-module-reachability.mjs', {
-    required: false,
-    precondition: () =>
-      existsSync(path.join(OUT, 'symbols.json')) &&
-      existsSync(path.join(OUT, 'entry-surface.json')),
-    reason: 'symbols.json or entry-surface.json missing',
-  });
-
-  // ─── Step 8: classify dead exports ──────────────────────
-  runStep('classify-dead-exports.mjs', { required: false });
-
-  // ─── Step 9: PCEF safe action proof ─────────────────────
-  runStep('export-action-safety.mjs', {
-    required: false,
-    precondition: () => existsSync(path.join(OUT, 'dead-classify.json')),
-    reason: 'dead-classify.json missing (classify step failed or was skipped)',
-  });
-
-  // ─── Step 10: runtime evidence (full only, coverage present) ──
-  const hasCoverage = () => {
-    const candidates = [
-      path.join(ROOT, 'coverage', 'coverage-final.json'),
-      path.join(ROOT, '.nyc_output', 'coverage-final.json'),
-    ];
-    return candidates.some(existsSync);
-  };
-  if (PROFILE !== 'quick') {
-    runStep('merge-runtime-evidence.mjs', {
-      required: false,
-      precondition: hasCoverage,
-      reason: 'no coverage-final.json in coverage/ or .nyc_output/',
-    });
-  }
-
-  // ─── Step 11: staleness (full only, git repo) ───────────
-  function isGitWorkTree() {
-    try {
-      const out = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
-        cwd: ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim();
-      return out === 'true';
-    } catch {
-      return false;
-    }
-  }
-  if (PROFILE !== 'quick') {
-    runStep('measure-staleness.mjs', {
-      required: false,
-      precondition: isGitWorkTree,
-      reason: 'not a git working tree',
-    });
-  }
-
-  // ─── Step 11: rank-fixes ──────────────────────────────────
-  runStep('rank-fixes.mjs', {
-    required: false,
-    precondition: () => existsSync(path.join(OUT, 'dead-classify.json')),
-    reason: 'dead-classify.json missing (classify step failed or was skipped)',
-  });
-
-  // ─── Step 12: checklist-facts (pre-compute for templates/REVIEW_CHECKLIST.md) ──
-  // Always runs — cheap and degrades per-item when inputs are missing.
-  // Produces `checklist-facts.json` so a structural-review walker lands
-  // with the automatable half pre-labeled `[grounded]`.
-  runStep('checklist-facts.mjs', { required: false });
-
-  // ─── Step 13: SARIF emission (ci, or --sarif) ──────────────
-  if (EMIT_SARIF) {
-    runStep('emit-sarif.mjs', { required: false });
-  } else {
-    skipped.push({ step: 'emit-sarif.mjs', reason: 'not in --sarif mode' });
-  }
-}
+const baseExecution = executeBaseRuntime(buildRuntimeExecutorRequest());
+const ORCHESTRATION_PLAN = baseExecution.plan;
+const RUN_BASE_PIPELINE = ORCHESTRATION_PLAN?.basePipeline?.status === 'planned';
+const BASE_PIPELINE_SKIP_REASON = RUN_BASE_PIPELINE
+  ? null
+  : ORCHESTRATION_PLAN?.basePipeline?.reason ?? 'base-pipeline-skipped';
+commandsRun.push(...(baseExecution.commandsRun ?? []));
+skipped.push(...(baseExecution.skipped ?? []));
+rustAnalysisRun = baseExecution.rustAnalysisRun ?? rustAnalysisRun;
+const basePipelineExitCode = Number(baseExecution.exitPolicy?.recommendedExitCode ?? 0);
 
 // ─── Build manifest ───────────────────────────────────────
-const initialEvidence = buildManifestEvidence(manifestEvidenceOptions());
-
-const manifest = {
-  meta: {
-    generated: new Date().toISOString(),
-    tool: 'audit-repo.mjs',
-    profile: PROFILE,
-    root: ROOT,
-    output: OUT,
-  },
+const manifestGenerated = new Date().toISOString();
+const manifest = buildManifestRootWithEvidence({
+  generated: manifestGenerated,
   profile: PROFILE,
   commandsRun,
   skipped,
-  scanRange: initialEvidence.scanRange,
-  confidence: initialEvidence.confidence,
-  blindZones: initialEvidence.blindZones,
-  generatedArtifacts: initialEvidence.generatedArtifacts,
-  livingAudit: initialEvidence.livingAudit,
-  artifactsProduced: collectProducedArtifacts(OUT),
-};
+  ...manifestEvidenceOptions(),
+});
 
 // ─── P1-3: pre-write opt-in step ──────────────────────────
 // ─── P2-2: post-write opt-in step — mutually exclusive with --pre-write ─
@@ -784,300 +587,104 @@ const manifest = {
 
 let preWriteBlock = undefined;
 let postWriteBlock = undefined;
-let finalExitCode = 0;
+let canonDraftBlock = undefined;
+let checkCanonBlock = undefined;
+let finalExitCode = basePipelineExitCode;
 let auditSummaryPreview = null;
 
-if (values['pre-write'] && values['post-write']) {
-  const reason = '--pre-write and --post-write are mutually exclusive';
-  process.stderr.write(`[audit-repo] ${reason}\n`);
-  preWriteBlock = { requested: true, ran: false, reason };
-  postWriteBlock = { requested: true, ran: false, reason };
-  finalExitCode = 2;
-} else if (values['pre-write']) {
-  if (!values.intent) {
-    process.stderr.write(`[audit-repo] --pre-write requested but skipped: --intent <file|-> missing\n`);
-    preWriteBlock = {
-      requested: true,
-      ran: false,
-      reason: '--intent missing',
-    };
-    finalExitCode = 2;
-  } else {
-    const { execFileSync: _exec } = await import('node:child_process');
-    const preWritePath = path.join(__dirname, 'pre-write.mjs');
-    const intentPath = values.intent === '-' ? '-' : path.resolve(values.intent);
-    const preArgs = [
-      preWritePath,
-      '--root', ROOT,
-      '--output', OUT,
-      '--intent', intentPath,
-      ...forwardedScanArgs(),
-    ];
-    if (values['no-fresh-audit']) preArgs.push('--no-fresh-audit');
-    try {
-      _exec(process.execPath, preArgs, {
-        stdio: [values.intent === '-' ? 'inherit' : 'ignore', 'inherit', 'inherit'],
-      });
-      const latestAdvisoryPath = path.join(OUT, 'pre-write-advisory.latest.json');
-      let advisoryPath = latestAdvisoryPath;
-      let advisoryInvocationId = null;
-      let advisoryEvidenceAvailability = null;
-      try {
-        const advisory = JSON.parse(readFileSync(latestAdvisoryPath, 'utf8'));
-        advisoryInvocationId = advisory.invocationId ?? null;
-        advisoryEvidenceAvailability = advisory.evidenceAvailability ?? null;
-        if (typeof advisory.artifactPaths?.invocationSpecific === 'string') {
-          advisoryPath = path.resolve(advisory.artifactPaths.invocationSpecific);
-        } else if (typeof advisory.invocationId === 'string') {
-          advisoryPath = path.join(OUT, `pre-write-advisory.${advisory.invocationId}.json`);
-        }
-      } catch { /* leave latest path fallback */ }
-      preWriteBlock = {
-        requested: true,
-        ran: true,
-        advisoryPath,
-        latestAdvisoryPath,
-        advisoryInvocationId,
-        evidenceAvailability: advisoryEvidenceAvailability,
-      };
-    } catch (e) {
-      preWriteBlock = {
-        requested: true,
-        ran: false,
-        reason: `pre-write.mjs exited non-zero: ${e.message}`,
-      };
-      finalExitCode = typeof e.status === 'number' && e.status !== 0 ? e.status : 1;
-    }
-  }
-} else if (values['post-write']) {
-  if (!values['pre-write-advisory']) {
-    process.stderr.write(`[audit-repo] --post-write requested but skipped: --pre-write-advisory <file> missing\n`);
-    postWriteBlock = {
-      requested: true,
-      ran: false,
-      reason: '--pre-write-advisory missing',
-    };
-    finalExitCode = 2;
-  } else {
-    const { execFileSync: _exec } = await import('node:child_process');
-    const postWritePath = path.join(__dirname, 'post-write.mjs');
-    const advisoryPath = path.resolve(values['pre-write-advisory']);
-    const deltaOutDir = values['delta-out'] ? path.resolve(values['delta-out']) : OUT;
-    const forwardedArgs = [
-      postWritePath,
-      '--root', ROOT,
-      '--output', OUT,
-      '--pre-write-advisory', advisoryPath,
-    ];
-    if (values['delta-out']) forwardedArgs.push('--delta-out', deltaOutDir);
-    if (values['no-fresh-audit']) forwardedArgs.push('--no-fresh-audit');
-    forwardedArgs.push(...forwardedScanArgs());
-    forwardedArgs.push(...forwardedIncrementalArgs());
+const advisoryInvocationId = generateInvocationId();
+const lifecycleRequestGuard = buildLifecycleRequestGuardRequest();
+const lifecycleExecution = executeAuditLifecycle({
+  schemaVersion: 'lumin-audit-lifecycle-execution-request.v1',
+  baseExitCode: basePipelineExitCode,
+  lifecycleRequestGuard,
+  preWrite: values['pre-write'] === true ? {
+    requested: values['pre-write'] === true,
+    routingInput: buildPreWriteRoutingInput(REQUESTED_PRE_WRITE_ENGINE, values.intent ?? 'missing'),
+    rust: buildRustPreWriteLifecycleRequest({
+      invocation: rustAnalyzerInvocationOrNull(),
+      advisoryInvocationId,
+      rustNativePath: path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`),
+      rustNativeLatestPath: path.join(OUT, 'rust-pre-write-artifact.latest.json'),
+    }),
+    js: buildJsPreWriteLifecycleRequest(),
+  } : null,
+  postWrite: values['post-write'] === true ? {
+    requested: values['post-write'] === true,
+    request: buildPostWriteLifecycleRequest(),
+  } : null,
+  canonDraft: values['canon-draft'] === true ? {
+    requested: values['canon-draft'] === true,
+    request: buildCanonDraftLifecycleRequest(),
+  } : null,
+  checkCanon: values['check-canon'] === true ? {
+    requested: values['check-canon'] === true,
+    request: buildCheckCanonLifecycleRequest(),
+  } : null,
+  exitPolicy: {
+    strictPostWrite: values['strict-post-write'] === true,
+    strictPostWriteConfidence: values['strict-post-write-confidence'] === true,
+  },
+});
+preWriteBlock = lifecycleExecution.preWrite ?? undefined;
+postWriteBlock = lifecycleExecution.postWrite ?? undefined;
+canonDraftBlock = lifecycleExecution.canonDraft ?? undefined;
+checkCanonBlock = lifecycleExecution.checkCanon ?? undefined;
+finalExitCode = lifecycleExecution.finalExitCode ?? basePipelineExitCode;
 
-    try {
-      _exec(process.execPath, forwardedArgs, { stdio: ['ignore', 'inherit', 'inherit'] });
-      const deltaPath = path.join(deltaOutDir, 'post-write-delta.latest.json');
-      postWriteBlock = { requested: true, ran: true, deltaPath };
-      // Re-read the delta artifact to surface summary fields in the manifest.
-      // Honest signal: if the delta fails to parse, summary fields stay absent
-      // rather than defaulting to a "clean" value.
-      try {
-        const delta = JSON.parse(readFileSync(deltaPath, 'utf8'));
-        postWriteBlock.silentNew = delta.summary?.silentNew ?? 0;
-        postWriteBlock.requiredAcknowledgementCount =
-          (delta.entries ?? []).filter((e) => e.label === 'silent-new').length;
-        postWriteBlock.baselineStatus = delta.baseline?.status ?? 'missing';
-        postWriteBlock.scanRangeParity = delta.scanRangeParity?.status ?? 'baseline-missing';
-        postWriteBlock.afterComplete = delta.inventoryCompleteness?.afterComplete ?? false;
-        postWriteBlock.fileDeltaStatus = delta.fileDelta?.status ?? 'missing';
-        postWriteBlock.unexpectedNewFileCount = delta.fileDelta?.summary?.unexpectedNew ?? 0;
-        postWriteBlock.plannedMissingFileCount = delta.fileDelta?.summary?.plannedMissing ?? 0;
-      } catch { /* delta unreadable — leave summary fields absent */ }
-    } catch (e) {
-      postWriteBlock = {
-        requested: true,
-        ran: false,
-        reason: `post-write.mjs exited non-zero: ${e.message}`,
-      };
-    }
-  }
-}
-
-manifest.preWrite = preWriteBlock;
-manifest.postWrite = postWriteBlock;
-
-// ─── P3-4-b: opt-in canon-draft orchestrator ─────────────
-//
-// Thin spawn wrapper. Each source runs a separate `generate-canon-draft.mjs`
-// invocation; per-source outcomes populate `manifest.canonDraft.perSource`.
-// Orthogonal with --pre-write / --post-write — all three can coexist on
-// one invocation.
-//
-// Exit contract (advisory):
-//   - `manifest.canonDraft.ran === true` iff ≥ 1 requested source succeeded.
-//   - Orchestrator exit 0 if ran; exit 1 if every requested source failed
-//     OR if --sources contained an unknown value.
-
-if (values['canon-draft']) {
-  const result = runCanonDraftLifecycle({
-    sourcesValue: SOURCES_VALUE,
-    root: ROOT,
-    outDir: OUT,
-    canonOutput: values['canon-output'],
-    scriptsDir: __dirname,
-    scanArgs: forwardedScanArgs(),
-  });
-  manifest.canonDraft = result.block;
-  if (result.forceExitCode || finalExitCode === 0) finalExitCode = result.exitCode;
-}
-
-// ─── P5-4: check-canon orchestrator ──────────────────────────────
-//
-// Thin spawn wrapper mirroring the --canon-draft block. When every source is
-// requested, spawn `check-canon.mjs --source all` once and copy its perSource
-// entries into manifest.checkCanon. For subsets, spawn one child per source.
-// Child exit 1 (drift) and exit 2 (attempted-but-failed-to-check, e.g.
-// missing canon) are LEGITIMATE per-source outcomes recorded into manifest —
-// NOT spawn failures. Only a true ENOENT-style failure produces ran=false on
-// that source.
-//
-// Advisory default: orchestrator exit 0 if manifest.checkCanon.ran === true.
-// --strict-check-canon escalates:
-//   summary.driftCount > 0 → orchestrator exit 1
-//   summary.sourcesChecked === 0 → orchestrator exit 2
-
-if (values['check-canon']) {
-  const result = runCheckCanonLifecycle({
-    sourcesValue: SOURCES_VALUE,
-    strict: !!values['strict-check-canon'],
-    root: ROOT,
-    outDir: OUT,
-    scriptsDir: __dirname,
-    scanArgs: forwardedScanArgs(),
-  });
-  manifest.checkCanon = result.block;
-  if (finalExitCode === 0) finalExitCode = result.exitCode;
-}
-
-// Strict post-write: if --strict-post-write is set AND the post-write step
-// was requested but did not run (spawn failure), escalate to exit 2. The
-// mutual-exclusion and missing-advisory branches above already set
-// finalExitCode=2, so this strictly targets the spawn-failure case (which
-// defaults to exit 0 under advisory semantics).
-if (values['strict-post-write'] && postWriteBlock?.ran === false && finalExitCode === 0) {
-  process.stderr.write(`[audit-repo] --strict-post-write: post-write did not run; escalating to exit 2\n`);
-  finalExitCode = 2;
-}
-
-function postWriteConfidenceLimited(block) {
-  if (!block?.ran) return false;
-  return block.baselineStatus !== 'available' ||
-    block.scanRangeParity !== 'ok' ||
-    block.afterComplete !== true;
-}
-
-if (values['strict-post-write-confidence'] && postWriteConfidenceLimited(postWriteBlock) && finalExitCode === 0) {
-  process.stderr.write(
-    `[audit-repo] --strict-post-write-confidence: post-write delta confidence limited ` +
-    `(baseline=${postWriteBlock.baselineStatus ?? 'unknown'}, ` +
-    `scanRange=${postWriteBlock.scanRangeParity ?? 'unknown'}, ` +
-    `afterComplete=${postWriteBlock.afterComplete === true}); escalating to exit 2\n`
-  );
-  finalExitCode = 2;
-}
-
-refreshManifestEvidence(manifest, manifestEvidenceOptions());
-const topologyArtifact = loadIfExists('topology.json');
-const moduleReachabilityArtifact = loadIfExists('module-reachability.json');
-if (topologyArtifact) {
-  const topologyMermaidPath = path.join(OUT, 'topology.mermaid.md');
-  atomicWrite(topologyMermaidPath, renderTopologyMermaid(topologyArtifact));
-  manifest.topologyMermaid = {
-    path: topologyMermaidPath,
-    format: 'markdown',
-    source: 'topology.json',
-    use: 'human visual companion; topology.json remains authoritative for exact citations',
-  };
-  manifest.artifactsProduced = collectProducedArtifacts(OUT);
-}
-const SHOULD_WRITE_SUMMARY = (
-  RUN_BASE_PIPELINE ||
-  preWriteBlock?.requested ||
-  postWriteBlock?.requested ||
-  manifest.canonDraft?.requested ||
-  manifest.checkCanon?.requested
-);
-if (SHOULD_WRITE_SUMMARY) {
-  const auditSummaryPath = path.join(OUT, 'audit-summary.latest.md');
-  const summaryMarkdown = renderAuditSummary({
-    manifest,
-    checklistFacts: loadIfExists('checklist-facts.json'),
-    fixPlan: loadIfExists('fix-plan.json'),
-    topology: topologyArtifact,
-    discipline: loadIfExists('discipline.json'),
-    callGraph: loadIfExists('call-graph.json'),
-    functionClones: loadIfExists('function-clones.json'),
-    symbols: loadIfExists('symbols.json'),
-    moduleReachability: moduleReachabilityArtifact,
-  });
-  writeFileSync(auditSummaryPath, summaryMarkdown);
-  auditSummaryPreview = renderSummaryConsolePreview(summaryMarkdown);
-  manifest.auditSummary = {
-    path: auditSummaryPath,
-    format: 'markdown',
-  };
-}
-if (RUN_BASE_PIPELINE && PROFILE !== 'quick') {
-  const reviewPackPath = path.join(OUT, 'audit-review-pack.latest.md');
-  const reviewPackMarkdown = renderAuditReviewPack({
-    manifest,
-    checklistFacts: loadIfExists('checklist-facts.json'),
-    fixPlan: loadIfExists('fix-plan.json'),
-    topology: loadIfExists('topology.json'),
-    discipline: loadIfExists('discipline.json'),
-    callGraph: loadIfExists('call-graph.json'),
-    functionClones: loadIfExists('function-clones.json'),
-    barrels: loadIfExists('barrels.json'),
-    shapeIndex: loadIfExists('shape-index.json'),
-    deadClassify: loadIfExists('dead-classify.json'),
-    symbols: loadIfExists('symbols.json'),
-    moduleReachability: moduleReachabilityArtifact,
-  });
-  writeFileSync(reviewPackPath, reviewPackMarkdown);
-  manifest.reviewPack = {
-    path: reviewPackPath,
-    format: 'markdown',
-    use: 'main assistant reads lanes as artifact briefs; if using built-in reviewer subagents, translate lanes into focused codebase-reading tasks with file:line evidence; the engine never calls external APIs',
-  };
-}
-const producerPerformance = buildProducerPerformanceArtifact(manifest.meta.generated);
-atomicWrite(
-  path.join(OUT, 'producer-performance.json'),
-  JSON.stringify(producerPerformance, null, 2)
-);
-manifest.performance = summarizeProducerPerformance(producerPerformance);
-manifest.artifactsProduced = collectProducedArtifacts(OUT);
-
-const manifestPath = path.join(OUT, 'manifest.json');
-writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+Object.assign(manifest, applyLifecycleAndRefreshManifestEvidence({
+  manifest,
+  lifecycle: {
+    preWrite: preWriteBlock ?? null,
+    postWrite: postWriteBlock ?? null,
+    canonDraft: canonDraftBlock ?? null,
+    checkCanon: checkCanonBlock ?? null,
+  },
+  ...manifestEvidenceOptions(),
+}));
+const manifestWrite = finalizeAuditRunWithCompanions({
+  manifest,
+  root: ROOT,
+  outDir: OUT,
+  profile: PROFILE,
+  includeTests: INCLUDE_TESTS,
+  production: PRODUCTION,
+  excludes: EFFECTIVE_EXCLUDES,
+  autoExcludes: AUTO_EXCLUDES,
+  noIncremental: values['no-incremental'] === true,
+  cacheRoot: performanceCacheRoot(),
+  clearIncrementalCache: values['clear-incremental-cache'] === true,
+  generatedArtifactsMode: GENERATED_ARTIFACTS_MODE,
+  artifactReadEvents: artifactReadMetrics.events(),
+  rustAnalysis: manifest.rustAnalysis,
+  commandsRun,
+  skipped,
+  companionPolicy: {
+    basePipelinePlanned: RUN_BASE_PIPELINE,
+    basePipelineSkipReason: BASE_PIPELINE_SKIP_REASON,
+  },
+});
+Object.assign(manifest, manifestWrite.closeoutUpdate ?? {});
+auditSummaryPreview = manifestWrite.auditSummaryPreview ?? null;
 
 // ─── Console report ───────────────────────────────────────
 console.log('');
-console.log(`[audit-repo] wrote ${manifestPath}`);
-console.log(`[audit-repo] artifacts: ${manifest.artifactsProduced.length} produced`);
-if (manifest.auditSummary?.path) {
-  console.log(`[audit-repo] summary: ${manifest.auditSummary.path}`);
+console.log(`[audit-repo] wrote ${manifestWrite.manifestPath ?? path.join(OUT, 'manifest.json')}`);
+console.log(`[audit-repo] artifacts: ${manifestWrite.artifactsProducedCount ?? manifest.artifactsProduced.length} produced`);
+if (manifestWrite.auditSummaryPath) {
+  console.log(`[audit-repo] summary: ${manifestWrite.auditSummaryPath}`);
 }
-if (manifest.reviewPack?.path) {
-  console.log(`[audit-repo] review pack: ${manifest.reviewPack.path}`);
+if (manifestWrite.reviewPackPath) {
+  console.log(`[audit-repo] review pack: ${manifestWrite.reviewPackPath}`);
 }
 if (auditSummaryPreview) {
   console.log('');
   console.log(auditSummaryPreview);
 }
-if ((manifest.blindZones ?? []).length > 0) {
-  console.log(`[audit-repo] ${formatBlindZonesSummary(manifest.blindZones)}`);
-  for (const z of manifest.blindZones) {
+const finalBlindZones = manifestWrite.blindZones ?? manifest.blindZones ?? [];
+if (finalBlindZones.length > 0) {
+  console.log(`[audit-repo] ${manifestWrite.blindZonesSummary}`);
+  for (const z of finalBlindZones) {
     console.log(`             • ${z.area} (${z.severity}) — ${z.effect.slice(0, 80)}${z.effect.length > 80 ? '…' : ''}`);
   }
 } else {

@@ -196,7 +196,7 @@ Vitest command, and the fixture boundary.
 
 | Candidate Suite                                                     |   Status | Why This Status                                                                                                                                             | Protected Invariant To Review                                                                                                                                             | Edge-Case Failure To Preserve                                                                                                                                                         | Fixture Boundary                                                                              |
 | ------------------------------------------------------------------- | -------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `tests/test-audit-repo.mjs`                                         | `PARKED` | Reviewed as an umbrella product-pass suite; direct mirror remains blocked even though the known split mirrors are complete.                                  | Artifact brief, manifest/performance, blind-zone confidence, scan range, lifecycle artifacts, and full-profile staleness each stay covered by focused mirrors.             | A single broad mirror would hide which evidence contract failed and could absorb future audit-repo product-pass behavior before a review names it.                                     | Keep Node suite authoritative; any new audit-repo split needs its own review page before a mirror. |
+| `tests/test-audit-repo.mjs`                                         | `DONE` | Retired from the default `npm test` gate as a legacy umbrella; the Rust audit-core gate is now the authoritative migrated audit-runtime check. | Artifact brief, manifest/performance, blind-zone confidence, scan range, lifecycle artifacts, and full-profile staleness stay available as focused reference mirrors while JS/TS producers are being retired. | A single broad mirror would hide which evidence contract failed and could absorb future audit-repo product-pass behavior before a review names it.                                     | Run `npm run test:audit-runtime-gate`; keep `npm run test:node:legacy-audit-repo` only for manual archaeology. |
 | `tests/test-pre-write-cue-tiers.mjs`                                | `PARKED` | Reviewed as split-track only; known T1-T10 contracts are complete in focused mirrors, but the direct umbrella remains Node-authoritative.                  | Cue tiers separate `EXISTS`, `SAFE_FIX`, `AGENT_REVIEW_CUE`, unavailable evidence, suppressed evidence, service-operation sibling cues, and local-operation sibling cues. | Suppressed candidates must not leak into cue cards; service/local-operation promotion must be policy-versioned, review-only, and blocked for muted/generated/class-method candidates. | Keep Node suite authoritative; any new cue-tier behavior needs a fresh split review.          |
 | `tests/test-pre-write-cue-tiers.mjs` (exact/signature safe split)   |   `DONE` | Mirrored as a narrow T1-T3 adapter lane without migrating the whole cue-tier suite.                                                                         | Exact identities and normalized function signatures create `SAFE_CUE` records, while mixed safe/review candidates render at `AGENT_REVIEW_CUE`.                           | Safe cue records must preserve claim-only/exact-symbol/function-signature evidence and must not become semantic equivalence or drop mixed review evidence.                            | Fixed `classifyPreWriteCues()` fixtures only; no lookup-name or shape/signature computation.  |
 | `tests/test-pre-write-cue-tiers.mjs` (class-method cue split)       |   `DONE` | Mirrored as a narrow T3c/T3d adapter lane without migrating the whole cue-tier suite.                                                                       | Class-method near-name candidates create `AGENT_REVIEW_CUE` cards only and cite `classMethodIndex`, not `defIndex`.                                                       | Class-method evidence must not become `SAFE_CUE`, `EXISTS`, `SAFE_FIX`, or top-level export proof, and must preserve `ClassName#methodName` identity.                                 | Fixed `classifyPreWriteCues()` fixtures only; no class-method indexing or lookup-name policy. |
@@ -221,7 +221,7 @@ The one-off review loop has moved to
 
 - Node `test-*.mjs` suites: 164
 - existing Vitest mirrors: 175
-- remaining parked Node suites: 2
+- remaining parked Node suites: 1
 
 Suites may now be batched by goal lane when the review metadata names the
 protected invariant, edge-case failure, preserved Node command, focused Vitest
@@ -256,9 +256,10 @@ audit-repo command lifecycle wrapper, mode-dispatch, resolver path lookup, and
 topology edge lens mirror batches are complete. The direct pre-write advisory
 lifecycle batch is complete, but cue-tier suites remain separate. The entry
 surface artifact suite is complete. The Python conventions suite is complete.
-The `test-audit-repo.mjs` umbrella suite is reviewed and intentionally parked
-as a direct broad mirror. Known split tracks are complete and covered by their
-focused mirrors. The artifact brief/review-pack track has a focused Vitest
+The `test-audit-repo.mjs` umbrella suite is reviewed and retired from the
+default `npm test` gate. Rust-owned manifest evidence contracts are guarded
+through `lumin-audit-core` cargo tests, while known split tracks remain focused
+reference mirrors during the JS/TS producer retirement. The artifact brief/review-pack track has a focused Vitest
 mirror at
 [`pilot-reviews/vitest-audit-repo-artifact-brief.md`](pilot-reviews/vitest-audit-repo-artifact-brief.md).
 The manifest/performance track also has a focused Vitest mirror, and the
@@ -271,9 +272,10 @@ The lifecycle artifact collection track has a focused Vitest mirror at
 The full-profile staleness/artifacts track has a focused mirror recorded at
 [`pilot-reviews/vitest-audit-repo-full-profile-staleness.md`](pilot-reviews/vitest-audit-repo-full-profile-staleness.md).
 There is no known reviewed audit-repo split still waiting for implementation.
-Keep the direct umbrella Node-authoritative; any future audit-repo product-pass
-split needs a fresh review page before a mirror. Do not enter other parked
-analyzer-sensitive suites directly.
+Use `npm run test:audit-runtime-gate` as the audit-repo runtime gate. The direct
+umbrella remains available through `npm run test:node:legacy-audit-repo` only for
+manual archaeology; any future audit-repo product-pass split needs a fresh review
+page before a mirror. Do not enter other parked analyzer-sensitive suites directly.
 
 The classification gates suite is complete. Keep future classifier matrix
 changes local to that suite and do not absorb deadness/ranking, resolver,

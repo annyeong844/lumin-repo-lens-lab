@@ -1,4 +1,5 @@
 pub mod cargo_check_unified_workspace;
+pub mod compact_unified_workspace;
 pub mod invalid_calibration_adjudication;
 pub mod multi_package_usage_error;
 mod run;

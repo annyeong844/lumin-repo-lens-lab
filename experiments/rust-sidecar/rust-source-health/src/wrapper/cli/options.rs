@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use lumin_rust_common::{parse_min_usize, parse_nonzero_usize, take_path, take_string, CliAction};
 
-use crate::protocol::DEFAULT_WORKER_STACK_BYTES;
+use crate::protocol::{DEFAULT_WORKER_STACK_BYTES, MIN_WORKER_STACK_BYTES};
 use crate::usage_error;
 
 #[derive(Debug)]
@@ -14,6 +14,9 @@ pub(super) struct WrapperOptions {
     pub(super) thread_count: Option<usize>,
     pub(super) worker_stack_bytes: usize,
     pub(super) artifact_profile: ArtifactProfile,
+    pub(super) cache_root: Option<PathBuf>,
+    pub(super) incremental_enabled: bool,
+    pub(super) clear_incremental_cache: bool,
 }
 
 impl WrapperOptions {
@@ -24,6 +27,9 @@ impl WrapperOptions {
         let mut thread_count = None;
         let mut worker_stack_bytes = DEFAULT_WORKER_STACK_BYTES;
         let mut artifact_profile = ArtifactProfile::Compact;
+        let mut cache_root = None;
+        let mut incremental_enabled = true;
+        let mut clear_incremental_cache = false;
 
         let mut iter = args.into_iter();
         while let Some(arg) = iter.next() {
@@ -40,12 +46,15 @@ impl WrapperOptions {
                 "--worker-stack-bytes" => {
                     let raw = take_string(&mut iter, "--worker-stack-bytes")?;
                     worker_stack_bytes =
-                        parse_min_usize(&raw, "--worker-stack-bytes", DEFAULT_WORKER_STACK_BYTES)?;
+                        parse_min_usize(&raw, "--worker-stack-bytes", MIN_WORKER_STACK_BYTES)?;
                 }
                 "--artifact-profile" => {
                     let raw = take_string(&mut iter, "--artifact-profile")?;
                     artifact_profile = ArtifactProfile::parse(&raw)?;
                 }
+                "--cache-root" => cache_root = Some(take_path(&mut iter, "--cache-root")?),
+                "--no-incremental" => incremental_enabled = false,
+                "--clear-incremental-cache" => clear_incremental_cache = true,
                 "--help" | "-h" => {
                     print_usage();
                     return Ok(CliAction::Help);
@@ -62,13 +71,16 @@ impl WrapperOptions {
             thread_count,
             worker_stack_bytes,
             artifact_profile,
+            cache_root,
+            incremental_enabled,
+            clear_incremental_cache,
         }))
     }
 }
 
 fn print_usage() {
     eprintln!(
-        "Usage: lumin-rust-source-health --root <path> --output <path> --source-commit <sha> [--artifact-profile compact|full] [--threads <n>] [--worker-stack-bytes <bytes>]"
+        "Usage: lumin-rust-source-health --root <path> --output <path> --source-commit <sha> [--artifact-profile compact|full] [--threads <n>] [--worker-stack-bytes <bytes>] [--cache-root <path>] [--no-incremental] [--clear-incremental-cache]"
     );
 }
 

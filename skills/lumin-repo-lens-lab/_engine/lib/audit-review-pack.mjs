@@ -17,6 +17,16 @@ function n(value, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+function formatRustScope(summary) {
+  const scope = summary?.scanScope;
+  if (!scope || typeof scope !== 'object') return '';
+  const tests = scope.includeTests === false ? 'production files only' : 'including tests';
+  const excludes = Array.isArray(scope.exclude) && scope.exclude.length > 0
+    ? `, ${scope.exclude.length} exclude ${scope.exclude.length === 1 ? 'pattern' : 'patterns'}`
+    : '';
+  return ` (${tests}${excludes})`;
+}
+
 function arr(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -141,7 +151,7 @@ function topologyLane({ topology, callGraph, barrels }) {
   }));
 }
 
-function typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symbols }) {
+function typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symbols, manifest }) {
   const totals = discipline?.totals ?? {};
   const escapeCount =
     n(totals[':any']) +
@@ -158,15 +168,31 @@ function typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symb
   const cloneStructure = n(checklistFacts?.B1_duplicate_implementation?.structureGroupCandidates, n(functionClones?.meta?.structureGroupCount));
   const cloneSignature = n(checklistFacts?.B1_duplicate_implementation?.signatureGroupCandidates, n(functionClones?.meta?.signatureGroupCount));
   const cloneNear = n(checklistFacts?.B1_duplicate_implementation?.nearFunctionCandidates, n(functionClones?.meta?.nearFunctionCandidateCount));
+  const rustAnalysis = manifest?.rustAnalysis;
+  const rustArtifactAvailable = rustAnalysis?.status === 'complete' && rustAnalysis?.available === true;
+  const artifacts = [
+    'discipline.json',
+    'shape-index.json',
+    'function-clones.json',
+    'checklist-facts.json',
+    'symbols.json',
+    ...(rustArtifactAvailable ? ['rust-analyzer-health.latest.json'] : []),
+  ];
+  const rustEvidenceMission = rustArtifactAvailable
+    ? 'Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.'
+    : 'Rust analyzer evidence is not available for this run; JS/TS clone and shape artifacts are not Rust evidence.';
   return lane('Lane 2 — Types, Shapes, And Contract Review', renderLanePrompt({
     title: 'Type and shape reviewer',
-    mission: 'Look for type-boundary and helper-shape drift that requires semantic judgment: repeated exported shapes, same-structure and near-function clone cues, and concentrated any/ignore-style escapes.',
-    artifacts: ['discipline.json', 'shape-index.json', 'function-clones.json', 'checklist-facts.json', 'symbols.json'],
+    mission: `Look for JS/TS type-boundary and helper-shape drift that requires semantic judgment: repeated exported shapes, same-structure and near-function clone cues, and concentrated any/ignore-style escapes. ${rustEvidenceMission}`,
+    artifacts,
     checks: [
       `Type escape total to screen: ${escapeCount}. Prioritize clusters over scattered one-offs.`,
       formatAnyContaminationReviewCheck(symbols),
-      `Exact exported shape groups: ${exactGroups}; near-shape review cues: ${nearCandidates}; raw shape facts: ${shapeFacts}.`,
-      `Function clone cues: exact body groups ${cloneExact}; same-structure groups ${cloneStructure}; same-signature groups ${cloneSignature}; near-function cues ${cloneNear}. Read source before calling them semantic duplicates.`,
+      `JS/TS exact exported shape groups: ${exactGroups}; near-shape review cues: ${nearCandidates}; raw shape facts: ${shapeFacts}. Do not use shape-index.json as Rust shape evidence.`,
+      `JS/TS function clone cues: exact body groups ${cloneExact}; same-structure groups ${cloneStructure}; same-signature groups ${cloneSignature}; near-function cues ${cloneNear}. Read source before calling them semantic duplicates.`,
+      rustArtifactAvailable
+        ? `Rust analyzer artifact available for ${n(rustAnalysis.files)} file(s)${formatRustScope(rustAnalysis)}. Use rust-analyzer-health.latest.json for Rust shape, signature, clone, and syntax review cues.`
+        : `Rust analyzer artifact not available in this run${rustAnalysis?.requested ? ` (${rustAnalysis.status ?? 'not-run'})` : ''}; keep Rust shape/clone claims limited to manifest blind-zone evidence.`,
       'For near-shape or semantic duplication, read the cited declarations before recommending a merge.',
     ],
     report: 'One type/shape theme worth smoothing, anything likely intentional, and what evidence is still missing.',
@@ -237,13 +263,24 @@ function deadSurfaceLane({ fixPlan, deadClassify, manifest, moduleReachability }
 function failureLane({ checklistFacts, manifest }) {
   const e2 = checklistFacts?.E2_silent_catch ?? {};
   const blindZones = arr(manifest?.blindZones);
+  const rustAnalysis = manifest?.rustAnalysis;
+  const rustArtifactAvailable = rustAnalysis?.status === 'complete' && rustAnalysis?.available === true;
+  const artifacts = [
+    'checklist-facts.json',
+    'manifest.json',
+    'discipline.json',
+    ...(rustArtifactAvailable ? ['rust-analyzer-health.latest.json'] : []),
+  ];
   return lane('Lane 4 — Failure Handling And Blind-Zone Review', renderLanePrompt({
     title: 'Failure-handling reviewer',
     mission: 'Check whether error-handling and measurement blind zones could make the main summary too optimistic.',
-    artifacts: ['checklist-facts.json', 'manifest.json', 'discipline.json'],
+    artifacts,
     checks: [
       `Silent catch count: ${n(e2.count)}; non-empty anonymous catches: ${n(e2.nonEmptyAnonymousCount)}; unused catch params: ${n(e2.unusedParamCount)}.`,
       `Blind zones recorded in manifest: ${blindZones.length}. Treat any blind zone as a limit on absence/removal claims.`,
+      rustArtifactAvailable
+        ? `Rust analyzer artifact available for ${n(rustAnalysis.files)} file(s)${formatRustScope(rustAnalysis)}. Read rust-analyzer-health.latest.json before making Rust syntax, clone, dead-definition, or absence claims.`
+        : `Rust analyzer artifact not available in this run${rustAnalysis?.requested ? ` (${rustAnalysis.status ?? 'not-run'})` : ''}; keep Rust findings limited to manifest blind-zone evidence.`,
       'If a catch pattern is intentional, recommend documenting the intent rather than changing behavior blindly.',
     ],
     report: 'Failure-handling strengths, one watch item if present, and exact limits on what this audit could not prove.',
@@ -276,7 +313,7 @@ export function renderAuditReviewPack({
     'Recommended default for a full audit: read lanes 1-4 before finalizing the normal gentle summary. If using Claude Code subagents, translate each chosen lane into a codebase-reading assignment with concrete files, symbols, or hypotheses. Do not paste artifact/checklist lanes wholesale; the subagent should inspect code directly and report file:line evidence.',
     '',
     topologyLane({ topology, callGraph, barrels }),
-    typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symbols }),
+    typeLane({ discipline, checklistFacts, shapeIndex, functionClones, symbols, manifest }),
     deadSurfaceLane({ fixPlan, deadClassify, manifest, moduleReachability }),
     failureLane({ checklistFacts, manifest }),
     '## Merge Instructions',

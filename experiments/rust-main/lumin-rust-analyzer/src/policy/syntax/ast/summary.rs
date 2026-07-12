@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use lumin_rust_source_health::protocol::{
     AstFacts, AstOpaqueMuteReason, AstOpaqueSurfaceVisibility, AstOpaqueVisibility,
+    CompactAstSummary,
 };
 use serde::Serialize;
 
@@ -83,5 +84,17 @@ pub(in crate::policy::syntax) fn ast_summary(ast: &AstFacts) -> AstSummary {
         review_opaque_surfaces: (counts.review() > 0).then_some(counts.review()),
         muted_opaque_surfaces: (counts.muted() > 0).then_some(counts.muted()),
         muted_opaque_surfaces_by_reason,
+    }
+}
+
+pub(in crate::policy::syntax) fn ast_summary_from_compact(
+    compact: &CompactAstSummary,
+) -> AstSummary {
+    AstSummary {
+        review_opaque_surfaces: (compact.review_opaque_surfaces > 0)
+            .then_some(compact.review_opaque_surfaces),
+        muted_opaque_surfaces: (compact.muted_opaque_surfaces > 0)
+            .then_some(compact.muted_opaque_surfaces),
+        muted_opaque_surfaces_by_reason: compact.muted_opaque_surfaces_by_reason.clone(),
     }
 }

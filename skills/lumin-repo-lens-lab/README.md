@@ -62,6 +62,23 @@ the intent JSON by hand.
 > 💡 First run installs parser dependencies once (~30 seconds). After that, fast.
 > For tiny follow-up checks after a fresh baseline, `/lumin-repo-lens-lab` uses the quick path.
 
+> ⚙️ Packages include the Rust `lumin-audit-core` helper for the build
+> platform plus a minimal packaged Cargo source fallback. If the runtime
+> platform binary is not packaged, the wrapper can build the current-platform
+> helper from `_engine/rust/Cargo.toml` when Cargo is available. You can also
+> point `LUMIN_AUDIT_CORE_BIN_<PLATFORM>_<ARCH>` / `LUMIN_AUDIT_CORE_BIN` at a
+> matching external binary, or put `lumin-audit-core` on `PATH`. In a source
+> checkout, the wrapper can build from `experiments/Cargo.toml`; set
+> `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` if you want missing helper binaries to
+> fail instead of invoking Cargo.
+
+> **WSL:** treat WSL as Linux. Use Node `^20.19.0 || >=22.12.0` inside WSL,
+> keep the skill checkout and `node_modules` in the WSL filesystem, and run
+> `npm ci --omit=dev --ignore-scripts --no-audit --fund=false` there. Do not
+> reuse a Windows `node_modules` tree under `/mnt/c`; native OXC bindings are
+> platform-specific. The packaged `linux-x64` audit-core should run without
+> Cargo. `LUMIN_AUDIT_CORE_NO_AUTO_BUILD=1` makes that guarantee explicit.
+
 For very large repos, do not auto-trigger full profile on every edit. Run
 `:full` once per branch, first checkup, or major refactor review, then use
 pre-write/post-write and quick follow-ups during the agent loop.
@@ -216,15 +233,15 @@ hung. Use `:full` for first checkups, branch-level reviews, and major refactor
 evidence; use quick/pre-write/post-write for smaller follow-ups.
 
 **Q. What are the main evidence limits?**
-Function-clone cues are review cues, not semantic-equivalence claims. They include exact body, same-structure, same-signature, and near-function evidence when the full profile has `function-clones.json`. Shape index is exact: nullable or widened types such as `email: string` versus `email: string | null` intentionally land in different groups. Start from `audit-summary.latest.md`, `manifest.json`, and `checklist-facts.json`, then open raw JSON artifacts only for the claim being cited.
+Function-clone cues are review cues, not semantic-equivalence claims. They include exact body, same-structure, same-signature, and near-function evidence when the full profile has `function-clones.json`. Shape index is exact JS/TS shape evidence: nullable or widened types such as `email: string` versus `email: string | null` intentionally land in different groups. For Rust files, use `rust-analyzer-health.latest.json` when `manifest.rustAnalysis` says it is available; otherwise keep Rust claims limited to the recorded blind zones. Start from `audit-summary.latest.md`, `manifest.json`, and `checklist-facts.json`, then open raw JSON artifacts only for the claim being cited.
 
 **Q. Does pre-write understand semantic duplicates?**
 No. Pre-write does not claim semantic equivalence from names alone. It surfaces grounded facts such as exact symbol/file matches, exact shape hashes, and exact function signature hashes, then separates weaker agent-review cues from muted token noise.
 
 Exact normalized body-hash cueing is deferred until a body-hash lane exists in the lookup artifacts. When two helpers only share a common verb such as `create`, the default chat surface stays quiet and the muted cue remains in JSON diagnostics.
 
-**Q. Why can post-write feel as expensive as a quick scan?**
-Post-write refreshes the after-snapshot before comparing it to the matching pre-write advisory, so small edits can still pay the repository walk cost. Reusing the same `--output` keeps artifacts together; an incremental post-write cache is planned, but the current default favors a fresh comparison over a stale clean result.
+**Q. Why does post-write still walk the repository?**
+Post-write skips the unrelated quick audit profile, but it refreshes the after-snapshot before comparing it to the matching pre-write advisory. Small edits therefore still pay the focused inventory walk cost. Reusing the same `--output` keeps the paired evidence together; the default favors a fresh comparison over a stale clean result.
 
 **Q. Does it call a model or subagent by itself?**
 No. Full and CI profiles may write `audit-review-pack.latest.md`, but that file does not call any model or API by itself. In Claude Code, the main assistant can turn a lane into a focused codebase-reading assignment. Subagents should inspect repository files directly and report file:line evidence.
@@ -269,7 +286,7 @@ not the preferred user-facing interface; start from the plugin commands or
 
 ### Conservative evidence boundaries
 
-Function-clone cues are review cues, not semantic-equivalence proofs; same-signature groups mean "same exported function type contract", not "same behavior". Shape-index matching is exact (a `string` and a `string | null` field intentionally land in different groups). For the operational gates that keep dead-code, shape, and barrel claims grounded, see `references/false-positive-index.md` and `references/operational-gates.md`.
+Function-clone cues are review cues, not semantic-equivalence proofs; same-signature groups mean "same exported function type contract", not "same behavior". Shape index is exact JS/TS shape evidence (a `string` and a `string | null` field intentionally land in different groups). Rust files use the Rust analyzer artifact for clone, signature, shape, syntax, and unused-definition evidence; JS/TS clone and shape artifacts are not Rust evidence. For the operational gates that keep dead-code, shape, and barrel claims grounded, see `references/false-positive-index.md` and `references/operational-gates.md`.
 
 ### Public beta
 

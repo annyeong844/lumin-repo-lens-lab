@@ -5,6 +5,7 @@ use lumin_rust_common::{posix_path_has_segment, posix_path_text};
 use lumin_rust_source_health::protocol::{
     HealthResponse, PathClassification, SkippedFile, SkippedFileReason,
 };
+use lumin_rust_source_health::{is_test_like_rust_path, RustFileScanScope};
 
 use super::super::intent::NormalizedIntent;
 use domain_cluster::{find_domain_cluster, DomainCluster};
@@ -35,6 +36,7 @@ fn lookup_file(intent_file: &str, syntax: &HealthResponse, root: &Path) -> FileL
     let mut result = FileLookupResult::Unknown;
     let path_is_safe = is_safe_relative_posix_path(&normalized);
     let path_is_excluded = is_excluded_by_source_health_path_policy(&normalized);
+    let scan_scope_exclusion = scan_scope_exclusion_reason(&normalized, syntax);
     let path_is_rust = normalized.ends_with(".rs");
     let domain_cluster = (path_is_safe && !path_is_excluded && path_is_rust)
         .then(|| find_domain_cluster(&normalized, syntax))
@@ -60,6 +62,10 @@ fn lookup_file(intent_file: &str, syntax: &HealthResponse, root: &Path) -> FileL
     } else if path_is_excluded {
         citations.push(format!(
             "[확인 불가, reason: '{normalized}' is outside rust-source-health path policy (target/vendor excluded)]"
+        ));
+    } else if let Some(reason) = scan_scope_exclusion {
+        citations.push(format!(
+            "[확인 불가, reason: '{normalized}' is outside rust-source-health input scope ({reason})]"
         ));
     } else if !path_is_rust {
         citations.push(format!(
@@ -107,6 +113,17 @@ fn skipped_reason(reason: SkippedFileReason) -> &'static str {
 
 fn is_excluded_by_source_health_path_policy(path: &str) -> bool {
     posix_path_has_segment(path, "target") || posix_path_has_segment(path, "vendor")
+}
+
+fn scan_scope_exclusion_reason(path: &str, syntax: &HealthResponse) -> Option<String> {
+    let input = syntax.meta.input.as_ref()?;
+    let scan_scope = RustFileScanScope::new(input.include_tests, &input.exclude);
+    if !scan_scope.include_tests() && is_test_like_rust_path(path) {
+        return Some("includeTests=false".to_string());
+    }
+    scan_scope
+        .exclusion_pattern_for_path(path, false)
+        .map(|pattern| format!("exclude contains '{pattern}'"))
 }
 
 fn is_safe_relative_posix_path(path: &str) -> bool {

@@ -48,7 +48,10 @@ export function renderMarkdown(delta) {
 
   // Under capability failure, suppress per-occurrence sections entirely.
   // Status lines and summary still render (truth-telling).
-  const suppressOccurrences = capStatus === 'mismatch' || capStatus === 'missing';
+  const suppressOccurrences =
+    capStatus === 'mismatch' ||
+    capStatus === 'missing' ||
+    delta.typeEscapeDelta?.status === 'not-applicable';
 
   if (!suppressOccurrences) {
     renderAnyDeltaBlock(lines, delta);
@@ -60,6 +63,7 @@ export function renderMarkdown(delta) {
   }
 
   renderFileDelta(lines, delta);
+  renderTypeEscapeDeltaStatus(lines, delta);
   renderInventoryCompleteness(lines, delta);
   renderStatusLines(lines, delta);
   renderSummary(lines, delta);
@@ -191,6 +195,13 @@ function renderFileDelta(lines, delta) {
   renderFileList(lines, 'Planned but not observed', fd.plannedMissing);
 }
 
+function renderTypeEscapeDeltaStatus(lines, delta) {
+  const ted = delta.typeEscapeDelta;
+  if (!ted) return;
+  lines.push(`Type-escape delta: ${ted.status}${ted.reason ? ` — ${ted.reason}` : ''}`);
+  lines.push('');
+}
+
 // ── Inventory completeness ─────────────────────────────────
 
 function renderInventoryCompleteness(lines, delta) {
@@ -199,11 +210,18 @@ function renderInventoryCompleteness(lines, delta) {
   const beforeParseCount = (ic.filesWithParseErrors ?? []).filter((e) => e.side === 'before').length;
 
   lines.push('Inventory completeness:');
-  lines.push(`- after-inventory complete: ${
-    ic.afterComplete ? 'yes' : `no — ${afterParseCount} file(s) had parse errors`
-  }`);
+  if (ic.afterComplete === null) {
+    lines.push(`- after-inventory complete: n/a`);
+  } else {
+    lines.push(`- after-inventory complete: ${
+      ic.afterComplete ? 'yes' : `no — ${afterParseCount} file(s) had parse errors`
+    }`);
+  }
   if (ic.beforeComplete === null) {
-    lines.push(`- before-inventory complete: n/a (baseline missing)`);
+    const reason = delta.typeEscapeDelta?.status === 'not-applicable'
+      ? ''
+      : ' (baseline missing)';
+    lines.push(`- before-inventory complete: n/a${reason}`);
   } else {
     lines.push(`- before-inventory complete: ${
       ic.beforeComplete ? 'yes' : `no — ${beforeParseCount} file(s) had parse errors`
@@ -237,6 +255,10 @@ function renderStatusLines(lines, delta) {
 
 function renderSummary(lines, delta) {
   const silentNew = delta.summary?.silentNew ?? 0;
+  if (delta.typeEscapeDelta?.status === 'not-applicable') {
+    lines.push('No TS type-escape acknowledgements required; this advisory has no TS any-equivalent post-write lane.');
+    return;
+  }
   if (silentNew > 0) {
     lines.push(`silent-new — REQUIRE acknowledgment: ${silentNew} entries listed above.`);
     return;

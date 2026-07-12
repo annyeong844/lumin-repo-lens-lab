@@ -131,9 +131,33 @@ pub fn assert_cli_artifact(output_path: &Path) -> Result<()> {
         artifact["files"]["src/lib.rs"]["astSummary"]["reviewOpaqueSurfaceSampleLimit"],
         10
     );
+    assert!(artifact["files"]["src/lib.rs"]["signals"].is_null());
+    assert_eq!(artifact["files"]["src/lib.rs"]["signalSummary"]["total"], 1);
     assert_eq!(
-        artifact["files"]["src/lib.rs"]["signals"][0]["kind"],
+        artifact["files"]["src/lib.rs"]["signalSummary"]["review"],
+        1
+    );
+    assert_eq!(artifact["files"]["src/lib.rs"]["signalSummary"]["muted"], 0);
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["signalSummary"]["byKind"]["unwrap-call"],
+        1
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["signalSummary"]["reviewSignalSampleLimit"],
+        10
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["signalSummary"]["reviewSignalExamples"][0]["kind"],
         "unwrap-call"
+    );
+    assert_eq!(
+        artifact["files"]["src/lib.rs"]["signalSummary"]["reviewSignalExamples"][0]["severity"],
+        "review"
+    );
+    assert!(
+        artifact["files"]["src/lib.rs"]["signalSummary"]["reviewSignalExamples"][0]["location"]
+            ["line"]
+            .is_number()
     );
     assert!(artifact["files"]["target/generated.rs"].is_null());
     assert!(artifact["files"]["vendor/vendored.rs"].is_null());

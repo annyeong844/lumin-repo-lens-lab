@@ -48,6 +48,7 @@ beforeAll(() => {
     "export const y = 2;\nconst internal = 3;\nexport { internal as publicName };\n",
   );
   fixture.write("src/build-index.ts", "export const buildIndex = true;\n");
+  fixture.write("src/coverage/absence.rs", "pub const COVERED: bool = true;\n");
   fixture.write(
     "src/socket-test-support.ts",
     "export const socketTestSupport = true;\n",
@@ -90,6 +91,21 @@ afterAll(() => {
 });
 
 describe("collectFiles language filters", () => {
+  it("hard-stops when the scan root cannot be read", () => {
+    expect(() =>
+      collectFiles(path.join(fixture.root, "missing-root"), {
+        languages: ["ts"],
+        includeTests: true,
+      }),
+    ).toThrow();
+  });
+
+  it("preserves authored source modules in nested coverage directories", () => {
+    expect(collectRel({ languages: ["rs"], includeTests: true })).toContain(
+      "src/coverage/absence.rs",
+    );
+  });
+
   it("keeps Python scans to Python files without leaking root JS/TS entries", () => {
     const files = collectRel({ languages: ["py"], includeTests: true });
 

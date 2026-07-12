@@ -1,12 +1,13 @@
 # Vitest Mirror Lane Closure Audit
 
 > **Date:** 2026-05-16.
-> **Last refreshed:** 2026-05-24.
-> **Scope:** WT-24 Vitest mirror lane plus the grouped Node runner shortcut.
+> **Last refreshed:** 2026-07-03.
+> **Scope:** WT-24 Vitest mirror lane plus the grouped Node runner shortcut and
+> audit-repo legacy umbrella retirement.
 
 This page records the completion audit for the risk-batched Vitest mirror lane.
 It explains why the lane is considered closed even though some Node suites
-remain intentionally Node-authoritative.
+remain intentionally Node-authoritative or explicitly legacy-only.
 
 ## Success Criteria
 
@@ -15,21 +16,25 @@ The active lane is complete when:
 1. every non-parked Node `tests/test-*.mjs` suite has a focused Vitest mirror;
 2. parked analyzer-sensitive suites have explicit deferral notes or review
    pages before any future mirror work;
-3. every focused mirror keeps the original Node command runnable;
-4. `npm run test:vitest` discovers only reviewed `tests/*.test.mjs` mirrors and
-   passes;
-5. `npm test` remains runnable and passes;
+3. every focused mirror keeps the original Node command runnable when that
+   original remains in the default Node gate, or names its legacy replacement
+   command when the umbrella has been retired;
+4. `npm run test:vitest` discovers only reviewed `tests/*.test.mjs` mirrors;
+5. `npm test` remains runnable for default Node suites while the migrated audit
+   runtime gate is `npm run test:audit-runtime-gate`;
 6. wiki/script reference gates pass.
-7. `npm run test:node:groups` remains an opt-in maintainer shortcut, not a
-   replacement for the authoritative serial Node lane.
+7. `npm run test:node:groups` remains an opt-in maintainer shortcut over the
+   same default Node suite set, not a replacement for the authoritative serial
+   Node lane.
 
 ## Current Inventory
 
 | Metric                           | Count | Evidence                         |
 | -------------------------------- | ----: | -------------------------------- |
-| Node `tests/test-*.mjs` suites   |   165 | 2026-05-24 local filesystem scan |
-| Focused Vitest mirror files      |   176 | 2026-05-24 local filesystem scan |
-| Node-authoritative parked suites |     2 | refreshed parked remainder below |
+| Node `tests/test-*.mjs` suites   |   167 | 2026-07-03 local filesystem scan |
+| Default Node suites in `npm test` | 166 | excludes documented legacy umbrella |
+| Focused Vitest mirror files      |   185 | 2026-07-03 local filesystem scan |
+| Node-authoritative parked suites |     1 | refreshed parked remainder below |
 
 `tests/test-incremental.mjs` is already mirrored by
 `tests/incremental-legacy-cache.test.mjs`, so it is not part of the parked
@@ -39,8 +44,13 @@ remainder even though the mirror file does not share the same stem.
 
 | Node Suite                           | Parked Category     | Why It Stays Node-Authoritative                                                            |
 | ------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------ |
-| `tests/test-audit-repo.mjs`          | audit-repo umbrella | direct broad product-pass suite stays Node-authoritative; known split mirrors are complete |
 | `tests/test-pre-write-cue-tiers.mjs` | cue-tier policy     | direct broad cue adapter suite stays Node-authoritative; known T1-T10 splits are complete  |
+
+`tests/test-audit-repo.mjs` moved out of the parked remainder and out of the
+default `npm test` gate. Its migrated runtime contracts are covered by Rust
+audit-core cargo tests; focused Vitest mirrors remain reference coverage while
+JS/TS producers are being retired. The legacy umbrella remains runnable only
+through `npm run test:node:legacy-audit-repo`.
 
 `tests/test-pre-write-cue-tiers.mjs` is not parked because known contracts are
 unmirrored. Its current T1-T10 contracts are covered by focused mirrors:
@@ -109,10 +119,10 @@ Mode provides the positive symlink realpath coverage.
 ## Grouped Node Shortcut
 
 [`scripts/run-tests-grouped.mjs`](../../scripts/run-tests-grouped.mjs) adds the
-opt-in `npm run test:node:groups` shortcut for local maintainer verification.
-It preserves fresh Node subprocess isolation, runs suites serially inside each
-deterministic group, uses bounded group-level parallelism, and prints failed
-group/suite replay commands. Its behavior is covered by
+opt-in `npm run test:node:groups` shortcut for local maintainer verification over
+the same default Node suite set as `npm test`. It preserves fresh Node subprocess
+isolation, runs suites serially inside each deterministic group, uses bounded
+group-level parallelism, and prints failed group/suite replay commands. Its behavior is covered by
 [`tests/test-run-tests-grouped.mjs`](../../tests/test-run-tests-grouped.mjs) and
 [`tests/run-tests-grouped.test.mjs`](../../tests/run-tests-grouped.test.mjs).
 
@@ -123,8 +133,8 @@ npm run test:node:groups -- --jobs 3
 ```
 
 It passed 165 suites across 12 groups in 362.8 seconds. This shortcut does not
-replace `npm test`; it is a faster first-pass runner for maintainers before the
-serial lane or CI gate is needed.
+replace `npm test`; it remains a faster first-pass runner for maintainers who
+are intentionally exercising the default Node lane.
 
 ## Closure Rule
 

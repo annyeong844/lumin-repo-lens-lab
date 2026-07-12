@@ -39,6 +39,9 @@
     "test:vitest:audit-repo-pre-write": "vitest run tests/audit-repo-pre-write.test.mjs",
     "test:vitest:audit-repo-scan-range": "vitest run tests/audit-repo-scan-range.test.mjs",
     "test:vitest:audit-repo-symbol-incremental": "vitest run tests/audit-repo-symbol-incremental.test.mjs",
+    "test:rust:audit-core": "cargo test --manifest-path experiments/Cargo.toml -p lumin-audit-core --locked --profile ci-test",
+    "test:rust:audit-core-blind-zones": "cargo test --manifest-path experiments/Cargo.toml -p lumin-audit-core --locked --profile ci-test blind_zones",
+    "test:audit-runtime-gate": "npm run test:rust:audit-core",
     "test:vitest:audit-manifest-export-surface": "vitest run tests/audit-manifest-export-surface.test.mjs",
     "test:vitest:alias": "vitest run tests/alias.test.mjs",
     "test:vitest:any-inventory": "vitest run tests/any-inventory.test.mjs",
@@ -77,7 +80,6 @@
     "test:vitest:cjs-classification": "vitest run tests/cjs-classification.test.mjs",
     "test:vitest:cjs-export-surface-artifact": "vitest run tests/cjs-export-surface-artifact.test.mjs",
     "test:vitest:cjs-integration": "vitest run tests/cjs-integration.test.mjs",
-    "test:vitest:class-method-index-prototype-names": "vitest run tests/class-method-index-prototype-names.test.mjs",
     "test:vitest:class-method-prewrite-surface": "vitest run tests/class-method-prewrite-surface.test.mjs",
     "test:vitest:classify-facts-ast": "vitest run tests/classify-facts-ast.test.mjs",
     "test:vitest:classify-performance-metadata": "vitest run tests/classify-performance-metadata.test.mjs",
@@ -209,9 +211,10 @@
     "publish:public-plugin": "node scripts/publish-public-plugin.mjs --push",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "test:node:legacy-audit-repo": "node tests/test-audit-repo.mjs",
     "test:node:groups": "node scripts/run-tests-grouped.mjs",
     "test": "node scripts/run-tests.mjs",
-    "ci": "npm run check && npm run check:drift && npm run check:test-doc && npm run check:doc-script-refs && npm run check:skill-triggering && npm run check:behavior && npm run lint && npm test"
+    "ci": "npm run check && npm run check:drift && npm run check:test-doc && npm run check:doc-script-refs && npm run check:skill-triggering && npm run check:behavior && npm run lint && npm test && npm run test:audit-runtime-gate"
   },
   "dependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",

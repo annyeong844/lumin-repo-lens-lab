@@ -63,17 +63,21 @@ fn collect_struct_shape_hash(
     let Some(hash) = rust_shape_hash(&fields) else {
         return;
     };
-    syntax.ast.shape_hashes.push(AstShapeHash {
-        kind: AstShapeHashKind::ShapeHash,
-        hash,
-        name: name.text().to_string(),
-        visibility: visibility_for(item.visibility()),
-        shape_kind: AstShapeKind::RecordStruct,
-        normalized_version: RUST_SHAPE_HASH_NORMALIZED_VERSION,
-        confidence: AstShapeConfidence::High,
-        fields,
-        location: ast_location(line_index, item.syntax().text_range()),
-    });
+    if syntax.retain_raw_ast_lanes {
+        syntax.ast.shape_hashes.push(AstShapeHash {
+            kind: AstShapeHashKind::ShapeHash,
+            hash,
+            name: name.text().to_string(),
+            visibility: visibility_for(item.visibility()),
+            shape_kind: AstShapeKind::RecordStruct,
+            normalized_version: RUST_SHAPE_HASH_NORMALIZED_VERSION,
+            confidence: AstShapeConfidence::High,
+            fields,
+            location: ast_location(line_index, item.syntax().text_range()),
+        });
+    } else {
+        syntax.ast.counts.shape_hashes += 1;
+    }
 }
 
 fn record_shape_fields(record_fields: &ast::RecordFieldList) -> Option<Vec<AstShapeField>> {

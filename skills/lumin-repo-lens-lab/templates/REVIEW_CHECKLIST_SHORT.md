@@ -122,7 +122,8 @@ are triggers. The model still checks context and can downgrade to
 Do not turn raw cues into recommendations without a named criterion. A
 silent catch needs a probe-vs-fallback criterion, duplicate helper advice
 needs signature compatibility plus source review of any
-`function-clones.json` cue, and oversized-function advice needs named
+JS/TS `function-clones.json` cue, Rust duplicate-helper advice needs
+`rust-analyzer-health.latest.json` evidence, and oversized-function advice needs named
 separable responsibilities. If that criterion is missing, keep the item
 as watch/context or leave it out of the top three.
 

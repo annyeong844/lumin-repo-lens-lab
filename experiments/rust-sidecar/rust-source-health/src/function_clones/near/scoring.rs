@@ -2,14 +2,18 @@ use std::collections::BTreeMap;
 
 use crate::protocol::RUST_FUNCTION_CLONE_NEAR_CALL_IDF_SATURATION;
 
+use crate::function_clones::common::FunctionBodyFactView;
+
 use super::model::NearFact;
 
-pub(super) fn call_token_idfs(facts: &[NearFact<'_>]) -> BTreeMap<String, f64> {
+pub(super) fn call_token_idfs<'a, B: FunctionBodyFactView>(
+    facts: &[NearFact<'a, B>],
+) -> BTreeMap<&'a str, f64> {
     let total_functions = facts.len() as f64;
-    let mut document_frequency = BTreeMap::<String, usize>::new();
+    let mut document_frequency = BTreeMap::<&'a str, usize>::new();
     for fact in facts {
         for token in &fact.significant_call_tokens {
-            *document_frequency.entry(token.clone()).or_default() += 1;
+            *document_frequency.entry(*token).or_default() += 1;
         }
     }
 
@@ -27,7 +31,7 @@ pub(super) struct TokenOverlap {
     pub(super) jaccard: f64,
 }
 
-pub(super) fn token_overlap(left: &[String], right: &[String]) -> TokenOverlap {
+pub(super) fn token_overlap<T: AsRef<str>>(left: &[T], right: &[T]) -> TokenOverlap {
     debug_assert_sorted_unique(left);
     debug_assert_sorted_unique(right);
 
@@ -37,11 +41,11 @@ pub(super) fn token_overlap(left: &[String], right: &[String]) -> TokenOverlap {
     let mut right_index = 0usize;
     while left_index < left.len() && right_index < right.len() {
         union += 1;
-        match left[left_index].cmp(&right[right_index]) {
+        match left[left_index].as_ref().cmp(right[right_index].as_ref()) {
             std::cmp::Ordering::Less => left_index += 1,
             std::cmp::Ordering::Greater => right_index += 1,
             std::cmp::Ordering::Equal => {
-                shared_tokens.push(left[left_index].clone());
+                shared_tokens.push(left[left_index].as_ref().to_string());
                 left_index += 1;
                 right_index += 1;
             }
@@ -62,7 +66,7 @@ pub(super) fn token_overlap(left: &[String], right: &[String]) -> TokenOverlap {
 
 pub(super) fn shared_token_idf_sum(
     shared_tokens: &[String],
-    token_idfs: &BTreeMap<String, f64>,
+    token_idfs: &BTreeMap<&str, f64>,
 ) -> f64 {
     shared_tokens
         .iter()
@@ -74,7 +78,7 @@ pub(super) fn saturated_call_token_idf_score(shared_idf_sum: f64) -> f64 {
     (shared_idf_sum / RUST_FUNCTION_CLONE_NEAR_CALL_IDF_SATURATION).min(1.0)
 }
 
-pub(super) fn token_idf(token: &str, token_idfs: &BTreeMap<String, f64>) -> f64 {
+pub(super) fn token_idf(token: &str, token_idfs: &BTreeMap<&str, f64>) -> f64 {
     token_idfs.get(token).copied().unwrap_or(0.0)
 }
 
@@ -99,6 +103,8 @@ pub(super) fn format_score(value: f64) -> String {
     }
 }
 
-fn debug_assert_sorted_unique(tokens: &[String]) {
-    debug_assert!(tokens.windows(2).all(|pair| pair[0] < pair[1]));
+fn debug_assert_sorted_unique<T: AsRef<str>>(tokens: &[T]) {
+    debug_assert!(tokens
+        .windows(2)
+        .all(|pair| pair[0].as_ref() < pair[1].as_ref()));
 }

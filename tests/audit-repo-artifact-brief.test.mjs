@@ -224,6 +224,44 @@ describe("audit-repo artifact brief split track", () => {
       "Identity-level anyContamination: 1 severe type owner, 1 severe helper owner",
     );
     expect(reviewPack).toContain("Inspect symbols.json owner maps");
+    expect(reviewPack).toContain(
+      "Rust analyzer evidence is not available for this run; JS/TS clone and shape artifacts are not Rust evidence.",
+    );
+    expect(reviewPack).toContain(
+      "Rust analyzer artifact not available in this run",
+    );
+    expect(reviewPack).not.toContain(
+      "Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.",
+    );
+
+    const reviewPackWithRustEvidence = renderAuditReviewPack({
+      manifest: {
+        scanRange: { files: 10, languages: ["ts", "rs"], includeTests: true },
+        rustAnalysis: {
+          status: "complete",
+          available: true,
+          files: 2,
+          scanScope: {
+            includeTests: false,
+            exclude: ["generated"],
+          },
+        },
+      },
+      discipline: { totals: { ":any": 41 } },
+      symbols,
+    });
+    expect(reviewPackWithRustEvidence).toContain(
+      "Use rust-analyzer-health.latest.json, not JS/TS clone or shape artifacts, for Rust files.",
+    );
+    expect(reviewPackWithRustEvidence).toContain(
+      "Artifacts for the controller to inspect first: discipline.json, shape-index.json, function-clones.json, checklist-facts.json, symbols.json, rust-analyzer-health.latest.json",
+    );
+    expect(reviewPackWithRustEvidence).toContain(
+      "Rust analyzer artifact available for 2 file(s)",
+    );
+    expect(reviewPackWithRustEvidence).toContain(
+      "Rust analyzer artifact available for 2 file(s) (production files only, 1 exclude pattern)",
+    );
     expect(reviewPack).toContain("Resolver blocked absence hints");
     expect(reviewPack).not.toContain("Ask the coding agent:");
 

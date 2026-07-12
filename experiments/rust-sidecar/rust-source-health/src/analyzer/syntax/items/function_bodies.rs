@@ -43,7 +43,7 @@ pub(in crate::analyzer::syntax::items) fn collect_function_body_fingerprint(
         visibility: visibility_for(function.visibility()),
         callable_kind,
         owner,
-        normalized_version: RUST_FUNCTION_BODY_NORMALIZED_VERSION,
+        normalized_version: RUST_FUNCTION_BODY_NORMALIZED_VERSION.to_string(),
         exact_body_hash: sha256_text(&exact_body),
         normalized_exact_hash: sha256_text(&normalized_exact),
         normalized_structure_hash: sha256_text(&normalized_structure),

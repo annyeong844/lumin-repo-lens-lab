@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
-use lumin_rust_source_health::protocol::{AstOpaqueMuteReason, HealthResponse, SignalMuteReason};
+use lumin_rust_source_health::protocol::{AstOpaqueMuteReason, SignalMuteReason};
 use serde::Serialize;
 
 use crate::policy::{
     syntax_review_opaque_surface_examples, syntax_review_signal_examples,
     SyntaxReviewOpaqueSurfaceExample, SyntaxReviewSignalExample,
 };
+use crate::syntax_phase::SyntaxPhase;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,8 +50,9 @@ pub(super) struct ProductSyntaxSummary<'a> {
 }
 
 impl<'a> ProductSyntaxSummary<'a> {
-    pub(super) fn from_syntax(response: &'a HealthResponse) -> Self {
-        let summary = &response.summary;
+    pub(super) fn from_syntax(response: SyntaxPhase<'a>) -> Self {
+        let summary = response.summary();
+        let function_clone_groups = response.function_clone_groups();
         Self {
             syntax_parse_error_files: summary.parse_error_files,
             syntax_parse_errors: summary.parse_errors,
@@ -62,42 +64,28 @@ impl<'a> ProductSyntaxSummary<'a> {
             syntax_shape_hashes: summary.shape_hashes,
             syntax_function_signatures: summary.function_signatures,
             syntax_function_body_fingerprints: summary.function_body_fingerprints,
-            syntax_function_clone_exact_body_groups: response
-                .function_clone_groups
-                .exact_body_group_count,
-            syntax_function_clone_structure_groups: response
-                .function_clone_groups
-                .structure_group_count,
-            syntax_function_clone_signature_groups: response
-                .function_clone_groups
-                .signature_group_count,
-            syntax_function_clone_near_candidates: response
-                .function_clone_groups
+            syntax_function_clone_exact_body_groups: function_clone_groups.exact_body_group_count,
+            syntax_function_clone_structure_groups: function_clone_groups.structure_group_count,
+            syntax_function_clone_signature_groups: function_clone_groups.signature_group_count,
+            syntax_function_clone_near_candidates: function_clone_groups
                 .near_function_candidate_count,
-            syntax_function_clone_near_candidate_projection_limit: response
-                .function_clone_groups
+            syntax_function_clone_near_candidate_projection_limit: function_clone_groups
                 .near_function_candidate_projection_limit,
-            syntax_function_clone_near_candidate_count_scope: response
-                .function_clone_groups
+            syntax_function_clone_near_candidate_count_scope: function_clone_groups
                 .candidate_generation_summary
                 .near_function_candidate_count_scope,
-            syntax_function_clone_candidate_generation_mode: response
-                .function_clone_groups
+            syntax_function_clone_candidate_generation_mode: function_clone_groups
                 .candidate_generation_policy
                 .mode,
-            syntax_function_clone_retrieval_contract_version: response
-                .function_clone_groups
+            syntax_function_clone_retrieval_contract_version: function_clone_groups
                 .candidate_generation_policy
                 .retrieval_contract_version,
-            syntax_function_clone_skipped_low_discrimination_buckets: response
-                .function_clone_groups
+            syntax_function_clone_skipped_low_discrimination_buckets: function_clone_groups
                 .skipped_low_discrimination_bucket_count,
-            syntax_function_clone_skipped_low_discrimination_raw_pair_estimate: response
-                .function_clone_groups
-                .skipped_low_discrimination_raw_pair_estimate,
-            syntax_function_clone_skipped_low_discrimination_pair_estimate_kind: response
-                .function_clone_groups
-                .skipped_low_discrimination_pair_estimate_kind,
+            syntax_function_clone_skipped_low_discrimination_raw_pair_estimate:
+                function_clone_groups.skipped_low_discrimination_raw_pair_estimate,
+            syntax_function_clone_skipped_low_discrimination_pair_estimate_kind:
+                function_clone_groups.skipped_low_discrimination_pair_estimate_kind,
             syntax_inline_patterns: summary.inline_patterns,
             syntax_impl_blocks: summary.impl_blocks,
             syntax_impl_methods: summary.impl_methods,
