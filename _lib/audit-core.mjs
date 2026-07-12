@@ -34,6 +34,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'manifest-root-with-evidence: missing --input <path|->',
   ],
   [
+    ['manifest-evidence-refresh'],
+    'manifest-evidence-refresh: missing --root <repo>',
+  ],
+  [
     ['manifest-evidence-refresh-with-reads'],
     'manifest-evidence-refresh-with-reads: missing --root <repo>',
   ],
@@ -228,6 +232,51 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
 export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v47';
+export const AUDIT_CORE_REQUIRED_FEATURES = [
+  'resultOutput',
+  'resultOutputSilencesStdout',
+  'jsTsExtractNamedImportEvidence',
+  'jsTsExtractImportMetaGlobEvidence',
+  'jsTsExtractCjsRequireEvidence',
+  'jsTsExtractCjsExportSurfaceEvidence',
+  'jsTsExtractLiteralDynamicImportEvidence',
+  'jsTsExtractDynamicImportOpacity',
+  'jsTsExtractPathBackedInput',
+  'jsTsExtractLocalOperations',
+  'jsTsPreWriteEvidence',
+  'jsTsPreWriteDiscovery',
+  'jsTsPreWriteIncrementalCache',
+  'jsTsPreWriteExactWorktreeByteCache',
+  'jsTsPreWriteCanonicalSourceContainment',
+  'sourceUseAssembly',
+  'sourceUseAssemblyResolvedRecordTargets',
+  'sourceUseAssemblyExternalRecordIds',
+  'nonSourceAssetSourceUseAssembly',
+  'sourceUseAssemblyConsumerSourceCounters',
+  'sourceUseAssemblyProjectionOnlyNonSourceAssets',
+  'sourceUseAssemblyRootRelativeSourceFiles',
+  'sourceUseAssemblySourceFileIds',
+  'sourceUseAssemblyRootRelativeRecordPaths',
+  'sourceUseAssemblySyntheticRecordIds',
+  'sourceUseAssemblyPathTable',
+  'sourceUseAssemblyEnumTable',
+  'sourceUseAssemblySpecifierTable',
+  'sourceUseAssemblyRecordRows',
+  'sourceUseAssemblyNameTable',
+  'sourceUseAssemblyTypeOnlyState',
+  'sourceUseAssemblyDerivedReExportMaps',
+  'sourceUseAssemblyTerminalRecordOutcomes',
+  'symbolGraphStrictRequestV2',
+  'generatedVirtualSourceUseAssembly',
+  'importMetaGlobSourceUseAssembly',
+  'sfcScriptSrcSourceUseAssembly',
+  'sharedSourceInventory',
+  'sourceInventoryRunBinding',
+  'failClosedLifecycleArtifacts',
+  'postWriteOnlyBasePipelineSkip',
+  'postWriteScopedBaseEvidence',
+  'lifecycleScopedArtifacts',
+];
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
 );
@@ -393,8 +442,9 @@ function auditCoreBinarySupportsCurrentContract(command) {
   return true;
 }
 
-function readAuditCoreRuntimeContract(command) {
+function readAuditCoreRuntimeContract(command, { cwd } = {}) {
   const result = spawnSync(command, ['runtime-contract'], {
+    cwd,
     encoding: 'utf8',
   });
   if (result.error || result.status !== 0) return null;
@@ -407,55 +457,15 @@ function readAuditCoreRuntimeContract(command) {
   }
 }
 
-function auditCoreBinaryReportsCurrentContract(command) {
-  const contract = readAuditCoreRuntimeContract(command);
+export function auditCoreBinaryReportsCurrentContract(command, options = {}) {
+  const contract = readAuditCoreRuntimeContract(command, options);
   if (!contract) return false;
 
   if (contract?.schemaVersion !== AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION) return false;
   if (contract?.contractVersion !== AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION) return false;
-  if (contract?.features?.resultOutput !== true) return false;
-  if (contract?.features?.resultOutputSilencesStdout !== true) return false;
-  if (contract?.features?.jsTsExtractNamedImportEvidence !== true) return false;
-  if (contract?.features?.jsTsExtractImportMetaGlobEvidence !== true) return false;
-  if (contract?.features?.jsTsExtractCjsRequireEvidence !== true) return false;
-  if (contract?.features?.jsTsExtractCjsExportSurfaceEvidence !== true) return false;
-  if (contract?.features?.jsTsExtractLiteralDynamicImportEvidence !== true) return false;
-  if (contract?.features?.jsTsExtractDynamicImportOpacity !== true) return false;
-  if (contract?.features?.jsTsExtractPathBackedInput !== true) return false;
-  if (contract?.features?.jsTsExtractLocalOperations !== true) return false;
-  if (contract?.features?.jsTsPreWriteEvidence !== true) return false;
-  if (contract?.features?.jsTsPreWriteDiscovery !== true) return false;
-  if (contract?.features?.jsTsPreWriteIncrementalCache !== true) return false;
-  if (contract?.features?.jsTsPreWriteExactWorktreeByteCache !== true) return false;
-  if (contract?.features?.jsTsPreWriteCanonicalSourceContainment !== true) return false;
-  if (contract?.features?.sourceUseAssembly !== true) return false;
-  if (contract?.features?.sourceUseAssemblyResolvedRecordTargets !== true) return false;
-  if (contract?.features?.sourceUseAssemblyExternalRecordIds !== true) return false;
-  if (contract?.features?.nonSourceAssetSourceUseAssembly !== true) return false;
-  if (contract?.features?.sourceUseAssemblyConsumerSourceCounters !== true) return false;
-  if (contract?.features?.sourceUseAssemblyProjectionOnlyNonSourceAssets !== true) return false;
-  if (contract?.features?.sourceUseAssemblyRootRelativeSourceFiles !== true) return false;
-  if (contract?.features?.sourceUseAssemblySourceFileIds !== true) return false;
-  if (contract?.features?.sourceUseAssemblyRootRelativeRecordPaths !== true) return false;
-  if (contract?.features?.sourceUseAssemblySyntheticRecordIds !== true) return false;
-  if (contract?.features?.sourceUseAssemblyPathTable !== true) return false;
-  if (contract?.features?.sourceUseAssemblyEnumTable !== true) return false;
-  if (contract?.features?.sourceUseAssemblySpecifierTable !== true) return false;
-  if (contract?.features?.sourceUseAssemblyRecordRows !== true) return false;
-  if (contract?.features?.sourceUseAssemblyNameTable !== true) return false;
-  if (contract?.features?.sourceUseAssemblyTypeOnlyState !== true) return false;
-  if (contract?.features?.sourceUseAssemblyDerivedReExportMaps !== true) return false;
-  if (contract?.features?.sourceUseAssemblyTerminalRecordOutcomes !== true) return false;
-  if (contract?.features?.symbolGraphStrictRequestV2 !== true) return false;
-  if (contract?.features?.generatedVirtualSourceUseAssembly !== true) return false;
-  if (contract?.features?.importMetaGlobSourceUseAssembly !== true) return false;
-  if (contract?.features?.sfcScriptSrcSourceUseAssembly !== true) return false;
-  if (contract?.features?.sharedSourceInventory !== true) return false;
-  if (contract?.features?.sourceInventoryRunBinding !== true) return false;
-  if (contract?.features?.failClosedLifecycleArtifacts !== true) return false;
-  if (contract?.features?.postWriteOnlyBasePipelineSkip !== true) return false;
-  if (contract?.features?.postWriteScopedBaseEvidence !== true) return false;
-  if (contract?.features?.lifecycleScopedArtifacts !== true) return false;
+  for (const feature of AUDIT_CORE_REQUIRED_FEATURES) {
+    if (contract?.features?.[feature] !== true) return false;
+  }
 
   const supported = new Set(Array.isArray(contract.supportedSubcommands)
     ? contract.supportedSubcommands
@@ -481,9 +491,10 @@ export function auditCoreRuntimeFeatureEnabled(feature) {
   return contract?.features?.[feature] === true;
 }
 
-function auditCoreBinarySupportsFixtureContract(command) {
+export function auditCoreBinarySupportsFixtureContract(command, { cwd } = {}) {
   for (const [args, expected] of AUDIT_CORE_CONTRACT_PROBES) {
     const result = spawnSync(command, args, {
+      cwd,
       encoding: 'utf8',
     });
     if (result.error) return auditCoreContractProbeFailure(
@@ -494,7 +505,7 @@ function auditCoreBinarySupportsFixtureContract(command) {
       `${args[0]} did not emit the expected missing-input contract`
     );
   }
-  return auditCoreBinaryWritesResultFiles(command);
+  return auditCoreBinaryWritesResultFiles(command, { cwd });
 }
 
 function auditCoreContractProbeFailure(message) {
@@ -504,7 +515,7 @@ function auditCoreContractProbeFailure(message) {
   return false;
 }
 
-function auditCoreBinaryWritesResultFiles(command) {
+function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
   const tempDir = mkdtempSync(path.join(tmpdir(), 'lumin-audit-core-contract-'));
   const rootDir = path.join(tempDir, 'root');
   const outputDir = path.join(tempDir, 'out');
@@ -1216,6 +1227,7 @@ writeFileSync(latest, JSON.stringify(advisory));
         {
           recordId: 'src/consumer.ts#6',
           consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          resolvedFile: path.join(rootDir, 'src', 'style.css'),
           fromSpec: './style.css',
           kind: 'import-side-effect',
           resolverStage: 'non-source-asset',
@@ -1629,6 +1641,7 @@ writeFileSync(latest, JSON.stringify(advisory));
     for (const probe of probes) {
       const resultPath = path.join(tempDir, `${probe.subcommand}.json`);
       const result = spawnSync(command, [...probe.args, '--result-output', resultPath], {
+        cwd,
         encoding: 'utf8',
       });
       if (result.error || result.status !== 0) return auditCoreContractProbeFailure(
@@ -2008,6 +2021,12 @@ function resultPayloadMatchesProbe(json, probe) {
       json.branchCounts?.sfcScriptSrcReachability === 1 &&
       json.branchCounts?.directConsumer === 1 &&
       json.branchCounts?.broadNamespace === 2 &&
+      json.nonSourceAssetRecordIds?.includes('src/consumer.ts#6') &&
+      json.nonSourceAssetRecordTargets?.some((entry) =>
+        entry?.recordId === 'src/consumer.ts#6' &&
+        entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/style.css')
+      ) &&
+      json.generatedVirtualRecordIds?.includes('src/consumer.ts#3') &&
       json.resolvedRecordTargets?.filter((entry) =>
         entry?.recordId === 'src/consumer.ts#0' &&
         entry?.resolvedFile?.replaceAll('\\', '/').endsWith('/src/dep.ts')
