@@ -60,6 +60,16 @@ unavailable rather than `0 observed consumers`.
 file lookup evidence comes from the Rust pre-write artifact when the intent
 declares `"language": "rust"`.
 
+### Lifecycle-Only Status
+
+Pre-write and post-write lifecycle-only runs intentionally skip the unrelated
+base audit. The manifest therefore keeps a `base-audit` `scan-gap` entry so
+base-audit absence and freshness claims cannot be made from stale evidence.
+That scope note does not degrade a current lifecycle result. Read
+`manifest.preWrite` or `manifest.postWrite` for lifecycle success and parity;
+human summaries report base evidence and current lifecycle blind zones
+separately.
+
 Exit codes through the orchestrator:
 
 - `0`: success

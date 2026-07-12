@@ -682,15 +682,26 @@ if (auditSummaryPreview) {
   console.log(auditSummaryPreview);
 }
 const finalBlindZones = manifestWrite.blindZones ?? manifest.blindZones ?? [];
+const lifecycleScopeZones = finalBlindZones.filter((zone) => zone?.area === 'base-audit');
+const analysisBlindZones = finalBlindZones.filter((zone) => zone?.area !== 'base-audit');
 if (finalBlindZones.length > 0) {
   console.log(`[audit-repo] ${manifestWrite.blindZonesSummary}`);
-  for (const z of finalBlindZones) {
+  for (const z of lifecycleScopeZones) {
+    console.log(`             • lifecycle scope (${z.severity}) — ${z.effect.slice(0, 80)}${z.effect.length > 80 ? '…' : ''}`);
+  }
+  for (const z of analysisBlindZones) {
     console.log(`             • ${z.area} (${z.severity}) — ${z.effect.slice(0, 80)}${z.effect.length > 80 ? '…' : ''}`);
   }
 } else {
   console.log('[audit-repo] blindZones: none detected');
 }
 console.log('');
-console.log('Next: review manifest.blindZones before making absence/removal claims.');
+if (analysisBlindZones.length > 0) {
+  console.log('Next: review manifest.blindZones before making absence/removal claims.');
+} else if (lifecycleScopeZones.length > 0) {
+  console.log('Next: use the requested lifecycle block in manifest.json for command status; base-audit absence and freshness claims remain unavailable.');
+} else {
+  console.log('Next: use the current command artifact for the requested review.');
+}
 
 if (finalExitCode !== 0) process.exit(finalExitCode);
