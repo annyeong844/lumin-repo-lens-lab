@@ -1,9 +1,8 @@
+use super::evidence::{is_absolute_like_path, normalize_path_segments, rel_path, value_string};
+use super::normalize_slashes;
+use super::prepare::{DefinitionFile, FileDataRecord};
 use super::protocol::{
     DeadCandidateInputs, FanInConsumerEntry, FanInInputs, FanInNamespaceUserEntry,
-};
-use super::{
-    is_absolute_like_path, normalize_path_segments, normalize_slashes, rel_path, value_string,
-    DefinitionFile, FileDataRecord,
 };
 use crate::source_use_assembly::SourceUseAssemblyResponse;
 use serde_json::{json, Map, Value};
