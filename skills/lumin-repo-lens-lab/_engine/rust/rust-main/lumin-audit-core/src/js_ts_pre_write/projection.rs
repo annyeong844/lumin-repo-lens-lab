@@ -43,6 +43,7 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
         incremental,
         rows,
         path_map,
+        discovery_ms: _,
     } = input;
     let mut def_index = Map::new();
     let mut definitions_by_file = BTreeMap::<String, BTreeSet<String>>::new();

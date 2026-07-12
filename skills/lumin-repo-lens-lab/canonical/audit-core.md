@@ -134,6 +134,7 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/input.rs`         | Fail-closed request validation and input preparation: artifact/dependency/file ordering contracts, canonical explicit-source containment, checked JS/TS source discovery, source-inventory/path-map construction, cache-backed extraction invocation, and exact extracted-row scope/cardinality checks | OXC parser traversal, cache storage format, fan-in classification, absence claims, or final JSON projection |
 | `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/projection.rs`    | Deterministic compact evidence projection from prepared current-run extraction rows: definitions, class/local-operation indexes, exact/broad/type fan-in, dependency consumers, unresolved relative imports, topology, parse failures, any-contamination annotations, and type-escape inventory | Request validation, source discovery, filesystem access, parser traversal, cache persistence, or JS fallback execution |
 | `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/cache.rs`         | Strict per-file OXC fact cache for the shared JS/TS pre-write/post-write evidence pass: repository and source-set identity, exact current-worktree byte SHA-256 identity, parsing from the same bytes used for identity, cache load/store validation, and incremental observations | source discovery, parser traversal, final evidence reuse, absence claims, cue/ranking policy, Git index/blob identity, artifact-path aliases as source identity, transformed repository bytes in place of worktree bytes, or stat/mtime-only identity                                                         |
+| `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/single_flight.rs` | Root-scoped cross-process admission for the JS/TS evidence pass using a host-local OS file lock, automatic crash/exit release through file-handle lifetime, and artifact-visible wait/held phase telemetry | source discovery, cache/result reuse, request coalescing, elapsed-time caps, stale-lock age guesses, cross-host coordination, parser policy, evidence projection, or JS fallback execution |
 
 `build-symbol-graph.mjs` requires Rust JS/TS extraction for every JS-family file
 in its changed set. An audit-core command failure, malformed batch response, or
@@ -499,6 +500,20 @@ removes this artifact cache together with per-file facts.
   source requests are canonicalized at the request boundary and rejected when
   they escape the canonical root. Warm cache hits release their worktree byte
   buffers immediately after hashing and identity comparison.
+  Concurrent `js-ts-pre-write-evidence` runs for the same canonical root are
+  serialized by a host-local OS file lock before source discovery. The lock is
+  independent of incremental reuse and covers discovery, exact worktree-byte
+  reads and hashing, parser/cache work, and compact evidence projection. It has
+  no elapsed-time timeout; the operating system releases it when the owning
+  process or file handle exits, so correctness does not depend on lock-file age
+  guesses or PID polling. WSL mounted-checkout host routing acquires the lock in
+  the Windows helper's temp domain; native Linux and native Windows runs use
+  their own host temp domains. Different execution hosts are not falsely
+  presented as coordinated. The evidence records lock wait, held scan time,
+  discovery, cache load, source read/hash, parse, cache write, and projection
+  timings under the incremental/runtime observation block. Lock waiting never
+  permits artifact reuse or an absence claim: every admitted invocation still
+  discovers the current source set and validates exact current worktree bytes.
 - Deployable audit-core platform binaries are rebuilt with Cargo's release
   profile before packaging. Debug-profile helpers remain valid for source
   development but must not be shipped as the runtime performance path. Every

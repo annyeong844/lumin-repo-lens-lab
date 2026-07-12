@@ -11,10 +11,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+use super::single_flight::elapsed_ms;
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const CACHE_PROFILE_VERSION: &str =
-    "js-ts-pre-write-oxc-facts.v4+oxc-0.139.0+audit-core-bridge-v47";
+    "js-ts-pre-write-oxc-facts.v4+oxc-0.139.0+audit-core-bridge-v48";
 const CACHE_FILE_NAME: &str = "facts.json";
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -80,6 +83,16 @@ struct CacheObservations {
     load_status: String,
     write_status: String,
     reason: Option<String>,
+    timing: CacheTiming,
+}
+
+#[derive(Default)]
+struct CacheTiming {
+    cache_load_ms: u64,
+    source_read_hash_ms: u64,
+    parse_ms: u64,
+    cache_write_ms: u64,
+    extraction_ms: u64,
 }
 
 pub(super) fn extract_with_cache(
@@ -90,12 +103,15 @@ pub(super) fn extract_with_cache(
     excludes: &[String],
     request: &JsTsPreWriteIncrementalRequest,
 ) -> Result<(Vec<JsTsExtractFileResult>, Value)> {
+    let extraction_started = Instant::now();
     if !request.enabled {
         let changed_files = files.len();
+        let parse_started = Instant::now();
         let extracted = extract_inputs(
             files.into_iter().map(input_without_source).collect(),
             source_files,
         )?;
+        let parse_ms = elapsed_ms(parse_started);
         return Ok((
             extracted,
             incremental_json(
@@ -106,6 +122,11 @@ pub(super) fn extract_with_cache(
                     load_status: "disabled".to_string(),
                     write_status: "disabled".to_string(),
                     reason: Some("disabled-by-request".to_string()),
+                    timing: CacheTiming {
+                        parse_ms,
+                        extraction_ms: elapsed_ms(extraction_started),
+                        ..CacheTiming::default()
+                    },
                     ..CacheObservations::default()
                 },
             ),
@@ -128,7 +149,9 @@ pub(super) fn extract_with_cache(
         remove_cache_file(&cache_path)?;
     }
 
+    let cache_load_started = Instant::now();
     let (mut prior, mut load_status) = load_cache(&cache_path);
+    let cache_load_ms = elapsed_ms(cache_load_started);
     let compatible = prior.as_ref().is_some_and(|cache| {
         cache.schema_version == CACHE_SCHEMA_VERSION
             && cache.profile_version == CACHE_PROFILE_VERSION
@@ -142,6 +165,10 @@ pub(super) fn extract_with_cache(
     let mut observations = CacheObservations {
         load_status,
         write_status: "pending".to_string(),
+        timing: CacheTiming {
+            cache_load_ms,
+            ..CacheTiming::default()
+        },
         ..CacheObservations::default()
     };
     let current_paths = files
@@ -180,6 +207,7 @@ pub(super) fn extract_with_cache(
     let mut pending = Vec::new();
     let mut identities = BTreeMap::new();
     let mut absolute_to_artifact = BTreeMap::new();
+    let source_read_hash_started = Instant::now();
     for file in files {
         let artifact_path = normalize_slashes(&file.artifact_file_path);
         let absolute_path = file.file_path.to_string_lossy().to_string();
@@ -218,7 +246,9 @@ pub(super) fn extract_with_cache(
             source: Some(source),
         });
     }
+    observations.timing.source_read_hash_ms = elapsed_ms(source_read_hash_started);
 
+    let parse_started = Instant::now();
     for result in extract_inputs(pending, source_files)? {
         let artifact_path = absolute_to_artifact
             .get(&normalize_slashes(&result.file_path))
@@ -233,6 +263,7 @@ pub(super) fn extract_with_cache(
             bail!("js-ts-pre-write-evidence: duplicate cached/extracted file {artifact_path}");
         }
     }
+    observations.timing.parse_ms = elapsed_ms(parse_started);
     if results.len() != identities.len() {
         bail!(
             "js-ts-pre-write-evidence: cache/extractor returned {} rows for {} files",
@@ -272,6 +303,7 @@ pub(super) fn extract_with_cache(
             scan_context_fingerprint: &scan_context_fingerprint,
             entries,
         };
+        let cache_write_started = Instant::now();
         match write_cache(&cache_path, &next) {
             Ok(()) => observations.write_status = "written".to_string(),
             Err(error) => {
@@ -279,7 +311,9 @@ pub(super) fn extract_with_cache(
                 observations.reason = Some(format!("cache-write-failed: {error}"));
             }
         }
+        observations.timing.cache_write_ms = elapsed_ms(cache_write_started);
     }
+    observations.timing.extraction_ms = elapsed_ms(extraction_started);
 
     Ok((
         results.into_values().collect(),
@@ -416,6 +450,13 @@ fn incremental_json(
         "loadStatus": observations.load_status,
         "writeStatus": observations.write_status,
         "reason": observations.reason,
+        "timing": {
+            "cacheLoadMs": observations.timing.cache_load_ms,
+            "sourceReadHashMs": observations.timing.source_read_hash_ms,
+            "parseMs": observations.timing.parse_ms,
+            "cacheWriteMs": observations.timing.cache_write_ms,
+            "extractionMs": observations.timing.extraction_ms,
+        },
     })
 }
 

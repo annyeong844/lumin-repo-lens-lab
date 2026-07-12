@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::time::Instant;
 
 use crate::js_ts_extract::JsTsExtractFileResult;
 use crate::scan_scope::{collect_source_files, to_repo_relative, ScanScopeOptions};
@@ -12,6 +13,7 @@ use super::protocol::{
     JsTsPreWriteEvidenceRequest, JsTsPreWriteSourceFile,
     JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION,
 };
+use super::single_flight::elapsed_ms;
 
 #[derive(Debug)]
 pub(super) struct SourceRow {
@@ -30,11 +32,10 @@ pub(super) struct PreparedEvidenceInput {
     pub(super) incremental: Value,
     pub(super) rows: Vec<SourceRow>,
     pub(super) path_map: BTreeMap<String, String>,
+    pub(super) discovery_ms: u64,
 }
 
 pub(super) fn prepare(request: JsTsPreWriteEvidenceRequest) -> Result<PreparedEvidenceInput> {
-    validate_request(&request)?;
-
     let JsTsPreWriteEvidenceRequest {
         schema_version: _,
         root,
@@ -49,11 +50,13 @@ pub(super) fn prepare(request: JsTsPreWriteEvidenceRequest) -> Result<PreparedEv
         incremental,
     } = request;
     let dependency_roots = dependency_roots.into_iter().collect::<BTreeSet<_>>();
+    let discovery_started = Instant::now();
     if discover_files {
         files = discover_js_ts_source_files(&root, include_tests, &excludes)?;
     } else {
         canonicalize_explicit_source_files(&root, &mut files)?;
     }
+    let discovery_ms = elapsed_ms(discovery_started);
 
     let path_map = files
         .iter()
@@ -129,6 +132,7 @@ pub(super) fn prepare(request: JsTsPreWriteEvidenceRequest) -> Result<PreparedEv
         incremental,
         rows,
         path_map,
+        discovery_ms,
     })
 }
 
@@ -156,7 +160,7 @@ pub(super) fn normalize_slashes(value: &str) -> String {
     value.replace('\\', "/")
 }
 
-fn validate_request(request: &JsTsPreWriteEvidenceRequest) -> Result<()> {
+pub(super) fn validate_request(request: &JsTsPreWriteEvidenceRequest) -> Result<()> {
     if request.schema_version != JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION {
         bail!(
             "js-ts-pre-write-evidence: unsupported schemaVersion '{}'",

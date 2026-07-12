@@ -82,6 +82,30 @@ fn builds_compact_pre_write_evidence_without_repository_artifacts() -> Result<()
     assert_eq!(evidence["topology"]["edges"][0]["to"], "src/dep.ts");
     assert_eq!(evidence["anyInventory"]["meta"]["complete"], true);
     assert_eq!(
+        evidence["anyInventory"]["meta"]["incremental"]["singleFlight"]["status"],
+        "acquired"
+    );
+    assert_eq!(
+        evidence["anyInventory"]["meta"]["incremental"]["singleFlight"]["scope"],
+        "canonical-root"
+    );
+    for field in [
+        "lockWaitMs",
+        "discoveryMs",
+        "parseMs",
+        "projectionMs",
+        "scanHeldMs",
+        "totalRuntimeMs",
+    ] {
+        if !evidence["anyInventory"]["meta"]["incremental"]["timing"][field].is_u64() {
+            bail!("missing numeric pre-write runtime timing field {field}");
+        }
+    }
+    assert_eq!(
+        evidence["summary"]["runtime"]["singleFlight"],
+        evidence["anyInventory"]["meta"]["incremental"]["singleFlight"]
+    );
+    assert_eq!(
         evidence["anyInventory"]["meta"]["artifact"],
         "any-inventory.pre.PROBE.json"
     );
@@ -313,6 +337,8 @@ fn strict_cache_reuses_only_byte_identical_files_and_rebuilds_current_evidence()
         warm["anyInventory"]["meta"]["incremental"]["writeStatus"],
         "unchanged"
     );
+    assert!(warm["anyInventory"]["meta"]["incremental"]["timing"]["sourceReadHashMs"].is_u64());
+    assert!(warm["summary"]["runtime"]["timing"]["scanHeldMs"].is_u64());
     assert_eq!(warm["symbols"]["defIndex"]["src/a.ts"]["a"]["line"], 1);
 
     fs::write(root.join("src/a.ts"), "export const a = 2;\n")?;
