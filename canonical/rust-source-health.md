@@ -586,7 +586,7 @@ source health now owns narrow exact-hash producers. A `shape.hash` matching
 `shape.hash` matching
 `HealthResponse::files[*].ast.functionSignatures[].hash` returns
 `SIGNATURE_MATCH`, matching the native audit-core function-signature lookup in
-`pre_write_lifecycle/js_native/lookup.rs`. Fields-only intents remain
+`pre_write_lifecycle/js_native/lookup/shape.rs`. Fields-only intents remain
 `UNAVAILABLE` because
 field names alone are not structural equality evidence. `typeLiteral` without
 an exact hash remains `UNAVAILABLE`; Rust must not parse TS/JS type literals in
@@ -607,7 +607,7 @@ field-only cue, or `typeLiteral` cue may be emitted from this lane until a
 checker-grade or explicitly documented Rust producer owns that evidence.
 
 Rust dependency intent lookup is the Rust analogue of the native audit-core
-dependency lane in `pre_write_lifecycle/js_native/lookup.rs`:
+dependency lane in `pre_write_lifecycle/js_native/lookup/dependency.rs`:
 
 - `Cargo.toml` replaces `package.json` as the declaration source.
 - `[dependencies]`, `[dev-dependencies]`, and `[build-dependencies]` replace
@@ -849,7 +849,7 @@ contract:
 
 Rust inline extraction intent support is the Rust analogue of audit-core's
 native `js_ts_extract/inline_patterns.rs` and
-`pre_write_lifecycle/js_native/lookup.rs` lane:
+`pre_write_lifecycle/js_native/lookup/inline.rs` lane:
 
 - `intent.refactorSources[]` is accepted as optional explicit extraction
   source evidence and follows the JS/TS input contract: `file` must be a safe
