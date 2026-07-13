@@ -23,6 +23,13 @@ Do not mix a source wrapper, binary from another checkout, and generated skill
 from an older commit. Do not benchmark `pre-write.mjs` or an audit-core
 subcommand directly and call that the lifecycle runtime.
 
+For a source-checkout diagnosis, record `node --version`, the wrapper checkout
+commit, and both packaged helper contracts before changing product code. The
+wrapper requires Node `^20.19.0 || >=22.12.0`. A one-off run with
+`LUMIN_AUDIT_CORE_FULL_CONTRACT_PROBE=1` verifies executable behavior, including
+`shapeTypeLiterals`, instead of trusting feature strings alone. Do not leave
+that expensive fixture probe enabled for normal write-gate runs.
+
 ## Fresh JS/TS Contract
 
 `--pre-write-engine auto` still selects the JS lifecycle owner when the intent
@@ -159,12 +166,14 @@ reader; do not attribute the wait to OXC or weaken evidence collection.
    `anyInventory.meta.incremental`: `loadStatus`, `changedFiles`,
    `reusedFiles`, `droppedFiles`, and `writeStatus`.
 6. In WSL or override-heavy environments, rerun once with
-   `LUMIN_AUDIT_CORE_CONTRACT_DEBUG=1`. Fix rejected binary/package selection;
-   do not add a fallback classifier.
-7. Check whether the intent requests exact JS/TS shapes, function signatures,
-   or inline refactor patterns. Those lanes still materialize checked legacy
-   artifacts until their Rust parity migrations land; report that owner
-   directly instead of hiding it as generic pre-write time.
+   `LUMIN_AUDIT_CORE_CONTRACT_DEBUG=1` and, when feature strings and behavior
+   disagree, once with `LUMIN_AUDIT_CORE_FULL_CONTRACT_PROBE=1`. Fix rejected
+   binary/package selection; do not add a fallback classifier.
+7. Exact object and literal-union `shapeTypeLiterals` are Rust-owned compact
+   evidence. A missing normalization is a wrapper/helper provenance failure,
+   not expected degradation. Function-signature and inline refactor lanes may
+   still materialize their checked focused artifacts; report those owners
+   directly instead of hiding them as generic pre-write time.
 8. Check the file inventory for accidental generated trees. Exclude a tree only
    when repository policy says it is out of scope, never just to improve time.
 

@@ -506,7 +506,10 @@ removes this artifact cache together with per-file facts.
   buffers immediately after hashing and identity comparison.
   Concurrent `js-ts-pre-write-evidence` runs for the same canonical root are
   serialized by a host-local OS file lock before source discovery. The lock is
-  independent of incremental reuse and covers discovery, exact worktree-byte
+  stored below a per-user private temp root so one account cannot own or block
+  another account's lock directory. It is released after compact evidence
+  projection and timing capture, before stdout or result-file transport.
+  It is independent of incremental reuse and covers discovery, exact worktree-byte
   reads and hashing, parser/cache work, and compact evidence projection. It has
   no elapsed-time timeout; the operating system releases it when the owning
   process or file handle exits, so correctness does not depend on lock-file age
