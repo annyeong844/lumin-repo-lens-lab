@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v49"
+        "audit-core-js-runtime-bridge.v50"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -95,6 +95,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     assert_eq!(contract["features"]["failClosedLifecycleArtifacts"], true);
     assert_eq!(contract["features"]["postWriteOnlyBasePipelineSkip"], true);
     assert_eq!(contract["features"]["postWriteScopedBaseEvidence"], true);
+    assert_eq!(contract["features"]["nativePostWriteLifecycle"], true);
     assert_eq!(contract["features"]["lifecycleScopedArtifacts"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyRecordRows"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyNameTable"], true);

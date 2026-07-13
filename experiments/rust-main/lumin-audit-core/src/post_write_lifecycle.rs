@@ -1,190 +1,63 @@
+mod delta;
+mod file_delta;
+mod protocol;
+mod render;
+
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use delta::{compute_delta, type_escape_delta_not_applicable};
+use file_delta::{compute_file_delta, repo_relative_file_list};
+use lumin_rust_common::atomic_write_json_pretty;
+use protocol::{AnyInventory, PostWriteDeltaArtifact, PreWriteAdvisory};
+pub use protocol::{
+    PostWriteBlock, PostWriteFailureKind, PostWriteLifecycleRequest, PostWriteLifecycleResult,
+    POST_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION, POST_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
+};
+use render::render_markdown;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
-pub const POST_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
-    "lumin-post-write-lifecycle-request.v1";
-pub const POST_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION: &str = "lumin-post-write-lifecycle-result.v1";
-const POST_WRITE_DELTA_SCHEMA_VERSION: &str = "lumin-post-write-delta.v1";
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PostWriteLifecycleRequest {
-    pub schema_version: String,
-    pub root: PathBuf,
-    pub output: PathBuf,
-    #[serde(default)]
-    pub advisory_path: Option<PathBuf>,
-    #[serde(default)]
-    pub delta_out: Option<PathBuf>,
-    pub scripts_dir: PathBuf,
-    pub node_executable: String,
-    #[serde(default)]
-    pub no_fresh_audit: bool,
-    #[serde(default)]
-    pub scan_args: Vec<String>,
-    #[serde(default)]
-    pub incremental_args: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PostWriteLifecycleResult {
-    pub schema_version: &'static str,
-    pub block: PostWriteBlock,
-    pub exit_code: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stdout: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stderr: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PostWriteBlock {
-    pub requested: bool,
-    pub ran: bool,
-    pub execution_owner: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delta_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub silent_new: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub required_acknowledgement_count: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub baseline_status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scan_range_parity: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub type_escape_delta_status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub after_complete: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_delta_status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub unexpected_new_file_count: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub planned_missing_file_count: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pre_write_invocation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delta_invocation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delta_schema_version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub failure_kind: Option<PostWriteFailureKind>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub child_exit_code: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum PostWriteFailureKind {
-    MissingAdvisory,
-    InvalidAdvisory,
-    OutputCleanupFailed,
-    ChildFailed,
-    DeltaArtifactInvalid,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PostWriteDeltaArtifact {
-    schema_version: String,
-    pre_write_invocation_id: String,
-    delta_invocation_id: String,
-    summary: PostWriteDeltaSummary,
-    entries: Vec<PostWriteDeltaEntry>,
-    baseline: StatusBlock,
-    scan_range_parity: StatusBlock,
-    type_escape_delta: StatusBlock,
-    inventory_completeness: InventoryCompletenessBlock,
-    file_delta: FileDeltaBlock,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PostWriteDeltaSummary {
-    silent_new: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-struct PostWriteDeltaEntry {
-    label: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-struct StatusBlock {
-    status: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InventoryCompletenessBlock {
-    after_complete: Value,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FileDeltaBlock {
-    status: String,
-    #[serde(default)]
-    summary: Option<FileDeltaSummary>,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FileDeltaSummary {
-    #[serde(default)]
-    unexpected_new: Option<u64>,
-    #[serde(default)]
-    planned_missing: Option<u64>,
-}
+use crate::js_ts_pre_write::{
+    start_js_ts_pre_write_evidence, JsTsPreWriteEvidenceRequest,
+    JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION,
+};
+use crate::scan_scope::{collect_source_files, ScanScopeOptions};
 
 pub fn execute_post_write_lifecycle(
     request: PostWriteLifecycleRequest,
 ) -> Result<PostWriteLifecycleResult> {
-    execute_post_write_lifecycle_with_stdio(request, ChildStdio::Capture)
+    execute_native_post_write(request)
 }
 
 pub fn execute_post_write_lifecycle_streaming(
     request: PostWriteLifecycleRequest,
 ) -> Result<PostWriteLifecycleResult> {
-    execute_post_write_lifecycle_with_stdio(request, ChildStdio::Inherit)
+    execute_native_post_write(request)
 }
 
-fn execute_post_write_lifecycle_with_stdio(
+fn execute_native_post_write(
     request: PostWriteLifecycleRequest,
-    child_stdio: ChildStdio,
 ) -> Result<PostWriteLifecycleResult> {
     validate_request(&request)?;
-    let delta_path = delta_output_dir(&request).join("post-write-delta.latest.json");
-    if let Err(error) = remove_file_if_present(&delta_path) {
+    let delta_dir = delta_output_dir(&request);
+    let latest_delta_path = delta_dir.join("post-write-delta.latest.json");
+    if let Err(error) = remove_file_if_present(&latest_delta_path) {
         return Ok(failure_result(
             PostWriteFailureKind::OutputCleanupFailed,
             format!(
                 "execute-post-write: failed to clear stale {}: {error}",
-                delta_path.display()
+                latest_delta_path.display()
             ),
             1,
             None,
             None,
-            None,
-            None,
         ));
     }
-    let Some(advisory_path) = request.advisory_path.as_ref() else {
+    let Some(advisory_path) = request.advisory_path.as_deref() else {
         return Ok(failure_result(
             PostWriteFailureKind::MissingAdvisory,
             "--pre-write-advisory missing".to_string(),
             2,
-            None,
-            None,
             None,
             Some(
                 "[audit-repo] --post-write requested but skipped: --pre-write-advisory <file> missing\n"
@@ -192,16 +65,13 @@ fn execute_post_write_lifecycle_with_stdio(
             ),
         ));
     };
-
-    let pre_write_invocation_id = match read_advisory_invocation_id(advisory_path) {
-        Ok(invocation_id) => invocation_id,
+    let advisory = match read_advisory(advisory_path) {
+        Ok(advisory) => advisory,
         Err(error) => {
             return Ok(failure_result(
                 PostWriteFailureKind::InvalidAdvisory,
                 error.to_string(),
                 2,
-                None,
-                None,
                 None,
                 Some(format!(
                     "[audit-repo] post-write advisory invalid: {error}\n"
@@ -209,82 +79,242 @@ fn execute_post_write_lifecycle_with_stdio(
             ));
         }
     };
-    let child = run_post_write_child(&request, advisory_path, child_stdio);
-    if !child.status_success {
-        let reason = post_write_failure_reason(
-            &[&delta_path],
-            format!("post-write.mjs exited non-zero: {}", child.reason),
-        );
-        return Ok(failure_result(
-            PostWriteFailureKind::ChildFailed,
-            reason,
-            child.exit_code.unwrap_or(1),
-            Some(pre_write_invocation_id),
-            child.exit_code,
-            nonempty(child.stdout),
-            nonempty(child.stderr),
-        ));
-    }
 
-    let latest_delta = match read_delta(&delta_path, &pre_write_invocation_id) {
-        Ok(delta) => delta,
+    let mut stderr = String::new();
+    let skip_type_escapes = type_escape_delta_not_applicable(&advisory);
+    let after_snapshot = match build_after_snapshot(&request, skip_type_escapes) {
+        Ok(snapshot) => snapshot,
         Err(error) => {
-            let reason = post_write_failure_reason(&[&delta_path], error.to_string());
+            let reason = cleanup_failure_reason(
+                &[
+                    &latest_delta_path,
+                    &request.output.join("any-inventory.json"),
+                ],
+                format!("native post-write evidence failed: {error}"),
+            );
             return Ok(failure_result(
-                PostWriteFailureKind::DeltaArtifactInvalid,
+                PostWriteFailureKind::EvidenceFailed,
                 reason,
                 1,
-                Some(pre_write_invocation_id),
-                child.exit_code,
-                nonempty(child.stdout),
-                nonempty(child.stderr),
+                Some(advisory.invocation_id),
+                Some(format!(
+                    "[post-write] Rust after-inventory failed: {error}\n"
+                )),
             ));
         }
     };
-    let specific_delta_path =
-        delta_specific_path(delta_output_dir(&request), &latest_delta.artifact);
-    let specific_delta = match read_delta(&specific_delta_path, &pre_write_invocation_id) {
-        Ok(delta) => delta,
-        Err(error) => {
-            let reason =
-                post_write_failure_reason(&[&delta_path, &specific_delta_path], error.to_string());
-            return Ok(failure_result(
-                PostWriteFailureKind::DeltaArtifactInvalid,
-                reason,
-                1,
-                Some(pre_write_invocation_id),
-                child.exit_code,
-                nonempty(child.stdout),
-                nonempty(child.stderr),
-            ));
-        }
-    };
-    if latest_delta.raw != specific_delta.raw {
-        let reason = post_write_failure_reason(
-            &[&delta_path, &specific_delta_path],
-            format!(
-                "post-write delta contract failed: latest and invocation-specific artifacts differ ({} != {})",
-                delta_path.display(),
-                specific_delta_path.display()
-            ),
+    if !skip_type_escapes {
+        stderr.push_str("[post-write] running lumin-audit-core for after-snapshot\n");
+    }
+    let (before_inventory, warnings) = load_before_inventory(&request, advisory_path, &advisory);
+    for warning in warnings {
+        stderr.push_str(&format!("[post-write] {warning}\n"));
+    }
+    let before_files = (advisory.pre_write.file_inventory.status.as_deref() == Some("available"))
+        .then_some(advisory.pre_write.file_inventory.files.as_slice());
+    let file_delta = compute_file_delta(
+        &request.root,
+        &advisory.intent.files,
+        before_files,
+        Some(&after_snapshot.files),
+        None,
+    );
+    let delta = compute_delta(
+        &advisory,
+        before_inventory.as_ref(),
+        after_snapshot.inventory.as_ref(),
+        &request.delta_invocation_id,
+        file_delta,
+    );
+    let specific_delta_path = delta_specific_path(&delta_dir, &delta);
+    if let Err(error) = write_delta_artifacts(&specific_delta_path, &latest_delta_path, &delta) {
+        let reason = cleanup_failure_reason(
+            &[&specific_delta_path, &latest_delta_path],
+            format!("post-write delta write failed: {error}"),
         );
         return Ok(failure_result(
             PostWriteFailureKind::DeltaArtifactInvalid,
             reason,
             1,
-            Some(pre_write_invocation_id),
-            child.exit_code,
-            nonempty(child.stdout),
-            nonempty(child.stderr),
+            Some(advisory.invocation_id),
+            nonempty(stderr),
         ));
     }
-    let delta = latest_delta.artifact;
+    let markdown = render_markdown(&delta);
+    let mut block = success_block(&latest_delta_path, &delta);
+    project_delta_summary(&mut block, &delta);
+    Ok(PostWriteLifecycleResult {
+        schema_version: POST_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
+        block,
+        exit_code: 0,
+        stdout: Some(markdown),
+        stderr: nonempty(stderr),
+    })
+}
 
-    let mut block = PostWriteBlock {
+struct AfterSnapshot {
+    inventory: Option<AnyInventory>,
+    files: Vec<String>,
+}
+
+fn build_after_snapshot(
+    request: &PostWriteLifecycleRequest,
+    skip_type_escapes: bool,
+) -> Result<AfterSnapshot> {
+    if skip_type_escapes {
+        let files = collect_source_files(
+            &request.root,
+            &ScanScopeOptions {
+                include_tests: request.include_tests,
+                exclude: request.excludes.clone(),
+                ..ScanScopeOptions::default()
+            },
+        )?;
+        return Ok(AfterSnapshot {
+            inventory: None,
+            files: repo_relative_file_list(&request.root, &files),
+        });
+    }
+
+    let inventory_path = request.output.join("any-inventory.json");
+    remove_file_if_present(&inventory_path)?;
+    let mut evidence = start_js_ts_pre_write_evidence(JsTsPreWriteEvidenceRequest {
+        schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
+        root: request.root.clone(),
+        evidence_artifact: format!("post-write-evidence.{}.json", request.delta_invocation_id),
+        any_inventory_artifact: "any-inventory.json".to_string(),
+        generated: request.generated.clone(),
+        include_tests: request.include_tests,
+        excludes: request.excludes.clone(),
+        dependency_roots: Vec::new(),
+        shape_type_literals: Vec::new(),
+        discover_files: true,
+        files: Vec::new(),
+        incremental: request.incremental.clone(),
+    })?
+    .into_evidence();
+    let object = evidence
+        .as_object_mut()
+        .context("native post-write evidence response must be an object")?;
+    let inventory_value = object
+        .remove("anyInventory")
+        .context("native post-write evidence response missing anyInventory")?;
+    let files_value = object
+        .remove("files")
+        .context("native post-write evidence response missing files")?;
+    let inventory = serde_json::from_value::<AnyInventory>(inventory_value)
+        .context("native post-write anyInventory shape is invalid")?;
+    let files = serde_json::from_value::<Vec<String>>(files_value)
+        .context("native post-write files shape is invalid")?;
+    if let Err(error) = atomic_write_json_pretty(&inventory_path, &inventory) {
+        let _ = remove_file_if_present(&inventory_path);
+        return Err(error).context("failed to write native post-write any-inventory.json");
+    }
+    Ok(AfterSnapshot {
+        inventory: Some(inventory),
+        files,
+    })
+}
+
+fn load_before_inventory(
+    request: &PostWriteLifecycleRequest,
+    advisory_path: &Path,
+    advisory: &PreWriteAdvisory,
+) -> (Option<AnyInventory>, Vec<String>) {
+    let Some(name) = advisory.pre_write.any_inventory_path.as_deref() else {
+        return (None, Vec::new());
+    };
+    let mut directories = Vec::new();
+    if let Some(parent) = advisory_path.parent() {
+        directories.push(parent.to_path_buf());
+    }
+    if let Some(output) = advisory.scan_range.output.as_ref() {
+        directories.push(output.clone());
+    }
+    directories.push(request.output.clone());
+    directories.sort();
+    directories.dedup();
+    let mut warnings = Vec::new();
+    let name_path = Path::new(name);
+    let candidates = if name_path.is_absolute() {
+        vec![name_path.to_path_buf()]
+    } else {
+        directories
+            .into_iter()
+            .map(|directory| directory.join(name_path))
+            .collect()
+    };
+    for candidate in candidates {
+        if !candidate.exists() {
+            continue;
+        }
+        match fs::read(&candidate)
+            .map_err(anyhow::Error::from)
+            .and_then(|bytes| serde_json::from_slice::<AnyInventory>(&bytes).map_err(Into::into))
+        {
+            Ok(inventory) => return (Some(inventory), warnings),
+            Err(error) => {
+                warnings.push(format!("failed to parse {}: {error}", candidate.display()))
+            }
+        }
+    }
+    (None, warnings)
+}
+
+fn validate_request(request: &PostWriteLifecycleRequest) -> Result<()> {
+    if request.schema_version != POST_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION {
+        bail!(
+            "execute-post-write: unsupported schemaVersion '{}'",
+            request.schema_version
+        );
+    }
+    validate_nonempty_path("root", &request.root)?;
+    validate_nonempty_path("output", &request.output)?;
+    validate_artifact_id(
+        "post-write delta deltaInvocationId",
+        &request.delta_invocation_id,
+    )?;
+    if request.generated.trim().is_empty() {
+        bail!("execute-post-write: generated must be a non-empty string");
+    }
+    Ok(())
+}
+
+fn read_advisory(path: &Path) -> Result<PreWriteAdvisory> {
+    let bytes = fs::read(path).with_context(|| {
+        format!(
+            "post-write advisory contract failed: failed to read {}",
+            path.display()
+        )
+    })?;
+    let advisory = serde_json::from_slice::<PreWriteAdvisory>(&bytes).with_context(|| {
+        format!(
+            "post-write advisory contract failed: invalid JSON or shape in {}",
+            path.display()
+        )
+    })?;
+    validate_artifact_id("post-write advisory invocationId", &advisory.invocation_id)?;
+    Ok(advisory)
+}
+
+fn write_delta_artifacts(
+    specific_path: &Path,
+    latest_path: &Path,
+    delta: &PostWriteDeltaArtifact,
+) -> Result<()> {
+    atomic_write_json_pretty(specific_path, delta)
+        .with_context(|| format!("failed to write {}", specific_path.display()))?;
+    atomic_write_json_pretty(latest_path, delta)
+        .with_context(|| format!("failed to write {}", latest_path.display()))?;
+    Ok(())
+}
+
+fn success_block(path: &Path, delta: &PostWriteDeltaArtifact) -> PostWriteBlock {
+    PostWriteBlock {
         requested: true,
         ran: true,
         execution_owner: "lumin-audit-core",
-        delta_path: Some(path_string(&delta_path)),
+        delta_path: Some(path_string(path)),
         silent_new: None,
         required_acknowledgement_count: None,
         baseline_status: None,
@@ -300,277 +330,10 @@ fn execute_post_write_lifecycle_with_stdio(
         failure_kind: None,
         child_exit_code: None,
         reason: None,
-    };
-    project_delta_summary(&mut block, &delta);
-
-    Ok(PostWriteLifecycleResult {
-        schema_version: POST_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION,
-        block,
-        exit_code: 0,
-        stdout: nonempty(child.stdout),
-        stderr: nonempty(child.stderr),
-    })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ChildStdio {
-    Capture,
-    Inherit,
-}
-
-fn validate_request(request: &PostWriteLifecycleRequest) -> Result<()> {
-    if request.schema_version != POST_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION {
-        bail!(
-            "execute-post-write: unsupported schemaVersion '{}'",
-            request.schema_version
-        );
     }
-    validate_nonempty("root", &request.root)?;
-    validate_nonempty("output", &request.output)?;
-    validate_nonempty("scriptsDir", &request.scripts_dir)?;
-    if request.node_executable.trim().is_empty() {
-        bail!("execute-post-write: nodeExecutable must be a non-empty string");
-    }
-    Ok(())
-}
-
-fn validate_nonempty(field: &str, path: &Path) -> Result<()> {
-    if path.as_os_str().is_empty() {
-        bail!("execute-post-write: {field} must be provided");
-    }
-    Ok(())
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct ChildOutput {
-    status_success: bool,
-    exit_code: Option<i32>,
-    reason: String,
-    stdout: String,
-    stderr: String,
-}
-
-fn run_post_write_child(
-    request: &PostWriteLifecycleRequest,
-    advisory_path: &Path,
-    child_stdio: ChildStdio,
-) -> ChildOutput {
-    let post_write_path = request.scripts_dir.join("post-write.mjs");
-    let mut args = vec![
-        path_string(&post_write_path),
-        "--root".to_string(),
-        path_string(&request.root),
-        "--output".to_string(),
-        path_string(&request.output),
-        "--pre-write-advisory".to_string(),
-        path_string(advisory_path),
-    ];
-    if let Some(delta_out) = &request.delta_out {
-        args.extend(["--delta-out".to_string(), path_string(delta_out)]);
-    }
-    if request.no_fresh_audit {
-        args.push("--no-fresh-audit".to_string());
-    }
-    args.extend(request.scan_args.clone());
-    args.extend(request.incremental_args.clone());
-
-    match child_stdio {
-        ChildStdio::Capture => match Command::new(&request.node_executable)
-            .args(args)
-            .stdin(Stdio::null())
-            .output()
-        {
-            Ok(output) => {
-                let status_success = output.status.success();
-                let reason = output
-                    .status
-                    .code()
-                    .map(|code| format!("post-write.mjs exited {code}"))
-                    .unwrap_or_else(|| "post-write.mjs terminated by signal".to_string());
-                ChildOutput {
-                    status_success,
-                    exit_code: output.status.code(),
-                    reason,
-                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                }
-            }
-            Err(error) => ChildOutput {
-                status_success: false,
-                exit_code: None,
-                reason: error.to_string(),
-                stdout: String::new(),
-                stderr: String::new(),
-            },
-        },
-        ChildStdio::Inherit => match Command::new(&request.node_executable)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-        {
-            Ok(status) => {
-                let status_success = status.success();
-                let reason = status
-                    .code()
-                    .map(|code| format!("post-write.mjs exited {code}"))
-                    .unwrap_or_else(|| "post-write.mjs terminated by signal".to_string());
-                ChildOutput {
-                    status_success,
-                    exit_code: status.code(),
-                    reason,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                }
-            }
-            Err(error) => ChildOutput {
-                status_success: false,
-                exit_code: None,
-                reason: error.to_string(),
-                stdout: String::new(),
-                stderr: String::new(),
-            },
-        },
-    }
-}
-
-fn delta_output_dir(request: &PostWriteLifecycleRequest) -> &Path {
-    request.delta_out.as_deref().unwrap_or(&request.output)
-}
-
-fn read_advisory_invocation_id(advisory_path: &Path) -> Result<String> {
-    let bytes = fs::read(advisory_path).with_context(|| {
-        format!(
-            "post-write advisory contract failed: failed to read {}",
-            advisory_path.display()
-        )
-    })?;
-    let advisory: Value = serde_json::from_slice(&bytes).with_context(|| {
-        format!(
-            "post-write advisory contract failed: invalid JSON in {}",
-            advisory_path.display()
-        )
-    })?;
-    let invocation_id = advisory
-        .as_object()
-        .context("post-write advisory contract failed: advisory must be an object")?
-        .get("invocationId")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .context("post-write advisory contract failed: invocationId must be a non-empty string")?;
-    validate_artifact_id("post-write advisory invocationId", invocation_id)?;
-    Ok(invocation_id.to_string())
-}
-
-struct ValidatedDelta {
-    artifact: PostWriteDeltaArtifact,
-    raw: Value,
-}
-
-fn read_delta(delta_path: &Path, expected_pre_write_id: &str) -> Result<ValidatedDelta> {
-    let bytes = fs::read(delta_path).with_context(|| {
-        format!(
-            "post-write delta contract failed: failed to read {}",
-            delta_path.display()
-        )
-    })?;
-    let raw = serde_json::from_slice::<Value>(&bytes).with_context(|| {
-        format!(
-            "post-write delta contract failed: invalid JSON in {}",
-            delta_path.display()
-        )
-    })?;
-    let delta =
-        serde_json::from_value::<PostWriteDeltaArtifact>(raw.clone()).with_context(|| {
-            format!(
-                "post-write delta contract failed: invalid shape in {}",
-                delta_path.display()
-            )
-        })?;
-    delta.validate(expected_pre_write_id)?;
-    Ok(ValidatedDelta {
-        artifact: delta,
-        raw,
-    })
-}
-
-impl PostWriteDeltaArtifact {
-    fn validate(&self, expected_pre_write_id: &str) -> Result<()> {
-        if self.schema_version != POST_WRITE_DELTA_SCHEMA_VERSION {
-            bail!(
-                "post-write delta contract failed: unsupported schemaVersion '{}'",
-                self.schema_version
-            );
-        }
-        validate_artifact_id(
-            "post-write delta preWriteInvocationId",
-            &self.pre_write_invocation_id,
-        )?;
-        validate_artifact_id(
-            "post-write delta deltaInvocationId",
-            &self.delta_invocation_id,
-        )?;
-        if self.pre_write_invocation_id != expected_pre_write_id {
-            bail!(
-                "post-write delta contract failed: preWriteInvocationId '{}' does not match advisory '{}'",
-                self.pre_write_invocation_id,
-                expected_pre_write_id
-            );
-        }
-        if !matches!(
-            self.inventory_completeness.after_complete,
-            Value::Bool(_) | Value::Null
-        ) {
-            bail!(
-                "post-write delta contract failed: inventoryCompleteness.afterComplete must be boolean or null"
-            );
-        }
-        Ok(())
-    }
-}
-
-fn validate_artifact_id(label: &str, value: &str) -> Result<()> {
-    if value.is_empty()
-        || !value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
-    {
-        bail!("{label} must be a filename-safe non-empty identifier");
-    }
-    Ok(())
-}
-
-fn delta_specific_path(output: &Path, delta: &PostWriteDeltaArtifact) -> PathBuf {
-    output.join(format!(
-        "post-write-delta.{}.{}.json",
-        delta.pre_write_invocation_id, delta.delta_invocation_id
-    ))
-}
-
-fn remove_file_if_present(path: &Path) -> std::io::Result<()> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
-    }
-}
-
-fn post_write_failure_reason(delta_paths: &[&Path], mut reason: String) -> String {
-    for delta_path in delta_paths {
-        if let Err(cleanup_error) = remove_file_if_present(delta_path) {
-            reason.push_str(&format!(
-                "; failed to remove invalid delta {}: {cleanup_error}",
-                delta_path.display()
-            ));
-        }
-    }
-    reason
 }
 
 fn project_delta_summary(block: &mut PostWriteBlock, delta: &PostWriteDeltaArtifact) {
-    let type_escape_delta_status = delta.type_escape_delta.status.clone();
-
     block.silent_new = Some(delta.summary.silent_new);
     block.required_acknowledgement_count = Some(
         delta
@@ -581,34 +344,39 @@ fn project_delta_summary(block: &mut PostWriteBlock, delta: &PostWriteDeltaArtif
     );
     block.baseline_status = Some(delta.baseline.status.clone());
     block.scan_range_parity = Some(delta.scan_range_parity.status.clone());
-    block.type_escape_delta_status = Some(type_escape_delta_status);
-    block.after_complete = Some(delta.inventory_completeness.after_complete.clone());
+    block.type_escape_delta_status = Some(delta.type_escape_delta.status.clone());
+    block.after_complete = Some(
+        delta
+            .inventory_completeness
+            .after_complete
+            .map(Value::Bool)
+            .unwrap_or(Value::Null),
+    );
     block.file_delta_status = Some(delta.file_delta.status.clone());
-    block.unexpected_new_file_count = Some(
-        delta
-            .file_delta
-            .summary
-            .as_ref()
-            .and_then(|summary| summary.unexpected_new)
-            .unwrap_or(0),
-    );
-    block.planned_missing_file_count = Some(
-        delta
-            .file_delta
-            .summary
-            .as_ref()
-            .and_then(|summary| summary.planned_missing)
-            .unwrap_or(0),
-    );
+    block.unexpected_new_file_count = delta
+        .file_delta
+        .summary
+        .as_ref()
+        .map(|summary| summary.unexpected_new);
+    block.planned_missing_file_count = delta
+        .file_delta
+        .summary
+        .as_ref()
+        .map(|summary| summary.planned_missing)
+        .or_else(|| {
+            delta
+                .file_delta
+                .planned_missing
+                .as_ref()
+                .map(|files| files.len() as u64)
+        });
 }
 
 fn failure_result(
-    failure_kind: PostWriteFailureKind,
+    kind: PostWriteFailureKind,
     reason: String,
     exit_code: i32,
     pre_write_invocation_id: Option<String>,
-    child_exit_code: Option<i32>,
-    stdout: Option<String>,
     stderr: Option<String>,
 ) -> PostWriteLifecycleResult {
     PostWriteLifecycleResult {
@@ -630,20 +398,72 @@ fn failure_result(
             pre_write_invocation_id,
             delta_invocation_id: None,
             delta_schema_version: None,
-            failure_kind: Some(failure_kind),
-            child_exit_code,
+            failure_kind: Some(kind),
+            child_exit_code: None,
             reason: Some(reason),
         },
         exit_code,
-        stdout,
+        stdout: None,
         stderr,
     }
 }
 
-fn nonempty(value: String) -> Option<String> {
-    (!value.is_empty()).then_some(value)
+fn delta_output_dir(request: &PostWriteLifecycleRequest) -> PathBuf {
+    request
+        .delta_out
+        .clone()
+        .unwrap_or_else(|| request.output.clone())
+}
+
+fn delta_specific_path(output: &Path, delta: &PostWriteDeltaArtifact) -> PathBuf {
+    output.join(format!(
+        "post-write-delta.{}.{}.json",
+        delta.pre_write_invocation_id, delta.delta_invocation_id
+    ))
+}
+
+fn validate_nonempty_path(field: &str, path: &Path) -> Result<()> {
+    if path.as_os_str().is_empty() {
+        bail!("execute-post-write: {field} must be provided");
+    }
+    Ok(())
+}
+
+fn validate_artifact_id(label: &str, value: &str) -> Result<()> {
+    if value.is_empty()
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        bail!("{label} must be a filename-safe non-empty identifier");
+    }
+    Ok(())
+}
+
+fn remove_file_if_present(path: &Path) -> std::io::Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn cleanup_failure_reason(paths: &[&Path], mut reason: String) -> String {
+    for path in paths {
+        if let Err(error) = remove_file_if_present(path) {
+            reason.push_str(&format!(
+                "; failed to remove invalid artifact {}: {error}",
+                path.display()
+            ));
+        }
+    }
+    reason
 }
 
 fn path_string(path: &Path) -> String {
-    path.to_string_lossy().to_string()
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn nonempty(value: String) -> Option<String> {
+    (!value.is_empty()).then_some(value)
 }

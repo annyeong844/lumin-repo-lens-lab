@@ -8,7 +8,7 @@ enum CodeShapeState {
     BlockComment,
 }
 
-pub(super) fn normalize_code_shape(raw: &str) -> String {
+pub(crate) fn normalize_code_shape(raw: &str) -> String {
     if raw.is_empty() {
         return String::new();
     }

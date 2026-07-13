@@ -35,6 +35,10 @@ fn finish_atomic_json_write(
 ) -> io::Result<()> {
     writer.write_all(b"\n")?;
     writer.flush()?;
+    #[cfg(windows)]
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
     fs::rename(temp, path)?;
     Ok(())
 }

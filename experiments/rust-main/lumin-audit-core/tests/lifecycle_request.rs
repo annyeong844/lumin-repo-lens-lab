@@ -315,16 +315,16 @@ fn cli_execute_audit_lifecycle_blocks_mutex_before_routing_input_file_read() -> 
             "postWrite": {
                 "requested": true,
                 "request": {
-                    "schemaVersion": "lumin-post-write-lifecycle-request.v1",
+                    "schemaVersion": "lumin-post-write-lifecycle-request.v2",
                     "root": temp.path(),
                     "output": temp.path().join("out"),
-                    "scriptsDir": temp.path(),
-                    "nodeExecutable": "node",
                     "advisoryPath": null,
                     "deltaOut": null,
-                    "noFreshAudit": false,
-                    "scanArgs": [],
-                    "incrementalArgs": []
+                    "deltaInvocationId": "DELTA-1",
+                    "generated": "2026-07-13T00:00:00.000Z",
+                    "includeTests": true,
+                    "excludes": [],
+                    "incremental": { "enabled": false, "clear": false }
                 }
             },
             "exitPolicy": {
@@ -471,16 +471,16 @@ fn cli_execute_audit_lifecycle_replays_post_write_missing_advisory_stderr() -> R
             "postWrite": {
                 "requested": true,
                 "request": {
-                    "schemaVersion": "lumin-post-write-lifecycle-request.v1",
+                    "schemaVersion": "lumin-post-write-lifecycle-request.v2",
                     "root": temp.path(),
                     "output": output_dir,
-                    "scriptsDir": temp.path(),
-                    "nodeExecutable": "node",
                     "advisoryPath": null,
                     "deltaOut": null,
-                    "noFreshAudit": false,
-                    "scanArgs": [],
-                    "incrementalArgs": []
+                    "deltaInvocationId": "DELTA-1",
+                    "generated": "2026-07-13T00:00:00.000Z",
+                    "includeTests": true,
+                    "excludes": [],
+                    "incremental": { "enabled": false, "clear": false }
                 }
             },
             "exitPolicy": {

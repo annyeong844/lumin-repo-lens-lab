@@ -499,17 +499,22 @@ function buildCheckCanonLifecycleRequest() {
 }
 
 function buildPostWriteLifecycleRequest() {
+  const incrementalEnabled = values['no-incremental'] !== true;
   return {
-    schemaVersion: 'lumin-post-write-lifecycle-request.v1',
+    schemaVersion: 'lumin-post-write-lifecycle-request.v2',
     root: ROOT,
     output: OUT,
-    scriptsDir: __dirname,
-    nodeExecutable: process.execPath,
     advisoryPath: values['pre-write-advisory'] ? path.resolve(values['pre-write-advisory']) : null,
     deltaOut: values['delta-out'] ? path.resolve(values['delta-out']) : null,
-    noFreshAudit: values['no-fresh-audit'] === true,
-    scanArgs: forwardedScanArgs(),
-    incrementalArgs: forwardedIncrementalArgs(),
+    deltaInvocationId: generateInvocationId(),
+    generated: manifestGenerated,
+    includeTests: INCLUDE_TESTS,
+    excludes: EFFECTIVE_EXCLUDES,
+    incremental: {
+      enabled: incrementalEnabled,
+      ...(incrementalEnabled ? { cacheRoot: performanceCacheRoot() } : {}),
+      clear: values['clear-incremental-cache'] === true,
+    },
   };
 }
 
