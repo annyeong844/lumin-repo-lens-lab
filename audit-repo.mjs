@@ -46,6 +46,7 @@
 // any step is captured but never hidden.
 
 import { existsSync, mkdirSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -65,9 +66,11 @@ import {
   applyLifecycleAndRefreshManifestEvidence,
 } from './_lib/audit-manifest.mjs';
 import { normalizeGeneratedArtifactsMode } from './_lib/generated-artifact-mode.mjs';
-import {
-  generateInvocationId,
-} from './_lib/pre-write-artifact.mjs';
+
+function generateInvocationId() {
+  const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
+  return `${timestamp}-${randomBytes(3).toString('hex')}`;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HELP_TEXT = `
@@ -173,7 +176,6 @@ const CLI_OPTIONS = {
   'pre-write-advisory': { type: 'string' },
   'delta-out': { type: 'string' },
   'no-include-tests': { type: 'boolean', default: false },
-  'no-fresh-audit': { type: 'boolean', default: false },
   'no-self-audit-excludes': { type: 'boolean', default: false },
   'no-incremental': { type: 'boolean', default: false },
   'cache-root': { type: 'string' },
@@ -544,16 +546,21 @@ function buildRustPreWriteLifecycleRequest({
   };
 }
 
-function buildJsPreWriteLifecycleRequest() {
+function buildJsPreWriteLifecycleRequest({ advisoryInvocationId }) {
   return {
-    schemaVersion: 'lumin-js-pre-write-lifecycle-request.v1',
+    schemaVersion: 'lumin-js-pre-write-lifecycle-request.v2',
     root: ROOT,
     output: OUT,
-    scriptsDir: __dirname,
-    nodeExecutable: process.execPath,
-    noFreshAudit: values['no-fresh-audit'] === true,
-    scanArgs: forwardedScanArgs(),
-    incrementalArgs: forwardedIncrementalArgs(),
+    invocationId: advisoryInvocationId,
+    generated: manifestGenerated,
+    includeTests: INCLUDE_TESTS,
+    production: PRODUCTION,
+    excludes: EFFECTIVE_EXCLUDES,
+    incremental: {
+      enabled: values['no-incremental'] !== true,
+      cacheRoot: performanceCacheRoot(),
+      clear: values['clear-incremental-cache'] === true,
+    },
   };
 }
 
@@ -612,7 +619,7 @@ const lifecycleExecution = executeAuditLifecycle({
       rustNativePath: path.join(OUT, `rust-pre-write-artifact.${advisoryInvocationId}.json`),
       rustNativeLatestPath: path.join(OUT, 'rust-pre-write-artifact.latest.json'),
     }),
-    js: buildJsPreWriteLifecycleRequest(),
+    js: buildJsPreWriteLifecycleRequest({ advisoryInvocationId }),
   } : null,
   postWrite: values['post-write'] === true ? {
     requested: values['post-write'] === true,

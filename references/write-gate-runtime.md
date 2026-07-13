@@ -20,8 +20,8 @@ node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs \
 ```
 
 Do not mix a source wrapper, binary from another checkout, and generated skill
-from an older commit. Do not benchmark `pre-write.mjs` or an audit-core
-subcommand directly and call that the lifecycle runtime.
+from an older commit. The removed standalone write-gate scripts are not valid
+entrypoints; measure the `audit-repo.mjs` lifecycle command end to end.
 
 For a source-checkout diagnosis, record `node --version`, the wrapper checkout
 commit, and both packaged helper contracts before changing product code. The
@@ -32,11 +32,10 @@ that expensive fixture probe enabled for normal write-gate runs.
 
 ## Fresh JS/TS Contract
 
-`--pre-write-engine auto` still selects the JS lifecycle owner when the intent
-does not declare `language: "rust"`. That owner must obtain fresh name, file,
-dependency-consumer, topology, and type-escape evidence from Rust
-`js-ts-pre-write-evidence`. Rust discovers the scoped files and parses them once
-with OXC; JS renders the advisory and owns compatibility policy.
+`--pre-write-engine auto` still selects the JS/TS lifecycle when the intent
+does not declare `language: "rust"`. Audit-core discovers the scoped files,
+parses them once with OXC, projects every lookup and cue, and writes the
+advisory without a Node child or JS policy fallback.
 
 After a normal fresh JS/TS run, read the invocation-specific advisory and
 verify:
@@ -51,9 +50,8 @@ verify:
 - the evidence artifact reports complete symbols, topology, and any-inventory
   metadata before an absence claim is made.
 
-Missing `preWrite.rustEvidencePath` is expected only with explicit
-`--no-fresh-audit`, or when a non-JS/TS route owns the advisory. On an ordinary
-fresh JS/TS run it indicates a stale or incompatible runtime. Stop validation,
+Missing `preWrite.rustEvidencePath` on the JS/TS route indicates a stale or
+incompatible runtime. Stop validation,
 identify the exact wrapper/package, and rebuild or reinstall it. Do not rerun a
 legacy path or reinterpret old `symbols.json` as fresh Rust evidence.
 
@@ -169,11 +167,9 @@ reader; do not attribute the wait to OXC or weaken evidence collection.
    `LUMIN_AUDIT_CORE_CONTRACT_DEBUG=1` and, when feature strings and behavior
    disagree, once with `LUMIN_AUDIT_CORE_FULL_CONTRACT_PROBE=1`. Fix rejected
    binary/package selection; do not add a fallback classifier.
-7. Exact object and literal-union `shapeTypeLiterals` are Rust-owned compact
-   evidence. A missing normalization is a wrapper/helper provenance failure,
-   not expected degradation. Function-signature and inline refactor lanes may
-   still materialize their checked focused artifacts; report those owners
-   directly instead of hiding them as generic pre-write time.
+7. Exact object, literal-union, function-signature, and inline-refactor facts
+   are Rust-owned current-run evidence. A missing normalization is a
+   wrapper/helper provenance failure, not expected degradation.
 8. Check the file inventory for accidental generated trees. Exclude a tree only
    when repository policy says it is out of scope, never just to improve time.
 
@@ -183,7 +179,7 @@ For post-write, also verify `baselineStatus`, `scanRangeParity`,
 ## Do Not
 
 - Do not use `pre-write-advisory.latest.json` across task boundaries.
-- Do not use `--no-fresh-audit` to make a slow fresh path appear fixed.
+- Do not restore a stale-evidence or no-fresh mode to make a slow path appear fixed.
 - Do not delete the incremental cache before every normal write gate.
 - Do not raise a timeout, cap the repository, mute evidence, or switch to a JS
   fallback to make the command finish.

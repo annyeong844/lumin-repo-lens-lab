@@ -1,6 +1,7 @@
 mod advisory;
 mod child;
 mod js_engine;
+mod js_native;
 mod protocol;
 mod rust_engine;
 

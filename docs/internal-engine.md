@@ -43,12 +43,10 @@ comparisons, or output formats:
 
 ## Lifecycle and canon workflows
 
-These scripts correspond to stable capabilities, but they still live as
-engine entrypoints for focused reproducer work. Public onboarding should
-still point to `audit-repo.mjs` first.
+Write-gate execution is available only through `audit-repo.mjs`; audit-core
+owns native pre-write and post-write computation behind that public lifecycle.
+The remaining focused script entrypoints are:
 
-- `pre-write.mjs`
-- `post-write.mjs`
 - `generate-canon-draft.mjs`
 - `check-canon.mjs`
 

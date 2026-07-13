@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use lumin_rust_common::atomic_write_json_pretty;
 use serde_json::Value;
 use std::fs;
@@ -7,40 +7,6 @@ use std::path::{Path, PathBuf};
 pub(super) struct AdvisoryWriteResult {
     pub(super) latest_path: PathBuf,
     pub(super) specific_path: PathBuf,
-}
-
-pub(super) fn read_required_json(path: &Path, label: &str) -> Result<Value> {
-    let text = fs::read_to_string(path)
-        .with_context(|| format!("{label}: failed to read {}", path.display()))?;
-    serde_json::from_str(&text)
-        .with_context(|| format!("{label}: invalid JSON in {}", path.display()))
-}
-
-pub(super) fn required_invocation_id<'a>(artifact: &'a Value, label: &str) -> Result<&'a str> {
-    artifact
-        .as_object()
-        .with_context(|| format!("{label} must be an object"))?
-        .get("invocationId")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .with_context(|| format!("{label}.invocationId must be a non-empty string"))
-}
-
-pub(super) fn validate_matching_json_artifacts(
-    latest: &Path,
-    specific: &Path,
-    label: &str,
-) -> Result<()> {
-    let latest_json = read_json_artifact(latest, label)?;
-    let specific_json = read_json_artifact(specific, label)?;
-    if latest_json != specific_json {
-        bail!(
-            "{label} contract failed: latest and invocation-specific artifacts differ ({} != {})",
-            latest.display(),
-            specific.display()
-        );
-    }
-    Ok(())
 }
 
 pub(super) fn write_advisory(output: &Path, advisory: &Value) -> Result<AdvisoryWriteResult> {
@@ -79,15 +45,4 @@ pub(super) fn remove_file_if_present(path: &Path) -> std::io::Result<()> {
 
 pub(super) fn path_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
-}
-
-fn read_json_artifact(path: &Path, label: &str) -> Result<Value> {
-    let bytes = fs::read(path)
-        .with_context(|| format!("{label} contract failed: failed to read {}", path.display()))?;
-    serde_json::from_slice(&bytes).with_context(|| {
-        format!(
-            "{label} contract failed: invalid JSON in {}",
-            path.display()
-        )
-    })
 }

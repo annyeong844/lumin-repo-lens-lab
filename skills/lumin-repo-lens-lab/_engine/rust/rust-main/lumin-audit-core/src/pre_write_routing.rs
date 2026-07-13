@@ -17,6 +17,7 @@ pub struct PreWriteRoutingRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PreWriteRoutingResult {
     pub engine: String,
+    pub intent_input: String,
     pub child_intent_flag: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub child_intent_input: Option<String>,
@@ -82,13 +83,15 @@ fn route_explicit_js(
             "intent.language \"rust\" is owned by lumin-rust-analyzer; use --pre-write-engine auto or --pre-write-engine rust"
         );
     }
+    let intent_input = request.intent_text;
     let child_intent_input = if request.intent_flag == "-" {
-        Some(request.intent_text)
+        Some(intent_input.clone())
     } else {
         None
     };
     Ok(route_result(
         "js",
+        intent_input,
         request.intent_flag,
         child_intent_input,
         request.requested_engine,
@@ -103,13 +106,15 @@ fn route_explicit_rust(
 ) -> Result<PreWriteRoutingResult> {
     if intent_language.as_deref() == Some("js-ts") {
         bail!(
-            "intent.language \"js-ts\" is owned by pre-write.mjs; use --pre-write-engine js or --pre-write-engine auto"
+            "intent.language \"js-ts\" is owned by native lumin-audit-core pre-write; use --pre-write-engine js or --pre-write-engine auto"
         );
     }
+    let intent_input = strip_route_only_fields(&request.intent_text);
     Ok(route_result(
         "rust",
+        intent_input.clone(),
         "-".to_string(),
-        Some(strip_route_only_fields(&request.intent_text)),
+        Some(intent_input),
         request.requested_engine,
         "explicit-cli",
         intent_language,
@@ -137,6 +142,7 @@ fn route_auto(
     };
     Ok(route_result(
         selected,
+        child_intent_input.clone().unwrap_or_default(),
         "-".to_string(),
         child_intent_input,
         request.requested_engine,
@@ -147,6 +153,7 @@ fn route_auto(
 
 fn route_result(
     selected: &str,
+    intent_input: String,
     child_intent_flag: String,
     child_intent_input: Option<String>,
     requested: String,
@@ -155,6 +162,7 @@ fn route_result(
 ) -> PreWriteRoutingResult {
     PreWriteRoutingResult {
         engine: selected.to_string(),
+        intent_input,
         child_intent_flag,
         child_intent_input,
         engine_selection: PreWriteEngineSelection {

@@ -91,7 +91,7 @@ fn explicit_engine_mismatch_hard_stops() -> Result<()> {
 
     assert!(error
         .to_string()
-        .contains("intent.language \"js-ts\" is owned by pre-write.mjs"));
+        .contains("intent.language \"js-ts\" is owned by native lumin-audit-core pre-write"));
     Ok(())
 }
 

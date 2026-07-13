@@ -15,6 +15,7 @@ use lumin_audit_core::canon_draft_lifecycle::{
 use lumin_audit_core::check_canon_lifecycle::{
     execute_check_canon_lifecycle, CheckCanonLifecycleRequest,
 };
+use lumin_audit_core::js_ts_pre_write::JsTsPreWriteIncrementalRequest;
 use lumin_audit_core::lifecycle::{
     build_manifest_lifecycle_update, summarize_lifecycle, ManifestLifecycleUpdateInput,
 };
@@ -109,14 +110,18 @@ struct RustPreWriteLifecycleTemplate {
 struct JsPreWriteLifecycleTemplate {
     root: PathBuf,
     output: PathBuf,
-    scripts_dir: PathBuf,
-    node_executable: String,
+    #[serde(rename = "invocationId")]
+    advisory_invocation_id: String,
     #[serde(default)]
-    no_fresh_audit: bool,
+    generated: Option<String>,
     #[serde(default)]
-    scan_args: Vec<String>,
+    include_tests: bool,
     #[serde(default)]
-    incremental_args: Vec<String>,
+    production: bool,
+    #[serde(default)]
+    excludes: Vec<String>,
+    #[serde(default)]
+    incremental: JsTsPreWriteIncrementalRequest,
 }
 
 #[derive(Debug, Deserialize)]
@@ -458,7 +463,7 @@ fn build_rust_pre_write_request(
         analyzer_invocation: template.analyzer.context(
             "execute-audit-lifecycle: rust pre-write selected but analyzer invocation is missing",
         )?,
-        intent_input: route.child_intent_input.clone().unwrap_or_default(),
+        intent_input: route.intent_input.clone(),
         include_tests: template.include_tests,
         production: template.production,
         excludes: template.excludes,
@@ -524,17 +529,17 @@ fn build_js_pre_write_request(
     route: &PreWriteRoutingResult,
 ) -> Result<JsPreWriteLifecycleRequest> {
     Ok(JsPreWriteLifecycleRequest {
-        schema_version: "lumin-js-pre-write-lifecycle-request.v1".to_string(),
+        schema_version: "lumin-js-pre-write-lifecycle-request.v2".to_string(),
         root: template.root,
         output: template.output,
-        scripts_dir: template.scripts_dir,
-        node_executable: template.node_executable,
-        child_intent_flag: route.child_intent_flag.clone(),
-        child_intent_input: route.child_intent_input.clone(),
+        advisory_invocation_id: Some(template.advisory_invocation_id),
+        intent_input: Some(route.intent_input.clone()),
         engine_selection: serde_json::to_value(&route.engine_selection)?,
-        no_fresh_audit: template.no_fresh_audit,
-        scan_args: template.scan_args,
-        incremental_args: template.incremental_args,
+        generated: template.generated,
+        include_tests: template.include_tests,
+        production: template.production,
+        excludes: template.excludes,
+        incremental: template.incremental,
     })
 }
 

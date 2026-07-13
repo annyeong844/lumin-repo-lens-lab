@@ -585,8 +585,9 @@ source health now owns narrow exact-hash producers. A `shape.hash` matching
 `HealthResponse::files[*].ast.shapeHashes[].hash` returns `SHAPE_MATCH`. A
 `shape.hash` matching
 `HealthResponse::files[*].ast.functionSignatures[].hash` returns
-`SIGNATURE_MATCH`, mirroring the JS/TS `_lib/pre-write-lookup-shape.mjs`
-`functionSignature` branch. Fields-only intents remain `UNAVAILABLE` because
+`SIGNATURE_MATCH`, matching the native audit-core function-signature lookup in
+`pre_write_lifecycle/js_native/lookup.rs`. Fields-only intents remain
+`UNAVAILABLE` because
 field names alone are not structural equality evidence. `typeLiteral` without
 an exact hash remains `UNAVAILABLE`; Rust must not parse TS/JS type literals in
 this lane. An unmatched exact hash is `NOT_OBSERVED` only when
@@ -605,8 +606,8 @@ semantic equivalence, auto-reuse, or auto-fix proof. No absence cue, fuzzy cue,
 field-only cue, or `typeLiteral` cue may be emitted from this lane until a
 checker-grade or explicitly documented Rust producer owns that evidence.
 
-Rust dependency intent lookup is the Rust analogue of the JS/TS
-`pre-write-lookup-dep.mjs` lane:
+Rust dependency intent lookup is the Rust analogue of the native audit-core
+dependency lane in `pre_write_lifecycle/js_native/lookup.rs`:
 
 - `Cargo.toml` replaces `package.json` as the declaration source.
 - `[dependencies]`, `[dev-dependencies]`, and `[build-dependencies]` replace
@@ -670,13 +671,9 @@ evidence. Same-file local-operation sibling review stays
 `unavailable/no-signature-facts` until Rust source health owns nested-function
 signature facts.
 
-`meta.lookupPolicy.jsTsPrecedent` must include the JS/TS intent, cue tier, and
-lookup owners that Rust pre-write has translated or intentionally exposes as
-unsupported evidence: `_lib/pre-write-intent.mjs`,
-`_lib/pre-write-cue-tiers.mjs`, `_lib/pre-write-lookup-name.mjs`,
-`_lib/pre-write-lookup-file.mjs`, `_lib/pre-write-lookup-shape.mjs`,
-`_lib/pre-write-lookup-dep.mjs`, and
-`_lib/pre-write-lookup-inline-patterns.mjs`.
+`meta.lookupPolicy.writeGatePolicyOwners` must cite the current native intent,
+cue, lookup, function-signature, and inline-pattern owners in audit-core. It
+must not cite deleted JS compatibility modules as live policy evidence.
 
 Rust pre-write lookup helpers have canonical owners:
 
@@ -850,8 +847,9 @@ contract:
   `alternativeConsidered` fields must remain stable so a downstream post-write
   phase can compare declared intent with observed language-specific evidence.
 
-Rust inline extraction intent support is the Rust analogue of the JS/TS
-`pre-write-lookup-inline-patterns.mjs` lane:
+Rust inline extraction intent support is the Rust analogue of audit-core's
+native `js_ts_extract/inline_patterns.rs` and
+`pre_write_lifecycle/js_native/lookup.rs` lane:
 
 - `intent.refactorSources[]` is accepted as optional explicit extraction
   source evidence and follows the JS/TS input contract: `file` must be a safe

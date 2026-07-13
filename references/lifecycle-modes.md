@@ -49,20 +49,20 @@ examples. Missing top-level arrays default to `[]` with an
 
 Pre-write is advisory. It informs the edit; it does not veto the edit.
 When `--pre-write` is the only lifecycle mode requested through the
-orchestrator, it does not run the base quick audit first. For a normal fresh
-JS/TS run, the JS lifecycle owner calls Rust `js-ts-pre-write-evidence` once to
-discover and parse the scoped files and return compact name, file,
-dependency-consumer, topology, and type-escape evidence. It does not build or
-load repository-sized `symbols.json`, `topology.json`, or `triage.json` for
-those lanes. The invocation-specific advisory must contain
+orchestrator, it does not run the base quick audit first. For a normal JS/TS
+run, audit-core discovers and parses the scoped files once, projects compact
+name, file, dependency-consumer, topology, shape, function-signature,
+inline-pattern, and type-escape evidence, then renders and writes the advisory
+in the same native lifecycle. It does not build or load repository-sized
+`symbols.json`, `topology.json`, or `triage.json` for those lanes. The
+invocation-specific advisory must contain
 `preWrite.rustEvidencePath`; read `references/write-gate-runtime.md` for the
 operational verification and stale-runtime procedure.
 
 Exact JS/TS shape requests, function-signature requests, and inline refactor
-patterns still materialize their checked legacy artifacts when requested until
-the corresponding Rust parity migrations land. With `--no-fresh-audit`, the
-caller explicitly opts into existing compatible artifacts; missing evidence is
-reported unavailable rather than converted to a clean absence claim.
+patterns are projected from the current invocation's native OXC evidence.
+There is no stale-artifact reuse mode or JS fallback classifier; missing or
+incomplete evidence remains visibly unavailable.
 `shape-index.json` is JS/TS shape evidence. Rust shape, signature, clone, and
 file lookup evidence comes from the Rust pre-write artifact when the intent
 declares `"language": "rust"`.

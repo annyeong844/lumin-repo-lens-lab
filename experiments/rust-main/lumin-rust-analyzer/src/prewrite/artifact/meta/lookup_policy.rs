@@ -3,20 +3,18 @@ use serde::Serialize;
 use crate::prewrite::lookup;
 use lumin_rust_source_health::protocol::RUST_INLINE_PATTERN_MAX_STATEMENTS;
 
-const LOOKUP_POLICY_JS_TS_PRECEDENT: &[&str] = &[
-    "_lib/pre-write-intent.mjs",
-    "_lib/pre-write-cue-tiers.mjs",
-    "_lib/pre-write-lookup-name.mjs",
-    "_lib/pre-write-lookup-file.mjs",
-    "_lib/pre-write-lookup-shape.mjs",
-    "_lib/pre-write-lookup-dep.mjs",
-    "_lib/pre-write-lookup-inline-patterns.mjs",
+const WRITE_GATE_POLICY_OWNERS: &[&str] = &[
+    "experiments/rust-main/lumin-audit-core/src/pre_write_intent.rs",
+    "experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/cues.rs",
+    "experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/lookup.rs",
+    "experiments/rust-main/lumin-audit-core/src/js_ts_extract/function_signature.rs",
+    "experiments/rust-main/lumin-audit-core/src/js_ts_extract/inline_patterns.rs",
 ];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct LookupPolicyMeta {
-    js_ts_precedent: &'static [&'static str],
+    write_gate_policy_owners: &'static [&'static str],
     near_name: NearNameLookupPolicyMeta,
     semantic_hint: SemanticHintLookupPolicyMeta,
     service_operation_sibling: OperationSiblingPolicyMeta,
@@ -29,7 +27,7 @@ pub(super) struct LookupPolicyMeta {
 impl LookupPolicyMeta {
     pub(super) fn from_constants() -> Self {
         Self {
-            js_ts_precedent: LOOKUP_POLICY_JS_TS_PRECEDENT,
+            write_gate_policy_owners: WRITE_GATE_POLICY_OWNERS,
             near_name: NearNameLookupPolicyMeta {
                 max_length_delta: lookup::NEAR_NAME_MAX_LENGTH_DELTA,
                 shared_prefix_min: lookup::NEAR_NAME_SHARED_PREFIX_MIN,

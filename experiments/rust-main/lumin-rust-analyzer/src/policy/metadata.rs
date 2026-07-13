@@ -22,7 +22,7 @@ pub(crate) fn policy_metadata() -> PolicyMetadata {
         js_ts_precedent: [
             "_lib/finding-provenance.mjs",
             "_lib/ranking.mjs",
-            "_lib/pre-write-cue-tiers.mjs",
+            "experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/cues.rs",
         ],
         syntax: syntax_policy(),
         semantic: semantic_policy(),
