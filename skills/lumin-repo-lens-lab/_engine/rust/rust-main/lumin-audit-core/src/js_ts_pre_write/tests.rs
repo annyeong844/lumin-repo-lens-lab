@@ -8,6 +8,36 @@ use super::projection::TYPE_ESCAPE_KINDS;
 use super::*;
 
 #[test]
+fn consuming_run_releases_scan_lock_before_result_transport() -> Result<()> {
+    let temp = tempdir()?;
+    let root = temp.path();
+    fs::write(root.join("app.ts"), "export const app = 1;\n")?;
+    let run = start_js_ts_pre_write_evidence(JsTsPreWriteEvidenceRequest {
+        schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
+        root: root.to_path_buf(),
+        evidence_artifact: "pre-write-evidence.PROBE.json".to_string(),
+        any_inventory_artifact: "any-inventory.pre.PROBE.json".to_string(),
+        generated: "2026-07-13T00:00:00.000Z".to_string(),
+        include_tests: true,
+        excludes: Vec::new(),
+        dependency_roots: Vec::new(),
+        shape_type_literals: Vec::new(),
+        discover_files: false,
+        files: vec![source_file(root, "app.ts")],
+        incremental: Default::default(),
+    })?;
+
+    assert!(!single_flight::ScanLease::is_available(root)?);
+    let evidence = run.into_evidence();
+    assert!(single_flight::ScanLease::is_available(root)?);
+    assert_eq!(
+        evidence["schemaVersion"],
+        JS_TS_PRE_WRITE_EVIDENCE_RESPONSE_SCHEMA_VERSION
+    );
+    Ok(())
+}
+
+#[test]
 fn builds_compact_pre_write_evidence_without_repository_artifacts() -> Result<()> {
     let temp = tempdir()?;
     let root = temp.path();

@@ -23,11 +23,7 @@ pub struct JsTsPreWriteEvidenceRun {
 }
 
 impl JsTsPreWriteEvidenceRun {
-    pub fn evidence(&self) -> &Value {
-        &self.evidence
-    }
-
-    fn into_evidence(self) -> Value {
+    pub fn into_evidence(self) -> Value {
         self.evidence
     }
 }
