@@ -36,8 +36,6 @@ const MAX_PACKAGED_LINUX_GLIBC = { major: 2, minor: 31 };
 
 const PUBLIC_COMMANDS = [
   'audit-repo.mjs',
-  'pre-write.mjs',
-  'post-write.mjs',
   'generate-canon-draft.mjs',
   'check-canon.mjs',
 ];
@@ -72,8 +70,6 @@ const PRODUCER_SCRIPTS = [
   'measure-topology.mjs',
   'merge-runtime-evidence.mjs',
   'p6-measurement.mjs',
-  'post-write.mjs',
-  'pre-write.mjs',
   'rank-fixes.mjs',
   'resolve-method-calls.mjs',
   'triage-repo.mjs',

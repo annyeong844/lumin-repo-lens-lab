@@ -308,7 +308,7 @@ Any one condition failing demotes to `medium`. Two failing → `low`. Three → 
 | `triage-repo.mjs` | boundary-rule |
 | `checklist-facts.mjs` | watchpoint (via threshold gates), blind-zone (via `_context_check_required`) |
 | `build-shape-index.mjs` | shape-hash |
-| `pre-write.mjs` | consumes facts and writes advisory artifacts; produces no canonical facts |
+| `lumin-audit-core::pre_write_lifecycle::js_native` | consumes current-run compact facts and writes advisory artifacts; produces no canonical facts |
 | `generate-canon-draft.mjs` | emits drafts derived from facts; not a fact producer |
 
 Current capability note: `build-symbol-graph.mjs` emits

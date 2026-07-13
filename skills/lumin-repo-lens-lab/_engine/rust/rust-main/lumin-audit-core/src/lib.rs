@@ -37,6 +37,7 @@ pub mod orchestration_executor;
 pub mod orchestration_plan;
 pub mod orchestration_result;
 pub mod post_write_lifecycle;
+pub mod pre_write_intent;
 pub mod pre_write_lifecycle;
 pub mod pre_write_routing;
 pub mod producer_performance;

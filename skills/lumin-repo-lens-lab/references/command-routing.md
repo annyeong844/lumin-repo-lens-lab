@@ -313,8 +313,8 @@ remains an alias for `--pre-write-engine rust`:
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --rust-pre-write $ARGUMENTS
 ```
 
-This routes to `lumin-rust-analyzer pre-write` instead of the JS/TS
-`pre-write.mjs` owner. The generated package must have
+This routes to `lumin-rust-analyzer pre-write` instead of the native audit-core
+JS/TS lifecycle. The generated package must have
 `LUMIN_RUST_ANALYZER_BIN` set to a built analyzer binary, or a maintainer
 checkout with `experiments/Cargo.toml` available. Do not silently
 fall back to JS/TS pre-write for Rust source intents.

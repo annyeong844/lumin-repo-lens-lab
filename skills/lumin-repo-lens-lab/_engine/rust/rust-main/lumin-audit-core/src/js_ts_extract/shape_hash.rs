@@ -509,7 +509,7 @@ fn value_text<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
-fn generated_file_evidence(file: &str, source: &str) -> Option<Value> {
+pub(super) fn generated_file_evidence(file: &str, source: &str) -> Option<Value> {
     let normalized = file.replace('\\', "/");
     if has_path_segment(&normalized, "__generated__") || has_path_segment(&normalized, "generated")
     {

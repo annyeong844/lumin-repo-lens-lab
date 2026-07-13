@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::js_ts_extract::{ClassMethodRecord, TypeEscapeRecord, UseRecord};
+use crate::js_ts_extract::{
+    ClassMethodRecord, FunctionSignatureFact, InlinePatternOccurrence, TypeEscapeRecord, UseRecord,
+    INLINE_NORMALIZER_VERSION, MAX_CATCH_STATEMENTS,
+};
 use crate::shape_index::{build_shape_index_artifact, ShapeIndexRequest};
 use crate::symbol_graph::any_contamination::{
     annotate_projected_def_index, ProjectedAnyContamination,
@@ -24,6 +27,7 @@ pub(super) const TYPE_ESCAPE_KINDS: &[&str] = &[
     "no-explicit-any-disable",
     "jsdoc-any",
 ];
+const INLINE_PATTERN_MIN_OCCURRENCES: usize = 3;
 
 #[derive(Debug, Default)]
 struct FanInSpaceConsumers {
@@ -54,6 +58,9 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
     let mut parse_error_files = Vec::new();
     let mut parse_errors = Vec::new();
     let mut type_escapes = Vec::<TypeEscapeRecord>::new();
+    let mut function_signature_facts = Vec::<FunctionSignatureFact>::new();
+    let mut inline_pattern_occurrences = Vec::<InlinePatternOccurrence>::new();
+    let mut inline_pattern_diagnostics = Vec::<Value>::new();
     let mut topology_nodes = Map::new();
 
     for row in &rows {
@@ -68,9 +75,17 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
                 "message": error.chars().take(200).collect::<String>(),
                 "line": 0,
             }));
+            inline_pattern_diagnostics.push(json!({
+                "kind": "parse-error",
+                "file": row.relative_path,
+                "message": error,
+            }));
             continue;
         }
         type_escapes.extend(row.extracted.type_escapes.iter().cloned());
+        function_signature_facts.extend(row.extracted.function_signature_facts.iter().cloned());
+        inline_pattern_occurrences.extend(row.extracted.inline_pattern_occurrences.iter().cloned());
+        inline_pattern_diagnostics.extend(row.extracted.inline_pattern_diagnostics.iter().cloned());
         let mut names = Map::new();
         let mut definition_names = BTreeSet::new();
         for definition in &row.extracted.defs {
@@ -244,6 +259,20 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
         &excludes,
         &incremental,
     )?;
+    function_signature_facts.sort_by(|left, right| left.identity.cmp(&right.identity));
+    let function_signature_count = function_signature_facts.len();
+    let inline_patterns = build_inline_patterns(
+        &rows,
+        inline_pattern_occurrences,
+        inline_pattern_diagnostics,
+        complete,
+        include_tests,
+        &excludes,
+    );
+    let inline_pattern_occurrence_count = inline_patterns
+        .pointer("/meta/patternOccurrenceCount")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     Ok(json!({
         "schemaVersion": JS_TS_PRE_WRITE_EVIDENCE_RESPONSE_SCHEMA_VERSION,
         "root": normalize_slashes(&root.to_string_lossy()),
@@ -255,6 +284,8 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
             "dependencyConsumerCount": dependency_consumer_count,
             "internalEdgeCount": internal_edge_count,
             "typeEscapeCount": type_escape_count,
+            "functionSignatureCount": function_signature_count,
+            "inlinePatternOccurrenceCount": inline_pattern_occurrence_count,
         },
         "symbols": {
             "meta": {
@@ -302,6 +333,18 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
         },
         "shapeIndex": shape_index,
         "shapeIntentNormalizations": shape_intent_normalizations,
+        "functionSignatures": {
+            "schemaVersion": "function-signatures.v1",
+            "meta": {
+                "complete": complete,
+                "normalizerVersion": "function-signature.normalized.v1",
+                "fileCount": rows.len(),
+                "factCount": function_signature_count,
+                "filesWithParseErrors": parse_error_files,
+            },
+            "facts": function_signature_facts,
+        },
+        "inlinePatterns": inline_patterns,
         "anyInventory": {
             "meta": {
                 "tool": "lumin-audit-core js-ts-pre-write-evidence",
@@ -323,6 +366,116 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
             "typeEscapes": type_escapes,
         },
     }))
+}
+
+fn build_inline_patterns(
+    rows: &[super::input::SourceRow],
+    occurrences: Vec<InlinePatternOccurrence>,
+    mut diagnostics: Vec<Value>,
+    complete: bool,
+    include_tests: bool,
+    excludes: &[String],
+) -> Value {
+    let mut grouped = BTreeMap::<String, (String, String, Vec<InlinePatternOccurrence>)>::new();
+    for occurrence in occurrences {
+        let entry = grouped
+            .entry(occurrence.pattern_hash.clone())
+            .or_insert_with(|| {
+                (
+                    occurrence.kind.clone(),
+                    occurrence.normalized_pattern.clone(),
+                    Vec::new(),
+                )
+            });
+        entry.2.push(occurrence);
+    }
+    let pattern_occurrence_count = grouped.values().map(|entry| entry.2.len()).sum::<usize>();
+    let mut groups = grouped
+        .into_iter()
+        .filter_map(|(pattern_hash, (kind, normalized_pattern, mut occurrences))| {
+            if occurrences.len() < INLINE_PATTERN_MIN_OCCURRENCES {
+                return None;
+            }
+            occurrences.sort_by(|left, right| {
+                left.file
+                    .cmp(&right.file)
+                    .then_with(|| left.line.cmp(&right.line))
+                    .then_with(|| left.end_line.cmp(&right.end_line))
+                    .then_with(|| left.enclosing_function.cmp(&right.enclosing_function))
+            });
+            let owner_files = occurrences
+                .iter()
+                .map(|occurrence| occurrence.file.clone())
+                .collect::<BTreeSet<_>>();
+            Some(json!({
+                "patternHash": pattern_hash,
+                "kind": kind,
+                "size": occurrences.len(),
+                "ownerFiles": owner_files,
+                "normalizedPattern": normalized_pattern,
+                "occurrences": occurrences,
+                "reviewReason": "same normalized catch block; verify control-flow and ownership before extracting",
+            }))
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by(|left, right| {
+        right
+            .get("size")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .cmp(&left.get("size").and_then(Value::as_u64).unwrap_or(0))
+            .then_with(|| {
+                left.get("patternHash")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .cmp(
+                        right
+                            .get("patternHash")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    )
+            })
+    });
+    diagnostics.sort_by(|left, right| {
+        value_string(left, "file")
+            .cmp(value_string(right, "file"))
+            .then_with(|| value_string(left, "kind").cmp(value_string(right, "kind")))
+            .then_with(|| value_string(left, "message").cmp(value_string(right, "message")))
+    });
+    json!({
+        "schemaVersion": "inline-patterns.v1",
+        "meta": {
+            "complete": complete,
+            "normalizerVersion": INLINE_NORMALIZER_VERSION,
+            "includeTests": include_tests,
+            "exclude": excludes,
+            "fileCount": rows.len(),
+            "patternOccurrenceCount": pattern_occurrence_count,
+            "groupCount": groups.len(),
+            "minOccurrences": INLINE_PATTERN_MIN_OCCURRENCES,
+            "maxPatternStatements": MAX_CATCH_STATEMENTS,
+            "thresholdPolicies": [{
+                "policyId": "inline-pattern-policy",
+                "policyVersion": "inline-pattern-policy-v1",
+                "thresholds": {
+                    "minOccurrences": INLINE_PATTERN_MIN_OCCURRENCES,
+                    "maxCatchStatements": MAX_CATCH_STATEMENTS,
+                },
+            }],
+            "supports": {
+                "catchBlockPatterns": true,
+                "statementSequencePatterns": false,
+                "semanticEquivalence": false,
+            },
+        },
+        "groups": groups,
+        "mutedGroups": [],
+        "diagnostics": diagnostics,
+    })
+}
+
+fn value_string<'a>(value: &'a Value, key: &str) -> &'a str {
+    value.get(key).and_then(Value::as_str).unwrap_or_default()
 }
 
 fn build_embedded_shape_index(

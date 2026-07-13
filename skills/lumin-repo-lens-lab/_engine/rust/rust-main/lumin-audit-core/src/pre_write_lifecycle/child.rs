@@ -2,7 +2,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use super::advisory::path_string;
-use super::protocol::{JsPreWriteLifecycleRequest, PreWriteLifecycleRequest};
+use super::protocol::PreWriteLifecycleRequest;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ChildStdio {
@@ -48,33 +48,6 @@ pub(super) fn run_rust_pre_write_child(
         &request.analyzer_invocation.command,
         &args,
         &request.intent_input,
-        child_stdio,
-    )
-}
-
-pub(super) fn run_js_pre_write_child(
-    request: &JsPreWriteLifecycleRequest,
-    child_stdio: ChildStdio,
-) -> ChildOutput {
-    let mut args = vec![
-        path_string(&request.scripts_dir.join("pre-write.mjs")),
-        "--root".to_string(),
-        path_string(&request.root),
-        "--output".to_string(),
-        path_string(&request.output),
-        "--intent".to_string(),
-        request.child_intent_flag.clone(),
-    ];
-    args.extend(request.scan_args.clone());
-    args.extend(request.incremental_args.clone());
-    if request.no_fresh_audit {
-        args.push("--no-fresh-audit".to_string());
-    }
-    run_child(
-        "pre-write.mjs",
-        &request.node_executable,
-        &args,
-        request.child_intent_input.as_deref().unwrap_or(""),
         child_stdio,
     )
 }

@@ -17,10 +17,10 @@ use super::single_flight::elapsed_ms;
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const CACHE_PROFILE_VERSION: &str =
-    "js-ts-pre-write-oxc-facts.v5+oxc-0.139.0+audit-core-bridge-v50";
+    "js-ts-pre-write-oxc-facts.v6+oxc-0.139.0+audit-core-bridge-v50";
 const CACHE_FILE_NAME: &str = "facts.json";
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JsTsPreWriteIncrementalRequest {
     #[serde(default)]

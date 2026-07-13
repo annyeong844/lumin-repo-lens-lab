@@ -92,24 +92,6 @@ export const SOFT_TAINTS = Object.freeze(new Set([
   TAINT.PARSE_ERRORS_ELSEWHERE,
 ]));
 
-// Delta-entry labels emitted by `_lib/post-write-delta.mjs::computeDelta`.
-// Consumed by the renderer + `requiredAcknowledgements(delta)` + `summarize`.
-// Centralized here (not inside post-write-delta.mjs) so a new label added by
-// the delta engine without a matching summary counter / render section fails
-// the vocab-drift assertion test. The earlier bug class (v1.10.0 P1 silent
-// provenance drop) is the same shape — every stringly-typed enumeration
-// crossing multiple modules needs a single source.
-export const DELTA_LABELS = Object.freeze({
-  PLANNED:              'planned',
-  PLANNED_NOT_OBSERVED: 'planned-not-observed',
-  SILENT_NEW:           'silent-new',
-  PRE_EXISTING:         'pre-existing',
-  REMOVED:              'removed',
-  OBSERVED_UNBASELINED: 'observed-unbaselined',
-});
-
-export const DELTA_LABEL_VALUES = Object.freeze(new Set(Object.values(DELTA_LABELS)));
-
 // The provenance fields that MUST flow through every proposal bucket
 // in `dead-classify.json`. Adding a new provenance field anywhere in
 // the classifier is a two-line change: append here, emit it in

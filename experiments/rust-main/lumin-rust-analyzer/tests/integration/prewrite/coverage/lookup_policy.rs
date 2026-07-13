@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::support::prewrite::PreWriteRepo;
 
 #[test]
-fn prewrite_meta_exposes_js_ts_lookup_policy_constants() -> Result<()> {
+fn prewrite_meta_exposes_current_write_gate_policy_owners() -> Result<()> {
     let repo = PreWriteRepo::new()?;
     let artifact = repo.run_json(
         r#"{
@@ -17,15 +17,13 @@ fn prewrite_meta_exposes_js_ts_lookup_policy_constants() -> Result<()> {
 
     let policy = &artifact["meta"]["lookupPolicy"];
     assert_eq!(
-        policy["jsTsPrecedent"],
+        policy["writeGatePolicyOwners"],
         serde_json::json!([
-            "_lib/pre-write-intent.mjs",
-            "_lib/pre-write-cue-tiers.mjs",
-            "_lib/pre-write-lookup-name.mjs",
-            "_lib/pre-write-lookup-file.mjs",
-            "_lib/pre-write-lookup-shape.mjs",
-            "_lib/pre-write-lookup-dep.mjs",
-            "_lib/pre-write-lookup-inline-patterns.mjs"
+            "experiments/rust-main/lumin-audit-core/src/pre_write_intent.rs",
+            "experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/cues.rs",
+            "experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/lookup.rs",
+            "experiments/rust-main/lumin-audit-core/src/js_ts_extract/function_signature.rs",
+            "experiments/rust-main/lumin-audit-core/src/js_ts_extract/inline_patterns.rs"
         ])
     );
     assert_eq!(policy["nearName"]["maxLengthDelta"], 2);

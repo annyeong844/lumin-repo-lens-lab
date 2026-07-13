@@ -2,10 +2,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
+use crate::js_ts_pre_write::JsTsPreWriteIncrementalRequest;
+
 pub const PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
     "lumin-rust-pre-write-lifecycle-request.v1";
 pub const JS_PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
-    "lumin-js-pre-write-lifecycle-request.v1";
+    "lumin-js-pre-write-lifecycle-request.v2";
 pub const PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION: &str = "lumin-pre-write-lifecycle-result.v1";
 
 pub(super) const RUST_PRE_WRITE_ARTIFACT_SCHEMA_VERSION: &str = "rust-pre-write.v1";
@@ -46,18 +48,21 @@ pub struct JsPreWriteLifecycleRequest {
     pub schema_version: String,
     pub root: PathBuf,
     pub output: PathBuf,
-    pub scripts_dir: PathBuf,
-    pub node_executable: String,
-    pub child_intent_flag: String,
+    #[serde(default, rename = "invocationId")]
+    pub advisory_invocation_id: Option<String>,
     #[serde(default)]
-    pub child_intent_input: Option<String>,
+    pub intent_input: Option<String>,
     pub engine_selection: Value,
     #[serde(default)]
-    pub no_fresh_audit: bool,
+    pub generated: Option<String>,
     #[serde(default)]
-    pub scan_args: Vec<String>,
+    pub include_tests: bool,
     #[serde(default)]
-    pub incremental_args: Vec<String>,
+    pub production: bool,
+    #[serde(default)]
+    pub excludes: Vec<String>,
+    #[serde(default)]
+    pub incremental: JsTsPreWriteIncrementalRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -126,6 +131,7 @@ pub struct PreWriteBlock {
 pub enum PreWriteFailureKind {
     OutputCleanupFailed,
     OutputWriteFailed,
+    EvidenceCollectionFailed,
     ChildFailed,
     NativeArtifactInvalid,
     AdvisoryArtifactInvalid,

@@ -121,7 +121,10 @@ fn cli_lifecycle_request_guard_emits_json_and_rejects_bad_schema() -> Result<()>
     assert_eq!(result["status"], "blocked");
     assert_eq!(result["preWrite"]["engine"], "js");
     assert_eq!(result["preWrite"]["language"], "js-ts");
-    assert_eq!(result["preWrite"]["producer"], "pre-write.mjs");
+    assert_eq!(
+        result["preWrite"]["producer"],
+        "lumin-audit-core js-ts-pre-write"
+    );
 
     fs::write(&input_path, r#"{"schemaVersion":"wrong"}"#)?;
     let output = Command::new(audit_core_bin())
@@ -227,10 +230,12 @@ fn cli_execute_audit_lifecycle_blocks_missing_pre_write_intent_before_route_pars
                 "js": {
                     "root": "repo",
                     "output": "out",
-                    "scriptsDir": "scripts",
-                    "nodeExecutable": "node",
-                    "noFreshAudit": false,
-                    "scanArgs": []
+                    "invocationId": "INV-JS-1",
+                    "generated": "2026-07-13T00:00:00.000Z",
+                    "includeTests": true,
+                    "production": false,
+                    "excludes": [],
+                    "incremental": { "enabled": false }
                 }
             },
             "exitPolicy": {
@@ -306,10 +311,12 @@ fn cli_execute_audit_lifecycle_blocks_mutex_before_routing_input_file_read() -> 
                 "js": {
                     "root": "repo",
                     "output": "out",
-                    "scriptsDir": "scripts",
-                    "nodeExecutable": "node",
-                    "noFreshAudit": false,
-                    "scanArgs": []
+                    "invocationId": "INV-JS-1",
+                    "generated": "2026-07-13T00:00:00.000Z",
+                    "includeTests": true,
+                    "production": false,
+                    "excludes": [],
+                    "incremental": { "enabled": false }
                 }
             },
             "postWrite": {
@@ -402,10 +409,12 @@ fn cli_execute_audit_lifecycle_reads_routing_input_stdin_after_guard_passes() ->
                 "js": {
                     "root": "repo",
                     "output": "out",
-                    "scriptsDir": "scripts",
-                    "nodeExecutable": "node",
-                    "noFreshAudit": false,
-                    "scanArgs": []
+                    "invocationId": "INV-JS-1",
+                    "generated": "2026-07-13T00:00:00.000Z",
+                    "includeTests": true,
+                    "production": false,
+                    "excludes": [],
+                    "incremental": { "enabled": false }
                 }
             },
             "exitPolicy": {

@@ -129,7 +129,7 @@ fn request_block(
 fn explicit_pre_write_owner(engine: &str) -> (Option<&'static str>, Option<&'static str>) {
     match engine {
         "rust" => (Some("rust"), Some("lumin-rust-analyzer")),
-        "js" => (Some("js-ts"), Some("pre-write.mjs")),
+        "js" => (Some("js-ts"), Some("lumin-audit-core js-ts-pre-write")),
         _ => (None, None),
     }
 }

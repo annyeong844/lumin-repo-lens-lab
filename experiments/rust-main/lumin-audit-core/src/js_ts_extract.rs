@@ -1,6 +1,8 @@
 mod cjs;
 mod code_shape;
 mod dynamic_imports;
+mod function_signature;
+mod inline_patterns;
 mod named_imports;
 mod shape_hash;
 mod surfaces;
@@ -27,6 +29,12 @@ use crate::relative_source_resolver::RelativeSourceResolver;
 use cjs::{collect_cjs_export_surface, collect_cjs_require_uses};
 pub(crate) use code_shape::normalize_code_shape;
 use dynamic_imports::{collect_dynamic_import_uses, collect_import_meta_glob_uses};
+use function_signature::collect_function_signature_facts;
+pub(crate) use function_signature::FunctionSignatureFact;
+use inline_patterns::collect_inline_pattern_facts;
+pub(crate) use inline_patterns::{
+    InlinePatternOccurrence, MAX_CATCH_STATEMENTS, NORMALIZER_VERSION as INLINE_NORMALIZER_VERSION,
+};
 use named_imports::collect_named_import_precision_uses;
 use shape_hash::collect_shape_hash_facts;
 use surfaces::{collect_class_method_surface, collect_pre_write_local_operation_surface};
@@ -37,6 +45,9 @@ pub const JS_TS_EXTRACT_RESPONSE_SCHEMA_VERSION: &str = "lumin-js-ts-extract-res
 const JS_TS_EXTRACT_WORKER_STACK_BYTES: usize = 4 * 1024 * 1024;
 
 pub(crate) fn normalize_shape_type_literal(type_literal: &str) -> serde_json::Value {
+    if function_signature::looks_like_type_literal(type_literal) {
+        return function_signature::normalize_type_literal(type_literal);
+    }
     let literal = type_literal.trim().trim_end_matches(';').trim_end();
     if literal.is_empty() {
         return serde_json::json!({
@@ -131,6 +142,12 @@ pub struct JsTsExtractFileResult {
     pub class_methods: Vec<ClassMethodRecord>,
     pub local_operations: Vec<serde_json::Value>,
     pub type_escapes: Vec<TypeEscapeRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub function_signature_facts: Vec<FunctionSignatureFact>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inline_pattern_occurrences: Vec<InlinePatternOccurrence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inline_pattern_diagnostics: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shape_facts: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -346,6 +363,9 @@ fn empty_file_result(
         class_methods: Vec::new(),
         local_operations: Vec::new(),
         type_escapes: Vec::new(),
+        function_signature_facts: Vec::new(),
+        inline_pattern_occurrences: Vec::new(),
+        inline_pattern_diagnostics: Vec::new(),
         shape_facts: Vec::new(),
         shape_diagnostics: Vec::new(),
         dynamic_import_opacity: Vec::new(),
@@ -413,6 +433,10 @@ fn extract_file(
     );
     let (shape_facts, shape_diagnostics) =
         collect_shape_hash_facts(&parsed.program, source, artifact_file_path, &line_starts);
+    let function_signature_facts =
+        collect_function_signature_facts(&parsed.program, source, artifact_file_path, &line_starts);
+    let inline_patterns =
+        collect_inline_pattern_facts(&parsed.program, source, artifact_file_path, &line_starts);
 
     Ok(JsTsExtractFileResult {
         file_path: file_path.to_string(),
@@ -422,6 +446,9 @@ fn extract_file(
         class_methods,
         local_operations,
         type_escapes,
+        function_signature_facts,
+        inline_pattern_occurrences: inline_patterns.occurrences,
+        inline_pattern_diagnostics: inline_patterns.diagnostics,
         shape_facts,
         shape_diagnostics,
         dynamic_import_opacity: dynamic_imports.opacity,

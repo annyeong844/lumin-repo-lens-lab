@@ -51,22 +51,29 @@ fn parse_request(value: Value) -> Result<RustPreWriteLifecycleRequest> {
     Ok(serde_json::from_value(value)?)
 }
 
-fn js_request(root: &Path, out: &Path, fake: &FakeJsPreWrite) -> Value {
+fn js_request(root: &Path, out: &Path) -> Value {
     json!({
-        "schemaVersion": "lumin-js-pre-write-lifecycle-request.v1",
+        "schemaVersion": "lumin-js-pre-write-lifecycle-request.v2",
         "root": path_string(root),
         "output": path_string(out),
-        "scriptsDir": path_string(&fake.scripts_dir),
-        "nodeExecutable": fake.command,
-        "childIntentFlag": "-",
-        "childIntentInput": "{\n  \"names\": [\"Thing\"]\n}\n",
+        "invocationId": "JS-1",
+        "intentInput": json!({
+            "names": ["Thing"],
+            "files": ["src/thing.ts"],
+            "shapes": [{ "typeLiteral": "(value: string) => number" }],
+            "refactorSources": [{ "file": "src/thing.ts" }],
+            "plannedTypeEscapes": [],
+        }).to_string(),
         "engineSelection": {
             "requested": "auto",
             "selected": "js",
             "reason": "intent-language-absent-default-js"
         },
-        "noFreshAudit": true,
-        "scanArgs": ["--production", "--exclude", "dist"],
+        "generated": "2026-07-13T00:00:00.000Z",
+        "includeTests": false,
+        "production": true,
+        "excludes": ["dist"],
+        "incremental": { "enabled": false },
     })
 }
 
@@ -270,80 +277,20 @@ fn rust_pre_write_rejects_malformed_native_artifact_without_reusing_stale_output
 }
 
 #[test]
-fn js_pre_write_runs_existing_producer_and_projects_advisory_block() -> Result<()> {
+fn js_pre_write_builds_current_native_evidence_and_advisory_without_node() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let out = temp.path().join("out");
-    fs::create_dir_all(&out)?;
-    let fake = write_fake_js_pre_write(temp.path(), &out, 0)?;
+    write_js_native_fixture(temp.path())?;
 
-    let result =
-        execute_js_pre_write_lifecycle(parse_js_request(js_request(temp.path(), &out, &fake))?)?;
+    let result = execute_js_pre_write_lifecycle(parse_js_request(js_request(temp.path(), &out))?)?;
 
     assert_eq!(result.exit_code, 0, "result={result:#?}");
     assert!(result.block.ran);
-    assert_eq!(
-        serde_json::to_value(&result.block)?["executionOwner"],
-        "lumin-audit-core"
-    );
+    assert_eq!(result.block.execution_owner, "lumin-audit-core");
     assert_eq!(result.block.engine, "js");
     assert_eq!(result.block.language, "js-ts");
-    assert_eq!(result.block.producer, "pre-write.mjs");
+    assert_eq!(result.block.producer, "lumin-audit-core js-ts-pre-write");
     assert_eq!(result.block.advisory_invocation_id.as_deref(), Some("JS-1"));
-    assert_eq!(
-        result.block.advisory_path.as_deref(),
-        Some(path_string(&out.join("pre-write-advisory.JS-1.json")).as_str())
-    );
-    assert_eq!(
-        result.block.latest_advisory_path.as_deref(),
-        Some(path_string(&out.join("pre-write-advisory.latest.json")).as_str())
-    );
-    assert_eq!(
-        result
-            .block
-            .evidence_availability
-            .as_ref()
-            .and_then(|value| value.get("status"))
-            .and_then(Value::as_str),
-        Some("available")
-    );
-    assert!(result
-        .stdout
-        .as_deref()
-        .unwrap_or_default()
-        .contains("## js pre-write"));
-    assert!(result
-        .stderr
-        .as_deref()
-        .unwrap_or_default()
-        .contains("[js-pre-write] diagnostic"));
-
-    let logged_args = fs::read_to_string(temp.path().join("js-args.log"))?.replace("\r\n", "\n");
-    assert!(logged_args.contains("pre-write.mjs"));
-    assert!(logged_args.contains("--root"));
-    assert!(logged_args.contains("--output"));
-    assert!(logged_args.contains("--intent\n-"));
-    assert!(logged_args.contains("--no-fresh-audit"));
-    assert!(logged_args.contains("--exclude\ndist"));
-    let captured_intent = fs::read_to_string(temp.path().join("js-intent.stdin"))?
-        .replace("\r\n", "\n")
-        .trim()
-        .to_string();
-    assert!(captured_intent.contains("\"names\": [\"Thing\"]"));
-    Ok(())
-}
-
-#[test]
-fn fresh_js_pre_write_preserves_validated_rust_evidence_paths() -> Result<()> {
-    let temp = tempfile::tempdir()?;
-    let out = temp.path().join("out");
-    fs::create_dir_all(&out)?;
-    let fake = write_fake_js_pre_write(temp.path(), &out, 0)?;
-    let mut request = js_request(temp.path(), &out, &fake);
-    request["noFreshAudit"] = json!(false);
-
-    let result = execute_js_pre_write_lifecycle(parse_js_request(request)?)?;
-
-    assert_eq!(result.exit_code, 0, "result={result:#?}");
     assert_eq!(
         result.block.rust_evidence_path.as_deref(),
         Some("pre-write-evidence.JS-1.json")
@@ -352,28 +299,82 @@ fn fresh_js_pre_write_preserves_validated_rust_evidence_paths() -> Result<()> {
         result.block.any_inventory_path.as_deref(),
         Some("any-inventory.pre.JS-1.json")
     );
+    assert!(result
+        .stdout
+        .as_deref()
+        .unwrap_or_default()
+        .contains("## pre-write advisory"));
+    assert!(result.stderr.is_none());
+
+    let advisory_specific = fs::read_to_string(out.join("pre-write-advisory.JS-1.json"))?;
+    let advisory_latest = fs::read_to_string(out.join("pre-write-advisory.latest.json"))?;
+    assert_eq!(advisory_specific, advisory_latest);
+    let advisory: Value = serde_json::from_str(&advisory_latest)?;
+    assert_eq!(advisory["invocationId"], "JS-1");
+    assert!(advisory["lookups"]
+        .as_array()
+        .is_some_and(|lookups| lookups.iter().any(|lookup| {
+            lookup.get("result").and_then(Value::as_str) == Some("SIGNATURE_MATCH")
+        })));
+    assert!(advisory["lookups"]
+        .as_array()
+        .is_some_and(|lookups| lookups.iter().any(|lookup| {
+            lookup.get("result").and_then(Value::as_str) == Some("INLINE_PATTERN_MATCH")
+        })));
+
+    let evidence: Value = serde_json::from_str(&fs::read_to_string(
+        out.join("pre-write-evidence.JS-1.json"),
+    )?)?;
+    assert_eq!(evidence["functionSignatures"]["meta"]["complete"], true);
+    assert_eq!(evidence["inlinePatterns"]["meta"]["groupCount"], 1);
+    assert_eq!(
+        evidence["shapeIntentNormalizations"][0]["shapeKind"],
+        "function-signature"
+    );
+    Ok(())
+}
+
+fn write_js_native_fixture(root: &Path) -> Result<()> {
+    fs::create_dir_all(root.join("src"))?;
+    fs::write(
+        root.join("package.json"),
+        serde_json::to_string_pretty(&json!({ "name": "native-pre-write-fixture" }))?,
+    )?;
+    fs::write(
+        root.join("src").join("thing.ts"),
+        concat!(
+            "export function Thing(value: string): number {\n",
+            "  try { return value.length; } catch { cleanup(); }\n",
+            "}\n",
+        ),
+    )?;
+    for file in ["second.ts", "third.ts"] {
+        fs::write(
+            root.join("src").join(file),
+            "export function work(): void { try { perform(); } catch { cleanup(); } }\n",
+        )?;
+    }
     Ok(())
 }
 
 #[test]
-fn js_pre_write_child_failure_records_block_without_advisory() -> Result<()> {
+fn js_pre_write_output_failure_clears_current_advisory_claims() -> Result<()> {
     let temp = tempfile::tempdir()?;
-    let out = temp.path().join("out");
-    fs::create_dir_all(&out)?;
-    let fake = write_fake_js_pre_write(temp.path(), &out, 9)?;
+    let output_file = temp.path().join("not-a-directory");
+    write_js_native_fixture(temp.path())?;
+    fs::write(&output_file, "occupied")?;
 
     let result =
-        execute_js_pre_write_lifecycle(parse_js_request(js_request(temp.path(), &out, &fake))?)?;
+        execute_js_pre_write_lifecycle(parse_js_request(js_request(temp.path(), &output_file))?)?;
 
-    assert_eq!(result.exit_code, 9, "result={result:#?}");
+    assert_eq!(result.exit_code, 1, "result={result:#?}");
     assert!(!result.block.ran);
-    assert!(result
-        .block
-        .reason
-        .as_deref()
-        .ok_or_else(|| anyhow!("reason should be present"))?
-        .starts_with("pre-write.mjs exited non-zero:"));
-    assert!(!out.join("pre-write-advisory.latest.json").exists());
+    assert_eq!(
+        serde_json::to_value(&result.block)?["failureKind"],
+        "output-write-failed"
+    );
+    assert!(result.block.advisory_path.is_none());
+    assert!(result.block.latest_advisory_path.is_none());
     Ok(())
 }
 
@@ -417,17 +418,15 @@ fn cli_execute_rust_pre_write_result_output_streams_child_and_writes_clean_resul
 }
 
 #[test]
-fn cli_execute_js_pre_write_result_output_streams_child_and_writes_clean_result_file() -> Result<()>
-{
+fn cli_execute_js_pre_write_runs_native_and_writes_clean_result_file() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let out = temp.path().join("out");
-    fs::create_dir_all(&out)?;
-    let fake = write_fake_js_pre_write(temp.path(), &out, 0)?;
+    write_js_native_fixture(temp.path())?;
     let input_path = temp.path().join("js-request.json");
     let result_path = temp.path().join("js-result.json");
     fs::write(
         &input_path,
-        serde_json::to_string(&js_request(temp.path(), &out, &fake))?,
+        serde_json::to_string(&js_request(temp.path(), &out))?,
     )?;
 
     let output = Command::new(audit_core_bin())
@@ -445,11 +444,15 @@ fn cli_execute_js_pre_write_result_output_streams_child_and_writes_clean_result_
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("## js pre-write"));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("[js-pre-write] diagnostic"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("## pre-write advisory"));
+    assert!(output.stderr.is_empty());
     let result: Value = serde_json::from_str(&fs::read_to_string(result_path)?)?;
     assert_eq!(result["block"]["ran"], true);
     assert_eq!(result["block"]["engine"], "js");
+    assert_eq!(
+        result["block"]["producer"],
+        "lumin-audit-core js-ts-pre-write"
+    );
     assert!(result.get("stdout").is_none());
     assert!(result.get("stderr").is_none());
     Ok(())
@@ -490,11 +493,6 @@ fn cli_execute_rust_pre_write_hard_stops_on_malformed_request() -> Result<()> {
 struct FakeAnalyzer {
     command: String,
     prefix_args: Vec<String>,
-}
-
-struct FakeJsPreWrite {
-    command: String,
-    scripts_dir: std::path::PathBuf,
 }
 
 #[cfg(windows)]
@@ -612,157 +610,6 @@ fn write_native_template(path: &Path) -> Result<()> {
             "cueCards": [],
             "suppressedCues": [],
             "unavailableEvidence": []
-        }))?,
-    )?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn write_fake_js_pre_write(dir: &Path, out: &Path, exit_code: i32) -> Result<FakeJsPreWrite> {
-    let scripts_dir = dir.join(format!("js-scripts-{exit_code}"));
-    fs::create_dir_all(&scripts_dir)?;
-    fs::write(scripts_dir.join("pre-write.mjs"), "// fake path only\n")?;
-    let script = dir.join(format!("fake-js-pre-write-{exit_code}.cmd"));
-    let template = dir.join("js-advisory-template.json");
-    let evidence_template = dir.join("js-pre-write-evidence-template.json");
-    let inventory_template = dir.join("js-pre-write-inventory-template.json");
-    write_js_advisory_template(&template, out)?;
-    write_js_pre_write_evidence_templates(&evidence_template, &inventory_template)?;
-    fs::write(
-        &script,
-        format!(
-            concat!(
-                "@echo off\r\n",
-                "setlocal EnableExtensions\r\n",
-                "set \"OUT=\"\r\n",
-                ":loop\r\n",
-                "if \"%~1\"==\"\" goto done\r\n",
-                "echo %~1>>\"{args_log}\"\r\n",
-                "if \"%~1\"==\"--output\" (\r\n",
-                "  set \"OUT=%~2\"\r\n",
-                "  echo %~2>>\"{args_log}\"\r\n",
-                ")\r\n",
-                "shift\r\n",
-                "goto loop\r\n",
-                ":done\r\n",
-                "more > \"{stdin_log}\"\r\n",
-                "if {exit_code} EQU 0 (\r\n",
-                "  copy /Y \"{template}\" \"%OUT%\\pre-write-advisory.latest.json\" >NUL\r\n",
-                "  copy /Y \"{template}\" \"%OUT%\\pre-write-advisory.JS-1.json\" >NUL\r\n",
-                "  copy /Y \"{evidence_template}\" \"%OUT%\\pre-write-evidence.JS-1.json\" >NUL\r\n",
-                "  copy /Y \"{inventory_template}\" \"%OUT%\\any-inventory.pre.JS-1.json\" >NUL\r\n",
-                "  echo ## js pre-write\r\n",
-                "  echo [js-pre-write] diagnostic 1>&2\r\n",
-                ")\r\n",
-                "exit /b {exit_code}\r\n"
-            ),
-            args_log = path_string(&dir.join("js-args.log")),
-            stdin_log = path_string(&dir.join("js-intent.stdin")),
-            template = path_string(&template),
-            evidence_template = path_string(&evidence_template),
-            inventory_template = path_string(&inventory_template),
-            exit_code = exit_code,
-        ),
-    )?;
-    Ok(FakeJsPreWrite {
-        command: path_string(&script),
-        scripts_dir,
-    })
-}
-
-#[cfg(not(windows))]
-fn write_fake_js_pre_write(dir: &Path, out: &Path, exit_code: i32) -> Result<FakeJsPreWrite> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let scripts_dir = dir.join(format!("js-scripts-{exit_code}"));
-    fs::create_dir_all(&scripts_dir)?;
-    fs::write(scripts_dir.join("pre-write.mjs"), "// fake path only\n")?;
-    let script = dir.join(format!("fake-js-pre-write-{exit_code}"));
-    let template = dir.join("js-advisory-template.json");
-    let evidence_template = dir.join("js-pre-write-evidence-template.json");
-    let inventory_template = dir.join("js-pre-write-inventory-template.json");
-    write_js_advisory_template(&template, out)?;
-    write_js_pre_write_evidence_templates(&evidence_template, &inventory_template)?;
-    fs::write(
-        &script,
-        format!(
-            r#"#!/bin/sh
-printf '%s\n' "$@" > '{args_log}'
-cat > '{stdin_log}'
-out=''
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = '--output' ]; then
-    shift
-    out="$1"
-  fi
-  shift || true
-done
-if [ {exit_code} -eq 0 ]; then
-  cp '{template}' "$out/pre-write-advisory.latest.json"
-  cp '{template}' "$out/pre-write-advisory.JS-1.json"
-  cp '{evidence_template}' "$out/pre-write-evidence.JS-1.json"
-  cp '{inventory_template}' "$out/any-inventory.pre.JS-1.json"
-  printf '%s\n' '## js pre-write'
-  printf '%s\n' '[js-pre-write] diagnostic' >&2
-fi
-exit {exit_code}
-"#,
-            args_log = path_string(&dir.join("js-args.log")),
-            stdin_log = path_string(&dir.join("js-intent.stdin")),
-            template = path_string(&template),
-            evidence_template = path_string(&evidence_template),
-            inventory_template = path_string(&inventory_template),
-        ),
-    )?;
-    let mut permissions = fs::metadata(&script)?.permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&script, permissions)?;
-    Ok(FakeJsPreWrite {
-        command: path_string(&script),
-        scripts_dir,
-    })
-}
-
-fn write_js_advisory_template(path: &Path, out: &Path) -> Result<()> {
-    fs::write(
-        path,
-        serde_json::to_string_pretty(&json!({
-            "invocationId": "JS-1",
-            "artifactPaths": {
-                "invocationSpecific": path_string(&out.join("pre-write-advisory.JS-1.json")),
-                "latest": path_string(&out.join("pre-write-advisory.latest.json"))
-            },
-            "evidenceAvailability": {
-                "status": "available",
-                "producer": "pre-write.mjs"
-            },
-            "preWrite": {
-                "rustEvidencePath": "pre-write-evidence.JS-1.json",
-                "anyInventoryPath": "any-inventory.pre.JS-1.json"
-            }
-        }))?,
-    )?;
-    Ok(())
-}
-
-fn write_js_pre_write_evidence_templates(evidence: &Path, inventory: &Path) -> Result<()> {
-    fs::write(
-        evidence,
-        serde_json::to_string_pretty(&json!({
-            "schemaVersion": "lumin-js-ts-pre-write-evidence-response.v1",
-            "anyInventory": {
-                "meta": { "artifact": "any-inventory.pre.JS-1.json" }
-            }
-        }))?,
-    )?;
-    fs::write(
-        inventory,
-        serde_json::to_string_pretty(&json!({
-            "meta": {
-                "artifact": "any-inventory.pre.JS-1.json",
-                "supports": { "typeEscapes": true }
-            },
-            "typeEscapes": []
         }))?,
     )?;
     Ok(())
