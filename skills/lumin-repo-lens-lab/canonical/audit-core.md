@@ -361,6 +361,11 @@ collection into a second helper invocation or fall back to a JS classifier.
 Cross-host execution requires an explicit whole-lifecycle path-translation
 contract; partial command-specific translation is not permitted.
 
+Current-run advisory cleanup treats both `NotFound` and `NotADirectory` as an
+absent stale file. The latter is Linux's result when the configured output
+parent is itself a file. Cleanup must not mask the checked advisory write
+failure; the subsequent write still hard-stops as `output-write-failed`.
+
 ### Shared Source Inventory
 
 The base audit pipeline has one current-run source inventory owner.

@@ -38,7 +38,14 @@ pub(super) fn advisory_specific_path(output: &Path, invocation_id: &str) -> Path
 pub(super) fn remove_file_if_present(path: &Path) -> std::io::Result<()> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Ok(())
+        }
         Err(error) => Err(error),
     }
 }
