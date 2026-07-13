@@ -11,6 +11,10 @@ import { normalizeTypeText } from './shape-hash.mjs';
 
 export const FUNCTION_SIGNATURE_NORMALIZED_VERSION = 'function-signature.normalized.v1';
 
+export function looksLikeFunctionSignatureTypeLiteral(typeLiteral) {
+  return /^\s*(?:<[^>]+>\s*)?\(/.test(String(typeLiteral ?? ''));
+}
+
 function sourceSlice(src, node) {
   if (!node || typeof node.start !== 'number' || typeof node.end !== 'number') return '';
   return src.slice(node.start, node.end);

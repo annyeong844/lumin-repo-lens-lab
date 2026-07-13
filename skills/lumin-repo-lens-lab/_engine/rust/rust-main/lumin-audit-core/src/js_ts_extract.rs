@@ -1,6 +1,8 @@
 mod cjs;
+mod code_shape;
 mod dynamic_imports;
 mod named_imports;
+mod shape_hash;
 mod surfaces;
 mod type_escape;
 
@@ -25,12 +27,72 @@ use crate::relative_source_resolver::RelativeSourceResolver;
 use cjs::{collect_cjs_export_surface, collect_cjs_require_uses};
 use dynamic_imports::{collect_dynamic_import_uses, collect_import_meta_glob_uses};
 use named_imports::collect_named_import_precision_uses;
+use shape_hash::collect_shape_hash_facts;
 use surfaces::{collect_class_method_surface, collect_pre_write_local_operation_surface};
 use type_escape::collect_type_escapes;
 
 pub const JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION: &str = "lumin-js-ts-extract-request.v1";
 pub const JS_TS_EXTRACT_RESPONSE_SCHEMA_VERSION: &str = "lumin-js-ts-extract-response.v1";
 const JS_TS_EXTRACT_WORKER_STACK_BYTES: usize = 4 * 1024 * 1024;
+
+pub(crate) fn normalize_shape_type_literal(type_literal: &str) -> serde_json::Value {
+    let literal = type_literal.trim().trim_end_matches(';').trim_end();
+    if literal.is_empty() {
+        return serde_json::json!({
+            "typeLiteral": type_literal,
+            "ok": false,
+            "reason": "empty-shape-type-literal",
+        });
+    }
+    let source = format!("export type __IntentShape = {literal};\n");
+    let allocator = Allocator::default();
+    let parsed = match parse_program(&allocator, &source, SourceType::ts()) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            return serde_json::json!({
+                "typeLiteral": type_literal,
+                "ok": false,
+                "reason": "parse-error",
+                "message": error.to_string(),
+            });
+        }
+    };
+    let (facts, diagnostics) = collect_shape_hash_facts(
+        &parsed.program,
+        &source,
+        "__intent_shape.ts",
+        &line_starts(&source),
+    );
+    if facts.len() != 1 {
+        return serde_json::json!({
+            "typeLiteral": type_literal,
+            "ok": false,
+            "reason": diagnostics.first()
+                .and_then(|value| value.get("code"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unsupported-intent-shape"),
+        });
+    }
+    let fact = &facts[0];
+    let shape_kind = fact
+        .get("shapeKind")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("object");
+    let evidence_count = if shape_kind == "literal-union" {
+        fact.get("literals")
+    } else {
+        fact.get("fields")
+    }
+    .and_then(serde_json::Value::as_array)
+    .map_or(0, Vec::len);
+    serde_json::json!({
+        "typeLiteral": type_literal,
+        "ok": true,
+        "hash": fact["hash"],
+        "shapeKind": shape_kind,
+        "evidenceCount": evidence_count,
+    })
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +130,10 @@ pub struct JsTsExtractFileResult {
     pub class_methods: Vec<ClassMethodRecord>,
     pub local_operations: Vec<serde_json::Value>,
     pub type_escapes: Vec<TypeEscapeRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shape_facts: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shape_diagnostics: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dynamic_import_opacity: Vec<DynamicImportOpacityRecord>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -279,6 +345,8 @@ fn empty_file_result(
         class_methods: Vec::new(),
         local_operations: Vec::new(),
         type_escapes: Vec::new(),
+        shape_facts: Vec::new(),
+        shape_diagnostics: Vec::new(),
         dynamic_import_opacity: Vec::new(),
         cjs_require_opacity: Vec::new(),
         cjs_export_surface: None,
@@ -342,6 +410,8 @@ fn extract_file(
         &line_starts,
         &exported_identity_ranges,
     );
+    let (shape_facts, shape_diagnostics) =
+        collect_shape_hash_facts(&parsed.program, source, artifact_file_path, &line_starts);
 
     Ok(JsTsExtractFileResult {
         file_path: file_path.to_string(),
@@ -351,6 +421,8 @@ fn extract_file(
         class_methods,
         local_operations,
         type_escapes,
+        shape_facts,
+        shape_diagnostics,
         dynamic_import_opacity: dynamic_imports.opacity,
         cjs_require_opacity: cjs_requires.opacity,
         cjs_export_surface,

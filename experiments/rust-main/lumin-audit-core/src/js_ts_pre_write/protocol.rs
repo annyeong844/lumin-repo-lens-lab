@@ -22,6 +22,8 @@ pub struct JsTsPreWriteEvidenceRequest {
     #[serde(default)]
     pub dependency_roots: Vec<String>,
     #[serde(default)]
+    pub shape_type_literals: Vec<String>,
+    #[serde(default)]
     pub discover_files: bool,
     #[serde(default)]
     pub files: Vec<JsTsPreWriteSourceFile>,

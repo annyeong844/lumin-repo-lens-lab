@@ -33,7 +33,10 @@ import { parseCanonicalFile } from '../lib/pre-write-canonical-parser.mjs';
 import { computeDrift } from '../lib/pre-write-drift.mjs';
 import { runColdCachePreflight } from '../lib/pre-write-cold-cache.mjs';
 import { buildRustPreWriteEvidence } from '../lib/pre-write-rust-evidence.mjs';
-import { functionSignatureFromTypeLiteral } from '../lib/function-signature-hash.mjs';
+import {
+  functionSignatureFromTypeLiteral,
+  looksLikeFunctionSignatureTypeLiteral,
+} from '../lib/function-signature-hash.mjs';
 import { collectFiles } from '../lib/collect-files.mjs';
 import { repoRelativeFileList } from '../lib/post-write-file-delta.mjs';
 import {
@@ -112,7 +115,17 @@ function hasEntries(value) {
 function hasFunctionSignatureShapeIntent(intent) {
   return (intent?.shapes ?? []).some((shape) =>
     typeof shape?.typeLiteral === 'string' &&
+    looksLikeFunctionSignatureTypeLiteral(shape.typeLiteral) &&
     functionSignatureFromTypeLiteral(shape.typeLiteral).ok === true);
+}
+
+function hasExactShapeIntent(intent) {
+  return (intent?.shapes ?? []).some((shape) => {
+    if (typeof shape?.typeLiteral === 'string') {
+      return !looksLikeFunctionSignatureTypeLiteral(shape.typeLiteral);
+    }
+    return typeof shape?.hash === 'string';
+  });
 }
 
 function failureReasonForArtifact(failures, artifact) {
@@ -180,9 +193,11 @@ function buildEvidenceAvailability({
       }));
     }
   }
-  if (hasEntries(intent.shapes)) {
+  if (hasExactShapeIntent(intent)) {
     artifacts.push(evidenceArtifact({
-      artifact: 'shape-index.json',
+      artifact: rustEvidence
+        ? `${rustEvidence.artifactName}#shapeIndex`
+        : 'shape-index.json',
       requiredFor: ['shapes'],
       loaded: !!shapeIndex,
       output,
@@ -280,6 +295,7 @@ failures.push(...preflight.failures);
 let rustEvidence = null;
 let symbols;
 let topology;
+let shapeIndex;
 if (!noFreshAudit) {
   try {
     rustEvidence = buildRustPreWriteEvidence({
@@ -289,18 +305,23 @@ if (!noFreshAudit) {
       includeTests: args.includeTests,
       exclude: args.exclude,
       dependencySpecifiers: intent.dependencies,
+      shapeTypeLiterals: intent.shapes
+        .map((shape) => shape.typeLiteral)
+        .filter((value) => typeof value === 'string' && value.length > 0),
       noIncremental: args.raw?.['no-incremental'] === true,
       cacheRoot: args.raw?.['cache-root'],
       clearIncrementalCache: args.raw?.['clear-incremental-cache'] === true,
     });
     symbols = rustEvidence.evidence.symbols;
     topology = rustEvidence.evidence.topology;
+    shapeIndex = rustEvidence.evidence.shapeIndex;
   } catch (error) {
     die(`Rust evidence failed: ${error?.message ?? String(error)}`);
   }
 } else {
   symbols = loadIfExists(OUTPUT, 'symbols.json', { tag: 'pre-write' });
   topology = loadIfExists(OUTPUT, 'topology.json', { tag: 'pre-write' });
+  shapeIndex = loadIfExists(OUTPUT, 'shape-index.json', { tag: 'pre-write' });
 }
 if (needsSymbols && !symbols && !preflight.failures.some((f) => f.kind === 'symbols-missing' || /symbols/i.test(f.kind))) {
   failures.push({ kind: 'symbols-missing', reason: `symbols.json not found in ${OUTPUT}` });
@@ -334,7 +355,6 @@ if (existsSync(canonicalPath)) {
 
 // ── Load optional P1-2 artifacts ─────────────────────────────
 
-const shapeIndex = loadIfExists(OUTPUT, 'shape-index.json', { tag: 'pre-write' });
 const functionClones = loadIfExists(OUTPUT, 'function-clones.json', { tag: 'pre-write' });
 const inlinePatterns = loadIfExists(OUTPUT, 'inline-patterns.json', { tag: 'pre-write' });
 const evidenceAvailability = buildEvidenceAvailability({
@@ -403,7 +423,11 @@ for (const depName of intent.dependencies) {
 }
 
 for (const shape of intent.shapes) {
-  const result = lookupShape(shape, { shapeIndex, functionClones });
+  const result = lookupShape(shape, {
+    shapeIndex,
+    functionClones,
+    shapeIntentNormalizations: rustEvidence?.evidence?.shapeIntentNormalizations,
+  });
   lookups.push(result);
 }
 

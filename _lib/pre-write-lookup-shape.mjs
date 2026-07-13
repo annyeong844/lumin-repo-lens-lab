@@ -12,7 +12,10 @@
 
 import { extractShapeHashFactsFromSource } from './shape-hash.mjs';
 import { SHAPE_HASH_RE, parseShapeIndexArtifact } from './shape-index-schema.mjs';
-import { functionSignatureFromTypeLiteral } from './function-signature-hash.mjs';
+import {
+  functionSignatureFromTypeLiteral,
+  looksLikeFunctionSignatureTypeLiteral,
+} from './function-signature-hash.mjs';
 
 const UNAVAILABLE_CITATION =
   '[확인 불가, shape-index.json absent; run build-shape-index.mjs to enable P4 shape-hash lookup]';
@@ -29,7 +32,7 @@ function unavailable(shape, citation, extra = {}) {
   };
 }
 
-function normalizeIntentTypeLiteral(typeLiteral) {
+function normalizeIntentTypeLiteral(typeLiteral, rustNormalizations) {
   const literal = String(typeLiteral ?? '').trim().replace(/;+$/, '');
   if (!literal) {
     return {
@@ -37,6 +40,24 @@ function normalizeIntentTypeLiteral(typeLiteral) {
       citation: '[확인 불가, shape.typeLiteral is empty; cannot compute exact shape hash]',
     };
   }
+  if (Array.isArray(rustNormalizations)) {
+    const normalized = rustNormalizations.find((entry) => entry?.typeLiteral === typeLiteral);
+    if (!normalized?.ok) {
+      const reason = normalized?.reason ?? 'rust-shape-intent-normalization-missing';
+      return {
+        ok: false,
+        citation: `[확인 불가, shape.typeLiteral could not be normalized to a supported shape; reason: ${reason}]`,
+      };
+    }
+    const shapeKind = normalized.shapeKind ?? 'object';
+    const evidenceKind = shapeKind === 'literal-union' ? 'literals' : 'fields';
+    return {
+      ok: true,
+      hash: normalized.hash,
+      citation: `[grounded, shape.typeLiteral normalized as ${shapeKind} with ${normalized.evidenceCount ?? 0} ${evidenceKind} via shape-hash.normalized.v1]`,
+    };
+  }
+
   const src = `export type __IntentShape = ${literal};\n`;
   const result = extractShapeHashFactsFromSource(src, '__intent_shape.ts', {
     observedAt: 'intent',
@@ -71,7 +92,7 @@ function normalizeIntentFunctionSignature(typeLiteral) {
   };
 }
 
-function resolveShapeHash(shape) {
+function resolveShapeHash(shape, rustNormalizations) {
   const hasHash = shape?.hash !== undefined;
   const hasTypeLiteral = shape?.typeLiteral !== undefined;
 
@@ -80,10 +101,13 @@ function resolveShapeHash(shape) {
   let literalSignature = null;
   let literalKind = 'shape';
   if (hasTypeLiteral) {
-    const functionSignature = normalizeIntentFunctionSignature(shape.typeLiteral);
+    const looksFunctionLike = looksLikeFunctionSignatureTypeLiteral(shape.typeLiteral);
+    const functionSignature = looksFunctionLike
+      ? normalizeIntentFunctionSignature(shape.typeLiteral)
+      : { ok: false };
     const normalized = functionSignature.ok
       ? functionSignature
-      : normalizeIntentTypeLiteral(shape.typeLiteral);
+      : normalizeIntentTypeLiteral(shape.typeLiteral, rustNormalizations);
     if (!normalized.ok) return normalized;
     literalHash = normalized.hash;
     literalCitation = normalized.citation;
@@ -209,7 +233,7 @@ function lookupFunctionSignature(shape, resolved, functionClones) {
 export function lookupShape(shape, ctx = {}) {
   const shapeIndex = ctx.shapeIndex ?? null;
   const functionClones = ctx.functionClones ?? null;
-  const resolved = resolveShapeHash(shape);
+  const resolved = resolveShapeHash(shape, ctx.shapeIntentNormalizations);
   if (!resolved.ok) {
     return unavailable(shape, resolved.citation);
   }

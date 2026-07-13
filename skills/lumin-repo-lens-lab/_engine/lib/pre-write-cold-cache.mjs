@@ -21,7 +21,10 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { functionSignatureFromTypeLiteral } from './function-signature-hash.mjs';
+import {
+  functionSignatureFromTypeLiteral,
+  looksLikeFunctionSignatureTypeLiteral,
+} from './function-signature-hash.mjs';
 
 const DEFAULT_COLD_CACHE_TIMEOUT_MS = 30_000;
 
@@ -86,6 +89,7 @@ function hasEntries(value) {
 function hasFunctionSignatureShapeIntent(intent) {
   return (intent?.shapes ?? []).some((shape) =>
     typeof shape?.typeLiteral === 'string' &&
+    looksLikeFunctionSignatureTypeLiteral(shape.typeLiteral) &&
     functionSignatureFromTypeLiteral(shape.typeLiteral).ok === true);
 }
 
@@ -104,9 +108,8 @@ function selectProducers({ intent, includeShapeIndex }) {
   // Name, file, and dependency evidence comes from the Rust compact
   // pre-write pass. Do not materialize symbols.json or topology.json here.
 
-  if (hasEntries(intent.shapes) || includeShapeIndex) {
-    needed.add('shape-index.json');
-  }
+  // Exact exported shape evidence is embedded in the Rust compact pre-write
+  // response. Function-signature shapes still use function-clones.json below.
 
   if (hasFunctionSignatureShapeIntent(intent)) {
     needed.add('function-clones.json');

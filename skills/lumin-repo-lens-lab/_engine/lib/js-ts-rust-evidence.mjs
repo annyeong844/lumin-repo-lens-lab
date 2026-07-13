@@ -21,8 +21,14 @@ function validateResponse(response, expectedArtifact, expectedInventory) {
   }
   if (!isObject(response.symbols) ||
       !isObject(response.topology) ||
+      !isObject(response.shapeIndex) ||
       !isObject(response.anyInventory)) {
-    throw new Error('Rust JS/TS evidence omitted symbols, topology, or anyInventory');
+    throw new Error('Rust JS/TS evidence omitted symbols, topology, shapeIndex, or anyInventory');
+  }
+  if (!Array.isArray(response.shapeIntentNormalizations) ||
+      response.shapeIntentNormalizations.some((entry) =>
+        !isObject(entry) || typeof entry.typeLiteral !== 'string' || typeof entry.ok !== 'boolean')) {
+    throw new Error('Rust JS/TS evidence returned invalid shape intent normalizations');
   }
   if (response.symbols.meta?.evidenceArtifact !== expectedArtifact ||
       response.topology.meta?.evidenceArtifact !== expectedArtifact) {
@@ -52,6 +58,11 @@ function validateResponse(response, expectedArtifact, expectedInventory) {
   }
   if (response.symbols.meta?.supports?.identityFanIn !== true ||
       response.symbols.meta?.supports?.dependencyImportConsumers !== true ||
+      response.shapeIndex.schemaVersion !== 'shape-index.v1' ||
+      response.shapeIndex.meta?.supports?.normalizedVersion !== 'shape-hash.normalized.v1' ||
+      !Array.isArray(response.shapeIndex.facts) ||
+      !isObject(response.shapeIndex.groupsByHash) ||
+      !Array.isArray(response.shapeIndex.diagnostics) ||
       typeof response.topology.meta?.complete !== 'boolean') {
     throw new Error('Rust JS/TS evidence omitted required capability guarantees');
   }
@@ -65,6 +76,7 @@ export function collectRustJsTsEvidence({
   includeTests,
   exclude = [],
   dependencySpecifiers = [],
+  shapeTypeLiterals = [],
   noIncremental = false,
   cacheRoot = null,
   clearIncrementalCache = false,
@@ -82,6 +94,7 @@ export function collectRustJsTsEvidence({
     includeTests: includeTests === true,
     excludes: [...exclude],
     dependencyRoots,
+    shapeTypeLiterals: [...new Set(shapeTypeLiterals)].sort(),
     discoverFiles: true,
     files: [],
     incremental: {
