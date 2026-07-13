@@ -1,0 +1,148 @@
+use super::{RESOLVER_CAPABILITIES_SCHEMA_VERSION, RESOLVER_VERSION};
+use serde_json::{json, Value};
+
+pub fn build_resolver_capabilities_artifact() -> Value {
+    json!({
+        "schemaVersion": RESOLVER_CAPABILITIES_SCHEMA_VERSION,
+        "resolverVersion": RESOLVER_VERSION,
+        "conditionProfiles": [
+            {
+                "profileId": "node-esm-default",
+                "conditions": ["node", "import", "default"],
+                "configuredBy": "default",
+            },
+        ],
+        "families": resolver_capability_families(),
+    })
+}
+
+fn resolver_capability_families() -> Value {
+    json!([
+        {
+            "family": "relative-paths",
+            "status": "supported",
+            "supportedCases": ["extensionless JS/TS files", "directory index files", "runtime JS extension mapped to source TS"],
+            "unsupportedCases": [],
+            "reasonCodes": ["relative-target-missing"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-relative-basic"],
+        },
+        {
+            "family": "absolute-project-paths",
+            "status": "partial",
+            "supportedCases": ["scoped tsconfig baseUrl imports", "root-prefix imports when root segment exists"],
+            "unsupportedCases": ["ambiguous project-reference redirected output"],
+            "reasonCodes": ["baseurl-target-missing", "unknown-internal-resolution"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-baseurl-scoped"],
+        },
+        {
+            "family": "node-packages",
+            "status": "partial",
+            "supportedCases": ["external package sentinel", "workspace package name detection"],
+            "unsupportedCases": ["package manager runtime hooks without static package metadata"],
+            "reasonCodes": ["unknown-internal-resolution"],
+            "absenceClaimPolicy": "fail-closed-when-encountered",
+            "fixtureRefs": ["resolver-external-vs-internal"],
+        },
+        {
+            "family": "tsconfig-paths",
+            "status": "partial",
+            "supportedCases": ["extends chain discovery", "single-star paths", "nearest scope wins", "baseUrl fallback"],
+            "unsupportedCases": ["ambiguous multi-target fallback", "project-reference redirected output"],
+            "reasonCodes": ["tsconfig-path-target-missing", "exact-alias-target-missing", "wildcard-alias-target-missing"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-tsconfig-paths-basic"],
+        },
+        {
+            "family": "workspace-packages",
+            "status": "partial",
+            "supportedCases": ["workspace package root imports", "source-direct main/module/types entries", "legacy subpath source probing"],
+            "unsupportedCases": ["generated workspace subpaths without generated artifact support"],
+            "reasonCodes": ["workspace-package-subpath-target-missing"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-workspace-package-subpath"],
+        },
+        {
+            "family": "package-json-exports",
+            "status": "partial",
+            "supportedCases": ["string targets", "subpath wildcard targets", "source remapping for dist outputs"],
+            "unsupportedCases": ["ambiguous conditional maps without configured condition profile", "array fallback ordering beyond supported source probes", "non-standard output-to-source layouts without explicit source metadata"],
+            "reasonCodes": ["workspace-package-subpath-target-missing", "condition-profile-ambiguous", "output-source-layout-unsupported"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-package-json-exports"],
+        },
+        {
+            "family": "output-to-source-mapping",
+            "status": "partial",
+            "supportedCases": ["dist/build/out/es/esm/distribution output directories mapped to source conventions"],
+            "unsupportedCases": ["workspace package exports pointing at non-standard compiled output directories without an explicit source condition"],
+            "reasonCodes": ["output-source-layout-unsupported"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-output-source-layout-unsupported"],
+        },
+        {
+            "family": "package-json-entry-fields",
+            "status": "partial",
+            "supportedCases": ["main", "module", "types", "browser as package entry candidates"],
+            "unsupportedCases": ["environment-specific browser/node divergence without explicit condition profile"],
+            "reasonCodes": ["workspace-package-subpath-target-missing"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-package-entry-fields"],
+        },
+        {
+            "family": "node-imports",
+            "status": "partial",
+            "supportedCases": ["package-local #imports wildcard maps"],
+            "unsupportedCases": ["ambiguous condition maps in imports", "custom condition profiles not configured by scan"],
+            "reasonCodes": ["condition-profile-ambiguous", "hash-import-target-missing", "hash-imports-unsupported"],
+            "absenceClaimPolicy": "fail-closed-when-encountered",
+            "fixtureRefs": ["resolver-node-imports-hash-wildcard"],
+        },
+        {
+            "family": "json-imports",
+            "status": "partial",
+            "supportedCases": ["file-level non-source asset reachability"],
+            "unsupportedCases": ["named JS export identity from JSON without an explicit transform"],
+            "reasonCodes": [],
+            "absenceClaimPolicy": "file-reachability-only",
+            "fixtureRefs": ["resolver-json-file-edge"],
+        },
+        {
+            "family": "generated-artifacts",
+            "status": "partial",
+            "supportedCases": ["generated artifact miss taxonomy", "generated consumer blind-zone diagnostics", "Prisma enum virtual surface"],
+            "unsupportedCases": ["generator execution by default", "runtime equivalence for virtual surfaces"],
+            "reasonCodes": ["workspace-generated-artifact-missing", "generated-consumer-blind-zone"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-generated-artifact-missing"],
+        },
+        {
+            "family": "dynamic-modules",
+            "status": "partial",
+            "supportedCases": ["literal dynamic import() member precision"],
+            "unsupportedCases": ["import.meta.glob expansion and non-literal dynamic module discovery"],
+            "reasonCodes": ["import-meta-glob-unsupported"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-import-meta-glob-unsupported"],
+        },
+        {
+            "family": "conditional-exports",
+            "status": "partial",
+            "supportedCases": ["default node/import condition profile"],
+            "unsupportedCases": ["browser/node ambiguity", "custom conditions without configured profile"],
+            "reasonCodes": ["condition-profile-ambiguous"],
+            "absenceClaimPolicy": "fail-closed-when-relevant",
+            "fixtureRefs": ["resolver-conditional-exports-basic"],
+        },
+        {
+            "family": "re-export-aliases",
+            "status": "supported",
+            "supportedCases": ["exported-name to local-name tracking", "definition id preservation"],
+            "unsupportedCases": [],
+            "reasonCodes": [],
+            "absenceClaimPolicy": "definition-identity-preserved",
+            "fixtureRefs": ["resolver-re-export-alias-identity"],
+        },
+    ])
+}
