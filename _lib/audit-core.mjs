@@ -231,7 +231,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v48';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v49';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -250,6 +250,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsPreWriteCanonicalSourceContainment',
   'jsTsPreWriteSingleFlight',
   'jsTsPreWritePhaseTiming',
+  'jsTsPreWriteShapeEvidence',
   'sourceUseAssembly',
   'sourceUseAssemblyResolvedRecordTargets',
   'sourceUseAssemblyExternalRecordIds',
@@ -872,7 +873,7 @@ writeFileSync(latest, JSON.stringify(advisory));
     }));
     const jsTsExtractProbeSource = 'import { api, bare } from "./dep";\napi.foo();\nconst cjsApi = require("./cjs-api");\ncjsApi.run();\nconst { cjsExact } = require("./cjs-exact");\nrequire("./cjs-side-effect");\nrequire(target);\nexport const view = bare;\nexport const routes = import.meta.glob("./pages/*.ts");\nexport async function load(target) {\n  const mod = await import("web-tree-sitter");\n  Parser = mod.Parser;\n  const lazy = await import("./lazy");\n  lazy.boot();\n  await import(`./pages/${target}.ts`);\n  return import(target);\n}\nexport function buildProbeRepository() {\n  function getProbe() { return null; }\n}\nexports.probe = 1;\nmodule.exports.namedProbe = 2;\nexports[dynamicName] = 3;\nmodule.exports = { objectProbe: 4 };\nmodule.exports = makeExports();\n';
     writeFileSync(path.join(rootDir, 'src', 'consumer.mjs'), jsTsExtractProbeSource);
-    writeFileSync(path.join(rootDir, 'src', 'dep.ts'), 'export const api = { foo() {} };\nexport const bare = 1;\nexport const escaped = bare as any;\n');
+    writeFileSync(path.join(rootDir, 'src', 'dep.ts'), 'export const api = { foo() {} };\nexport const bare = 1;\nexport const escaped = bare as any;\nexport interface ProbeShape { id: string }\n');
     writeFileSync(jsTsExtractInputPath, JSON.stringify({
       schemaVersion: 'lumin-js-ts-extract-request.v1',
       files: [
@@ -891,6 +892,7 @@ writeFileSync(latest, JSON.stringify(advisory));
       includeTests: true,
       excludes: [],
       dependencyRoots: ['web-tree-sitter'],
+      shapeTypeLiterals: ['{ id: string }'],
       discoverFiles: true,
       files: [],
     }));
@@ -1788,6 +1790,17 @@ function resultPayloadMatchesProbe(json, probe) {
       json.anyInventory?.meta?.supports?.typeEscapes === true &&
       json.anyInventory?.typeEscapes?.some((escape) =>
         escape?.file === 'src/dep.ts' && escape?.escapeKind === 'as-any'
+      ) &&
+      json.shapeIndex?.schemaVersion === 'shape-index.v1' &&
+      json.shapeIndex?.meta?.supports?.normalizedVersion === 'shape-hash.normalized.v1' &&
+      json.shapeIndex?.facts?.some((fact) =>
+        fact?.identity === 'src/dep.ts::ProbeShape' &&
+        fact?.hash === 'sha256:a97f556e6454ed1e3862416c986810198b0bc796dd54ba4b8aca1ee75697df34'
+      ) &&
+      json.shapeIntentNormalizations?.some((entry) =>
+        entry?.typeLiteral === '{ id: string }' &&
+        entry?.ok === true &&
+        entry?.hash === 'sha256:a97f556e6454ed1e3862416c986810198b0bc796dd54ba4b8aca1ee75697df34'
       ) &&
       json.files?.includes('src/consumer.mjs') &&
       json.files?.includes('src/dep.ts') &&

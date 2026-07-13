@@ -3,6 +3,7 @@ use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::js_ts_extract::{ClassMethodRecord, TypeEscapeRecord, UseRecord};
+use crate::shape_index::{build_shape_index_artifact, ShapeIndexRequest};
 use crate::symbol_graph::any_contamination::{
     annotate_projected_def_index, ProjectedAnyContamination,
 };
@@ -40,6 +41,7 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
         include_tests,
         excludes,
         dependency_roots,
+        shape_intent_normalizations,
         incremental,
         rows,
         path_map,
@@ -234,6 +236,14 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
         .iter()
         .map(|row| row.relative_path.clone())
         .collect::<Vec<_>>();
+    let shape_index = build_embedded_shape_index(
+        &rows,
+        &root,
+        &generated,
+        include_tests,
+        &excludes,
+        &incremental,
+    )?;
     Ok(json!({
         "schemaVersion": JS_TS_PRE_WRITE_EVIDENCE_RESPONSE_SCHEMA_VERSION,
         "root": normalize_slashes(&root.to_string_lossy()),
@@ -290,6 +300,8 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
             "nodes": topology_nodes,
             "edges": topology_edges,
         },
+        "shapeIndex": shape_index,
+        "shapeIntentNormalizations": shape_intent_normalizations,
         "anyInventory": {
             "meta": {
                 "tool": "lumin-audit-core js-ts-pre-write-evidence",
@@ -311,6 +323,62 @@ pub(super) fn project(input: PreparedEvidenceInput) -> Result<Value> {
             "typeEscapes": type_escapes,
         },
     }))
+}
+
+fn build_embedded_shape_index(
+    rows: &[super::input::SourceRow],
+    root: &std::path::Path,
+    generated: &str,
+    include_tests: bool,
+    excludes: &[String],
+    incremental: &Value,
+) -> Result<Value> {
+    let scope = if include_tests {
+        "TS/JS including tests, exported types only"
+    } else {
+        "TS/JS production files, exported types only"
+    };
+    let mut facts = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut files_with_parse_errors = Vec::new();
+    for row in rows {
+        if let Some(error) = row.extracted.error.as_deref() {
+            files_with_parse_errors.push(json!({
+                "file": row.relative_path,
+                "message": error,
+            }));
+            diagnostics.push(json!({
+                "kind": "shape-hash-diagnostic",
+                "code": "parse-error",
+                "severity": "error",
+                "file": row.relative_path,
+                "message": error,
+            }));
+            continue;
+        }
+        facts.extend(row.extracted.shape_facts.iter().cloned().map(|mut fact| {
+            if let Some(object) = fact.as_object_mut() {
+                object.insert("scope".to_string(), json!(scope));
+            }
+            fact
+        }));
+        diagnostics.extend(row.extracted.shape_diagnostics.iter().cloned());
+    }
+    build_shape_index_artifact(ShapeIndexRequest {
+        schema_version: crate::shape_index::SHAPE_INDEX_REQUEST_SCHEMA_VERSION.to_string(),
+        generated: generated.to_string(),
+        root: json!(normalize_slashes(&root.to_string_lossy())),
+        include_tests,
+        exclude: excludes.iter().map(|value| json!(value)).collect(),
+        scope: scope.to_string(),
+        observed_at: generated.to_string(),
+        file_count: rows.len(),
+        facts,
+        diagnostics,
+        files_with_parse_errors,
+        files_with_read_errors: Vec::new(),
+        incremental: Some(incremental.clone()),
+    })
 }
 
 fn build_class_method_file_index(

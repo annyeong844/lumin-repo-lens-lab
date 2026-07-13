@@ -17,7 +17,7 @@ use super::single_flight::elapsed_ms;
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const CACHE_PROFILE_VERSION: &str =
-    "js-ts-pre-write-oxc-facts.v4+oxc-0.139.0+audit-core-bridge-v48";
+    "js-ts-pre-write-oxc-facts.v5+oxc-0.139.0+audit-core-bridge-v49";
 const CACHE_FILE_NAME: &str = "facts.json";
 
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
-use crate::js_ts_extract::JsTsExtractFileResult;
+use crate::js_ts_extract::{normalize_shape_type_literal, JsTsExtractFileResult};
 use crate::scan_scope::{collect_source_files, to_repo_relative, ScanScopeOptions};
 
 use super::cache::extract_with_cache;
@@ -29,6 +29,7 @@ pub(super) struct PreparedEvidenceInput {
     pub(super) include_tests: bool,
     pub(super) excludes: Vec<String>,
     pub(super) dependency_roots: BTreeSet<String>,
+    pub(super) shape_intent_normalizations: Vec<Value>,
     pub(super) incremental: Value,
     pub(super) rows: Vec<SourceRow>,
     pub(super) path_map: BTreeMap<String, String>,
@@ -45,11 +46,18 @@ pub(super) fn prepare(request: JsTsPreWriteEvidenceRequest) -> Result<PreparedEv
         include_tests,
         excludes,
         dependency_roots,
+        shape_type_literals,
         discover_files,
         mut files,
         incremental,
     } = request;
     let dependency_roots = dependency_roots.into_iter().collect::<BTreeSet<_>>();
+    let shape_intent_normalizations = shape_type_literals
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|literal| normalize_shape_type_literal(&literal))
+        .collect();
     let discovery_started = Instant::now();
     if discover_files {
         files = discover_js_ts_source_files(&root, include_tests, &excludes)?;
@@ -129,6 +137,7 @@ pub(super) fn prepare(request: JsTsPreWriteEvidenceRequest) -> Result<PreparedEv
         include_tests,
         excludes,
         dependency_roots,
+        shape_intent_normalizations,
         incremental,
         rows,
         path_map,

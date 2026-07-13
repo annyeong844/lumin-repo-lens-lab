@@ -14,7 +14,7 @@ fn builds_compact_pre_write_evidence_without_repository_artifacts() -> Result<()
     fs::create_dir_all(root.join("src"))?;
     fs::write(
         root.join("src/dep.ts"),
-        "export function live() { return 1; }\nexport const unused = 2;\n",
+        "export function live() { return 1; }\nexport const unused = 2;\nexport interface User { id: string }\n",
     )?;
     fs::write(
         root.join("src/app.ts"),
@@ -30,6 +30,7 @@ fn builds_compact_pre_write_evidence_without_repository_artifacts() -> Result<()
         include_tests: true,
         excludes: vec!["vendor".to_string()],
         dependency_roots: vec!["react".to_string()],
+        shape_type_literals: vec!["{ id: string }".to_string()],
         discover_files: false,
         files: vec![
             source_file(root, "src/app.ts"),
@@ -81,6 +82,15 @@ fn builds_compact_pre_write_evidence_without_repository_artifacts() -> Result<()
     );
     assert_eq!(evidence["topology"]["edges"][0]["to"], "src/dep.ts");
     assert_eq!(evidence["anyInventory"]["meta"]["complete"], true);
+    assert_eq!(evidence["shapeIndex"]["schemaVersion"], "shape-index.v1");
+    assert_eq!(evidence["shapeIndex"]["meta"]["complete"], true);
+    assert_eq!(evidence["shapeIndex"]["meta"]["factCount"], 1);
+    assert_eq!(evidence["shapeIndex"]["facts"][0]["exportedName"], "User");
+    assert_eq!(evidence["shapeIntentNormalizations"][0]["ok"], true);
+    assert_eq!(
+        evidence["shapeIntentNormalizations"][0]["hash"],
+        evidence["shapeIndex"]["facts"][0]["hash"]
+    );
     assert_eq!(
         evidence["anyInventory"]["meta"]["incremental"]["singleFlight"]["status"],
         "acquired"
@@ -135,6 +145,7 @@ fn parse_errors_degrade_every_shared_projection_without_claiming_absence() -> Re
         include_tests: false,
         excludes: Vec::new(),
         dependency_roots: Vec::new(),
+        shape_type_literals: Vec::new(),
         discover_files: false,
         files: vec![source_file(root, "src/broken.ts")],
         incremental: Default::default(),
@@ -143,6 +154,11 @@ fn parse_errors_degrade_every_shared_projection_without_claiming_absence() -> Re
     assert_eq!(evidence["symbols"]["meta"]["complete"], false);
     assert_eq!(evidence["topology"]["meta"]["complete"], false);
     assert_eq!(evidence["anyInventory"]["meta"]["complete"], false);
+    assert_eq!(evidence["shapeIndex"]["meta"]["complete"], false);
+    assert_eq!(
+        evidence["shapeIndex"]["diagnostics"][0]["code"],
+        "parse-error"
+    );
     assert_eq!(
         evidence["anyInventory"]["meta"]["filesWithParseErrors"][0]["file"],
         "src/broken.ts"
@@ -163,6 +179,7 @@ fn unreadable_required_sources_hard_stop() -> Result<()> {
         include_tests: true,
         excludes: Vec::new(),
         dependency_roots: Vec::new(),
+        shape_type_literals: Vec::new(),
         discover_files: false,
         files: vec![source_file(root, "src/missing.ts")],
         incremental: Default::default(),
@@ -188,6 +205,7 @@ fn rejects_paths_outside_the_declared_root() -> Result<()> {
         include_tests: true,
         excludes: Vec::new(),
         dependency_roots: Vec::new(),
+        shape_type_literals: Vec::new(),
         discover_files: false,
         files: vec![JsTsPreWriteSourceFile {
             file_path: outside.path().join("outside.ts"),
@@ -221,6 +239,7 @@ fn rejects_lexically_nested_path_that_canonicalizes_outside_root() -> Result<()>
         include_tests: true,
         excludes: Vec::new(),
         dependency_roots: Vec::new(),
+        shape_type_literals: Vec::new(),
         discover_files: false,
         files: vec![JsTsPreWriteSourceFile {
             file_path: root.join("../outside.ts"),
@@ -260,6 +279,7 @@ fn discovers_the_checked_production_scope_before_parsing() -> Result<()> {
         include_tests: false,
         excludes: Vec::new(),
         dependency_roots: Vec::new(),
+        shape_type_literals: Vec::new(),
         discover_files: true,
         files: Vec::new(),
         incremental: Default::default(),
@@ -292,6 +312,7 @@ fn strict_cache_reuses_only_byte_identical_files_and_rebuilds_current_evidence()
             include_tests: true,
             excludes: Vec::new(),
             dependency_roots: Vec::new(),
+            shape_type_literals: Vec::new(),
             discover_files: true,
             files: Vec::new(),
             incremental: JsTsPreWriteIncrementalRequest {
@@ -385,6 +406,7 @@ fn strict_cache_keys_identity_by_source_bytes_not_artifact_alias() -> Result<()>
             include_tests: true,
             excludes: Vec::new(),
             dependency_roots: Vec::new(),
+            shape_type_literals: Vec::new(),
             discover_files: false,
             files: vec![JsTsPreWriteSourceFile {
                 file_path: root.join("src/real.ts"),
