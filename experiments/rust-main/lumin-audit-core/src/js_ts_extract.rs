@@ -25,6 +25,7 @@ use std::path::Path;
 
 use crate::relative_source_resolver::RelativeSourceResolver;
 use cjs::{collect_cjs_export_surface, collect_cjs_require_uses};
+pub(crate) use code_shape::normalize_code_shape;
 use dynamic_imports::{collect_dynamic_import_uses, collect_import_meta_glob_uses};
 use named_imports::collect_named_import_precision_uses;
 use shape_hash::collect_shape_hash_facts;

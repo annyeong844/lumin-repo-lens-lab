@@ -86,6 +86,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'execute-js-pre-write: missing --input <path|->',
   ],
   [
+    ['execute-post-write'],
+    'execute-post-write: missing --input <path|->',
+  ],
+  [
     ['execute-audit-lifecycle'],
     'execute-audit-lifecycle: missing --input <path|->',
   ],
@@ -231,7 +235,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v49';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v50';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -278,6 +282,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'failClosedLifecycleArtifacts',
   'postWriteOnlyBasePipelineSkip',
   'postWriteScopedBaseEvidence',
+  'nativePostWriteLifecycle',
   'lifecycleScopedArtifacts',
 ];
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
@@ -528,6 +533,12 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
   const auditLifecycleInputPath = path.join(tempDir, 'execute-audit-lifecycle.json');
   const auditLifecycleIntentPath = path.join(tempDir, 'execute-audit-lifecycle-intent.json');
   const jsPreWriteInputPath = path.join(tempDir, 'execute-js-pre-write.json');
+  const postWriteInputPath = path.join(tempDir, 'execute-post-write.json');
+  const postWriteOutputDir = path.join(tempDir, 'post-write-out');
+  const postWriteAdvisoryPath = path.join(
+    postWriteOutputDir,
+    'pre-write-advisory.PROBE-POST-WRITE.json',
+  );
   const jsPreWriteScriptsDir = path.join(tempDir, 'js-pre-write-scripts');
   const barrelDisciplineInputPath = path.join(tempDir, 'barrel-discipline-artifact.json');
   const blockClonesInputPath = path.join(tempDir, 'block-clones-artifact.json');
@@ -565,6 +576,7 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
     mkdirSync(path.join(rootDir, 'src'), { recursive: true });
     mkdirSync(outputDir, { recursive: true });
     mkdirSync(lifecycleOutputDir, { recursive: true });
+    mkdirSync(postWriteOutputDir, { recursive: true });
     mkdirSync(compareLeftDir, { recursive: true });
     mkdirSync(compareRightDir, { recursive: true });
     mkdirSync(jsPreWriteScriptsDir, { recursive: true });
@@ -689,6 +701,67 @@ writeFileSync(latest, JSON.stringify(advisory));
       },
       noFreshAudit: false,
       scanArgs: [],
+    }));
+    writeFileSync(postWriteAdvisoryPath, JSON.stringify({
+      invocationId: 'PROBE-POST-WRITE',
+      intentHash: 'probe-post-write-intent',
+      intent: {
+        names: [],
+        shapes: [],
+        files: ['src/probe.ts'],
+        dependencies: [],
+        plannedTypeEscapes: [],
+      },
+      scanRange: { output: postWriteOutputDir },
+      preWrite: {
+        anyInventoryPath: 'any-inventory.pre.PROBE-POST-WRITE.json',
+        fileInventory: { status: 'available', files: [] },
+      },
+      capabilities: {
+        language: 'js-ts',
+        postWriteTypeEscapes: 'available',
+      },
+    }));
+    writeFileSync(
+      path.join(postWriteOutputDir, 'any-inventory.pre.PROBE-POST-WRITE.json'),
+      JSON.stringify({
+        meta: {
+          complete: true,
+          scope: 'TS/JS production files',
+          includeTests: false,
+          exclude: [],
+          filesWithParseErrors: [],
+          supports: {
+            typeEscapes: true,
+            escapeKinds: [
+              'explicit-any',
+              'as-any',
+              'angle-any',
+              'as-unknown-as-T',
+              'rest-any-args',
+              'index-sig-any',
+              'generic-default-any',
+              'ts-ignore',
+              'ts-expect-error',
+              'no-explicit-any-disable',
+              'jsdoc-any',
+            ],
+          },
+        },
+        typeEscapes: [],
+      }),
+    );
+    writeFileSync(postWriteInputPath, JSON.stringify({
+      schemaVersion: 'lumin-post-write-lifecycle-request.v2',
+      root: rootDir,
+      output: postWriteOutputDir,
+      advisoryPath: postWriteAdvisoryPath,
+      deltaOut: null,
+      deltaInvocationId: 'PROBE-DELTA',
+      generated: '2026-07-13T00:00:00.000Z',
+      includeTests: false,
+      excludes: [],
+      incremental: { enabled: false, clear: false },
     }));
     writeFileSync(auditLifecycleInputPath, JSON.stringify({
       schemaVersion: 'lumin-audit-lifecycle-execution-request.v1',
@@ -1480,6 +1553,13 @@ writeFileSync(latest, JSON.stringify(advisory));
         requiresArtifactReads: false,
       },
       {
+        subcommand: 'execute-post-write',
+        args: ['execute-post-write', '--input', postWriteInputPath],
+        requiresArtifactReads: false,
+        outputDir: postWriteOutputDir,
+        expectedStdoutIncludes: '## post-write delta',
+      },
+      {
         subcommand: 'execute-audit-lifecycle',
         args: ['execute-audit-lifecycle', '--input', auditLifecycleInputPath],
         requiresArtifactReads: false,
@@ -1651,9 +1731,18 @@ writeFileSync(latest, JSON.stringify(advisory));
       if (result.error || result.status !== 0) return auditCoreContractProbeFailure(
         `${probe.subcommand} failed with status ${result.status ?? 'spawn-error'}: ${result.error?.message ?? result.stderr ?? ''}`
       );
-      if ((result.stdout ?? '').trim().length > 0) return auditCoreContractProbeFailure(
-        `${probe.subcommand} wrote JSON to stdout while using --result-output`
-      );
+      const stdout = result.stdout ?? '';
+      if (probe.expectedStdoutIncludes) {
+        if (!stdout.includes(probe.expectedStdoutIncludes)) {
+          return auditCoreContractProbeFailure(
+            `${probe.subcommand} omitted its expected stdout rendering`
+          );
+        }
+      } else if (stdout.trim().length > 0) {
+        return auditCoreContractProbeFailure(
+          `${probe.subcommand} wrote JSON to stdout while using --result-output`
+        );
+      }
       if (!existsSync(resultPath)) return auditCoreContractProbeFailure(
         `${probe.subcommand} did not create ${resultPath}`
       );
@@ -2205,6 +2294,33 @@ function resultPayloadMatchesProbe(json, probe) {
       json.exitCode === 0 &&
       json.stdout === undefined &&
       json.stderr === undefined;
+  }
+  if (probe.subcommand === 'execute-post-write') {
+    const latestPath = path.join(probe.outputDir, 'post-write-delta.latest.json');
+    const specificPath = path.join(
+      probe.outputDir,
+      'post-write-delta.PROBE-POST-WRITE.PROBE-DELTA.json',
+    );
+    if (!existsSync(latestPath) || !existsSync(specificPath)) return false;
+    const latest = JSON.parse(readFileSync(latestPath, 'utf8'));
+    const specific = JSON.parse(readFileSync(specificPath, 'utf8'));
+    return json.schemaVersion === 'lumin-post-write-lifecycle-result.v2' &&
+      isObject(json.block) &&
+      json.block.executionOwner === 'lumin-audit-core' &&
+      json.block.ran === true &&
+      json.block.preWriteInvocationId === 'PROBE-POST-WRITE' &&
+      json.block.deltaInvocationId === 'PROBE-DELTA' &&
+      json.block.deltaSchemaVersion === 'lumin-post-write-delta.v1' &&
+      json.block.baselineStatus === 'available' &&
+      json.block.scanRangeParity === 'ok' &&
+      json.block.typeEscapeDeltaStatus === 'computed' &&
+      json.exitCode === 0 &&
+      json.stdout === undefined &&
+      json.stderr === undefined &&
+      latest.schemaVersion === 'lumin-post-write-delta.v1' &&
+      latest.preWriteInvocationId === 'PROBE-POST-WRITE' &&
+      latest.deltaInvocationId === 'PROBE-DELTA' &&
+      JSON.stringify(latest) === JSON.stringify(specific);
   }
   if (probe.subcommand === 'execute-audit-lifecycle') {
     return json.schemaVersion === 'lumin-audit-lifecycle-execution-result.v1' &&

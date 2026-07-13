@@ -271,7 +271,11 @@ and the packaged source fallback must be regenerated from the same contract.
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/advisory.rs` | Shared current-run advisory artifact paths and IO: latest/specific path construction, exact JSON matching, atomic advisory writes, stale/invalid file removal, and required invocation-id validation | Rust native artifact semantics, JS/TS evidence semantics, child execution, lifecycle result projection |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/rust_engine.rs` | Rust engine lifecycle execution: source-commit fallback, stale output invalidation, exact native schema/policy/producer/coverage validation, native latest copy, advisory construction, JS-supplied inventory/failure pass-through, capability projection, and typed success/failure blocks | Rust analyzer internals, JS/TS producer semantics, generic child process mechanics |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_engine.rs` | JS/TS engine lifecycle execution: request validation, stale latest invalidation, current-run latest/specific advisory and evidence readback, advisory/evidence path projection, and typed success/failure blocks | `pre-write.mjs` producer semantics, JS/TS parsing, generic child process mechanics |
-| `experiments/rust-main/lumin-audit-core/src/post_write_lifecycle.rs` | `manifest.postWrite` raw lifecycle block execution for `--post-write`: missing/malformed advisory hard-stop, existing `post-write.mjs` child spawning, optional delta-out/no-fresh-audit/scan/incremental argv forwarding, stale latest invalidation, non-zero child failure propagation, exact current-run delta schema/advisory-id/specific-copy validation, typed failure projection, delta summary projection, and product-mode inherited stdout/stderr with result JSON written out-of-band. In implicit quick post-write-only mode the orchestration plan skips the unrelated base profile because this child owns fresh delta-required inventory production; manifest base evidence is explicitly unavailable rather than loaded from a reused output directory. | post-write delta computation, type-escape/file-delta classification semantics, markdown rendering, pre-write advisory construction, final manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/post_write_lifecycle.rs` | Thin native `manifest.postWrite` lifecycle facade for `--post-write`: request validation, current-run cleanup, native after-snapshot orchestration, delta artifact writing, lifecycle result projection, and failure projection without spawning Node | pre-write advisory construction, JS fallback execution, base-audit orchestration, final manifest file writing |
+| `experiments/rust-main/lumin-audit-core/src/post_write_lifecycle/protocol.rs` | Project-owned post-write request/result, advisory, inventory, delta, file-delta, status, summary, and failure shapes plus schema/vocabulary constants | repository walking, classification, rendering, artifact IO |
+| `experiments/rust-main/lumin-audit-core/src/post_write_lifecycle/delta.rs` | Deterministic type-escape capability/scan parity, planned matching, baseline classification, duplicate diagnostics, required-acknowledgement projection, and summary semantics ported from the checked JS producer | filesystem IO, clock/random ID generation, Markdown rendering, file discovery |
+| `experiments/rust-main/lumin-audit-core/src/post_write_lifecycle/file_delta.rs` | Deterministic repo-relative planned/before/after file-set classification and summary projection | source discovery, type-escape classification, policy judgement about whether an unexpected file is wrong |
+| `experiments/rust-main/lumin-audit-core/src/post_write_lifecycle/render.rs` | Deterministic post-write Markdown projection from the typed delta artifact | classification, artifact IO, terminal policy |
 | `experiments/rust-main/lumin-audit-core/src/living_audit.rs` | `manifest.json.livingAudit` projection from known living-audit document candidate paths under the audited root | audit document authoring, final answer policy, producer orchestration |
 | `experiments/rust-main/lumin-audit-core/src/manifest_core.rs` | `manifest.json.scanRange`, `manifest.json.confidence`, and `manifest.json.sfcEvidence` projections from already-produced `triage.json` and `symbols.json` | blind-zone detection, living-audit document discovery, producer execution |
 | `experiments/rust-main/lumin-audit-core/src/resolver_diagnostics.rs` | `manifest.json.resolverDiagnostics` projection from already-produced `symbols.json`, `resolver-capabilities.json`, and `resolver-diagnostics.json` | module resolution, blocked-hint production, blind-zone detection |
@@ -436,14 +440,13 @@ removes this artifact cache together with per-file facts.
 - Most audit-core modules read already-produced artifacts. `orchestration_executor.rs`
   is the explicit exception for base audit profile child execution, and
   `canon_draft_lifecycle.rs` and `check_canon_lifecycle.rs` are explicit
-  exceptions for lifecycle child execution. `pre_write_lifecycle.rs` is the
-  explicit Rust pre-write exception: it may run `lumin-rust-analyzer pre-write`
-  and project the checked Rust advisory block, but it must not own JS/TS
-  `pre-write.mjs` producer semantics. `post_write_lifecycle.rs` is the explicit
-  post-write exception: it may run the existing `post-write.mjs` entrypoint and
-  project the checked raw lifecycle block, but it must not own post-write delta
-  producer semantics. These modules run existing producer entrypoints but do
-  not reinterpret source-language producer semantics.
+  exceptions for lifecycle child execution. `pre_write_lifecycle.rs` may run
+  `lumin-rust-analyzer pre-write` until the native Rust pre-write owner lands.
+  Native post-write is owned by `post_write_lifecycle/`: it invokes the Rust
+  JS/TS evidence library directly, computes type-escape and file deltas, writes
+  latest and invocation-specific artifacts, and renders Markdown without a
+  Node child. `post-write.mjs`, JS delta computation, no-fresh reuse, and any
+  fallback classifier are forbidden production paths after this owner lands.
 - `js_ts_pre_write.rs` is the explicit JS/TS pre-write evidence exception. It
   may discover files through the checked `scan_scope.rs` mirror or consume an
   explicit path-backed file list, parse those files with OXC, and
@@ -454,13 +457,12 @@ removes this artifact cache together with per-file facts.
   compact symbol projection must reuse `symbol_graph/any_contamination.rs` for
   identity annotations and owner maps. Broad namespace/dynamic consumers belong
   only to `fanInByIdentitySpace.broad`, not exact `fanInByIdentity` counts. The
-  normal fresh post-write reuses the same command's `anyInventory` and `files`
-  projections for the after-snapshot and file delta input. The JS bridge may
-  write `any-inventory.json` and pass those returned files to the existing
-  delta owner, but it must not run `any-inventory.mjs`, load Node `oxc-parser`,
-  or perform a second repository walk as a fallback. `any-inventory.mjs`
-  remains only the legacy/reference producer and explicit no-fresh paths may
-  retain parser-free file-delta discovery. This
+  native post-write path reuses the same library response's `anyInventory` and
+  `files` projections for the after-snapshot and file delta input. It writes the
+  current `any-inventory.json` itself and must not run `any-inventory.mjs`, load
+  Node `oxc-parser`, perform a second repository walk, or reuse stale output as
+  a no-fresh fallback. `any-inventory.mjs` is reference-only until deleted with
+  the legacy write-gate scripts. This
   Rust owner must not write `symbols.json` or `topology.json`, broaden the
   supplied scan scope, invent fallback evidence, or own cue-tier/rendering
   policy. A malformed request, unreadable required source, omitted response
