@@ -8,10 +8,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod file_history;
+mod pickaxe;
+
+use file_history::collect_file_history;
+use pickaxe::{collect_symbol_mentions, is_pickaxe_eligible, Mention, PICKAXE_MODE};
+
 pub const STALENESS_REQUEST_SCHEMA_VERSION: &str = "lumin-staleness-producer-request.v1";
-const STALENESS_CACHE_SCHEMA_VERSION: i64 = 1;
+const STALENESS_CACHE_SCHEMA_VERSION: i64 = 2;
 const TOOL_NAME: &str = "measure-staleness.mjs";
-const MIN_PICKAXE_SYMBOL_LEN: usize = 4;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,12 +46,6 @@ pub struct StalenessRequest {
 }
 
 #[derive(Debug, Clone)]
-struct Mention {
-    status: &'static str,
-    ts: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
 struct Grounding {
     grounding: &'static str,
     confidence: &'static str,
@@ -56,37 +55,52 @@ struct Grounding {
 #[derive(Debug, Default, Clone)]
 struct PerformanceCounters {
     dead_candidates_processed: i64,
+    file_touch_files: i64,
     file_touch_git_calls: i64,
+    file_touch_wall_ms: i64,
+    line_blame_files: i64,
     line_blame_git_calls: i64,
+    line_blame_unavailable_files: i64,
     line_blame_cache_hits: i64,
     line_blame_cache_misses: i64,
+    line_blame_worker_count: i64,
+    line_blame_wall_ms: i64,
     symbol_pickaxe_git_calls: i64,
+    symbol_pickaxe_eligible_symbols: i64,
+    symbol_pickaxe_patch_lines: i64,
+    symbol_pickaxe_wall_ms: i64,
 }
 
 impl PerformanceCounters {
     fn json(&self) -> Value {
         json!({
             "deadCandidatesProcessed": self.dead_candidates_processed,
+            "fileTouchFiles": self.file_touch_files,
             "fileTouchGitCalls": self.file_touch_git_calls,
+            "fileTouchWallMs": self.file_touch_wall_ms,
+            "lineBlameFiles": self.line_blame_files,
             "lineBlameGitCalls": self.line_blame_git_calls,
+            "lineBlameUnavailableFiles": self.line_blame_unavailable_files,
             "lineBlameCacheHits": self.line_blame_cache_hits,
             "lineBlameCacheMisses": self.line_blame_cache_misses,
+            "lineBlameWorkerCount": self.line_blame_worker_count,
+            "lineBlameWallMs": self.line_blame_wall_ms,
             "symbolPickaxeGitCalls": self.symbol_pickaxe_git_calls,
+            "symbolPickaxeEligibleSymbols": self.symbol_pickaxe_eligible_symbols,
+            "symbolPickaxePatchLines": self.symbol_pickaxe_patch_lines,
+            "symbolPickaxeWallMs": self.symbol_pickaxe_wall_ms,
         })
     }
 }
 
 struct StalenessContext {
-    root: PathBuf,
     max_age_days: i64,
     stale_age_days: i64,
-    since: String,
     skip_pickaxe: bool,
     now: i64,
     performance: PerformanceCounters,
-    dead_candidates_by_file: HashMap<String, usize>,
-    file_touch_cache: HashMap<String, Option<i64>>,
-    line_blame_cache: HashMap<String, HashMap<i64, i64>>,
+    file_touch_times: HashMap<String, Option<i64>>,
+    line_blame_times: HashMap<String, HashMap<i64, i64>>,
     symbol_mention_cache: HashMap<String, Mention>,
 }
 
@@ -158,25 +172,51 @@ pub fn build_staleness_artifact(request: StalenessRequest) -> Result<Value> {
         }
     }
 
-    let mut dead_candidates_by_file = HashMap::new();
+    let mut candidate_lines_by_file = BTreeMap::<String, Vec<i64>>::new();
     for dead in &dead_list {
         if let Some(file) = string_field(dead, "file") {
-            *dead_candidates_by_file.entry(file).or_insert(0) += 1;
+            candidate_lines_by_file
+                .entry(file)
+                .or_default()
+                .push(number_field(dead, "line").unwrap_or(1));
         }
     }
+    let file_history = collect_file_history(&root, &candidate_lines_by_file)?;
+    let pickaxe = collect_symbol_mentions(
+        &root,
+        &request.since,
+        request.skip_pickaxe,
+        dead_list
+            .iter()
+            .filter_map(|dead| string_field(dead, "symbol")),
+    )?;
+    let performance = PerformanceCounters {
+        file_touch_files: file_history.file_touch_files,
+        file_touch_git_calls: file_history.file_touch_git_calls,
+        file_touch_wall_ms: file_history.file_touch_wall_ms,
+        line_blame_files: file_history.line_blame_files,
+        line_blame_git_calls: file_history.line_blame_git_calls,
+        line_blame_unavailable_files: file_history.line_blame_unavailable_files,
+        line_blame_cache_hits: file_history.line_blame_cache_hits,
+        line_blame_cache_misses: file_history.line_blame_cache_misses,
+        line_blame_worker_count: file_history.line_blame_worker_count,
+        line_blame_wall_ms: file_history.line_blame_wall_ms,
+        symbol_pickaxe_git_calls: pickaxe.git_calls,
+        symbol_pickaxe_eligible_symbols: pickaxe.eligible_symbols,
+        symbol_pickaxe_patch_lines: pickaxe.patch_lines,
+        symbol_pickaxe_wall_ms: pickaxe.wall_ms,
+        ..PerformanceCounters::default()
+    };
 
     let mut ctx = StalenessContext {
-        root,
         max_age_days: request.max_age_days,
         stale_age_days: request.stale_age_days,
-        since: request.since.clone(),
         skip_pickaxe: request.skip_pickaxe,
         now: unix_now(),
-        performance: PerformanceCounters::default(),
-        dead_candidates_by_file,
-        file_touch_cache: HashMap::new(),
-        line_blame_cache: HashMap::new(),
-        symbol_mention_cache: HashMap::new(),
+        performance,
+        file_touch_times: file_history.file_touch_times,
+        line_blame_times: file_history.line_blame_times,
+        symbol_mention_cache: pickaxe.mentions,
     };
 
     let mut enriched = Vec::new();
@@ -185,9 +225,9 @@ pub fn build_staleness_artifact(request: StalenessRequest) -> Result<Value> {
         let file = string_field(dead, "file").unwrap_or_default();
         let symbol = string_field(dead, "symbol").unwrap_or_default();
         let line = number_field(dead, "line").unwrap_or(1);
-        let file_ts = file_last_touched(&mut ctx, &file);
-        let line_ts = line_last_touched(&mut ctx, &file, line);
-        let mention = symbol_last_mention(&mut ctx, &symbol);
+        let file_ts = file_last_touched(&ctx, &file);
+        let line_ts = line_last_touched(&ctx, &file, line);
+        let mention = symbol_last_mention(&ctx, &symbol);
         let tier = staleness_tier(&ctx, line_ts, file_ts);
         let grounding = grounding_for(&ctx, tier, &mention);
 
@@ -239,6 +279,7 @@ pub fn build_staleness_artifact(request: StalenessRequest) -> Result<Value> {
                 "since": request.since,
             },
             "skipPickaxe": request.skip_pickaxe,
+            "pickaxeMode": PICKAXE_MODE,
             "incremental": incremental_meta(
                 &request,
                 &cache,
@@ -304,148 +345,32 @@ fn git(root: &Path, args: &[&str]) -> String {
         .unwrap_or_default()
 }
 
-fn git_owned(root: &Path, args: &[String]) -> String {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
-        .unwrap_or_default()
+fn file_last_touched(ctx: &StalenessContext, rel_file: &str) -> Option<i64> {
+    ctx.file_touch_times.get(rel_file).copied().flatten()
 }
 
-fn file_last_touched(ctx: &mut StalenessContext, rel_file: &str) -> Option<i64> {
-    if let Some(cached) = ctx.file_touch_cache.get(rel_file) {
-        return *cached;
-    }
-    ctx.performance.file_touch_git_calls += 1;
-    let out = git(
-        &ctx.root,
-        &["log", "-1", "--format=%at", "--follow", "--", rel_file],
-    );
-    let ts = parse_i64(out.trim());
-    ctx.file_touch_cache.insert(rel_file.to_string(), ts);
-    ts
-}
-
-fn line_last_touched(ctx: &mut StalenessContext, rel_file: &str, line: i64) -> Option<i64> {
+fn line_last_touched(ctx: &StalenessContext, rel_file: &str, line: i64) -> Option<i64> {
     let safe_line = if line > 0 { line } else { 1 };
-    if ctx
-        .dead_candidates_by_file
+    ctx.line_blame_times
         .get(rel_file)
+        .and_then(|times| times.get(&safe_line))
         .copied()
-        .unwrap_or(0)
-        <= 1
-    {
-        ctx.performance.line_blame_git_calls += 1;
-        let range = format!("{safe_line},{safe_line}");
-        let out = git(
-            &ctx.root,
-            &["blame", "--porcelain", "-L", &range, "--", rel_file],
-        );
-        return first_author_time(&out);
-    }
-    line_blame_times(ctx, rel_file).get(&safe_line).copied()
 }
 
-fn line_blame_times(ctx: &mut StalenessContext, rel_file: &str) -> HashMap<i64, i64> {
-    if let Some(cached) = ctx.line_blame_cache.get(rel_file) {
-        ctx.performance.line_blame_cache_hits += 1;
-        return cached.clone();
-    }
-    ctx.performance.line_blame_cache_misses += 1;
-    ctx.performance.line_blame_git_calls += 1;
-    let out = git(&ctx.root, &["blame", "--line-porcelain", "--", rel_file]);
-    let times = parse_line_blame_times(&out);
-    ctx.line_blame_cache
-        .insert(rel_file.to_string(), times.clone());
-    times
-}
-
-fn parse_line_blame_times(out: &str) -> HashMap<i64, i64> {
-    let mut times = HashMap::new();
-    let mut current_final_line = None;
-    let mut current_author_time = None;
-    for line in out.lines() {
-        let parts = line.split_whitespace().collect::<Vec<_>>();
-        if (parts.len() == 3 || parts.len() == 4)
-            && is_blame_hash(parts[0])
-            && parse_i64(parts[1]).is_some()
-            && parse_i64(parts[2]).is_some()
-        {
-            current_final_line = parse_i64(parts[2]);
-            current_author_time = None;
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("author-time ") {
-            current_author_time = parse_i64(rest);
-            continue;
-        }
-        if line.starts_with('\t') {
-            if let (Some(final_line), Some(author_time)) = (current_final_line, current_author_time)
-            {
-                times.insert(final_line, author_time);
-            }
-            current_final_line = None;
-            current_author_time = None;
-        }
-    }
-    times
-}
-
-fn first_author_time(out: &str) -> Option<i64> {
-    out.lines()
-        .find_map(|line| line.strip_prefix("author-time ").and_then(parse_i64))
-}
-
-fn is_blame_hash(text: &str) -> bool {
-    let len = text.len();
-    (7..=64).contains(&len) && text.chars().all(|ch| ch == '^' || ch.is_ascii_hexdigit())
-}
-
-fn symbol_last_mention(ctx: &mut StalenessContext, symbol: &str) -> Mention {
-    if ctx.skip_pickaxe || symbol.len() < MIN_PICKAXE_SYMBOL_LEN || !is_safe_ident(symbol) {
+fn symbol_last_mention(ctx: &StalenessContext, symbol: &str) -> Mention {
+    if ctx.skip_pickaxe || !is_pickaxe_eligible(symbol) {
         return Mention {
             status: "skipped",
             ts: None,
         };
     }
-    if let Some(cached) = ctx.symbol_mention_cache.get(symbol) {
-        return cached.clone();
-    }
-    let mut args = vec!["log".to_string()];
-    if !ctx.since.is_empty() {
-        args.push(format!("--since={}", ctx.since));
-    }
-    args.push(format!("-S{symbol}"));
-    args.push("--format=%at".to_string());
-    args.push("-1".to_string());
-    ctx.performance.symbol_pickaxe_git_calls += 1;
-    let out = git_owned(&ctx.root, &args);
-    let result = parse_i64(out.trim())
-        .map(|ts| Mention {
-            status: "warm",
-            ts: Some(ts),
-        })
+    ctx.symbol_mention_cache
+        .get(symbol)
+        .cloned()
         .unwrap_or(Mention {
             status: "cold",
             ts: None,
-        });
-    ctx.symbol_mention_cache
-        .insert(symbol.to_string(), result.clone());
-    result
-}
-
-fn is_safe_ident(symbol: &str) -> bool {
-    let mut chars = symbol.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
-        return false;
-    }
-    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
+        })
 }
 
 fn staleness_tier(
@@ -601,10 +526,6 @@ fn unix_now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0)
-}
-
-fn parse_i64(text: &str) -> Option<i64> {
-    text.trim().parse::<i64>().ok()
 }
 
 fn string_field(value: &Value, field: &str) -> Option<String> {

@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v56"
+        "audit-core-js-runtime-bridge.v57"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -100,6 +100,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(contract["features"]["symbolGraphStrictRequestV2"], true);
     assert_eq!(contract["features"]["symbolGraphDeadTestCandidates"], true);
+    assert_eq!(contract["features"]["stalenessBatchPickaxe"], true);
     assert_eq!(
         contract["features"]["generatedVirtualSourceUseAssembly"],
         true

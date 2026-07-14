@@ -140,6 +140,7 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
+aho-corasick = "1.1.4"
 anyhow = "1"
 lumin-rust-common = { path = "rust-common", default-features = false }
 oxc_allocator = "0.139.0"
