@@ -264,7 +264,9 @@ Empty list case:
 
 ## 10. Producer responsibilities
 
-- **Per-identity annotation** — extend `_engine/lib/extract-ts.mjs` (or sibling `_engine/lib/extract-ts-contamination.mjs`) to annotate each extracted `def` with the `anyContamination` object defined in §4. Omit when clean.
+- **Per-identity annotation** — `symbol_graph/any_contamination.rs` associates
+  Rust-extracted type escapes with exported identities and annotates each `def`
+  with the `anyContamination` object defined in §4. Omit when clean.
 - **Per-occurrence `type-escape` fact** — fresh AST walk emits exactly one `type-escape` fact per occurrence, covering every `escapeKind` enumerated in `canonical/fact-model.md` §3.9. The producer MUST cover all 11 kinds, not just the common three:
 
   | escapeKind | AST / source shape |

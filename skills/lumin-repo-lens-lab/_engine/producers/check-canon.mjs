@@ -42,7 +42,7 @@ import { detectHelperRegistryDrift } from '../lib/check-canon-helpers.mjs';
 import { detectTopologyDrift } from '../lib/check-canon-topology.mjs';
 import { detectNamingDrift } from '../lib/check-canon-naming.mjs';
 import { collectFiles } from '../lib/collect-files.mjs';
-import { extractDefinitionsAndUses } from '../lib/extract-ts.mjs';
+import { createDefinitionsAndUsesExtractor } from '../lib/extract-ts.mjs';
 import { detectRepoMode } from '../lib/repo-mode.mjs';
 import { buildAliasMap } from '../lib/alias-map.mjs';
 import { makeResolver, isResolvedFile } from '../lib/resolver-core.mjs';
@@ -84,6 +84,20 @@ const canonDir = cli.raw['canon-dir']
 
 const output = cli.output;
 
+let freshRustScan = null;
+function getFreshRustScan() {
+  if (freshRustScan) return freshRustScan;
+  const files = collectFiles(cli.root, {
+    includeTests: cli.includeTests,
+    exclude: cli.exclude,
+  });
+  freshRustScan = {
+    files,
+    extractFn: createDefinitionsAndUsesExtractor({ root: cli.root, files }),
+  };
+  return freshRustScan;
+}
+
 // ─── Per-source dispatchers ──────────────────────────────────
 
 function dispatchTypeOwnership() {
@@ -116,10 +130,7 @@ function dispatchHelperRegistry() {
   if (!callGraph) {
     process.stderr.write(`[check-canon] call-graph.json not found in ${output}; cross-check diagnostics skipped.\n`);
   }
-  const files = collectFiles(cli.root, {
-    includeTests: cli.includeTests,
-    exclude: cli.exclude,
-  });
+  const { files, extractFn } = getFreshRustScan();
   const repoMode = detectRepoMode(cli.root);
   const aliasMap = buildAliasMap(cli.root, repoMode, { exclude: cli.exclude });
   const rawResolver = makeResolver(cli.root, aliasMap);
@@ -131,7 +142,7 @@ function dispatchHelperRegistry() {
     canonPath,
     scanContext: {
       files, root: cli.root,
-      extractFn: extractDefinitionsAndUses,
+      extractFn,
       resolveSpecifier, symbols, callGraph,
     },
     canonLabelSet: HELPER_LABEL_SET,
@@ -163,17 +174,14 @@ function dispatchTopology() {
 
 function dispatchNaming() {
   const canonPath = path.join(canonDir, 'naming.md');
-  const files = collectFiles(cli.root, {
-    includeTests: cli.includeTests,
-    exclude: cli.exclude,
-  });
+  const { files, extractFn } = getFreshRustScan();
   const repoMode = detectRepoMode(cli.root);
   const submoduleOf = buildSubmoduleResolver(cli.root, repoMode);
   const result = detectNamingDrift({
     canonPath,
     scanContext: {
       files, root: cli.root,
-      extractFn: extractDefinitionsAndUses,
+      extractFn,
       submoduleOf,
       lowInfoNames: new Set(LOW_INFO_NAMES),
       lowInfoHelperNames: new Set(LOW_INFO_HELPER_NAMES),

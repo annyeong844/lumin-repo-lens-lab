@@ -31,7 +31,7 @@ import { collectTopologyStructure, renderTopology } from '../lib/canon-draft-top
 import { collectNamingCohorts, renderNaming } from '../lib/canon-draft-naming.mjs';
 import { atomicWrite } from '../lib/atomic-write.mjs';
 import { collectFiles } from '../lib/collect-files.mjs';
-import { extractDefinitionsAndUses } from '../lib/extract-ts.mjs';
+import { createDefinitionsAndUsesExtractor } from '../lib/extract-ts.mjs';
 import { detectRepoMode } from '../lib/repo-mode.mjs';
 import { buildAliasMap } from '../lib/alias-map.mjs';
 import { makeResolver, isResolvedFile } from '../lib/resolver-core.mjs';
@@ -164,6 +164,7 @@ if (source === 'helper-registry') {
     includeTests: args.includeTests,
     exclude: args.exclude,
   });
+  const extractFn = createDefinitionsAndUsesExtractor({ root: ROOT, files });
 
   // Resolver wrapper — normalizes sentinels to null (only real file paths
   // count as "resolved" for helper-owner attribution).
@@ -190,7 +191,7 @@ if (source === 'helper-registry') {
   } = collectHelperIdentities({
     files,
     root: ROOT,
-    extractFn: extractDefinitionsAndUses,
+    extractFn,
     resolveSpecifier,
     symbols,
     callGraph,
@@ -292,13 +293,14 @@ if (source === 'topology') {
 // ── naming path (P3-4) ────────────────────────────────────
 //
 // Fresh AST pass. File cohorts ALWAYS use collectFiles (P0-6).
-// Symbol cohorts from fresh `extractDefinitionsAndUses`.
+// Symbol cohorts from the current Rust JS/TS fact index.
 
 if (source === 'naming') {
   const files = collectFiles(ROOT, {
     includeTests: args.includeTests,
     exclude: args.exclude,
   });
+  const extractFn = createDefinitionsAndUsesExtractor({ root: ROOT, files });
 
   // Reuse submodule resolver from paths.mjs (same pattern as topology).
   const { buildSubmoduleResolver } = await import('../lib/paths.mjs');
@@ -315,7 +317,7 @@ if (source === 'naming') {
   } = collectNamingCohorts({
     files,
     root: ROOT,
-    extractFn: extractDefinitionsAndUses,
+    extractFn,
     submoduleOf,
     lowInfoNames: new Set(LOW_INFO_NAMES),
     lowInfoHelperNames: new Set(LOW_INFO_HELPER_NAMES),
