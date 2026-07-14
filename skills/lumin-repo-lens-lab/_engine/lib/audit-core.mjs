@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v53';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v54';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -253,6 +253,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsExtractPathBackedInput',
   'jsTsExtractLocalOperations',
   'sfcFileFacts',
+  'sfcFileConventionFacts',
   'jsTsPreWriteEvidence',
   'jsTsPreWriteDiscovery',
   'jsTsPreWriteIncrementalCache',
@@ -967,9 +968,39 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
             '<script setup lang="ts">',
             'import ProbeCard from "./ProbeCard.vue";',
             'import * as UI from "./ui";',
+            'defineOptions({ components: { ProbeCard } });',
             '</script>',
             '<script src="./setup.ts"></script>',
             '<style>@import "./theme.css";</style>',
+          ].join('\n'),
+        },
+        {
+          filePath: 'src/Options.vue',
+          source: [
+            '<script>',
+            'import OptionsCard from "./OptionsCard.vue";',
+            'export default { components: { OptionsCard } };',
+            '</script>',
+            '<template><OptionsCard /></template>',
+          ].join('\n'),
+        },
+        {
+          filePath: 'src/Page.astro',
+          source: [
+            '---',
+            'import AstroCard from "./AstroCard.astro";',
+            '---',
+            '<AstroCard client:load />',
+          ].join('\n'),
+        },
+        {
+          filePath: 'src/Panel.svelte',
+          source: [
+            '<script>',
+            'import { enhance } from "./actions";',
+            'import { count } from "./stores";',
+            '</script>',
+            '<form use:enhance>{$count}</form>',
           ].join('\n'),
         },
       ],
@@ -2079,7 +2110,11 @@ function resultPayloadMatchesProbe(json, probe) {
       );
   }
   if (probe.subcommand === 'sfc-file-facts-artifact') {
-    const file = json.files?.[0];
+    const files = Array.isArray(json.files) ? json.files : [];
+    const file = files.find((row) => row?.filePath === 'src/App.vue');
+    const optionsFile = files.find((row) => row?.filePath === 'src/Options.vue');
+    const astroFile = files.find((row) => row?.filePath === 'src/Page.astro');
+    const svelteFile = files.find((row) => row?.filePath === 'src/Panel.svelte');
     return json.schemaVersion === 'lumin-sfc-file-facts-response.v1' &&
       file?.filePath === 'src/App.vue' &&
       file.scriptImportConsumers?.some((row) =>
@@ -2100,6 +2135,32 @@ function resultPayloadMatchesProbe(json, probe) {
         row?.tagName === 'UI.Panel' &&
         row?.memberName === 'Panel' &&
         row?.reason === 'sfc-template-namespace-component'
+      ) &&
+      file.frameworkConventionComponents?.some((row) =>
+        row?.conventionKind === 'macro-registration' &&
+        row?.componentName === 'ProbeCard' &&
+        row?.bindingSource === './ProbeCard.vue' &&
+        row?.reason === 'sfc-framework-vue-macro-registration'
+      ) &&
+      optionsFile?.frameworkConventionComponents?.some((row) =>
+        row?.conventionKind === 'options-registration' &&
+        row?.componentName === 'OptionsCard' &&
+        row?.bindingSource === './OptionsCard.vue'
+      ) &&
+      astroFile?.frameworkConventionComponents?.some((row) =>
+        row?.conventionKind === 'client-directive' &&
+        row?.tagName === 'AstroCard' &&
+        row?.directiveName === 'client:load'
+      ) &&
+      svelteFile?.frameworkConventionComponents?.some((row) =>
+        row?.conventionKind === 'action-directive' &&
+        row?.actionName === 'enhance' &&
+        row?.bindingSource === './actions'
+      ) &&
+      svelteFile?.frameworkConventionComponents?.some((row) =>
+        row?.conventionKind === 'store-auto-subscription' &&
+        row?.storeName === 'count' &&
+        row?.bindingSource === './stores'
       );
   }
   if (probe.subcommand === 'checklist-facts-artifact') {

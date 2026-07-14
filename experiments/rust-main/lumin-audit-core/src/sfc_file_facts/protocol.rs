@@ -17,18 +17,115 @@ pub struct SfcFileInput {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SfcFileFactsResponse {
-    pub schema_version: &'static str,
-    pub files: Vec<SfcFileFacts>,
+    pub(super) schema_version: &'static str,
+    pub(super) files: Vec<SfcFileFacts>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SfcFileFacts {
-    pub file_path: String,
-    pub script_import_consumers: Vec<SfcScriptImportConsumer>,
-    pub script_sources: Vec<SfcScriptSource>,
-    pub style_asset_references: Vec<SfcStyleAssetReference>,
-    pub template_component_refs: Vec<SfcTemplateComponentRef>,
+    pub(super) file_path: String,
+    pub(super) script_import_consumers: Vec<SfcScriptImportConsumer>,
+    pub(super) script_sources: Vec<SfcScriptSource>,
+    pub(super) style_asset_references: Vec<SfcStyleAssetReference>,
+    pub(super) template_component_refs: Vec<SfcTemplateComponentRef>,
+    pub(super) framework_convention_components: Vec<SfcFileConvention>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub(super) enum SfcFileConvention {
+    AstroClientDirective(AstroClientDirectiveConvention),
+    SvelteActionDirective(SvelteActionDirectiveConvention),
+    SvelteStoreSubscription(SvelteStoreSubscriptionConvention),
+    VueMacroRegistration(VueMacroRegistrationConvention),
+    VueOptionsRegistration(VueOptionsRegistrationConvention),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SfcConventionCommon {
+    pub framework: &'static str,
+    pub convention_kind: &'static str,
+    pub consumer_file: String,
+    pub source: &'static str,
+    pub confidence: &'static str,
+    pub eligible_for_fan_in: bool,
+    pub eligible_for_safe_fix: bool,
+    pub status: &'static str,
+    pub reason: &'static str,
+    pub line: usize,
+    pub sfc_block_kind: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SfcConventionBinding {
+    pub binding_name: String,
+    pub binding_source: String,
+    pub from_spec: String,
+    pub binding_kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub imported_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct AstroClientDirectiveConvention {
+    #[serde(flatten)]
+    pub common: SfcConventionCommon,
+    pub tag_name: String,
+    pub normalized_tag_name: String,
+    pub directive_name: String,
+    #[serde(flatten)]
+    pub binding: SfcConventionBinding,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SvelteActionDirectiveConvention {
+    #[serde(flatten)]
+    pub common: SfcConventionCommon,
+    pub tag_name: String,
+    pub directive_name: String,
+    pub action_name: String,
+    #[serde(flatten)]
+    pub binding: SfcConventionBinding,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SvelteStoreSubscriptionConvention {
+    #[serde(flatten)]
+    pub common: SfcConventionCommon,
+    pub subscription_name: String,
+    pub store_name: String,
+    #[serde(flatten)]
+    pub binding: SfcConventionBinding,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct VueMacroRegistrationConvention {
+    #[serde(flatten)]
+    pub common: SfcConventionCommon,
+    pub macro_name: &'static str,
+    pub component_name: String,
+    pub normalized_tag_names: Vec<String>,
+    #[serde(flatten)]
+    pub binding: SfcConventionBinding,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct VueOptionsRegistrationConvention {
+    #[serde(flatten)]
+    pub common: SfcConventionCommon,
+    pub option_name: &'static str,
+    pub component_name: String,
+    pub normalized_tag_names: Vec<String>,
+    #[serde(flatten)]
+    pub binding: SfcConventionBinding,
 }
 
 #[derive(Debug, Clone, Serialize)]

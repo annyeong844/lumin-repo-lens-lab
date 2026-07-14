@@ -26,34 +26,11 @@ function lineOf(src, offset) {
   return line;
 }
 
-function attrsHaveSrc(attrs) {
-  return srcAttrValue(attrs) !== null;
-}
-
-function srcAttrValue(attrs) {
-  const match = `${attrs ?? ""}`.match(
-    /(?:^|\s)src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i,
-  );
-  if (!match) return null;
-  return match[1] ?? match[2] ?? match[3] ?? "";
-}
-
 function isRelativeSourceSpec(spec) {
   return (
     typeof spec === "string" &&
     (spec.startsWith("./") || spec.startsWith("../"))
   );
-}
-
-function parserLangFromAttrs(attrs) {
-  const match = `${attrs ?? ""}`.match(
-    /\blang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'=<>`]+))/i,
-  );
-  const raw = (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").toLowerCase();
-  if (raw === "tsx") return "tsx";
-  if (raw === "jsx") return "jsx";
-  if (raw === "js" || raw === "javascript") return "js";
-  return "ts";
 }
 
 function parserLangFromFile(filePath) {
@@ -110,107 +87,6 @@ function mayContainGlobalComponentRegistration(src) {
   return GLOBAL_COMPONENT_REGISTRATION_SOURCE_RE.test(`${src ?? ""}`);
 }
 
-function stripHtmlComments(src) {
-  return `${src ?? ""}`.replace(/<!--[\s\S]*?-->/g, (match) =>
-    " ".repeat(match.length),
-  );
-}
-
-function stripSvelteNonTemplateBlocks(src) {
-  return `${src ?? ""}`.replace(
-    /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi,
-    (match) => " ".repeat(match.length),
-  );
-}
-
-function extractScriptBlocks(src, filePath) {
-  const lang = sfcLanguageForFile(filePath);
-  if (lang === "astro") return extractAstroFrontmatter(src);
-  if (lang !== "vue" && lang !== "svelte") return [];
-
-  const blocks = [];
-  const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-  let match;
-  while ((match = scriptRe.exec(src))) {
-    const attrs = match[1] ?? "";
-    if (attrsHaveSrc(attrs)) continue;
-    const contentStart = match.index + match[0].indexOf(match[2]);
-    blocks.push({
-      content: match[2],
-      startOffset: contentStart,
-      kind:
-        lang === "vue" && /\bsetup\b/i.test(attrs)
-          ? "vue-script-setup"
-          : `${lang}-script`,
-      parserLang: parserLangFromAttrs(attrs),
-    });
-  }
-  return blocks;
-}
-
-function extractTemplateBlocks(src, filePath) {
-  const lang = sfcLanguageForFile(filePath);
-  if (lang === "astro") {
-    const frontmatter = extractAstroFrontmatter(src)[0];
-    const startOffset = frontmatter
-      ? frontmatter.startOffset + frontmatter.content.length + 4
-      : 0;
-    return [
-      {
-        content: src.slice(startOffset),
-        startOffset,
-        kind: "astro-template",
-        sfcLanguage: "astro",
-      },
-    ];
-  }
-  if (lang === "vue") {
-    const blocks = [];
-    const templateRe = /<template\b([^>]*)>([\s\S]*?)<\/template>/gi;
-    let match;
-    while ((match = templateRe.exec(src))) {
-      const contentStart = match.index + match[0].indexOf(match[2]);
-      blocks.push({
-        content: match[2],
-        startOffset: contentStart,
-        kind: "vue-template",
-        sfcLanguage: "vue",
-      });
-    }
-    return blocks;
-  }
-  if (lang === "svelte") {
-    return [
-      {
-        content: stripSvelteNonTemplateBlocks(src),
-        startOffset: 0,
-        kind: "svelte-template",
-        sfcLanguage: "svelte",
-      },
-    ];
-  }
-  return [];
-}
-
-function extractAstroFrontmatter(src) {
-  const open = src.match(/^---\r?\n/);
-  if (!open) return [];
-
-  const closeRe = /^---\s*$/gm;
-  closeRe.lastIndex = open[0].length;
-  const close = closeRe.exec(src);
-  if (!close) return [];
-
-  return [
-    {
-      content: src.slice(open[0].length, close.index),
-      startOffset: open[0].length,
-      kind: "astro-frontmatter",
-      parserLang: "ts",
-    },
-  ];
-}
-
 function parseScriptAst(script, filePath, parserLang) {
   const parse = loadParseSync();
   const candidates = [parserLang || "ts"];
@@ -255,77 +131,6 @@ function computedPropertySource(node, src) {
   return src.slice(key.start, key.end).trim() || null;
 }
 
-function parseScriptImportConsumers(
-  script,
-  { filePath, fileSource, startOffset, blockKind, parserLang },
-) {
-  const out = [];
-  const program = parseScriptAst(script, filePath, parserLang);
-  if (!program) return out;
-
-  for (const node of program.body ?? []) {
-    if (node?.type !== "ImportDeclaration") continue;
-    const fromSpec = node.source?.value;
-    if (typeof fromSpec !== "string" || fromSpec.length === 0) continue;
-    const line = lineOf(fileSource, startOffset + node.start);
-    const declarationTypeOnly = node.importKind === "type";
-    if (!Array.isArray(node.specifiers) || node.specifiers.length === 0) {
-      out.push({
-        consumerFile: filePath,
-        fromSpec,
-        name: "*",
-        kind: "import-side-effect",
-        typeOnly: false,
-        line,
-        sfcBlockKind: blockKind,
-      });
-      continue;
-    }
-
-    for (const specifier of node.specifiers) {
-      if (specifier.type === "ImportDefaultSpecifier") {
-        out.push({
-          consumerFile: filePath,
-          fromSpec,
-          name: "default",
-          localName: importLocalName(specifier),
-          kind: "default",
-          typeOnly: declarationTypeOnly,
-          line,
-          sfcBlockKind: blockKind,
-        });
-      } else if (specifier.type === "ImportNamespaceSpecifier") {
-        out.push({
-          consumerFile: filePath,
-          fromSpec,
-          name: "*",
-          localName: importLocalName(specifier),
-          kind: "namespace",
-          typeOnly: declarationTypeOnly,
-          line,
-          sfcBlockKind: blockKind,
-        });
-      } else if (specifier.type === "ImportSpecifier") {
-        const name = importedName(specifier);
-        if (name) {
-          out.push({
-            consumerFile: filePath,
-            fromSpec,
-            name,
-            localName: importLocalName(specifier),
-            kind: "import",
-            typeOnly: declarationTypeOnly || specifier.importKind === "type",
-            line,
-            sfcBlockKind: blockKind,
-          });
-        }
-      }
-    }
-  }
-
-  return out;
-}
-
 function importLocalName(specifier) {
   return specifier?.local?.name ?? null;
 }
@@ -363,176 +168,6 @@ function traverseAst(node, visit) {
       traverseAst(value, visit);
     }
   }
-}
-
-function traverseAstWithAncestors(node, visit, ancestors = []) {
-  if (!node || typeof node !== "object") return;
-  visit(node, ancestors);
-  const nextAncestors = [...ancestors, node];
-  for (const [key, value] of Object.entries(node)) {
-    if (key === "parent") continue;
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        traverseAstWithAncestors(item, visit, nextAncestors);
-      }
-    } else if (
-      value &&
-      typeof value === "object" &&
-      typeof value.type === "string"
-    ) {
-      traverseAstWithAncestors(value, visit, nextAncestors);
-    }
-  }
-}
-
-function isFunctionScopeNode(node) {
-  return (
-    node?.type === "Program" ||
-    node?.type === "FunctionDeclaration" ||
-    node?.type === "FunctionExpression" ||
-    node?.type === "ArrowFunctionExpression"
-  );
-}
-
-function collectPatternBindingNames(pattern, out) {
-  const name = identifierName(pattern);
-  if (name) {
-    out.add(name);
-    return;
-  }
-
-  if (pattern?.type === "AssignmentPattern") {
-    collectPatternBindingNames(pattern.left, out);
-    return;
-  }
-
-  if (pattern?.type === "RestElement") {
-    collectPatternBindingNames(pattern.argument, out);
-    return;
-  }
-
-  if (pattern?.type === "ArrayPattern") {
-    for (const element of pattern.elements ?? []) {
-      collectPatternBindingNames(element, out);
-    }
-    return;
-  }
-
-  if (pattern?.type !== "ObjectPattern") return;
-  for (const property of pattern.properties ?? []) {
-    if (property?.type === "RestElement") {
-      collectPatternBindingNames(property.argument, out);
-      continue;
-    }
-    collectPatternBindingNames(property?.value, out);
-  }
-}
-
-function nearestAstScope(ancestors, scopes) {
-  for (let i = ancestors.length - 1; i >= 0; i--) {
-    if (scopes.has(ancestors[i])) return ancestors[i];
-  }
-  return null;
-}
-
-function addPatternBindingsToScope(scopes, scope, pattern) {
-  if (!scope) return;
-  let names = scopes.get(scope);
-  if (!names) {
-    names = new Set();
-    scopes.set(scope, names);
-  }
-  collectPatternBindingNames(pattern, names);
-}
-
-function collectSvelteScriptBindingScopes(program) {
-  const scopes = new Map([[program, new Set()]]);
-  traverseAstWithAncestors(program, (node, ancestors) => {
-    if (isFunctionScopeNode(node) && !scopes.has(node)) {
-      scopes.set(node, new Set());
-    }
-
-    if (node?.type === "ImportDeclaration") {
-      const scope = nearestAstScope(ancestors, scopes);
-      for (const specifier of node.specifiers ?? []) {
-        addPatternBindingsToScope(scopes, scope, specifier.local);
-      }
-      return;
-    }
-
-    if (node?.type === "VariableDeclarator") {
-      addPatternBindingsToScope(
-        scopes,
-        nearestAstScope(ancestors, scopes),
-        node.id,
-      );
-      return;
-    }
-
-    if (node?.type === "FunctionDeclaration") {
-      addPatternBindingsToScope(
-        scopes,
-        nearestAstScope(ancestors, scopes),
-        node.id,
-      );
-      for (const param of node.params ?? []) {
-        addPatternBindingsToScope(scopes, node, param);
-      }
-      return;
-    }
-
-    if (
-      node?.type === "FunctionExpression" ||
-      node?.type === "ArrowFunctionExpression"
-    ) {
-      if (node.type === "FunctionExpression") {
-        addPatternBindingsToScope(scopes, node, node.id);
-      }
-      for (const param of node.params ?? []) {
-        addPatternBindingsToScope(scopes, node, param);
-      }
-      return;
-    }
-
-    if (node?.type === "CatchClause") {
-      addPatternBindingsToScope(
-        scopes,
-        nearestAstScope(ancestors, scopes),
-        node.param,
-      );
-    }
-  });
-  return scopes;
-}
-
-function isSvelteDollarIdentifierShadowed(name, ancestors, scopes) {
-  for (let i = ancestors.length - 1; i >= 0; i--) {
-    if (scopes.get(ancestors[i])?.has(name)) return true;
-  }
-  return false;
-}
-
-function isNonReferenceIdentifier(node, ancestors) {
-  const parent = ancestors.at(-1);
-  if (!parent) return false;
-  if (
-    parent.type === "MemberExpression" &&
-    parent.property === node &&
-    !parent.computed
-  ) {
-    return true;
-  }
-  if (parent.type === "Property" && parent.key === node && !parent.computed) {
-    return parent.value !== node;
-  }
-  if (parent.type === "LabeledStatement" && parent.label === node) return true;
-  if (
-    (parent.type === "BreakStatement" || parent.type === "ContinueStatement") &&
-    parent.label === node
-  ) {
-    return true;
-  }
-  return false;
 }
 
 const VUE_APP_FACTORY_NAMES = new Set(["createApp", "createSSRApp"]);
@@ -631,98 +266,6 @@ function collectImportBindings(program, src) {
             ? "default"
             : importedName(specifier),
         line: lineOf(src, node.start),
-      });
-    }
-  }
-  return out;
-}
-
-function isFunctionLikeValue(node) {
-  return (
-    node?.type === "ArrowFunctionExpression" ||
-    node?.type === "FunctionExpression"
-  );
-}
-
-function collectLocalSvelteActionBindings(
-  program,
-  src,
-  startOffset,
-  filePath,
-  blockKind,
-) {
-  const out = new Map();
-  for (const node of program.body ?? []) {
-    if (node?.type === "FunctionDeclaration") {
-      const bindingName = identifierName(node.id);
-      if (!bindingName) continue;
-      out.set(bindingName, {
-        bindingName,
-        bindingSource: filePath,
-        bindingKind: "local-function",
-        line: lineOf(src, startOffset + (node.start ?? 0)),
-        sfcBlockKind: blockKind,
-      });
-      continue;
-    }
-
-    if (node?.type !== "VariableDeclaration" || node.kind !== "const") {
-      continue;
-    }
-    for (const declaration of node.declarations ?? []) {
-      const bindingName = identifierName(declaration.id);
-      if (!bindingName || !isFunctionLikeValue(declaration.init)) continue;
-      out.set(bindingName, {
-        bindingName,
-        bindingSource: filePath,
-        bindingKind: "local-const-function",
-        line: lineOf(src, startOffset + (declaration.start ?? node.start ?? 0)),
-        sfcBlockKind: blockKind,
-      });
-    }
-  }
-  return out;
-}
-
-function collectLocalSvelteStoreBindings(
-  program,
-  src,
-  startOffset,
-  filePath,
-  blockKind,
-  imports,
-) {
-  const factoryBindings = new Set();
-  for (const record of imports?.values?.() ?? []) {
-    if (
-      record.bindingSource === "svelte/store" &&
-      SVELTE_STORE_FACTORY_IMPORTS.has(record.importedName ?? record.bindingName)
-    ) {
-      factoryBindings.add(record.bindingName);
-    }
-  }
-  if (factoryBindings.size === 0) return new Map();
-
-  const out = new Map();
-  for (const node of program.body ?? []) {
-    if (node?.type !== "VariableDeclaration" || node.kind !== "const") {
-      continue;
-    }
-    for (const declaration of node.declarations ?? []) {
-      const bindingName = identifierName(declaration.id);
-      const calleeName =
-        declaration.init?.type === "CallExpression"
-          ? identifierName(declaration.init.callee)
-          : null;
-      if (!bindingName || !calleeName || !factoryBindings.has(calleeName)) {
-        continue;
-      }
-      out.set(bindingName, {
-        bindingName,
-        bindingSource: filePath,
-        bindingKind: "local-store-factory",
-        line: lineOf(src, startOffset + (declaration.start ?? node.start ?? 0)),
-        sfcBlockKind: blockKind,
       });
     }
   }
@@ -883,9 +426,6 @@ const NUXT_LAYER_EXTENDS_UNAVAILABLE_REASON =
   "sfc-framework-nuxt-layer-extends-unavailable";
 const NUXT_MODULE_PACKAGE_UNAVAILABLE_REASON =
   "sfc-framework-nuxt-module-package-unavailable";
-const SVELTE_STORE_SUBSCRIPTION_REASON =
-  "sfc-framework-svelte-store-subscription";
-const SVELTE_STORE_FACTORY_IMPORTS = new Set(["writable", "readable", "derived"]);
 const NUXT_CUSTOM_RESOLVER_HOOKS = new Set([
   "components:dirs",
   "components:extend",
@@ -1636,39 +1176,21 @@ function nuxtComponentsAliasRecord({ use, manifest = null }) {
 
 function collectSfcNuxtComponentsAliasConventions({
   root,
-  includeTests = true,
-  exclude = [],
-  files = null,
+  scriptImports,
 }) {
   if (!hasNuxtConventionSignal(root)) return [];
   const out = [];
   const manifestByName = nuxtGeneratedManifestLookup(root);
-  const sfcFiles = filesForLanguages({
-    root,
-    includeTests,
-    exclude,
-    languages: SFC_FAMILY_LANGS,
-    files,
-  });
-
-  for (const filePath of sfcFiles) {
-    let src;
-    try {
-      src = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    for (const use of parseSfcImportConsumersForConvention(src, filePath)) {
-      if (use.fromSpec !== NUXT_COMPONENTS_ALIAS_SPEC) continue;
-      if (use.kind !== "import" || use.typeOnly) continue;
-      if (NUXT_COMPONENTS_ALIAS_HELPER_EXPORTS.has(use.name)) continue;
-      out.push(
-        nuxtComponentsAliasRecord({
-          use,
-          manifest: manifestByName.get(use.name) ?? null,
-        }),
-      );
-    }
+  for (const use of scriptImports) {
+    if (use.fromSpec !== NUXT_COMPONENTS_ALIAS_SPEC) continue;
+    if (use.kind !== "import" || use.typeOnly) continue;
+    if (NUXT_COMPONENTS_ALIAS_HELPER_EXPORTS.has(use.name)) continue;
+    out.push(
+      nuxtComponentsAliasRecord({
+        use,
+        manifest: manifestByName.get(use.name) ?? null,
+      }),
+    );
   }
 
   return out;
@@ -1704,450 +1226,6 @@ function unpluginConfigRecord({ filePath, pluginName, fromSpec, line }) {
     reason: "sfc-framework-auto-import-plugin-config",
     line,
   };
-}
-
-function astroClientDirectiveName(attrs) {
-  const match = `${attrs ?? ""}`.match(
-    /(?:^|\s)(client:[A-Za-z][A-Za-z0-9_-]*)(?=\s|=|\/|$)/,
-  );
-  return match?.[1] ?? null;
-}
-
-function astroClientDirectiveRecord({
-  filePath,
-  tagName,
-  normalizedTagName,
-  directiveName,
-  binding,
-  line,
-  blockKind,
-}) {
-  return {
-    framework: "astro",
-    conventionKind: "client-directive",
-    consumerFile: filePath,
-    tagName,
-    normalizedTagName,
-    directiveName,
-    bindingName: binding.bindingName,
-    bindingSource: binding.bindingSource,
-    fromSpec: binding.bindingSource,
-    bindingKind: binding.bindingKind,
-    ...(binding.importedName ? { importedName: binding.importedName } : {}),
-    source: "sfc-framework-astro-client-directive",
-    confidence: "framework-convention-observed",
-    eligibleForFanIn: false,
-    eligibleForSafeFix: false,
-    status: "muted",
-    reason: "sfc-framework-astro-client-directive",
-    line,
-    sfcBlockKind: blockKind,
-  };
-}
-
-function svelteActionDirectiveRecord({
-  filePath,
-  tagName,
-  directiveName,
-  actionName,
-  binding,
-  line,
-  blockKind,
-}) {
-  return {
-    framework: "svelte",
-    conventionKind: "action-directive",
-    consumerFile: filePath,
-    tagName,
-    directiveName,
-    actionName,
-    bindingName: binding.bindingName,
-    bindingSource: binding.bindingSource,
-    fromSpec: binding.bindingSource,
-    bindingKind: binding.bindingKind,
-    ...(binding.importedName ? { importedName: binding.importedName } : {}),
-    source: "sfc-framework-svelte-action-directive",
-    confidence: "framework-convention-observed",
-    eligibleForFanIn: false,
-    eligibleForSafeFix: false,
-    status: "muted",
-    reason: "sfc-framework-svelte-action-directive",
-    line,
-    sfcBlockKind: blockKind,
-  };
-}
-
-function svelteStoreSubscriptionRecord({
-  filePath,
-  subscriptionName,
-  storeName,
-  binding,
-  line,
-  blockKind,
-}) {
-  return {
-    framework: "svelte",
-    conventionKind: "store-auto-subscription",
-    consumerFile: filePath,
-    subscriptionName,
-    storeName,
-    bindingName: binding.bindingName,
-    bindingSource: binding.bindingSource,
-    fromSpec: binding.bindingSource,
-    bindingKind: binding.bindingKind,
-    ...(binding.importedName ? { importedName: binding.importedName } : {}),
-    source: SVELTE_STORE_SUBSCRIPTION_REASON,
-    confidence: "framework-convention-observed",
-    eligibleForFanIn: false,
-    eligibleForSafeFix: false,
-    status: "muted",
-    reason: SVELTE_STORE_SUBSCRIPTION_REASON,
-    line,
-    sfcBlockKind: blockKind,
-  };
-}
-
-function vueMacroRegistrationRecord({
-  filePath,
-  macroName,
-  componentName,
-  binding,
-  line,
-  blockKind,
-}) {
-  return {
-    framework: "vue",
-    conventionKind: "macro-registration",
-    consumerFile: filePath,
-    macroName,
-    componentName,
-    normalizedTagNames: normalizedGlobalComponentNames(componentName),
-    bindingName: binding.bindingName,
-    bindingSource: binding.bindingSource,
-    fromSpec: binding.bindingSource,
-    bindingKind: binding.bindingKind,
-    ...(binding.importedName ? { importedName: binding.importedName } : {}),
-    source: "sfc-framework-vue-macro-registration",
-    confidence: "framework-convention-observed",
-    eligibleForFanIn: false,
-    eligibleForSafeFix: false,
-    status: "muted",
-    reason: "sfc-framework-vue-macro-registration",
-    line,
-    sfcBlockKind: blockKind,
-  };
-}
-
-function vueOptionsRegistrationRecord({
-  filePath,
-  componentName,
-  binding,
-  line,
-  blockKind,
-}) {
-  return {
-    framework: "vue",
-    conventionKind: "options-registration",
-    consumerFile: filePath,
-    optionName: "components",
-    componentName,
-    normalizedTagNames: normalizedGlobalComponentNames(componentName),
-    bindingName: binding.bindingName,
-    bindingSource: binding.bindingSource,
-    fromSpec: binding.bindingSource,
-    bindingKind: binding.bindingKind,
-    ...(binding.importedName ? { importedName: binding.importedName } : {}),
-    source: "sfc-framework-vue-options-registration",
-    confidence: "framework-convention-observed",
-    eligibleForFanIn: false,
-    eligibleForSafeFix: false,
-    status: "muted",
-    reason: "sfc-framework-vue-options-registration",
-    line,
-    sfcBlockKind: blockKind,
-  };
-}
-
-function componentsObjectFromDefineOptions(node) {
-  if (node?.type !== "CallExpression") return null;
-  if (identifierName(node.callee) !== "defineOptions") return null;
-  const options = node.arguments?.[0];
-  if (options?.type !== "ObjectExpression") return null;
-  for (const property of options.properties ?? []) {
-    if (property?.type !== "Property") continue;
-    if (property.computed) continue;
-    if (astPropertyName(property) !== "components") continue;
-    return property.value?.type === "ObjectExpression" ? property.value : null;
-  }
-  return null;
-}
-
-function componentsObjectFromVueDefaultExport(node) {
-  if (node?.type !== "ExportDefaultDeclaration") return null;
-  const declaration = node.declaration;
-  if (declaration?.type !== "ObjectExpression") return null;
-  for (const property of declaration.properties ?? []) {
-    if (property?.type !== "Property") continue;
-    if (property.computed) continue;
-    if (astPropertyName(property) !== "components") continue;
-    return property.value?.type === "ObjectExpression" ? property.value : null;
-  }
-  return null;
-}
-
-function parseVueMacroRegistrations(
-  script,
-  { filePath, fileSource, startOffset, blockKind, parserLang },
-) {
-  const out = [];
-  if (blockKind !== "vue-script-setup") return out;
-  const program = parseScriptAst(script, filePath, parserLang);
-  if (!program) return out;
-  const imports = collectImportBindings(program, fileSource);
-
-  traverseAst(program, (node) => {
-    const components = componentsObjectFromDefineOptions(node);
-    if (!components) return;
-    for (const property of components.properties ?? []) {
-      if (property?.type !== "Property") continue;
-      if (property.computed) continue;
-      const componentName = astPropertyName(property);
-      const bindingName = identifierName(property.value);
-      const binding = bindingName ? imports.get(bindingName) : null;
-      if (!componentName || !binding) continue;
-      out.push(
-        vueMacroRegistrationRecord({
-          filePath,
-          macroName: "defineOptions",
-          componentName,
-          binding,
-          line: lineOf(
-            fileSource,
-            startOffset + (property.start ?? node.start),
-          ),
-          blockKind,
-        }),
-      );
-    }
-  });
-
-  return out;
-}
-
-function parseVueOptionsRegistrations(
-  script,
-  { filePath, fileSource, startOffset, blockKind, parserLang },
-) {
-  const out = [];
-  if (blockKind !== "vue-script") return out;
-  const program = parseScriptAst(script, filePath, parserLang);
-  if (!program) return out;
-  const imports = collectImportBindings(program, fileSource);
-
-  for (const node of program.body ?? []) {
-    const components = componentsObjectFromVueDefaultExport(node);
-    if (!components) continue;
-    for (const property of components.properties ?? []) {
-      if (property?.type !== "Property") continue;
-      if (property.computed) continue;
-      const componentName = astPropertyName(property);
-      const bindingName = identifierName(property.value);
-      const binding = bindingName ? imports.get(bindingName) : null;
-      if (!componentName || !binding) continue;
-      out.push(
-        vueOptionsRegistrationRecord({
-          filePath,
-          componentName,
-          binding,
-          line: lineOf(
-            fileSource,
-            startOffset + (property.start ?? node.start),
-          ),
-          blockKind,
-        }),
-      );
-    }
-  }
-
-  return out;
-}
-
-function parseAstroClientDirectiveTags(
-  template,
-  { filePath, fileSource, startOffset, blockKind, bindings },
-) {
-  const out = [];
-  const cleaned = stripHtmlComments(template);
-  const tagRe = /<\s*([A-Za-z][A-Za-z0-9.:-]*)([^<>]*?)(?:\/?)>/g;
-  let match;
-  while ((match = tagRe.exec(cleaned))) {
-    const tagName = match[1];
-    if (tagName.includes(".")) continue;
-    const attrs = match[2] ?? "";
-    const directiveName = astroClientDirectiveName(attrs);
-    if (!directiveName) continue;
-    const line = lineOf(fileSource, startOffset + match.index);
-
-    for (const candidate of templateTagCandidates(tagName)) {
-      const binding = bindings.exposedNames.get(candidate);
-      if (!binding) continue;
-      out.push(
-        astroClientDirectiveRecord({
-          filePath,
-          tagName,
-          normalizedTagName: candidate,
-          directiveName,
-          binding,
-          line,
-          blockKind,
-        }),
-      );
-      break;
-    }
-  }
-  return out;
-}
-
-function parseSvelteActionDirectiveTags(
-  template,
-  { filePath, fileSource, startOffset, blockKind, bindings },
-) {
-  const out = [];
-  const cleaned = stripHtmlComments(template);
-  const tagRe = /<\s*([A-Za-z][A-Za-z0-9.:-]*)([^<>]*?)(?:\/?)>/g;
-  let match;
-  while ((match = tagRe.exec(cleaned))) {
-    const tagName = match[1];
-    const attrs = match[2] ?? "";
-    const line = lineOf(fileSource, startOffset + match.index);
-    const actionRe = /(?:^|\s)(use:([A-Za-z_$][\w$]*))(?=\s|=|\/|$)/g;
-    let actionMatch;
-    while ((actionMatch = actionRe.exec(attrs))) {
-      const directiveName = actionMatch[1];
-      const actionName = actionMatch[2];
-      const binding =
-        bindings.localActions?.get(actionName) ??
-        bindings.exposedNames.get(actionName) ??
-        bindings.imports.get(actionName);
-      if (!binding) continue;
-      out.push(
-        svelteActionDirectiveRecord({
-          filePath,
-          tagName,
-          directiveName,
-          actionName,
-          binding,
-          line,
-          blockKind,
-        }),
-      );
-    }
-  }
-  return out;
-}
-
-function svelteStoreBindingForName(storeName, bindings) {
-  const binding =
-    bindings.localStores?.get(storeName) ??
-    bindings.exposedNames.get(storeName) ??
-    bindings.imports.get(storeName);
-  if (
-    binding?.bindingSource === "svelte/store" &&
-    SVELTE_STORE_FACTORY_IMPORTS.has(binding.importedName ?? binding.bindingName)
-  ) {
-    return null;
-  }
-  return binding ?? null;
-}
-
-function pushSvelteStoreSubscription({
-  out,
-  seen,
-  storeName,
-  binding,
-  filePath,
-  line,
-  blockKind,
-}) {
-  if (!storeName || !binding || !Number.isFinite(line)) return;
-  const subscriptionName = `$${storeName}`;
-  const key = `${filePath}|${subscriptionName}|${line}|${blockKind}`;
-  if (seen.has(key)) return;
-  seen.add(key);
-  out.push(
-    svelteStoreSubscriptionRecord({
-      filePath,
-      subscriptionName,
-      storeName,
-      binding,
-      line,
-      blockKind,
-    }),
-  );
-}
-
-function parseSvelteStoreSubscriptionsInScript(
-  script,
-  { filePath, fileSource, startOffset, blockKind, parserLang, bindings, seen },
-) {
-  const out = [];
-  const program = parseScriptAst(script, filePath, parserLang);
-  if (!program) return out;
-  const scopes = collectSvelteScriptBindingScopes(program);
-  traverseAstWithAncestors(program, (node, ancestors) => {
-    const name = identifierName(node);
-    if (!name || !name.startsWith("$") || name.startsWith("$$")) return;
-    if (
-      isNonReferenceIdentifier(node, ancestors) ||
-      isSvelteDollarIdentifierShadowed(name, ancestors, scopes)
-    ) {
-      return;
-    }
-    const storeName = name.slice(1);
-    const binding = svelteStoreBindingForName(storeName, bindings);
-    pushSvelteStoreSubscription({
-      out,
-      seen,
-      storeName,
-      binding,
-      filePath,
-      line: lineOf(fileSource, startOffset + (node.start ?? 0)),
-      blockKind,
-    });
-  });
-  return out;
-}
-
-function parseSvelteStoreSubscriptionsInTemplate(
-  template,
-  { filePath, fileSource, startOffset, blockKind, bindings, seen },
-) {
-  const out = [];
-  const cleaned = stripHtmlComments(template);
-  const expressionRe = /\{([^{}]*)\}/g;
-  let expressionMatch;
-  while ((expressionMatch = expressionRe.exec(cleaned))) {
-    const expression = expressionMatch[1] ?? "";
-    const storeRe = /\$(?!\$)([A-Za-z_$][\w$]*)/g;
-    let storeMatch;
-    while ((storeMatch = storeRe.exec(expression))) {
-      const storeName = storeMatch[1];
-      const binding = svelteStoreBindingForName(storeName, bindings);
-      pushSvelteStoreSubscription({
-        out,
-        seen,
-        storeName,
-        binding,
-        filePath,
-        line: lineOf(
-          fileSource,
-          startOffset + expressionMatch.index + 1 + storeMatch.index,
-        ),
-        blockKind,
-      });
-    }
-  }
-  return out;
 }
 
 function parseUnpluginVueComponentsConfig(src, filePath) {
@@ -2436,130 +1514,6 @@ function parseGlobalComponentRegistrations(program, { filePath, fileSource }) {
   return markDuplicateGlobalRegistrations(out);
 }
 
-function collectComponentRegistrations(program) {
-  const out = new Map();
-  for (const node of program.body ?? []) {
-    if (node?.type !== "ExportDefaultDeclaration") continue;
-    const declaration = node.declaration;
-    if (declaration?.type !== "ObjectExpression") continue;
-    for (const prop of declaration.properties ?? []) {
-      if (prop?.type !== "Property") continue;
-      if (astPropertyName(prop) !== "components") continue;
-      if (prop.value?.type !== "ObjectExpression") continue;
-      for (const componentProp of prop.value.properties ?? []) {
-        if (componentProp?.type !== "Property") continue;
-        const tagName = astPropertyName(componentProp);
-        const bindingName =
-          componentProp.value?.type === "Identifier"
-            ? componentProp.value.name
-            : null;
-        if (tagName && bindingName) out.set(tagName, bindingName);
-      }
-    }
-  }
-  return out;
-}
-
-function collectScriptComponentBindings(src, filePath) {
-  const imports = new Map();
-  const namespaceImports = new Map();
-  const exposedNames = new Map();
-  const localActions = new Map();
-  const localStores = new Map();
-  const lang = sfcLanguageForFile(filePath);
-
-  for (const block of extractScriptBlocks(src, filePath)) {
-    const program = parseScriptAst(block.content, filePath, block.parserLang);
-    if (!program) continue;
-    const blockImports = new Map();
-    const blockNamespaceImports = new Map();
-
-    for (const node of program.body ?? []) {
-      if (node?.type !== "ImportDeclaration") continue;
-      const fromSpec = node.source?.value;
-      if (typeof fromSpec !== "string" || fromSpec.length === 0) continue;
-      if (node.importKind === "type") continue;
-      for (const specifier of node.specifiers ?? []) {
-        if (specifier.importKind === "type") continue;
-        const bindingName = importLocalName(specifier);
-        if (!bindingName) continue;
-        if (specifier.type === "ImportNamespaceSpecifier") {
-          const record = {
-            bindingName,
-            bindingSource: fromSpec,
-            bindingKind: "namespace",
-            line: lineOf(src, block.startOffset + node.start),
-            sfcBlockKind: block.kind,
-          };
-          namespaceImports.set(bindingName, record);
-          blockNamespaceImports.set(bindingName, record);
-          continue;
-        }
-        if (
-          specifier.type !== "ImportDefaultSpecifier" &&
-          specifier.type !== "ImportSpecifier"
-        ) {
-          continue;
-        }
-        const record = {
-          bindingName,
-          bindingSource: fromSpec,
-          bindingKind:
-            specifier.type === "ImportDefaultSpecifier" ? "default" : "named",
-          importedName:
-            specifier.type === "ImportDefaultSpecifier"
-              ? "default"
-              : importedName(specifier),
-          line: lineOf(src, block.startOffset + node.start),
-          sfcBlockKind: block.kind,
-        };
-        imports.set(bindingName, record);
-        blockImports.set(bindingName, record);
-      }
-    }
-
-    if (lang === "vue" && !block.kind.includes("setup")) {
-      const registrations = collectComponentRegistrations(program);
-      for (const [tagName, bindingName] of registrations) {
-        const record = blockImports.get(bindingName);
-        if (record) exposedNames.set(tagName, record);
-      }
-    } else {
-      for (const [bindingName, record] of blockImports) {
-        exposedNames.set(bindingName, record);
-      }
-    }
-
-    for (const [bindingName, record] of blockNamespaceImports) {
-      namespaceImports.set(bindingName, record);
-    }
-
-    if (lang === "svelte") {
-      for (const [bindingName, record] of collectLocalSvelteActionBindings(
-        program,
-        src,
-        block.startOffset,
-        filePath,
-        block.kind,
-      )) {
-        localActions.set(bindingName, record);
-      }
-      for (const [bindingName, record] of collectLocalSvelteStoreBindings(
-        program,
-        src,
-        block.startOffset,
-        filePath,
-        block.kind,
-        blockImports,
-      )) {
-        localStores.set(bindingName, record);
-      }
-    }
-  }
-
-  return { imports, namespaceImports, exposedNames, localActions, localStores };
-}
-
 function pascalFromKebab(value) {
   if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(value)) return null;
   return value
@@ -2567,32 +1521,6 @@ function pascalFromKebab(value) {
     .filter(Boolean)
     .map((part) => part[0].toUpperCase() + part.slice(1))
     .join("");
-}
-
-function isPascalTag(value) {
-  return /^[A-Z][A-Za-z0-9]*$/.test(value);
-}
-
-function templateTagCandidates(tagName) {
-  if (isPascalTag(tagName)) return [tagName];
-  const pascal = pascalFromKebab(tagName);
-  return pascal ? [pascal, tagName] : [];
-}
-
-function parseSfcImportConsumersForConvention(src, filePath = "<sfc>") {
-  const out = [];
-  for (const block of extractScriptBlocks(src, filePath)) {
-    out.push(
-      ...parseScriptImportConsumers(block.content, {
-        filePath,
-        fileSource: src,
-        startOffset: block.startOffset,
-        blockKind: block.kind,
-        parserLang: block.parserLang,
-      }),
-    );
-  }
-  return out;
 }
 
 export function parseSfcTemplateComponentRefs(src, filePath = "<sfc>") {
@@ -2644,6 +1572,7 @@ function rustFileFacts(src, filePath) {
       scriptSources: [],
       styleAssetReferences: [],
       templateComponentRefs: [],
+      frameworkConventionComponents: [],
     };
   }
   return extractSfcFileFactsForSources([{ filePath, source: src }])[0];
@@ -2759,61 +1688,87 @@ export function collectSfcGeneratedComponentManifests({ root }) {
   return out;
 }
 
+const PER_FILE_FRAMEWORK_CONVENTION_ORDER = [
+  ["astro", "client-directive"],
+  ["svelte", "action-directive"],
+  ["svelte", "store-auto-subscription"],
+  ["vue", "macro-registration"],
+  ["vue", "options-registration"],
+];
+
+function orderedPerFileFrameworkConventions(rows) {
+  const ordered = [];
+  const recognized = new Set();
+  for (const [framework, conventionKind] of PER_FILE_FRAMEWORK_CONVENTION_ORDER) {
+    for (const [index, row] of rows.entries()) {
+      if (
+        row?.framework !== framework ||
+        row?.conventionKind !== conventionKind
+      ) {
+        continue;
+      }
+      recognized.add(index);
+      ordered.push(row);
+    }
+  }
+  if (recognized.size !== rows.length) {
+    throw new Error(
+      "collectSfcFrameworkConventionComponents: Rust returned an unknown per-file convention kind",
+    );
+  }
+  return ordered;
+}
+
 export function collectSfcFrameworkConventionComponents({
   root,
   includeTests = true,
   exclude = [],
   files = null,
+  perFileConventions = null,
+  perFileScriptImports = null,
 }) {
   const out = [];
   const resolvedRoot = path.resolve(root);
   out.push(...collectUnpluginVueComponentsConfigs(resolvedRoot));
-  out.push(
-    ...collectSfcAstroClientDirectiveConventions({
+  let scriptImports = perFileScriptImports;
+  if (perFileConventions === null && perFileScriptImports === null) {
+    const sfcFiles = filesForLanguages({
       root: resolvedRoot,
       includeTests,
       exclude,
+      languages: SFC_FAMILY_LANGS,
       files,
-    }),
-  );
-  out.push(
-    ...collectSfcSvelteActionDirectiveConventions({
-      root: resolvedRoot,
-      includeTests,
-      exclude,
-      files,
-    }),
-  );
-  out.push(
-    ...collectSfcSvelteStoreSubscriptionConventions({
-      root: resolvedRoot,
-      includeTests,
-      exclude,
-      files,
-    }),
-  );
-  out.push(
-    ...collectSfcVueMacroRegistrationConventions({
-      root: resolvedRoot,
-      includeTests,
-      exclude,
-      files,
-    }),
-  );
-  out.push(
-    ...collectSfcVueOptionsRegistrationConventions({
-      root: resolvedRoot,
-      includeTests,
-      exclude,
-      files,
-    }),
-  );
+    });
+    const sourceInputs = [];
+    for (const filePath of sfcFiles) {
+      try {
+        sourceInputs.push({ filePath, source: readFileSync(filePath, "utf8") });
+      } catch {
+        continue;
+      }
+    }
+    const fileFacts = extractSfcFileFactsForSources(sourceInputs);
+    out.push(
+      ...orderedPerFileFrameworkConventions(
+        fileFacts.flatMap((file) => file.frameworkConventionComponents),
+      ),
+    );
+    scriptImports = fileFacts.flatMap((file) => file.scriptImportConsumers);
+  } else {
+    if (
+      !Array.isArray(perFileConventions) ||
+      !Array.isArray(perFileScriptImports)
+    ) {
+      throw new TypeError(
+        "collectSfcFrameworkConventionComponents: per-file facts must be arrays",
+      );
+    }
+    out.push(...orderedPerFileFrameworkConventions(perFileConventions));
+  }
   out.push(
     ...collectSfcNuxtComponentsAliasConventions({
       root: resolvedRoot,
-      includeTests,
-      exclude,
-      files,
+      scriptImports,
     }),
   );
   out.push(...collectSfcNuxtComponentsDirConfigConventions({ root: resolvedRoot }));
@@ -2859,218 +1814,6 @@ export function collectSfcFrameworkConventionComponents({
           root: resolvedRoot,
           filePath,
           conventionRoot,
-        }),
-      );
-    }
-  }
-
-  return out;
-}
-
-function collectSfcVueOptionsRegistrationConventions({
-  root,
-  includeTests = true,
-  exclude = [],
-  files = null,
-}) {
-  const out = [];
-  const vueFiles = filesForLanguages({
-    root,
-    includeTests,
-    exclude,
-    languages: ["vue"],
-    files,
-  });
-
-  for (const filePath of vueFiles) {
-    let src;
-    try {
-      src = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    for (const block of extractScriptBlocks(src, filePath)) {
-      out.push(
-        ...parseVueOptionsRegistrations(block.content, {
-          filePath,
-          fileSource: src,
-          startOffset: block.startOffset,
-          blockKind: block.kind,
-          parserLang: block.parserLang,
-        }),
-      );
-    }
-  }
-
-  return out;
-}
-
-function collectSfcVueMacroRegistrationConventions({
-  root,
-  includeTests = true,
-  exclude = [],
-  files = null,
-}) {
-  const out = [];
-  const vueFiles = filesForLanguages({
-    root,
-    includeTests,
-    exclude,
-    languages: ["vue"],
-    files,
-  });
-
-  for (const filePath of vueFiles) {
-    let src;
-    try {
-      src = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    for (const block of extractScriptBlocks(src, filePath)) {
-      out.push(
-        ...parseVueMacroRegistrations(block.content, {
-          filePath,
-          fileSource: src,
-          startOffset: block.startOffset,
-          blockKind: block.kind,
-          parserLang: block.parserLang,
-        }),
-      );
-    }
-  }
-
-  return out;
-}
-
-function collectSfcSvelteActionDirectiveConventions({
-  root,
-  includeTests = true,
-  exclude = [],
-  files = null,
-}) {
-  const out = [];
-  const svelteFiles = filesForLanguages({
-    root,
-    includeTests,
-    exclude,
-    languages: ["svelte"],
-    files,
-  });
-
-  for (const filePath of svelteFiles) {
-    let src;
-    try {
-      src = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    const bindings = collectScriptComponentBindings(src, filePath);
-    for (const block of extractTemplateBlocks(src, filePath)) {
-      if (block.sfcLanguage !== "svelte") continue;
-      out.push(
-        ...parseSvelteActionDirectiveTags(block.content, {
-          filePath,
-          fileSource: src,
-          startOffset: block.startOffset,
-          blockKind: block.kind,
-          bindings,
-        }),
-      );
-    }
-  }
-
-  return out;
-}
-
-function collectSfcSvelteStoreSubscriptionConventions({
-  root,
-  includeTests = true,
-  exclude = [],
-  files = null,
-}) {
-  const out = [];
-  const svelteFiles = filesForLanguages({
-    root,
-    includeTests,
-    exclude,
-    languages: ["svelte"],
-    files,
-  });
-
-  for (const filePath of svelteFiles) {
-    let src;
-    try {
-      src = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    const bindings = collectScriptComponentBindings(src, filePath);
-    const seen = new Set();
-    for (const block of extractScriptBlocks(src, filePath)) {
-      if (!block.kind.startsWith("svelte-")) continue;
-      out.push(
-        ...parseSvelteStoreSubscriptionsInScript(block.content, {
-          filePath,
-          fileSource: src,
-          startOffset: block.startOffset,
-          blockKind: block.kind,
-          parserLang: block.parserLang,
-          bindings,
-          seen,
-        }),
-      );
-    }
-    for (const block of extractTemplateBlocks(src, filePath)) {
-      if (block.sfcLanguage !== "svelte") continue;
-      out.push(
-        ...parseSvelteStoreSubscriptionsInTemplate(block.content, {
-          filePath,
-          fileSource: src,
-          startOffset: block.startOffset,
-          blockKind: block.kind,
-          bindings,
-          seen,
-        }),
-      );
-    }
-  }
-
-  return out;
-}
-
-function collectSfcAstroClientDirectiveConventions({
-  root,
-  includeTests = true,
-  exclude = [],
-  files = null,
-}) {
-  const out = [];
-  const astroFiles = filesForLanguages({
-    root,
-    includeTests,
-    exclude,
-    languages: ["astro"],
-    files,
-  });
-
-  for (const filePath of astroFiles) {
-    let src;
-    try {
-      src = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    const bindings = collectScriptComponentBindings(src, filePath);
-    for (const block of extractTemplateBlocks(src, filePath)) {
-      if (block.sfcLanguage !== "astro") continue;
-      out.push(
-        ...parseAstroClientDirectiveTags(block.content, {
-          filePath,
-          fileSource: src,
-          startOffset: block.startOffset,
-          blockKind: block.kind,
-          bindings,
         }),
       );
     }

@@ -201,7 +201,19 @@ exports, construct source-use graph evidence, or project `symbols.json`.
 deterministic per-file SFC fact extraction from caller-supplied source text:
 Vue/Svelte script blocks and Astro frontmatter, static script imports,
 relative `<script src>`, relative style `url()`/`@import` references, and
-template component bindings grounded in those script imports. The strict
+template component bindings grounded in those script imports. The same parse
+pass also owns review-only per-file convention facts grounded in explicit
+bindings: Vue `defineOptions({ components })` and Options API component
+registrations, Astro `client:*` directives, Svelte `use:` actions, and Svelte
+`$store` subscriptions. `sfc_file_facts/script.rs` owns script AST facts,
+binding scopes, and raw convention candidates; `sfc_file_facts/template.rs`
+owns template tag/expression projection; `sfc_file_facts/conventions.rs` owns
+binding-grounded convention row construction and SFC component-name
+normalization; `sfc_file_facts/protocol.rs` owns the strict project-owned wire
+shapes. These lanes must preserve the checked SFC
+policy: unresolved, computed, comment-only, non-function action, and non-store
+bindings do not produce convention evidence, and emitted convention rows stay
+muted review evidence with no graph fan-in or safe-fix eligibility. The strict
 `lumin-sfc-file-facts-request.v1` request carries the complete scoped SFC file
 set and exact source text; Rust must not walk the repository, resolve a
 specifier, or infer repository-level framework conventions. A malformed
@@ -216,9 +228,10 @@ repository-level SFC collectors. It returns raw script-import, script-src,
 style-asset, template-ref, global-registration, generated-manifest, and
 framework-convention facts plus collection telemetry. It must not parse SFC
 file contents, resolve those facts, assign graph status/reason fields,
-construct source-use records, or project SFC artifact rows. Repository-level
-Nuxt/Vue/Svelte/Astro convention discovery remains in the checked JS collector
-until a later owner migration removes that lane in full. Deterministic
+construct source-use records, or project SFC artifact rows. JS may collect
+repository-level Nuxt and unplugin configuration/filesystem convention facts;
+it must not reparse SFC files or recreate the Rust-owned Vue/Astro/Svelte
+per-file convention classifiers. Deterministic
 resolution-linked projections remain Rust-owned by `symbol_graph/sfc.rs`. The
 JS convention owner excludes Nuxt `#components` imports from the ordinary
 script-consumer lane because it materializes them as framework-convention
