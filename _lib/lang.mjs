@@ -6,8 +6,7 @@
 //
 //   1. `.jsx` files were parsed as TS. oxc-parser doesn't accept JSX
 //      syntax in TS mode, so pure React+JS codebases produced dozens of
-//      spurious parse errors and `extractDefinitionsAndUses` returned
-//      empty def/use lists — everything looked dead.
+//      spurious parse errors and incomplete def/use evidence.
 //   2. `.mjs` / `.cjs` / `.js` were also forced into TS mode. This
 //      happens to work for most JS because TS is (almost) a superset,
 //      but the edge cases fail silently.

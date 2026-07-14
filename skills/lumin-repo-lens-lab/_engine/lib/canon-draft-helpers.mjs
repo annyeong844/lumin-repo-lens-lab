@@ -3,7 +3,7 @@
 // Extracted from `_lib/canon-draft.mjs` during post-P3 cleanup (2026-04-21).
 //
 // Per maintainer history notes v2 PF-3/PF-4:
-//   - Definition inventory comes from a fresh `extractDefinitionsAndUses`
+//   - Definition inventory comes from the current Rust JS/TS fact index.
 //     pass on the scan range — NOT from call-graph.json.
 //   - Fan-in is consumer-file-count (distinct files that import the
 //     helper), NOT aggregated call-site count from call-graph.json.

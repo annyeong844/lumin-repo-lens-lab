@@ -47,8 +47,9 @@ export const LOW_INFO_HELPER_NAMES_SET = new Set(LOW_INFO_HELPER_NAMES);
 
 // ── Helper-owner kinds (docs/history/phases/p3/p3-2.md v2 §5.3 + HW-9) ──────────
 //
-// Exported top-level helper declarations. Mirrors `_lib/extract-ts.mjs`
-// output kinds verbatim. Class methods NOT included (canonical §10.7).
+// Exported top-level helper declarations. Mirrors Rust
+// `js-ts-extract-artifact` output kinds verbatim. Class methods NOT included
+// (canonical §10.7).
 
 export const HELPER_OWNER_KINDS = Object.freeze(new Set([
   'FunctionDeclaration',

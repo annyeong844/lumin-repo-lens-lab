@@ -95,7 +95,7 @@ Mode: fresh-ast
 | `pythonExtractShape` | `_lib/extract-py.mjs::pythonExtractShape` | `_lib/extract-py.mjs:14` | — | 1 | shared-helper ⚠ |  | — |
 | `normalizeCodeShape` | `_lib/extract-ts-escapes.mjs::normalizeCodeShape` | `_lib/extract-ts-escapes.mjs:29` | — | 4 | central-helper ✅ |  | — |
 | `extractTypeEscapes` | `_lib/extract-ts-escapes.mjs::extractTypeEscapes` | `_lib/extract-ts-escapes.mjs:369` | — | 2 | shared-helper ⚠ |  | — |
-| `extractDefinitionsAndUses` | `_lib/extract-ts.mjs::extractDefinitionsAndUses` | `_lib/extract-ts.mjs:25` | — | 3 | central-helper ✅ |  | — |
+| `extractDefinitionsAndUses` | `_lib/extract-ts.mjs::extractDefinitionsAndUses` | `_lib/extract-ts.mjs:53` | — | 3 | compatibility-adapter ⚠ | Rust `js-ts-extract-artifact` owns extraction | — |
 | `specifierCouldMatchFile` | `_lib/finding-provenance.mjs::specifierCouldMatchFile` | `_lib/finding-provenance.mjs:29` | — | 2 | shared-helper ⚠ |  | — |
 | `computeFindingProvenance` | `_lib/finding-provenance.mjs::computeFindingProvenance` | `_lib/finding-provenance.mjs:44` | — | 2 | shared-helper ⚠ |  | — |
 | `loadCache` | `_lib/incremental.mjs::loadCache` | `_lib/incremental.mjs:54` | — | 3 | central-helper ✅ |  | — |

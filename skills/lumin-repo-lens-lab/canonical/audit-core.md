@@ -189,6 +189,18 @@ missing per-file result is a producer hard-stop. It must not import or invoke
 `_engine/lib/extract-ts.mjs` as a fallback. Rust-reported per-file parse errors remain
 artifact-visible parse failures; they are not helper-contract failures.
 
+`generate-canon-draft.mjs` and `check-canon.mjs` use the same Rust JS/TS fact
+owner for fresh helper-registry and naming inventories. They must collect the
+scoped JS-family file set once, invoke `js-ts-extract-artifact` in bounded
+batches, and expose the resulting project-owned `defs` and `uses` rows through
+the existing synchronous canon collector callback. `check-canon --source all`
+must share one current-run extraction index across helper and naming checks.
+An audit-core command failure, malformed response, duplicate/missing result, or
+lookup outside that scoped index is a hard-stop; there is no JS parser fallback.
+Rust per-file parse failures remain per-file canon diagnostics and must not be
+converted to empty definitions or uses. `_engine/lib/extract-ts.mjs` is a compatibility
+adapter only and must not load OXC, parse source text, or own extraction policy.
+
 `_engine/lib/symbol-graph-discovery.mjs` owns source snapshot construction,
 incremental extraction-cache classification, Rust JS/TS batch invocation,
 Python/Go extraction input adaptation, and normalized per-file fact assembly.

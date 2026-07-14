@@ -89,6 +89,7 @@ export function extractRustJsHybridBatch({
   files,
   fileSizes,
   sourceFiles = files,
+  label = 'symbols rust-js extractor',
 }) {
   const results = new Map();
   const warnings = [];
@@ -132,12 +133,12 @@ export function extractRustJsHybridBatch({
       responseFiles = runRustJsFactsRequest(
         currentBatch,
         request.sourceFiles,
-        'symbols rust-js extractor',
+        label,
         requestText,
       );
     } catch (error) {
       const reason = error?.message ?? 'unknown audit-core failure';
-      throw new Error(`symbols rust-js extractor failed: ${reason}`, {
+      throw new Error(`${label} failed: ${reason}`, {
         cause: error,
       });
     }

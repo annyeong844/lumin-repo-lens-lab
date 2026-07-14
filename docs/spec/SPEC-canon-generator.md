@@ -50,7 +50,8 @@ The vibe-coder sees: Claude's sessions stay consistent over time. They don't nee
 - Business-logic documentation (what a function MEANS domain-wise). The generator emits structural observations; semantic intent is the LLM/human finalize step.
 - Auto-promotion from `canonical-draft/` to `canonical/`. Promotion is manual by design.
 - Drift detection against existing `canonical/*.md` — that is `check-canon.mjs`, a separate spec (§9 / §10).
-- Local / private type tracking (even though `_lib/extract-ts.mjs` surfaces some of these, they do not go in the Phase 1 draft).
+- Local / private type tracking (even though the Rust JS/TS fact index surfaces
+  some of these, they do not go in the Phase 1 draft).
 
 ---
 
@@ -76,9 +77,14 @@ The vibe-coder sees: Claude's sessions stay consistent over time. They don't nee
 | `checklist-facts.json` | severity anchor for `zero-internal-fan-in` items | compute inline |
 | `triage.json` | workspace package names (for identity labels) | degrade: use directory name |
 
-### 3.3 Shared extractor (already present)
+### 3.3 Shared extractor
 
-Since v1.10.1, `_lib/extract-ts.mjs` exports `extractDefinitionsAndUses(filePath)`, shared with `build-symbol-graph.mjs`. The canon draft generator uses the same module — no duplicate extractor. (This closed external review item P0-1.)
+Fresh helper and naming inventories use the Rust-owned
+`js-ts-extract-artifact` command. `_lib/extract-ts.mjs` is only a compatibility
+adapter over that command; it does not parse source text or own a fallback
+classifier. Canon CLIs batch the complete scoped file set before entering the
+existing synchronous aggregation helpers, so `--source all` can share one
+current-run extraction index instead of parsing the repository twice.
 
 ---
 
@@ -92,7 +98,7 @@ One file: `<canon-output>/type-ownership.md`.
 
 | Phase | File | Complexity | Dependencies |
 |---|---|---|---|
-| **1** | `canonical-draft/type-ownership.md` | Low | `_lib/extract-ts.mjs` (present), optional `symbols.json.reExportsByFile` |
+| **1** | `canonical-draft/type-ownership.md` | Low | Rust JS/TS facts or `symbols.json.reExportsByFile` |
 | 2 | `canonical-draft/helper-registry.md` | Medium | Phase 1 + `call-graph.json` |
 | 3 | `canonical-draft/topology.md` | Medium | `topology.json` + `triage.json` |
 | 4 | `canonical-draft/naming.md` | Low-Medium | fresh AST pass |
@@ -107,9 +113,9 @@ Each phase is a **reviewable release gate**. Phase 2 starts only after Phase 1 s
 ### 5.1 Input collection
 
 1. Run `collectFiles(root, { includeTests: cli.includeTests, exclude: cli.exclude })`.
-2. For each TS-family file, run `extractDefinitionsAndUses(file)` from `_lib/extract-ts.mjs`.
+2. Build one scoped Rust JS/TS fact index and read each file's definitions and uses from it.
 3. Load `symbols.json.reExportsByFile` if present.
-4. Keep only **exported** top-level defs where `kind ∈ {TSInterfaceDeclaration, TSTypeAliasDeclaration, TSEnumDeclaration, TSModuleDeclaration}`. The `extractDefinitionsAndUses` walker already filters to exports; re-confirm this in a unit test.
+4. Keep only **exported** top-level defs where `kind ∈ {TSInterfaceDeclaration, TSTypeAliasDeclaration, TSEnumDeclaration, TSModuleDeclaration}`. The Rust fact owner already filters to exports; re-confirm this in a behavior test.
 
 ### 5.2 Identity-keyed aggregation
 
@@ -130,7 +136,7 @@ typeUsesByIdentity:
 
 Resolving a `use` (import) to an identity:
 
-1. Extract an `importRecord` from each use in `extractDefinitionsAndUses(consumerFile).uses`:
+1. Extract an `importRecord` from each Rust-owned `uses` row for the consumer file:
 
    ```
    { fromSpec, importedName, localName, kind, typeOnly }
@@ -205,7 +211,7 @@ The example below uses a 4-backtick outer fence so the nested ` ```json ` block 
 > **Status:** draft, v{N}
 > **Generated:** {ISO timestamp}
 > **Root:** {repo absolute path}
-> **Source:** `_lib/extract-ts.mjs` pass ({N} files scanned) + `symbols.json.reExportsByFile` ({present|absent})
+> **Source:** Rust `js-ts-extract-artifact` pass ({N} files scanned) + `symbols.json.reExportsByFile` ({present|absent})
 > **Scope:** exported top-level TS type declarations only. Local / private types are not in Phase 1.
 
 [optional existing-canon warning header — see §5.4]
@@ -365,7 +371,7 @@ Same four metrics as v0 (recall, precision, owner agreement, DUPLICATE_STRONG de
 
 ## 8. Open questions (resolved from v0)
 
-- **Q1 (symbols.json extension vs fresh pass)** — ✅ CLOSED. `_lib/extract-ts.mjs` exists since v1.10.1 and is shared with `build-symbol-graph.mjs`. Generator uses the shared module for a fresh pass. `symbols.json.reExportsByFile` is consumed when present.
+- **Q1 (symbols.json extension vs fresh pass)** — ✅ CLOSED. The generator builds a fresh, scoped Rust `js-ts-extract-artifact` index. `symbols.json.reExportsByFile` is consumed when present.
 - **Q2 (output location)** — ✅ CLOSED. `--canon-output` separate from `--output`. Defaults per mode (§3.1).
 - **Q3 (canonical/ exists)** — ✅ CLOSED. Phase 1 emits observational draft with warning header. Full drift = Phase 5 separate spec.
 - **Q4 (tunable thresholds)** — ✅ CLOSED. Baked in Phase 1. CLI flags open up in Phase 2.
@@ -410,7 +416,7 @@ Phase 1 ships when:
 - **LLM-only canon drafting** — rejected: no reproducibility, no calibration, expensive, AST-trivial tasks done badly.
 - **Full schema upfront** — rejected: locks format before empirical feedback. Phased rollout is required.
 - **Write directly to `canonical/`** — rejected: erases the draft-vs-canon decision gate. Humans must own promotion.
-- **Mixed extractor** (copy into generator + leave in build-symbol-graph) — rejected even though tempting. `_lib/extract-ts.mjs` is the single source; duplicate code is exactly the anti-pattern this skill exists to detect.
+- **Mixed extractor** (copy into generator + leave in build-symbol-graph) — rejected. Rust `js-ts-extract-artifact` is the semantic owner; duplicate JS parsing or fallback classification is exactly the anti-pattern this skill exists to detect.
 
 ---
 
@@ -421,6 +427,7 @@ Phase 1 ships when:
 - **2026-04-20 (v0.2)**: Canonical-spine promotion. This spec demoted from standalone source-of-truth to P3 subordinate. §5.3 classification table removed and delegated to `canonical/classification-gates.md` (the canonical file reversed the v0.1 Rule 1 / Rule 2 precedence conflict; this spec must NOT re-assert the v0.1 ordering). `classifyIdentity` API renamed to `classifyTypeNameGroup` + `classifySingleIdentity` to match the canonical file's distinct group-vs-identity split. "Export type namespace" wording corrected to "Export namespace". Alias fidelity handoff now explicitly references `canonical/identity-and-alias.md`.
 - **2026-04-20 (v0.2.1)**: Second reviewer pass. Five P0 items and three P1 items absorbed, closing remaining drift risk against the canonical spine. Primary repairs: §5.2 now takes a full `importRecord` and delegates chain resolution to `canonical/identity-and-alias.md` §6 (including mixed-file and ambiguous-star handling); `LOW_INFO_NAMES` treated as a Markdown-normative canonical + code-mirror pair with drift test; §6 output format widened to separate group-vs-identity counts, surface `Tags` and `Any / unknown signal` columns, and add `severely-any-contaminated` / `ANY_COLLISION` bucket rows; classification functions' responsibility clarified (core label only; renderer owns Tags + contamination merging); `tests/test-classification-gates.mjs` promoted to a distinct handoff step with enumerated case coverage. See §14 v0.2.1 change log.
 - **2026-04-20 (v0.2.2)**: Third reviewer pass. Three P0 items + three P1 items absorbed. `fact-model.md` §3.1 `type-owner` now carries `exportedName` as the canonical identity field (§14 P0-1). SPEC §13 classification handoff restored the `tags` field on `classifyTypeNameGroup` return (dropped in v0.2.1 handoff while retained in §5.3) and split Tags-column composition between semantic tags (classification) and path tags (pathMeta) in `renderTypeOwnershipRow` (§14 P0-2). `any-contamination.md` §10 producer responsibilities now enumerate all 10 `escapeKind` values 1:1 with `fact-model.md` §3.9 (§14 P0-3). Classification-gates `any-contamination.md §5` cross-refs retargeted to §6 Stage 1 / §9 via title-based anchor. Pre-write output example's flat `anyContamination` schema upgraded to `{label, labels, measurements}`. SPEC §6 output-format fence widened to 4 backticks so the nested `json` block in Generation Metadata renders cleanly. Q5 test-only storage moved to `Tags` column wording.
+- **2026-07-14 (Rust fact-owner migration)**: Canon helper and naming scans now build one scoped Rust `js-ts-extract-artifact` index per invocation. `_lib/extract-ts.mjs` remains only as a fail-closed compatibility adapter; it owns no parser or JS fallback. `check-canon --source all` shares the same index across both sources.
 
 ---
 
