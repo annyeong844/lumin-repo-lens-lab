@@ -489,6 +489,17 @@ new contract version or rely on Cargo auto-build to hide the mismatch. The
 packaged binary is the normal installed runtime; the Cargo workspace is a
 fallback for unsupported or missing platforms.
 
+The source-checkout bridge follows the same rule. After explicit environment
+overrides and the normal installed-package path, it must contract-probe the
+checked-in generated-skill binary at
+`skills/lumin-repo-lens-lab/_engine/bin/<platform>-<arch>/` before inspecting or
+building a Cargo target. A source checkout must not pay a one-time Rust compile
+merely because its normal installed-package-relative path does not exist. Cargo
+remains the fail-closed fallback when the checked-in platform helper is absent
+or does not satisfy the current runtime contract. Developers who need an
+unpackaged helper under active modification use the existing explicit binary
+override.
+
 Linux release binaries must be built in a controlled compatibility-baseline
 environment, not directly against the maintainer's current WSL glibc. The
 packaging verification must inspect the maximum required GLIBC symbol version;

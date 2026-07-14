@@ -315,6 +315,14 @@ function executableOnPath(exe) {
 function auditCoreBinary() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
+  const platformKey = `${process.platform}-${process.arch}`;
+  const packagedPlatform = path.resolve(here, '../bin', platformKey, exe);
+  const sourceCheckoutPlatform = path.resolve(
+    here,
+    '../skills/lumin-repo-lens-lab/_engine/bin',
+    platformKey,
+    exe,
+  );
   const platformEnv = `LUMIN_AUDIT_CORE_BIN_${process.platform}_${process.arch}`
     .replace(/[^A-Z0-9_]/gi, '_')
     .toUpperCase();
@@ -327,6 +335,10 @@ function auditCoreBinary() {
     path: process.env.PATH ?? '',
     cargoTargetDir: process.env.CARGO_TARGET_DIR ?? null,
     noAutoBuild: process.env.LUMIN_AUDIT_CORE_NO_AUTO_BUILD ?? null,
+    preferredCandidates: candidateSignatureKey([
+      packagedPlatform,
+      sourceCheckoutPlatform,
+    ]),
   });
   const configuredOverrides = [process.env[platformEnv], process.env.LUMIN_AUDIT_CORE_BIN]
     .map((configured) => configured ? path.resolve(configured) : null)
@@ -354,8 +366,10 @@ function auditCoreBinary() {
   for (const resolved of configuredOverrides) {
     if (resolved && auditCoreCandidateSupportsCurrentContract(resolved)) return remember(resolved);
   }
-  const packagedPlatform = path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe);
   if (auditCoreCandidateSupportsCurrentContract(packagedPlatform)) return remember(packagedPlatform);
+  if (auditCoreCandidateSupportsCurrentContract(sourceCheckoutPlatform)) {
+    return remember(sourceCheckoutPlatform);
+  }
   const packagedSourceManifest = path.resolve(here, '../rust', 'Cargo.toml');
   if (isLuminAuditCoreWorkspace(path.dirname(packagedSourceManifest))) {
     const built = auditCoreBinaryFromManifest(packagedSourceManifest, autoBuildCandidatePath(packagedSourceManifest, exe));
@@ -377,9 +391,11 @@ function auditCoreBinary() {
   }
   const pathBinary = executableOnPath(exe);
   if (pathBinary && auditCoreCandidateSupportsCurrentContract(pathBinary)) return remember(pathBinary);
-  if (existsSync(packagedPlatform)) {
+  const stalePackagedPlatform = [packagedPlatform, sourceCheckoutPlatform]
+    .find((candidate) => existsSync(candidate));
+  if (stalePackagedPlatform) {
     throw new Error(
-      `lumin-audit-core binary at ${packagedPlatform} does not satisfy the required runtime contract.${auditCorePlatformHint()}`
+      `lumin-audit-core binary at ${stalePackagedPlatform} does not satisfy the required runtime contract.${auditCorePlatformHint()}`
     );
   }
   return remember(packagedPlatform);
@@ -427,13 +443,20 @@ function candidateSignatureKey(commands) {
 export function auditCoreRuntimeCandidateSignature() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const exe = process.platform === 'win32' ? 'lumin-audit-core.exe' : 'lumin-audit-core';
+  const platformKey = `${process.platform}-${process.arch}`;
   const platformEnv = `LUMIN_AUDIT_CORE_BIN_${process.platform}_${process.arch}`
     .replace(/[^A-Z0-9_]/gi, '_')
     .toUpperCase();
   const candidates = [
     process.env[platformEnv] ? path.resolve(process.env[platformEnv]) : null,
     process.env.LUMIN_AUDIT_CORE_BIN ? path.resolve(process.env.LUMIN_AUDIT_CORE_BIN) : null,
-    path.resolve(here, '../bin', `${process.platform}-${process.arch}`, exe),
+    path.resolve(here, '../bin', platformKey, exe),
+    path.resolve(
+      here,
+      '../skills/lumin-repo-lens-lab/_engine/bin',
+      platformKey,
+      exe,
+    ),
   ];
 
   const packagedSourceManifest = path.resolve(here, '../rust', 'Cargo.toml');
