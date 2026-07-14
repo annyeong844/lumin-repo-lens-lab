@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { chmodSync, utimesSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, copyFileSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { runAuditCoreJson } from "../_lib/audit-core.mjs";
 import * as auditManifest from "../_lib/audit-manifest.mjs";
 import { createTempRepoFixture } from "./_helpers/temp-repo-fixture.mjs";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function writeFakeAuditCore(binaryPath, { resultMode }) {
   const validResult = `
@@ -223,6 +227,71 @@ describe("audit-core JS bridge output policy", () => {
       fixture.cleanup();
       if (previous === undefined) delete process.env.LUMIN_AUDIT_CORE_BIN;
       else process.env.LUMIN_AUDIT_CORE_BIN = previous;
+    }
+  }, 30000);
+
+  it("ACB5. resolves the checked-in skill prebuilt before Cargo in a source checkout", () => {
+    const fixture = createTempRepoFixture({
+      prefix: "audit-core-source-prebuilt-",
+    });
+    const platformKey = `${process.platform}-${process.arch}`;
+    const exe = process.platform === "win32"
+      ? "lumin-audit-core.exe"
+      : "lumin-audit-core";
+    const platformEnv = `LUMIN_AUDIT_CORE_BIN_${process.platform}_${process.arch}`
+      .replace(/[^A-Z0-9_]/gi, "_")
+      .toUpperCase();
+
+    try {
+      fixture.mkdir("_lib");
+      fixture.mkdir(`skills/lumin-repo-lens-lab/_engine/bin/${platformKey}`);
+      copyFileSync(
+        path.join(REPO_ROOT, "_lib/audit-core.mjs"),
+        fixture.path("_lib/audit-core.mjs"),
+      );
+      copyFileSync(
+        path.join(REPO_ROOT, "_lib/audit-core-contract-fixtures.mjs"),
+        fixture.path("_lib/audit-core-contract-fixtures.mjs"),
+      );
+      const fixtureBinary = fixture.path(
+        `skills/lumin-repo-lens-lab/_engine/bin/${platformKey}/${exe}`,
+      );
+      copyFileSync(
+        path.join(
+          REPO_ROOT,
+          `skills/lumin-repo-lens-lab/_engine/bin/${platformKey}/${exe}`,
+        ),
+        fixtureBinary,
+      );
+      if (process.platform !== "win32") chmodSync(fixtureBinary, 0o755);
+
+      const env = {
+        ...process.env,
+        PATH: "",
+        LUMIN_AUDIT_CORE_NO_AUTO_BUILD: "1",
+      };
+      delete env.LUMIN_AUDIT_CORE_BIN;
+      delete env[platformEnv];
+      delete env.CARGO_TARGET_DIR;
+      const moduleUrl = pathToFileURL(fixture.path("_lib/audit-core.mjs")).href;
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "--eval",
+          `import { auditCoreRuntimeFeatureEnabled } from ${JSON.stringify(moduleUrl)}; process.stdout.write(JSON.stringify({ enabled: auditCoreRuntimeFeatureEnabled("jsTsPreWriteEvidence") }));`,
+        ],
+        {
+          cwd: fixture.root,
+          env,
+          encoding: "utf8",
+        },
+      );
+
+      expect(child.status, child.stderr).toBe(0);
+      expect(JSON.parse(child.stdout)).toEqual({ enabled: true });
+    } finally {
+      fixture.cleanup();
     }
   }, 30000);
 });
