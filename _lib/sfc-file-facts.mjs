@@ -20,6 +20,7 @@ function validateFileResult(result, filePath) {
     'scriptSources',
     'styleAssetReferences',
     'templateComponentRefs',
+    'frameworkConventionComponents',
   ]) {
     if (!Array.isArray(result[field])) {
       throw new Error(

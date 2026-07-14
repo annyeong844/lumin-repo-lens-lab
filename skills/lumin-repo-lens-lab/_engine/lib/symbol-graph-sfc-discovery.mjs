@@ -131,6 +131,9 @@ export function discoverSymbolGraphSfcFacts({
   const templateComponentRefs = fileFacts.flatMap(
     (file) => file.templateComponentRefs,
   );
+  const perFileFrameworkConventionComponents = fileFacts.flatMap(
+    (file) => file.frameworkConventionComponents,
+  );
   const globalComponentRegistrations = collectTimed(
     phaseTimer,
     "collect-sfc-global-component-registrations",
@@ -152,7 +155,14 @@ export function discoverSymbolGraphSfcFacts({
   const frameworkConventionComponents = collectTimed(
     phaseTimer,
     "collect-sfc-framework-convention-components",
-    () => collectSfcFrameworkConventionComponents(scopedCollectorInput),
+    () =>
+      collectSfcFrameworkConventionComponents({
+        ...scopedCollectorInput,
+        perFileConventions: perFileFrameworkConventionComponents,
+        perFileScriptImports: fileFacts.flatMap(
+          (file) => file.scriptImportConsumers,
+        ),
+      }),
   );
 
   phaseTimer.setCounter(

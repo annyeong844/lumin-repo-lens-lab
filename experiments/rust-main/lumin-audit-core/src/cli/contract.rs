@@ -139,6 +139,7 @@ const RUNTIME_FEATURES: &[&str] = &[
     "jsTsExtractPathBackedInput",
     "jsTsExtractLocalOperations",
     "sfcFileFacts",
+    "sfcFileConventionFacts",
     "jsTsPreWriteEvidence",
     "jsTsPreWriteDiscovery",
     "jsTsPreWriteIncrementalCache",

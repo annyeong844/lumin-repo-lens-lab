@@ -1,4 +1,5 @@
 mod blocks;
+mod conventions;
 mod protocol;
 mod script;
 mod style;
@@ -12,7 +13,7 @@ use protocol::SfcFileFacts;
 pub use protocol::{SfcFileFactsRequest, SfcFileFactsResponse};
 use script::{extract_script_facts, ScriptFacts};
 use style::extract_style_asset_references;
-use template::extract_template_component_refs;
+use template::{extract_template_facts, TemplateFacts};
 
 pub const SFC_FILE_FACTS_REQUEST_SCHEMA_VERSION: &str = "lumin-sfc-file-facts-request.v1";
 pub const SFC_FILE_FACTS_RESPONSE_SCHEMA_VERSION: &str = "lumin-sfc-file-facts-response.v1";
@@ -47,10 +48,18 @@ pub fn build_sfc_file_facts_response(request: SfcFileFactsRequest) -> Result<Sfc
 fn extract_file_facts(file_path: &str, source: &str) -> Result<SfcFileFacts> {
     let language = SfcLanguage::from_path(file_path)?;
     let scripts = script_blocks(source, language);
-    let ScriptFacts { imports, bindings } =
-        extract_script_facts(source, file_path, language, &scripts)?;
+    let ScriptFacts {
+        imports,
+        bindings,
+        mut conventions,
+    } = extract_script_facts(source, file_path, language, &scripts)?;
     let styles = style_blocks(source, language);
     let templates = template_blocks(source, language);
+    let TemplateFacts {
+        component_refs,
+        conventions: template_conventions,
+    } = extract_template_facts(source, file_path, language, &templates, &bindings);
+    conventions.extend(template_conventions);
 
     Ok(SfcFileFacts {
         file_path: file_path.to_string(),
@@ -59,9 +68,8 @@ fn extract_file_facts(file_path: &str, source: &str) -> Result<SfcFileFacts> {
         style_asset_references: extract_style_asset_references(
             source, file_path, language, &styles,
         ),
-        template_component_refs: extract_template_component_refs(
-            source, file_path, language, &templates, &bindings,
-        ),
+        template_component_refs: component_refs,
+        framework_convention_components: conventions,
     })
 }
 

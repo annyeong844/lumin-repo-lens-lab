@@ -151,6 +151,142 @@ fn supports_vue_options_component_bindings() -> Result<()> {
 }
 
 #[test]
+fn extracts_checked_per_file_framework_conventions() -> Result<()> {
+    let vue_macro = [
+        "<template><!-- defineOptions({ components: { CommentOnly } }) --></template>",
+        "<script setup lang=\"ts\">",
+        "import MacroCard from './MacroCard.vue';",
+        "import MacroAlias from './macro-alias';",
+        "const dynamicName = 'DynamicCard';",
+        "defineOptions({ components: { MacroCard, 'macro-alias': MacroAlias, Missing, [dynamicName]: MacroCard } });",
+        "</script>",
+    ]
+    .join("\n");
+    let vue_options = [
+        "<template />",
+        "<script lang=\"ts\">",
+        "import OptionsCard from './OptionsCard.vue';",
+        "import OptionsAlias from './options-alias';",
+        "const dynamicName = 'DynamicCard';",
+        "export default { components: { OptionsCard, 'options-alias': OptionsAlias, Missing, [dynamicName]: OptionsCard } };",
+        "</script>",
+    ]
+    .join("\n");
+    let astro = [
+        "---",
+        "import { UsedByAstro } from './astro-use';",
+        "---",
+        "<UsedByAstro client:load />",
+        "<MissingAstro client:load />",
+        "<div client:load />",
+        "<!-- <UsedByAstro client:visible /> -->",
+    ]
+    .join("\n");
+    let svelte = [
+        "<script context=\"module\" lang=\"ts\">",
+        "import { enhance } from './actions';",
+        "</script>",
+        "<script lang=\"ts\">",
+        "import { writable } from 'svelte/store';",
+        "import { importedCount } from './stores';",
+        "function localAction(node) { return { destroy() {} }; }",
+        "const localConstAction = (node) => ({ destroy() {} });",
+        "const localCount = writable(0);",
+        "const notAction = 1;",
+        "const notStore = 1;",
+        "$: doubled = $localCount * 2;",
+        "function shadowed($importedCount) { return $importedCount; }",
+        "</script>",
+        "<form use:enhance></form>",
+        "<div use:localAction></div>",
+        "<section use:localConstAction></section>",
+        "<button use:notAction></button>",
+        "<p>{$importedCount}</p>",
+        "<p>{$localCount}</p>",
+        "<p>$plainText</p>",
+        "<p>{$missingStore}</p>",
+        "<p>{$notStore}</p>",
+        "<!-- <div use:commentAction></div><p>{$commentStore}</p> -->",
+    ]
+    .join("\n");
+    let response = build(serde_json::json!({
+        "schemaVersion": "lumin-sfc-file-facts-request.v1",
+        "files": [
+            {"filePath": "pages/Macro.vue", "source": vue_macro},
+            {"filePath": "pages/Options.vue", "source": vue_options},
+            {"filePath": "pages/Home.astro", "source": astro},
+            {"filePath": "components/Page.svelte", "source": svelte}
+        ]
+    }))?;
+
+    let files = response["files"].as_array().context("files array")?;
+    let macro_rows = files[0]["frameworkConventionComponents"]
+        .as_array()
+        .context("Vue macro rows")?;
+    assert_eq!(macro_rows.len(), 2);
+    assert!(macro_rows.iter().any(|row| {
+        row["conventionKind"] == "macro-registration"
+            && row["componentName"] == "MacroCard"
+            && row["bindingSource"] == "./MacroCard.vue"
+            && row["status"] == "muted"
+            && row["eligibleForFanIn"] == false
+            && row["eligibleForSafeFix"] == false
+    }));
+    assert!(macro_rows.iter().any(|row| {
+        row["componentName"] == "macro-alias"
+            && row["normalizedTagNames"] == serde_json::json!(["macro-alias", "MacroAlias"])
+    }));
+
+    let options_rows = files[1]["frameworkConventionComponents"]
+        .as_array()
+        .context("Vue options rows")?;
+    assert_eq!(options_rows.len(), 2);
+    assert!(options_rows.iter().any(|row| {
+        row["conventionKind"] == "options-registration"
+            && row["optionName"] == "components"
+            && row["componentName"] == "OptionsCard"
+    }));
+
+    let astro_rows = files[2]["frameworkConventionComponents"]
+        .as_array()
+        .context("Astro rows")?;
+    assert_eq!(astro_rows.len(), 1);
+    assert_eq!(astro_rows[0]["directiveName"], "client:load");
+    assert_eq!(astro_rows[0]["bindingName"], "UsedByAstro");
+
+    let svelte_rows = files[3]["frameworkConventionComponents"]
+        .as_array()
+        .context("Svelte rows")?;
+    assert_eq!(
+        svelte_rows
+            .iter()
+            .filter(|row| row["conventionKind"] == "action-directive")
+            .count(),
+        3
+    );
+    let store_names = svelte_rows
+        .iter()
+        .filter(|row| row["conventionKind"] == "store-auto-subscription")
+        .filter_map(|row| row["storeName"].as_str())
+        .collect::<Vec<_>>();
+    assert!(store_names.contains(&"importedCount"));
+    assert!(store_names.contains(&"localCount"));
+    assert!(!store_names.iter().any(|name| matches!(
+        *name,
+        "missingStore" | "notStore" | "commentStore" | "plainText"
+    )));
+    assert_eq!(
+        svelte_rows
+            .iter()
+            .filter(|row| row["storeName"] == "importedCount")
+            .count(),
+        1,
+        "the shadowed script reference must not duplicate the template evidence"
+    );
+    Ok(())
+}
+
+#[test]
 fn rejects_duplicate_files_and_script_parse_failures() -> Result<()> {
     let duplicate = serde_json::from_value::<SfcFileFactsRequest>(serde_json::json!({
         "schemaVersion": "lumin-sfc-file-facts-request.v1",
