@@ -445,6 +445,8 @@ fn cli_execute_js_pre_write_runs_native_and_writes_clean_result_file() -> Result
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("## pre-write advisory"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("cueCards=`"));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("### Agent review cues"));
     assert!(output.stderr.is_empty());
     let result: Value = serde_json::from_str(&fs::read_to_string(result_path)?)?;
     assert_eq!(result["block"]["ran"], true);

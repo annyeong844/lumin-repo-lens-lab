@@ -1,5 +1,43 @@
 use serde_json::Value;
 
+pub(super) fn handoff_markdown(advisory: &Value) -> String {
+    let mut lines = vec![
+        "## pre-write advisory (canonical/pre-write-gate §5)".to_string(),
+        String::new(),
+    ];
+    if let Some(path) = advisory
+        .pointer("/artifactPaths/invocationSpecific")
+        .and_then(Value::as_str)
+    {
+        lines.push(format!(
+            "Post-write handoff: `--pre-write-advisory {path}`."
+        ));
+        lines.push(format!("Full current-run advisory: `{path}`."));
+        lines.push(String::new());
+    }
+    lines.push(format!(
+        "Summary: cueCards=`{}`, suppressedCues=`{}`, lookups=`{}`, unavailableEvidence=`{}`, drift=`{}`, plannedTypeEscapes=`{}`.",
+        array_len(advisory, "/cueCards"),
+        array_len(advisory, "/suppressedCues"),
+        array_len(advisory, "/lookups"),
+        array_len(advisory, "/unavailableEvidence"),
+        array_len(advisory, "/drift"),
+        array_len(advisory, "/intent/plannedTypeEscapes"),
+    ));
+    lines.push(
+        "Read the invocation-specific JSON selectively before editing; stdout does not duplicate its per-candidate rows."
+            .to_string(),
+    );
+    lines.join("\n")
+}
+
+fn array_len(value: &Value, pointer: &str) -> usize {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len)
+}
+
 pub(super) fn markdown(advisory: &Value) -> String {
     let mut lines = vec![
         "## pre-write advisory (canonical/pre-write-gate §5)".to_string(),
@@ -243,4 +281,39 @@ fn render_planned_escapes(advisory: &Value, lines: &mut Vec<String>) {
         }
     }
     lines.push(String::new());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handoff_markdown;
+    use serde_json::json;
+
+    #[test]
+    fn handoff_reports_complete_counts_without_rendering_candidate_rows() {
+        let advisory = json!({
+            "artifactPaths": {
+                "invocationSpecific": "/repo/.audit/pre-write-advisory.INV-1.json",
+            },
+            "cueCards": [
+                {"candidate": {"identity": "src/a.ts::candidateOne"}},
+                {"candidate": {"identity": "src/b.ts::candidateTwo"}},
+            ],
+            "suppressedCues": [{"reason": "generated-only"}],
+            "lookups": [{"kind": "name"}, {"kind": "file"}, {"kind": "shape"}],
+            "unavailableEvidence": [{"evidenceLane": "inline-extraction"}],
+            "drift": [{"intentName": "oldOwner"}],
+            "intent": {
+                "plannedTypeEscapes": [{"escapeKind": "as-unknown-as-T"}],
+            },
+        });
+
+        let handoff = handoff_markdown(&advisory);
+
+        assert!(handoff.contains("pre-write-advisory.INV-1.json"));
+        assert!(handoff.contains(
+            "cueCards=`2`, suppressedCues=`1`, lookups=`3`, unavailableEvidence=`1`, drift=`1`, plannedTypeEscapes=`1`"
+        ));
+        assert!(!handoff.contains("candidateOne"));
+        assert!(!handoff.contains("candidateTwo"));
+    }
 }

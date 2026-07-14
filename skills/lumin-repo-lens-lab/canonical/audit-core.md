@@ -337,7 +337,7 @@ and the packaged source fallback must be regenerated from the same contract.
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/lookup/shape.rs` | Exact shape-hash and normalized function-signature projection | fuzzy structural inference, source parsing, cue tiering |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/lookup/inline.rs` | Focused inline-pattern matching against current-run extracted evidence | source extraction, pattern discovery, cue tiering |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/cues.rs` | Deterministic JS/TS pre-write cue cards, muted cues, and unavailable-evidence projection from lookup results | lookup discovery, source parsing, artifact IO, or Markdown rendering |
-| `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/render.rs` | Deterministic JS/TS pre-write Markdown projection from the completed advisory | evidence collection, lookup classification, cue tiering, or artifact IO |
+| `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/render.rs` | Deterministic JS/TS pre-write Markdown projection from the completed advisory plus the constant-shape result-file terminal handoff containing the invocation path and complete evidence counts | evidence collection, lookup classification, cue tiering, artifact IO, or per-candidate terminal streaming on the production result-file route |
 | `experiments/rust-main/lumin-audit-core/src/living_audit.rs` | `manifest.json.livingAudit` projection from known living-audit document candidate paths under the audited root | audit document authoring, final answer policy, producer orchestration |
 | `experiments/rust-main/lumin-audit-core/src/manifest_core.rs` | `manifest.json.scanRange`, `manifest.json.confidence`, and `manifest.json.sfcEvidence` projections from already-produced `triage.json` and `symbols.json` | blind-zone detection, living-audit document discovery, producer execution |
 | `experiments/rust-main/lumin-audit-core/src/resolver_diagnostics.rs` | `manifest.json.resolverDiagnostics` projection from already-produced `symbols.json`, `resolver-capabilities.json`, and `resolver-diagnostics.json` | module resolution, blocked-hint production, blind-zone detection |
@@ -641,6 +641,12 @@ removes this artifact cache together with per-file facts.
   large audit cannot fail on Node child-process stdout buffering after Rust has
   already produced the result. Direct CLI stdout for these commands is only a
   compatibility/debug surface, not the JS wrapper contract.
+- Result-file pre-write lifecycle commands follow the same transport rule for
+  human-readable output. The invocation-specific advisory JSON preserves every
+  cue and lookup, while terminal stdout is a constant-shape handoff with the
+  advisory path and complete counts. It must not grow with candidate or lookup
+  cardinality; otherwise a completed run can block before its result file is
+  recovered by the caller.
 - JS/TS producer lanes remain JS-owned until a lane-specific Rust parity proof
   exists.
 - For `build-symbol-graph` migration, JS may continue to own file collection,
