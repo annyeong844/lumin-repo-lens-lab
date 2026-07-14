@@ -165,8 +165,9 @@ for explaining cross-submodule flow, cycles, or hub files; cite
 `topology.json` for exact grounded claims.
 Checklist gate: the checklist is a required review step, not an output
 template. Short output is not permission to skip it. Before composing,
-triage C/D/E/A/B/F using `checklist-facts.json`; mark unavailable lanes
-as `unknown` internally instead of silently omitting them. If the user
+triage C/D(+H)/E/A/B/F/G using `checklist-facts.json`, raw artifacts, and
+the dedicated tools named by the checklist; mark unavailable lanes as
+`unknown` internally instead of silently omitting them. If the user
 asked for full, deep, exhaustive, due-diligence, CI, or formal review,
 open `templates/REVIEW_CHECKLIST.md` and walk it before drafting.
 
@@ -226,7 +227,7 @@ Read `manifest.json`, `fix-plan.json`, `checklist-facts.json`, and
 supporting artifacts before making claims. Use `audit-summary.latest.md`
 only as an artifact map; do not copy its measured cue order into the
 chat answer. Always pass the checklist gate before choosing the final
-answer. For short chat, triage C/D/E/A/B/F and compress the result. For
+answer. For short chat, triage C/D(+H)/E/A/B/F/G and compress the result. For
 full, deep, exhaustive, due-diligence, CI, or formal review, open
 `templates/REVIEW_CHECKLIST.md` and walk it before drafting. Before reporting dead-export
 counts, run a quick FP screen: inspect `fix-plan.summary`, `muted`,

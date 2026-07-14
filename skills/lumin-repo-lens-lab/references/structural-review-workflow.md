@@ -52,8 +52,9 @@ needs `unknown` plus scan range.
 
 Checklist gate and output density are separate. The Core Contract makes
 the checklist a required review step, not merely a template. Before any
-structural answer, triage C/D/E/A/B/F using `checklist-facts.json` plus
-relevant raw artifacts. Short output only controls what you show; it
+structural answer, triage C/D(+H)/E/A/B/F/G using `checklist-facts.json`,
+relevant raw artifacts, and dedicated non-lumin tools. Short output only
+controls what you show; it
 does not permit skipping the checklist pass. For full, due-diligence,
 exhaustive, or formal review, open `templates/REVIEW_CHECKLIST.md` and
 walk it before drafting.
