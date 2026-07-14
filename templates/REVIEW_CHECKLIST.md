@@ -1,6 +1,6 @@
-# Structural Review Checklist (v1.1)
+# Structural Review Checklist (v2.1)
 
-Six review sections — **A. Size & simplicity**, **B. Duplication & shape**, **C. Cohesion & boundaries**, **D. Types & contracts**, **E. Failure handling**, **F. Abstraction & tests**.
+Eight review sections — **A. Size & simplicity**, **B. Duplication & shape**, **C. Cohesion & boundaries**, **D. Types & contracts**, **E. Failure handling**, **F. Abstraction & tests**, **G. Security & operations**, **H. Ceremony & excess contracts**.
 
 When a user asks for a structural review, walk every section with
 grounded evidence first and synthesis last. Closely related prompts may
@@ -121,6 +121,46 @@ contradictions instead of carrying both sides into the report.
 
 If you're running this for a TS/JS monorepo with this skill's artifacts available (`symbols.json`, `topology.json`, `topology.mermaid.md`, `dead-classify.json`, `fix-plan.json`, `discipline.json`, `call-graph.json`, `shape-index.json`, `triage.json`, `level2-methods.json`, `runtime-evidence.json`, `staleness.json`, `barrels.json`, `checklist-facts.json`, `lumin-repo-lens-lab.sarif`), prefer their fields over re-scanning. `checklist-facts.json` pre-computes the automatable half — see its `_citation_hint` per item for the expected label format. `topology.mermaid.md` is a capped visual companion for cross-submodule flow, cycles, and hub files only; cite `topology.json` for grounded topology claims.
 
+## Tool responsibility boundary
+
+### Layer 1: lumin-grounded evidence
+
+- Function size: `checklist-facts.json.A2_function_size`.
+- Cross-submodule coupling and cycles:
+  `checklist-facts.json.A5_decoupling_ratio`,
+  `checklist-facts.json.A6_circular_deps`, and
+  `topology.json.crossSubmoduleEdges[]` / `sccs[]`.
+- Clone and shape cues: `checklist-facts.json.B1_duplicate_implementation`
+  and `B1B2_shape_drift`. These are structural candidates, not semantic
+  equivalence.
+- Ranked dead-code evidence: `checklist-facts.json.B3_dead_code` and
+  `fix-plan.json`. Do not promote raw `symbols.json.deadProdList` directly.
+- Boundary-rule presence, barrel policy, and silent catches:
+  `C5_lint_enforcement`, `C7_barrel_amplification`, and `E2_silent_catch`.
+- Canon and write-gate evidence: invocation-specific `pre-write` / `post-write`
+  artifacts and `canon-drift.json`. A skipped or stale artifact is not clean.
+- Rust macro/cfg opacity, only when `manifest.rustAnalysis.status` is
+  `complete`: `rust-analyzer-health.latest.json.summary.syntaxReviewOpaqueSurfaces`.
+  `compilerOracleOpaqueSurfaces` is not an emitted field.
+
+### Layer 2: ESLint, tsc, and ecosystem enforcement
+
+- Floating or misused promises: `@typescript-eslint/no-floating-promises` and
+  `no-misused-promises`.
+- Type checking and exhaustiveness: `tsc --strict` and
+  `@typescript-eslint/switch-exhaustiveness-check` where configured.
+- Formatting, debugger/console policy, dependency vulnerabilities, and update
+  policy remain ESLint/formatter/npm-audit/Renovate concerns.
+
+### Layer 3: human judgment
+
+- Semantic equivalence, correct dependency direction, state-writer intent,
+  fallback meaning, test quality, mock depth, security boundaries, and ceremony
+  are not grounded by current lumin artifacts.
+- `call-graph.json` does not enumerate module-level `let`/`Map`/`Set` writers.
+  `runtime-evidence.json` does not emit repository branch-coverage percentages.
+  Those questions require source or dedicated tool evidence.
+
 This checklist is repo-neutral. It intentionally does not include
 dogfood-only checks for `lumin-repo-lens-lab` itself.
 
@@ -128,8 +168,20 @@ The default `quick` profile does not produce every optional artifact.
 For a full checklist walk, prefer `--profile full`; it emits
 `call-graph.json`, `barrels.json`, and `shape-index.json` in addition
 to the quick artifacts, and adds runtime/staleness evidence when those
-inputs are available. If an optional artifact is still absent, `[확인
-불가]` is the correct answer for the affected prompt.
+inputs are available. If an optional artifact is still absent, `[unknown]` is
+the correct answer for the affected prompt.
+
+Use the profiles by cadence:
+
+- During an edit transaction: invocation-specific `pre-write`, then the edit,
+  then matching `post-write` before broad generators mutate the scan range.
+- For a small fresh follow-up: `quick`.
+- Once per branch or before a structural review: `full`.
+- In CI: the `ci` profile emits SARIF. `SAFE_FIX` maps to SARIF `warning`, but
+  SARIF generation alone is not a failing gate; repository code-scanning policy
+  must explicitly enforce one.
+- ESLint, tsc, dependency, and security checks remain resident regardless of
+  lumin profile.
 
 ---
 
@@ -153,19 +205,18 @@ inputs are available. If an optional artifact is still absent, `[확인
 
 ### A3. helper zoo처럼 보조 함수가 무질서하게 증식해 책임이 흐려지지는 않았는가?
 
-**Evidence sources:** `symbols.json.topSymbolFanIn` (helpers with 0 fan-in outside their file = private — expected; helpers with 1 caller = candidate helper-zoo noise).
-**Pattern:** a file exports ≥ 8 named helpers, most with fan-in ≤ 1, and the file is < 200 LOC → `helper zoo` anti-pattern.
-**LLM judgment:** yes — verify names are unrelated (zoo) vs a cohesive utility family (fine).
+**Evidence sources:** `symbols.json.topSymbolFanIn` is a name-keyed, capped top-50 display list. It may identify a high-fan-in helper but cannot prove that an omitted helper has fan-in 0 or 1, and it is not a per-file export inventory.
+**LLM judgment:** yes — inspect the file's exported helpers and their actual consumers. Verify names are unrelated (zoo) vs a cohesive utility family (fine). If the consumer scan was not performed, answer `[unknown]` rather than treating absence from `topSymbolFanIn` as zero.
 
 ### A4. 과분할, 불필요한 레이어링, 의미 없는 파일 쪼개기가 존재하지 않는가?
 
-**Evidence sources:** `topology.json.nodes[]` where `loc < 50` AND `fanOut = 0` AND `fanIn ≤ 1`. Clusters of such tiny files pointing at one consumer = over-split.
-**Counter-evidence:** `_lib/parse-oxc.mjs` (39 LOC, fanOut 0, fanIn 6) is NOT over-split — it's a shared primitive. Small ≠ over-split; small + few consumers + redundant with a sibling = over-split.
+**Evidence sources:** `topology.json.nodes` is an object keyed by file and exposes `loc` only. `topFanIn[]` and `topFanOut[]` are capped top-15 lists, not complete per-file fan maps. Use them as positive cues, then read the candidate file and its consumers.
+**Counter-evidence:** small does not mean over-split. A small shared primitive with several consumers is healthy; a small file with a single consumer is still only a candidate until sibling responsibility and dependency direction are read.
 
 ### A5. 디커플링이 잘 이루어졌는가?
 
 - **Primary source**: `checklist-facts.json.A5_decoupling_ratio` (fields: `gate`, `ratioLowerBound`, `crossSubmoduleEdgesTop30Sum`, `totalInternalEdges`).
-- **Supplementary**: `level2-methods.json.crossPkgMethodEdges` for method-level coupling density, when present.
+- **Supplementary**: `level2-methods.json.crossSubmoduleMethod` for method-level coupling density, when present.
 - **Do not consult**: `fix-plan.json` — A5 is a structural coupling measure, not a dead-code measure.
 - **Cite the value**: `[grounded, checklist-facts.json.A5_decoupling_ratio.ratioLowerBound = 0.87]`.
 - **Context check (Rule 6)**: **HIGH RATIO CAN BE HEALTHY** when layering is by design (top-level scripts → `_lib/` helpers = intentional cross-submodule by construction). In layered repos, downgrade fix→watch or watch→healthy if the ratio reflects the layering, not disorder. A counter-test: do the cross-submodule edges have direction consistency (leaves → core = healthy; core → leaves = inversion)?
@@ -203,7 +254,7 @@ inputs are available. If an optional artifact is still absent, `[확인
 - **Supplementary**: `dead-classify.json.proposal_C_remove_symbol[]` for the specific symbols, `runtime-evidence.json` for runtime-zero-hit confirmation.
 - **Do not consult**: `symbols.json.deadProdList` directly — that's pre-ranking. Use the ranked/classified numbers from B3 Primary.
 - **Cite the value**: `[grounded, checklist-facts.json.B3_dead_code = {safeFix: 2, reviewFix: 5, degraded: 1, muted: 0, total: 8}]`.
-- **Context check (Rule 6)**: SAFE_FIX ≥ 10 → ❌ fix unless those are all in an opt-in experimental module. REVIEW_FIX count alone is not a gate; it's a review queue.
+- **Context check (Rule 6)**: `SAFE_FIX` is actionable evidence, but its count does not define severity by itself. Judge scope, ownership, and public-contract impact. `REVIEW_FIX` remains a review queue, not a deletion verdict.
 
 ### B4. 동일한 멀티스텝 워크플로우/파이프라인이 서로 다른 진입점에서 독립적으로 구현되고 있지는 않은가?
 
@@ -221,22 +272,22 @@ inputs are available. If an optional artifact is still absent, `[확인
 
 ### C1. 모듈, 파일, 함수의 응집도는 충분히 높고 SRP는 잘 지켜지고 있는가?
 
-**Evidence sources:** `call-graph.json.moduleCallCount[]` (feature-envy edges). A file that imports heavily from one sibling and hardly from others = cohesion or feature-envy depending on direction.
-**LLM judgment:** yes — verify name vs body alignment.
+**Evidence sources:** `call-graph.json.moduleCallCount[]` is a capped top-50 list of `{edge: "from → to", count}` cross-module call totals. It is a direction cue, not import density or proof of feature envy.
+**LLM judgment:** yes — read the caller and callee responsibilities before deciding whether the direction is cohesion or feature envy.
 
 ### C2. 구조 경계는 건강한가? 책임과 의존 방향이 자연스럽고 무리하지 않은가?
 
-**Evidence sources:** `topology.json.subEdges[]` — cross-submodule edge direction. Leaves → core flow is healthy; core → leaves is an inversion (likely feature envy or layering violation).
+**Evidence sources:** `topology.json.crossSubmoduleEdges[]` — complete cross-submodule edge direction when present. `crossSubmoduleTop[]` is only a capped display fallback. Leaves → core flow can be healthy; core → leaves is an inversion candidate that still requires the repo's intended layering.
 
 ### C3. 검증, 정규화, 에러 처리 같은 교차 관심사가 병목 지점에서 집중 관리되고 있는가?
 
-**Evidence sources:** `discipline.json` for error-handling density (`try|catch|throw` counts per file). `call-graph.json` for validator-like function fan-in (high fan-in on `validate*`/`normalize*`/`assert*` = cohesive; scattered use = diffuse).
-**LLM judgment:** yes — cross-cut identification requires reading names + call sites.
+**Evidence sources:** source inspection, with `call-graph.json.callFanInByIdentity` or `topCallees[]` as supplementary call-site cues when the validator identity is known. `discipline.json` does not count `try`, `catch`, or `throw`.
+**LLM judgment:** yes — cross-cut identification requires reading names, implementations, and call sites.
 
 ### C4. 상태 변경은 단일 진입점 또는 예측 가능한 경로를 통하는가?
 
-**Evidence sources:** `call-graph.json` — look for `Map.prototype.set` / `Set.prototype.add` / direct assignment to module-level `let` bindings. Multiple writers to the same global = ❌ fix.
-**LLM judgment:** yes — static analysis can find writers but intent (single-writer-by-design) needs review.
+**Evidence sources:** dedicated source/dataflow inspection. Current `call-graph.json` records call edges and fan-in; it does not enumerate `Map.prototype.set`, `Set.prototype.add`, or assignments to module-level bindings.
+**LLM judgment:** yes — list concrete writer sites first, then judge whether the state has one intentional mutation entrypoint.
 
 ### C5. 모듈 경계가 lint, import rule, build rule 등으로 실제 강제되고 있는가?
 
@@ -252,7 +303,7 @@ inputs are available. If an optional artifact is still absent, `[확인
 ### C7. 배럴 파일이 import amplification을 일으키고 있지 않은가?
 
 - **Primary source**: `checklist-facts.json.C7_barrel_amplification` (fields: `gate`, `worstCompliance`, `byPackage[]`).
-- **Supplementary**: `symbols.json.reExportsByFile` for non-workspace barrel candidates (a file re-exporting ≥ 10 symbols from ≥ 5 siblings, imported by ≥ 3 consumers = barrel-bomb candidate).
+- **Supplementary**: `symbols.json.reExportsByFile` for non-workspace re-export surfaces. Consumer counts require a separate identity/edge join; `reExportsByFile` alone does not prove import amplification.
 - **Cite the value**: `[grounded, checklist-facts.json.C7_barrel_amplification.worstCompliance = 0.32]`.
 - **Context check (Rule 6)**: Node ESM has no tree-shake → barrel bombs have a real cold-start cost. Monorepo with single-package mode legitimately returns `gate: ok` (no workspace barrels to discipline). In TypeScript bundled output, barrel cost is sometimes eliminated by downstream bundler — state which.
 
@@ -268,12 +319,12 @@ inputs are available. If an optional artifact is still absent, `[확인
 
 ### D1. 타입 조임과 인터페이스 계약은 안정적인가?
 
-**Evidence sources:** `discipline.json.anyTypes`, `tsIgnoreCount`, `tsExpectErrorCount`. `level2-methods.json.envDiagnostic.epistemicNote` flags missing `@types/*` installs that inflate any-typed counts.
+**Evidence sources:** `discipline.json.totals[":any"]`, `totals["as any"]`, `totals["as unknown as"]`, `totals["@ts-ignore"]`, `totals["@ts-expect-error"]`, and offender lists. These are regex-supported counts. `level2-methods.json.meta.envDiagnostic.epistemicNote` applies only to that artifact's `anyTyped` method-resolution classification; missing `@types/*` does not inflate `discipline.json` source-text counts.
 **JS-only repos:** D1 reduces to "do scripts converge on a documented shape across files?" — check for shared vocab / schema modules and JSON/artifact schema parsers.
 
 ### D2. 인터페이스, 타입 가드, 제네릭은 필요한 만큼만 사용되고 있는가?
 
-**Evidence sources:** LLM judgment + `symbols.json.deadProdList` filtered to `kind: TSInterfaceDeclaration | TSTypeAliasDeclaration`. Unused type exports = over-spec.
+**Evidence sources:** LLM judgment + `symbols.json.deadProdList` filtered to `kind: TSInterfaceDeclaration | TSTypeAliasDeclaration`. These are over-spec candidates, not proof; public API and intentional type/predicate pairs still require review.
 **Related:** see FP-06 (type + predicate partner pattern) — don't flag intentional type/predicate pairs.
 
 ### D3. 네이밍, 규칙, 표현 방식은 일관적인가?
@@ -283,8 +334,8 @@ inputs are available. If an optional artifact is still absent, `[확인
 
 ### D4. 암묵 계약, 숨겨진 임포트, 초기화 순서 의존성 같은 비가시적 결합이 존재하지 않는가?
 
-**Evidence sources:** `call-graph.json.semiDeadList[]` can surface imports kept for side effects only. `topology.json.sccs[]` at the module-init layer reveals cycles that encode initialization order.
-**LLM judgment:** yes — side-effect-only imports are sometimes intentional (polyfills, registrations); need context.
+**Evidence sources:** `call-graph.json.semiDeadList[]` surfaces named/default value imports with no observed use; it does not contain side-effect-only imports. Internal side-effect edges may appear in `symbols.json.resolvedInternalEdges[]` with `kind: "import-side-effect"`. `topology.json.sccs[]` reveals module cycles but not execution order by itself.
+**LLM judgment:** yes — inspect source imports and initialization behavior; polyfills and registrations are often intentional.
 
 ### D5. 상태에 따라 존재 여부가 달라지는 필드가 optional로 뭉뚱그려져 있지는 않은가? (discriminated union으로 좁힐 수 있는가?)
 
@@ -303,18 +354,18 @@ inputs are available. If an optional artifact is still absent, `[확인
 ### E1. 방어 코드는 필요한 경계에만 최소한으로 존재하는가? 호출부마다 중복 방어가 반복되고 있지는 않은가?
 
 **Evidence sources:** AST scan for `try/catch` + `??`/`||` fallback chains. Repeated `a ?? defaultA; b ?? defaultB; ...` across call sites = defensive noise.
-**Gate:** `grep -c "try {" *.mjs` vs genuine external boundaries → if inside-file try/catch outnumbers boundary-facing ones 2:1, ❌ fix.
+**Interpretation:** count and classify candidate sites, but do not invent a ratio gate. Probe, optional-input, and trust-boundary catches have different meanings.
 
 ### E2. catch는 에러를 삼키지 않고 적절히 전파, 기록, 표면화하고 있는가?
 
 - **Primary source**: `checklist-facts.json.E2_silent_catch` (fields: `gate`, `analysis`, `count`, `sites[]`, `nonEmptyAnonymousCount`, `nonEmptyAnonymousSites[]`, `unusedParamCount`, `unusedParamSites[]`).
 - **Supplementary**: open each site to judge probe-vs-logic (see Context check below).
 - **Cite the value**: `[grounded, checklist-facts.json.E2_silent_catch.count = 11, nonEmptyAnonymousCount = 2, unusedParamCount = 1, analysis = oxc-ast-catch-clause, sites = [ ... first 3 ... ]]`.
-- **Context check (Rule 6)**: the raw count includes intentional fs / JSON-parse probes (e.g., `try { statSync(p) } catch {}` in `_lib/paths.mjs`-style helpers). Count probe catches separately before deciding the gate — "11 total, 9 are probes + 2 real logic catches" usually stays ⚠ watch, not ❌ fix. Non-empty `catch { ... }` sites do not inflate the empty silent count, but they are still watch evidence because they discard the error identity. Upgrade to fix only when >3 catches sit in non-probe positions.
+- **Context check (Rule 6)**: the raw count includes intentional fs / JSON-parse probes (e.g., `try { statSync(p) } catch {}` in `_lib/paths.mjs`-style helpers). Count probe catches separately before deciding the gate — "11 total, 9 are probes + 2 real logic catches" usually stays ⚠ watch, not ❌ fix. Non-empty `catch { ... }` sites do not inflate the empty silent count, but they are still watch evidence because they discard the error identity. Upgrade to fix when required workflow, persisted state, or security failures are hidden; raw count alone is not the criterion.
 
 ### E3. fallback, graceful degradation, silent recovery가 버그 은닉 장치로 작동하고 있지는 않은가?
 
-**Evidence sources:** LLM judgment + `discipline.json` `catch` density. A catch block that `return null` / `return []` without logging is a candidate hider.
+**Evidence sources:** source inspection plus `checklist-facts.json.E2_silent_catch` as a nearby cue. `discipline.json` does not expose catch density. A catch block that returns `null` or `[]` without surfacing required-workflow failure is a candidate hider.
 **Cue:** the fallback path has no telemetry — error is just lost.
 
 ### E4. catch가 에러의 실제 원인과 다른 코드/메시지로 재분류하고 있지는 않은가? (권한 오류를 '파일 없음'으로 보고 등)
@@ -329,7 +380,7 @@ inputs are available. If an optional artifact is still absent, `[확인
 
 ### E6. 비동기 흐름에서 에러가 삼켜지지 않는가? (fire-and-forget Promise, unhandled rejection)
 
-**Evidence sources:** AST scan for `CallExpression` that returns a Promise, NOT inside `await` / `.then(...)` / `.catch(...)` / `return`. Typical finder: grep for standalone `.foo()` calls where `foo` is async.
+**Evidence sources:** `@typescript-eslint/no-floating-promises` and `no-misused-promises` when configured. Otherwise use a type-aware source review; syntax-only grep cannot reliably know which calls return promises.
 **Related:** `process.on('unhandledRejection')` present? If not, Node will warn at runtime; if yes, is it doing more than logging?
 
 ---
@@ -349,8 +400,8 @@ inputs are available. If an optional artifact is still absent, `[확인
 
 ### F2. 테스트는 happy path뿐 아니라 엣지 케이스, 실패 케이스, 계약 위반 상황까지 포함하고 있는가?
 
-**Evidence sources:** `runtime-evidence.json` if coverage is available — branch coverage < 70% on critical modules → ❌ fix. Test file inventory: `tests/README.md` (generated) lists suites + per-suite description.
-**Cue:** per-module test suite with < 5 assertions → likely happy-path-only.
+**Evidence sources:** `runtime-evidence.json` only classifies coverage for ranked dead-symbol candidates; it does not emit general branch-coverage percentages. Use the repository's native coverage report for line/branch coverage, and read tests for realistic success, edge, and hard-stop behavior. `tests/README.md` is an inventory, not coverage proof.
+**Cue:** assertion count alone does not establish test quality. Read whether the assertions exercise product contracts and failure paths.
 
 ### F3. 테스트가 구현 세부사항이 아니라 동작/계약을 검증하고 있는가? (내부 리팩터링 시 테스트가 같이 깨지면 구현에 결합된 것)
 
@@ -364,15 +415,82 @@ inputs are available. If an optional artifact is still absent, `[확인
 
 ---
 
+## G. Security, dependencies & operations
+
+Current lumin artifacts do not ground this section. Use dedicated tools and
+source review; report missing tool output as `[unknown]`.
+
+### G1. 외부 입력은 신뢰 경계에서 파싱·검증·정규화되는가?
+
+**Evidence sources:** source inspection plus the repository's schema validators
+and negative tests. Identify the actual boundary: CLI/stdin, HTTP, filesystem,
+environment, subprocess, or deserialized artifact.
+
+### G2. 인젝션, path traversal, 비밀값 노출 표면이 없는가?
+
+**Evidence sources:** dedicated security tooling and source review. Trace
+untrusted values into query construction, shell/process arguments, paths,
+HTML/DOM sinks, logs, artifacts, and client bundles.
+
+### G3. 의존성·락파일·버전 정책은 건강한가?
+
+**Evidence sources:** package-manager audit output, Renovate/Dependabot, license
+policy, and lockfile review. Lumin's unused-dependency artifact is review
+evidence only; it is not a vulnerability or license scanner.
+
+### G4. 장애·재시도·성능 병목이 관측 가능한가?
+
+**Evidence sources:** structured logs, traces, producer-performance artifacts,
+and failure-path tests. Quiet retry loops and fallback without telemetry belong
+in E as well.
+
+**Section G summary**: `[severity] — [one-sentence security/operations characterization]`.
+
+---
+
+## H. Ceremony & excess contracts
+
+This section counterbalances D. Types, schemas, owners, and adapters are useful
+only when they enforce a real invariant or physical boundary.
+
+### H1. 사용되지 않는 owner/contract/policy/type이 남아 있는가?
+
+**Evidence sources:** ranked dead evidence as a candidate list, then source and
+public-API review. `symbols.json.deadProdList` is not enough to delete a public
+contract.
+
+### H2. 단일 사용처 추상화와 배선 코드가 실작동 코드를 압도하는가?
+
+**Evidence sources:** call sites and the implementation diff. One caller is a
+cue, not a verdict; protocol, trust, process, worker, and unsafe boundaries may
+justify a single-use type or adapter.
+
+### H3. 규범이 canon lifecycle에 연결되어 있는가?
+
+Team-specific owner, naming, and shape rules should move through
+`canon-draft` → human promotion → `check-canon`. A prose-only preference is not
+a mechanically enforced contract.
+
+### H4. 이 계약을 삭제하면 무엇이 실제로 깨지는가?
+
+If deletion only removes a few forwarding declarations and no invariant,
+consumer, compatibility surface, or physical boundary fails, the contract is a
+ceremony candidate. Prove that with source and consumer evidence before
+removing it.
+
+**Section H summary**: `[severity] — [one-sentence ceremony/contract characterization]`.
+
+---
+
 ## Anti-pattern one-liners
 
 Quick scan — if any of these ring true, cite it at the top of the report before the per-item answers.
 
 | Pattern | Detection |
 |---|---|
-| God object / mega interface | single file > 800 LOC with > 6 top-level concerns |
+| God object / mega interface | oversized file plus several unrelated responsibilities confirmed from source |
 | Helper zoo | see A3 |
-| Hidden shared state | module-level mutable `let` written from ≥ 2 call sites |
+| Hidden shared state | module-level mutable state with multiple concrete writer sites confirmed by source/dataflow review |
 | Catch 후 무시 | see E2 |
 | Fallback으로 상태 덮음 | see E3 |
 | Shared shape drift | see B2 |
@@ -382,6 +500,9 @@ Quick scan — if any of these ring true, cite it at the top of the report befor
 | Feature envy | `call-graph.json.moduleCallCount` asymmetry |
 | Stringly-typed | see B2 |
 | Barrel bomb | see C7 |
+| Type laundering | unchecked `as` / `any` / non-null assertions cross a trust boundary |
+| Ceremony stack | owner/contract/policy/adapters outnumber the behavior they protect |
+| Ghost citation | a claim cites an artifact name but no field value or scan range |
 
 ---
 
@@ -390,7 +511,7 @@ Quick scan — if any of these ring true, cite it at the top of the report befor
 Answer these five before the full walk when time is short:
 
 1. **지금 당장 손댈 1순위는?** — pick the highest-severity `fix` item from sections C → E → A → B (in that order — boundary > failure > size > duplication).
-2. **전체 구조를 망가뜨리는 중심 병목?** — usually one of: SCC > 2 nodes, or god-file with cross-cutting concerns, or barrel bomb on a hot path.
+2. **전체 구조를 망가뜨리는 중심 병목?** — usually one of: a nontrivial production SCC, a god-file with cross-cutting concerns, or a barrel bomb on a hot path.
 3. **수정 반경 대비 효과가 가장 큰 지점?** — pick the `fix` item with lowest touched-file count per severity.
 4. **지금 고치지 않으면 이후 모든 변경 비용을 키우는 부분?** — boundary/contract drift items (C2 / D1 / B2).
 5. **요구사항이 살짝 바뀌면 어떤 모듈이 먼저 깨지는가?** — the one with highest cross-submodule method edges (`level2-methods.json.crossSubmoduleMethod`).
@@ -404,7 +525,7 @@ The final report MUST contain:
 - **HCA-1 — 30-second summary** (5 bullets, top anti-patterns if any)
 - **HCA-2 — Decision points table** (only `fix` items with bucket + 근거)
 - **HCA-3 — Evidence trail index** (artifact paths used)
-- **Body: A / B / C / D / E / F sections** in order, every item answered or labeled `unknown`
+- **Body: A / B / C / D / E / F / G / H sections** in order, every item answered or labeled `unknown`
 - **Correction log** — if the scan revealed a claim from a prior audit that no longer holds.
 
 Do not skip the unlabeled/unknown items. The purpose of the checklist is to make blind spots visible, not to cherry-pick.

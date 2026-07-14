@@ -3,7 +3,7 @@
 > **Role:** canonical naming, shape, helper, and module contract for the Rust source health track.
 > **Owner:** this file.
 > **Status:** M6 spine addition.
-> **Last updated:** 2026-06-24
+> **Last updated:** 2026-07-14
 
 ---
 
@@ -43,9 +43,13 @@ omits raw evidence, the product artifact must either expose the corresponding
 summary/example projection or mark the raw lane as available only through the
 compatibility CLI.
 Compact `AstSummary` also preserves an uncapped
-`compilerOracleOpaqueSurfaces` count. The unified analyzer uses that typed
-compact field to select targeted Cargo oracle paths, so Cargo semantic modes do
-not need to force the full raw AST lane merely to find macro/cfg opacity.
+`syntaxReviewOpaqueSurfaces` count. The unified artifact exposes it at
+`rust-analyzer-health.latest.json.summary.syntaxReviewOpaqueSurfaces` and the
+Rust protocol field is `syntax_review_opaque_surfaces`. There is no emitted
+`compilerOracleOpaqueSurfaces` JSON field; reviews must not cite that name. The
+unified analyzer uses the typed compact field to select targeted Cargo oracle
+paths, so Cargo semantic modes do not need to force the full raw AST lane merely
+to find macro/cfg opacity.
 Precise semantic-finding overlap with individual opaque surfaces remains a full
 diagnostic capability unless a compact typed overlap lane is added.
 
