@@ -86,6 +86,36 @@ function writeTextZeroFixture(root) {
   );
 }
 
+function writeReachableTestExportFixture(root) {
+  write(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "classify-test-export",
+      type: "module",
+      private: true,
+    }),
+  );
+  write(
+    root,
+    "tests/setup/server.js",
+    [
+      "export function usedServer() { return 1; }",
+      "export function unusedServer() { return 2; }",
+      "",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "tests/server.test.js",
+    [
+      "import { usedServer } from './setup/server.js';",
+      "usedServer();",
+      "",
+    ].join("\n"),
+  );
+}
+
 function buildAndClassify(root, output, classifyArgs = []) {
   run("build-symbol-graph.mjs", ["--root", root, "--output", output]);
   run("classify-dead-exports.mjs", [
@@ -99,6 +129,38 @@ function buildAndClassify(root, output, classifyArgs = []) {
 }
 
 describe("classify-dead-exports performance metadata", () => {
+  it(
+    "classifies unused exports inside reachable test modules when tests are included",
+    () => {
+      const root = fresh("vitest-classify-test-export-fx-");
+      const output = fresh("vitest-classify-test-export-out-");
+      try {
+        writeReachableTestExportFixture(root);
+        const artifact = buildAndClassify(root, output);
+        const testCandidate = artifact.proposal_C_remove_symbol?.find(
+          (candidate) =>
+            candidate.file === "tests/setup/server.js" &&
+            candidate.symbol === "unusedServer",
+        );
+
+        expect(testCandidate).toMatchObject({
+          file: "tests/setup/server.js",
+          symbol: "unusedServer",
+          fileInternalUses: 0,
+        });
+        expect(artifact.summary?.performance).toMatchObject({
+          productionDeadCandidates: 0,
+          testDeadCandidates: 1,
+          deadCandidatesTotal: 1,
+          deadCandidatesProcessed: 1,
+        });
+      } finally {
+        cleanup(root, output);
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   describe("default performance metadata", () => {
     let root;
     let output;

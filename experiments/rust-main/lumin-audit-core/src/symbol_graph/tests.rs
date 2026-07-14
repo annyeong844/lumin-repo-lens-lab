@@ -191,6 +191,60 @@ fn builds_strict_graph_from_raw_facts_once() -> Result<()> {
 }
 
 #[test]
+fn preserves_export_level_dead_candidates_from_reachable_test_files() -> Result<()> {
+    let root = "C:/repo";
+    let extraction = json!({
+        "pathTable": ["tests/setup/server.js", "tests/server.test.js"],
+        "fileIds": [0, 1],
+        "defIndex": [{
+            "filePathId": 0,
+            "definitions": {
+                "usedServer": {
+                    "name": "usedServer",
+                    "kind": "FunctionDeclaration",
+                    "line": 1,
+                },
+                "unusedServer": {
+                    "name": "unusedServer",
+                    "kind": "FunctionDeclaration",
+                    "line": 2,
+                },
+            },
+        }],
+        "fileData": [],
+        "parseErrorFileIds": [],
+    });
+    let source_use = json!({
+        "schemaVersion": "lumin-source-use-assembly-request.v1",
+        "root": root,
+        "records": [{
+            "recordId": "test-server-consumer",
+            "consumerFileId": 1,
+            "resolvedFileId": 0,
+            "fromSpec": "./setup/server.js",
+            "name": "usedServer",
+            "kind": "import",
+            "resolverStage": "resolved-internal",
+        }],
+    });
+    let mut graph = empty_graph();
+    graph["deadCandidates"]["testLikeFiles"] = json!(["tests/setup/server.js"]);
+
+    let artifact = build(root, extraction, source_use, graph)?;
+
+    assert_eq!(
+        artifact["fanInByIdentity"]["tests/setup/server.js::usedServer"],
+        1
+    );
+    assert_eq!(artifact["deadInProd"], 0);
+    assert_eq!(artifact["deadInTest"], 1);
+    assert_eq!(artifact["deadProdList"], json!([]));
+    assert_eq!(artifact["deadTestList"][0]["file"], "tests/setup/server.js");
+    assert_eq!(artifact["deadTestList"][0]["symbol"], "unusedServer");
+    Ok(())
+}
+
+#[test]
 fn shares_parent_path_table_with_embedded_source_use() -> Result<()> {
     let root = "C:/repo";
     let extraction = json!({

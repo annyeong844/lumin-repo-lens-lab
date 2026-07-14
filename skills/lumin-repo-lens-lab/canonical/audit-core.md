@@ -336,10 +336,21 @@ typed terminal source-use record before the Rust call. A malformed use or a
 failed record conversion is not a resolver fallback lane and must hard-stop the
 producer.
 
+Dead-export projection is identity-level for every included source file,
+including files reached from tests or entry setup. Rust emits production
+candidates as `symbols.json.deadProdList` and included test-like candidates as
+`symbols.json.deadTestList`; it must not reduce the test lane to a count-only
+summary. `classify-dead-exports.mjs` consumes the production list first and,
+when `includeTests` is true, appends the test list. Candidate-limit ordering
+therefore preserves production work while still making test-only dead exports
+review-visible. Its performance block records separate production and test
+input counts.
+
 The strict v2 cutover is atomic. There is no v1 adapter or dual-schema window.
 The current runtime bridge contract version and required feature set are owned
 by `_engine/lib/audit-core.mjs` and the Rust runtime-contract command. The strict
 contract requires `symbolGraphStrictRequestV2`,
+`symbolGraphDeadTestCandidates`,
 `sourceUseAssemblyDerivedReExportMaps`, and
 `sourceUseAssemblyTerminalRecordOutcomes`; an
 older helper or a helper missing either feature is rejected before execution.

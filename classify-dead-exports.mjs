@@ -99,9 +99,16 @@ function isTimeBudgetExceeded() {
   return timeBudgetMs > 0 && Date.now() - classifyStartedAt >= timeBudgetMs;
 }
 
-const allDeadCandidates = Array.isArray(symbolsData.deadProdList)
+const productionDeadCandidates = Array.isArray(symbolsData.deadProdList)
   ? symbolsData.deadProdList
   : [];
+const testDeadCandidates = includeTests === true && Array.isArray(symbolsData.deadTestList)
+  ? symbolsData.deadTestList
+  : [];
+const allDeadCandidates = [
+  ...productionDeadCandidates,
+  ...testDeadCandidates,
+];
 const candidateLimitApplied =
   configuredCandidateLimit !== null && allDeadCandidates.length > configuredCandidateLimit;
 const deadList = candidateLimitApplied
@@ -109,7 +116,8 @@ const deadList = candidateLimitApplied
   : allDeadCandidates;
 
 console.log(
-  `[classify] production dead candidates: ${deadList.length}` +
+  `[classify] dead export candidates: ${deadList.length} ` +
+  `(production=${productionDeadCandidates.length}, test=${testDeadCandidates.length})` +
   (candidateLimitApplied ? ` (limited from ${allDeadCandidates.length})` : ''),
 );
 if (candidateLimitApplied) {
@@ -775,6 +783,8 @@ const artifactRequest = {
   performance: {
     deadCandidatesTotal: allDeadCandidates.length,
     deadCandidatesProcessed: deadList.length,
+    productionDeadCandidates: productionDeadCandidates.length,
+    testDeadCandidates: testDeadCandidates.length,
     candidateLimit: configuredCandidateLimit,
     candidateLimitApplied,
     timeBudgetMs,

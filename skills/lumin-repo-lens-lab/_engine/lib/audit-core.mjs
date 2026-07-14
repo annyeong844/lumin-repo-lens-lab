@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v55';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v56';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -288,6 +288,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'sourceUseAssemblyDerivedReExportMaps',
   'sourceUseAssemblyTerminalRecordOutcomes',
   'symbolGraphStrictRequestV2',
+  'symbolGraphDeadTestCandidates',
   'generatedVirtualSourceUseAssembly',
   'importMetaGlobSourceUseAssembly',
   'sfcScriptSrcSourceUseAssembly',
@@ -1960,8 +1961,8 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.tool === 'build-symbol-graph.mjs' &&
       json.meta.schemaVersion === 3 &&
       json.meta.supports?.identityFanIn === true &&
-      json.files === 3 &&
-      json.totalDefs === 3 &&
+      json.files === 4 &&
+      json.totalDefs === 4 &&
       json.totalUsesResolved === 3 &&
       json.unresolvedUses === 3 &&
       json.uses?.resolvedInternal === 3 &&
@@ -1988,6 +1989,8 @@ function resultPayloadMatchesProbe(json, probe) {
       json.fanInByIdentity?.['src/a.ts::beta'] === 0 &&
       json.fanInByIdentity?.['src/a.ts::gamma'] === 1 &&
       json.deadProdList?.[0]?.symbol === 'beta' &&
+      json.deadTestList?.[0]?.file === 'tests/setup/server.js' &&
+      json.deadTestList?.[0]?.symbol === 'unusedTestServer' &&
       json.unresolvedInternalSummaryByReason?.['alias-miss']?.count === 1 &&
       json.unresolvedInternalSummaryByReason?.['workspace-generated-artifact-missing']?.count === 1;
   }

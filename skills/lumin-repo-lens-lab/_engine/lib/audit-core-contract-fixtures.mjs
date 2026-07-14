@@ -12,14 +12,23 @@ export function symbolGraphContractProbeRequest(root) {
       incremental: null,
     },
     extraction: {
-      pathTable: ['src/a.ts', 'src/b.ts', 'src/c.ts'],
-      fileIds: [0, 1, 2],
+      pathTable: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'tests/setup/server.js'],
+      fileIds: [0, 1, 2, 3],
       defIndex: [{
         filePathId: 0,
         definitions: {
           alpha: { name: 'alpha', kind: 'FunctionDeclaration', line: 1 },
           beta: { name: 'beta', kind: 'FunctionDeclaration', line: 2 },
           gamma: { name: 'gamma', kind: 'FunctionDeclaration', line: 3 },
+        },
+      }, {
+        filePathId: 3,
+        definitions: {
+          unusedTestServer: {
+            name: 'unusedTestServer',
+            kind: 'FunctionDeclaration',
+            line: 1,
+          },
         },
       }],
       fileData: [{
@@ -117,7 +126,7 @@ export function symbolGraphContractProbeRequest(root) {
       },
       deadCandidates: {
         barrelFiles: [],
-        testLikeFiles: [],
+        testLikeFiles: ['tests/setup/server.js'],
       },
       sfc: {
         styleAssetReferences: [],
