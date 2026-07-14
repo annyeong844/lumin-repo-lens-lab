@@ -5,11 +5,8 @@ import {
   collectSfcFrameworkConventionComponents,
   collectSfcGeneratedComponentManifests,
   collectSfcGlobalComponentRegistrations,
-  collectSfcImportConsumers,
-  collectSfcScriptSources,
-  collectSfcStyleAssetReferences,
-  collectSfcTemplateComponentRefs,
 } from "./sfc-consumers.mjs";
+import { extractSfcFileFacts } from "./sfc-file-facts.mjs";
 
 const SFC_PACKAGE_ROOTS = new Set([
   "astro",
@@ -18,6 +15,7 @@ const SFC_PACKAGE_ROOTS = new Set([
   "unplugin-vue-components",
   "vue",
 ]);
+const NUXT_COMPONENTS_ALIAS_SPEC = "#components";
 
 function packageRootFromSpecifier(spec) {
   if (
@@ -120,26 +118,18 @@ export function discoverSymbolGraphSfcFacts({
     exclude,
     files: sfcSourceFiles,
   };
-  const collectWhenSfcFilesExist = (phase, collect) =>
-    collectTimed(phaseTimer, phase, () =>
-      sfcSourceFiles.length > 0 ? collect(scopedCollectorInput) : [],
-    );
-
-  const scriptImportConsumers = collectWhenSfcFilesExist(
-    "collect-sfc-script-imports",
-    collectSfcImportConsumers,
+  const fileFacts = collectTimed(phaseTimer, "collect-sfc-file-facts", () =>
+    sfcSourceFiles.length > 0 ? extractSfcFileFacts(sfcSourceFiles) : [],
   );
-  const scriptSources = collectWhenSfcFilesExist(
-    "collect-sfc-script-src",
-    collectSfcScriptSources,
+  const scriptImportConsumers = fileFacts
+    .flatMap((file) => file.scriptImportConsumers)
+    .filter((record) => record.fromSpec !== NUXT_COMPONENTS_ALIAS_SPEC);
+  const scriptSources = fileFacts.flatMap((file) => file.scriptSources);
+  const styleAssetReferences = fileFacts.flatMap(
+    (file) => file.styleAssetReferences,
   );
-  const styleAssetReferences = collectWhenSfcFilesExist(
-    "collect-sfc-style-assets",
-    collectSfcStyleAssetReferences,
-  );
-  const templateComponentRefs = collectWhenSfcFilesExist(
-    "collect-sfc-template-component-refs",
-    collectSfcTemplateComponentRefs,
+  const templateComponentRefs = fileFacts.flatMap(
+    (file) => file.templateComponentRefs,
   );
   const globalComponentRegistrations = collectTimed(
     phaseTimer,

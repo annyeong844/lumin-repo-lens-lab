@@ -27,6 +27,7 @@ mod rank_fixes;
 mod resolver_diagnostics_artifacts;
 mod runtime_evidence;
 mod sarif;
+mod sfc_file_facts;
 mod shape_index;
 mod source_use_assembly;
 mod staleness;
@@ -61,6 +62,7 @@ use rank_fixes::*;
 use resolver_diagnostics_artifacts::*;
 use runtime_evidence::*;
 use sarif::*;
+use sfc_file_facts::*;
 use shape_index::*;
 use source_use_assembly::*;
 use staleness::*;
@@ -105,6 +107,7 @@ pub fn run() -> Result<()> {
         }
         Some("runtime-evidence-artifact") => run_runtime_evidence_artifact(args.collect()),
         Some("sarif-artifact") => run_sarif_artifact(args.collect()),
+        Some("sfc-file-facts-artifact") => run_sfc_file_facts_artifact(args.collect()),
         Some("shape-index-artifact") => run_shape_index_artifact(args.collect()),
         Some("source-use-assembly-artifact") => run_source_use_assembly_artifact(args.collect()),
         Some("staleness-artifact") => run_staleness_artifact(args.collect()),

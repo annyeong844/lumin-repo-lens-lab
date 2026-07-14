@@ -50,6 +50,7 @@ pub mod runtime_evidence;
 pub mod rust_analysis;
 pub mod sarif;
 pub mod scan_scope;
+pub mod sfc_file_facts;
 pub mod shape_index;
 mod source_commit;
 mod source_inventory;
