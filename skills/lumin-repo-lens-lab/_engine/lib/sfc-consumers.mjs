@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { collectFiles } from "./collect-files.mjs";
 import { JS_FAMILY_LANGS, SFC_FAMILY_LANGS } from "./lang.mjs";
+import { extractSfcFileFactsForSources } from "./sfc-file-facts.mjs";
 
 const require = createRequire(import.meta.url);
 let parseSync = null;
@@ -191,50 +192,6 @@ function extractTemplateBlocks(src, filePath) {
   return [];
 }
 
-function extractScriptSrcBlocks(src, filePath) {
-  const lang = sfcLanguageForFile(filePath);
-  if (lang !== "vue" && lang !== "svelte") return [];
-
-  const blocks = [];
-  const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-  let match;
-  while ((match = scriptRe.exec(src))) {
-    const attrs = match[1] ?? "";
-    const fromSpec = srcAttrValue(attrs);
-    if (!isRelativeSourceSpec(fromSpec)) continue;
-    blocks.push({
-      consumerFile: filePath,
-      fromSpec,
-      name: "*",
-      kind: "sfc-script-src",
-      typeOnly: false,
-      line: lineOf(src, match.index),
-      sfcBlockKind: `${lang}-script-src`,
-      sfcLanguage: lang,
-    });
-  }
-  return blocks;
-}
-
-function extractStyleBlocks(src, filePath) {
-  const lang = sfcLanguageForFile(filePath);
-  if (lang !== "vue" && lang !== "svelte" && lang !== "astro") return [];
-
-  const blocks = [];
-  const styleRe = /<style\b([^>]*)>([\s\S]*?)<\/style>/gi;
-  let match;
-  while ((match = styleRe.exec(src))) {
-    const contentStart = match.index + match[0].indexOf(match[2]);
-    blocks.push({
-      content: match[2],
-      startOffset: contentStart,
-      kind: `${lang}-style`,
-      sfcLanguage: lang,
-    });
-  }
-  return blocks;
-}
-
 function extractAstroFrontmatter(src) {
   const open = src.match(/^---\r?\n/);
   if (!open) return [];
@@ -277,197 +234,6 @@ function parseScriptAst(script, filePath, parserLang) {
   }
 
   return null;
-}
-
-function isCssIdentChar(ch) {
-  return /[A-Za-z0-9_-]/.test(ch);
-}
-
-function skipCssWhitespace(src, index) {
-  let i = index;
-  while (i < src.length && /\s/.test(src[i])) i++;
-  return i;
-}
-
-function skipCssString(src, index) {
-  const quote = src[index];
-  let i = index + 1;
-  while (i < src.length) {
-    if (src[i] === "\\") {
-      i += 2;
-      continue;
-    }
-    if (src[i] === quote) return i + 1;
-    i++;
-  }
-  return i;
-}
-
-function parseCssEscapeValue(src, index) {
-  if (src[index] !== "\\") return null;
-  let i = index + 1;
-  if (i >= src.length) return { value: "", end: i };
-
-  if (src[i] === "\r" && src[i + 1] === "\n") return { value: "", end: i + 2 };
-  if (src[i] === "\n" || src[i] === "\r" || src[i] === "\f")
-    return { value: "", end: i + 1 };
-
-  if (/[0-9A-Fa-f]/.test(src[i])) {
-    let hex = "";
-    while (i < src.length && hex.length < 6 && /[0-9A-Fa-f]/.test(src[i])) {
-      hex += src[i];
-      i++;
-    }
-    if (/\s/.test(src[i] ?? "")) i++;
-    const codePoint = Number.parseInt(hex, 16);
-    const validCodePoint =
-      Number.isFinite(codePoint) && codePoint > 0 && codePoint <= 0x10ffff;
-    return {
-      value: validCodePoint ? String.fromCodePoint(codePoint) : "\uFFFD",
-      end: i,
-    };
-  }
-
-  return { value: src[i], end: i + 1 };
-}
-
-function parseCssQuotedValue(src, index) {
-  const quote = src[index];
-  let i = index + 1;
-  let value = "";
-  while (i < src.length) {
-    if (src[i] === "\\") {
-      const escaped = parseCssEscapeValue(src, i);
-      value += escaped?.value ?? "";
-      i = escaped?.end ?? i + 1;
-      continue;
-    }
-    if (src[i] === quote) return { value, end: i + 1 };
-    value += src[i];
-    i++;
-  }
-  return null;
-}
-
-function parseCssUrlFunction(src, index) {
-  let i = index + 3;
-  if (isCssIdentChar(src[index - 1] ?? "") || isCssIdentChar(src[i] ?? ""))
-    return null;
-  i = skipCssWhitespace(src, i);
-  if (src[i] !== "(") return null;
-  i = skipCssWhitespace(src, i + 1);
-
-  let value = "";
-  if (src[i] === '"' || src[i] === "'") {
-    const parsed = parseCssQuotedValue(src, i);
-    if (!parsed) return null;
-    value = parsed.value;
-    i = skipCssWhitespace(src, parsed.end);
-    if (src[i] !== ")") return null;
-    return { value: value.trim(), end: i + 1 };
-  }
-
-  while (i < src.length && src[i] !== ")") {
-    if (src[i] === "\\") {
-      const escaped = parseCssEscapeValue(src, i);
-      value += escaped?.value ?? "";
-      i = escaped?.end ?? i + 1;
-      continue;
-    }
-    value += src[i];
-    i++;
-  }
-  if (src[i] !== ")") return null;
-  return { value: value.trim(), end: i + 1 };
-}
-
-function parseCssImportValue(src, index) {
-  let i = index + "@import".length;
-  if (isCssIdentChar(src[i] ?? "")) return null;
-  i = skipCssWhitespace(src, i);
-
-  if (src.slice(i, i + 3).toLowerCase() === "url") {
-    const parsed = parseCssUrlFunction(src, i);
-    return parsed ? { ...parsed, importSyntax: "url" } : null;
-  }
-
-  if (src[i] === '"' || src[i] === "'") {
-    const parsed = parseCssQuotedValue(src, i);
-    return parsed
-      ? { ...parsed, value: parsed.value.trim(), importSyntax: "string" }
-      : null;
-  }
-
-  return null;
-}
-
-function parseStyleAssetReferences(
-  style,
-  { filePath, fileSource, startOffset, blockKind, sfcLanguage },
-) {
-  const out = [];
-  let i = 0;
-  while (i < style.length) {
-    if (style[i] === "/" && style[i + 1] === "*") {
-      const end = style.indexOf("*/", i + 2);
-      i = end >= 0 ? end + 2 : style.length;
-      continue;
-    }
-
-    if (style[i] === '"' || style[i] === "'") {
-      i = skipCssString(style, i);
-      continue;
-    }
-
-    if (
-      style[i] === "@" &&
-      style.slice(i, i + "@import".length).toLowerCase() === "@import"
-    ) {
-      const parsed = parseCssImportValue(style, i);
-      if (parsed) {
-        if (isRelativeSourceSpec(parsed.value)) {
-          out.push({
-            consumerFile: filePath,
-            fromSpec: parsed.value,
-            kind: "sfc-style-import",
-            source: "sfc-style-import",
-            styleKind: "import",
-            importSyntax: parsed.importSyntax,
-            confidence: "grounded-asset-reference",
-            line: lineOf(fileSource, startOffset + i),
-            sfcBlockKind: blockKind,
-            sfcLanguage,
-          });
-        }
-        i = parsed.end;
-        continue;
-      }
-    }
-
-    if (style.slice(i, i + 3).toLowerCase() === "url") {
-      const parsed = parseCssUrlFunction(style, i);
-      if (parsed) {
-        if (isRelativeSourceSpec(parsed.value)) {
-          out.push({
-            consumerFile: filePath,
-            fromSpec: parsed.value,
-            kind: "sfc-style-url",
-            source: "sfc-style-url",
-            styleKind: "url",
-            confidence: "grounded-asset-reference",
-            line: lineOf(fileSource, startOffset + i),
-            sfcBlockKind: blockKind,
-            sfcLanguage,
-          });
-        }
-        i = parsed.end;
-        continue;
-      }
-    }
-
-    i++;
-  }
-  return out;
 }
 
 function importedName(specifier) {
@@ -1892,7 +1658,7 @@ function collectSfcNuxtComponentsAliasConventions({
     } catch {
       continue;
     }
-    for (const use of parseSfcImportConsumers(src, filePath)) {
+    for (const use of parseSfcImportConsumersForConvention(src, filePath)) {
       if (use.fromSpec !== NUXT_COMPONENTS_ALIAS_SPEC) continue;
       if (use.kind !== "import" || use.typeOnly) continue;
       if (NUXT_COMPONENTS_ALIAS_HELPER_EXPORTS.has(use.name)) continue;
@@ -2813,142 +2579,7 @@ function templateTagCandidates(tagName) {
   return pascal ? [pascal, tagName] : [];
 }
 
-function dynamicTemplateBindingName(tagName, attrs) {
-  const tag = `${tagName ?? ""}`.toLowerCase();
-  if (tag === "component") {
-    const match = `${attrs ?? ""}`.match(
-      /(?:^|\s)(?::is|v-bind:is)\s*=\s*(?:"([^"]+)"|'([^']+)')/i,
-    );
-    const value = match?.[1] ?? match?.[2] ?? "";
-    return /^[A-Za-z_$][\w$]*$/.test(value) ? value : null;
-  }
-  if (tag === "svelte:component") {
-    const match = `${attrs ?? ""}`.match(
-      /\bthis\s*=\s*\{\s*([A-Za-z_$][\w$]*)\s*\}/i,
-    );
-    return match?.[1] ?? null;
-  }
-  return null;
-}
-
-function templateRefRecord({
-  filePath,
-  tagName,
-  normalizedTagName,
-  binding,
-  line,
-  blockKind,
-  sfcLanguage,
-  templateKind,
-  status = "binding",
-  reason = null,
-  extra = {},
-}) {
-  return {
-    consumerFile: filePath,
-    tagName,
-    normalizedTagName,
-    bindingName: binding.bindingName,
-    bindingSource: binding.bindingSource,
-    fromSpec: binding.bindingSource,
-    bindingKind: binding.bindingKind,
-    ...(binding.importedName ? { importedName: binding.importedName } : {}),
-    source: "sfc-template-component-ref",
-    language: sfcLanguage,
-    templateKind,
-    confidence: status === "muted" ? "muted-review" : "binding-review",
-    eligibleForFanIn: false,
-    eligibleForSafeFix: false,
-    status,
-    ...(reason ? { reason } : {}),
-    line,
-    sfcBlockKind: blockKind,
-    ...extra,
-  };
-}
-
-function parseTemplateTags(
-  template,
-  { filePath, fileSource, startOffset, blockKind, sfcLanguage, bindings },
-) {
-  const out = [];
-  const cleaned = stripHtmlComments(template);
-  const tagRe = /<\s*([A-Za-z][A-Za-z0-9.:-]*)([^<>]*?)(?:\/?)>/g;
-  let match;
-  while ((match = tagRe.exec(cleaned))) {
-    const tagName = match[1];
-    const attrs = match[2] ?? "";
-    const line = lineOf(fileSource, startOffset + match.index);
-
-    const dynamicName = dynamicTemplateBindingName(tagName, attrs);
-    if (dynamicName) {
-      const binding =
-        bindings.imports.get(dynamicName) ??
-        bindings.exposedNames.get(dynamicName);
-      if (binding) {
-        out.push(
-          templateRefRecord({
-            filePath,
-            tagName,
-            normalizedTagName: dynamicName,
-            binding,
-            line,
-            blockKind,
-            sfcLanguage,
-            templateKind: "dynamic-component",
-            status: "muted",
-            reason: "sfc-template-dynamic-component",
-          }),
-        );
-      }
-      continue;
-    }
-
-    if (tagName.includes(".")) {
-      const [namespaceName, memberName] = tagName.split(".", 2);
-      const binding = bindings.namespaceImports.get(namespaceName);
-      if (binding && memberName) {
-        out.push(
-          templateRefRecord({
-            filePath,
-            tagName,
-            normalizedTagName: tagName,
-            binding,
-            line,
-            blockKind,
-            sfcLanguage,
-            templateKind: "namespace-component-tag",
-            status: "muted",
-            reason: "sfc-template-namespace-component",
-            extra: { memberName },
-          }),
-        );
-      }
-      continue;
-    }
-
-    for (const candidate of templateTagCandidates(tagName)) {
-      const binding = bindings.exposedNames.get(candidate);
-      if (!binding) continue;
-      out.push(
-        templateRefRecord({
-          filePath,
-          tagName,
-          normalizedTagName: candidate,
-          binding,
-          line,
-          blockKind,
-          sfcLanguage,
-          templateKind: "component-tag",
-        }),
-      );
-      break;
-    }
-  }
-  return out;
-}
-
-export function parseSfcImportConsumers(src, filePath = "<sfc>") {
+function parseSfcImportConsumersForConvention(src, filePath = "<sfc>") {
   const out = [];
   for (const block of extractScriptBlocks(src, filePath)) {
     out.push(
@@ -2965,21 +2596,7 @@ export function parseSfcImportConsumers(src, filePath = "<sfc>") {
 }
 
 export function parseSfcTemplateComponentRefs(src, filePath = "<sfc>") {
-  const out = [];
-  const bindings = collectScriptComponentBindings(src, filePath);
-  for (const block of extractTemplateBlocks(src, filePath)) {
-    out.push(
-      ...parseTemplateTags(block.content, {
-        filePath,
-        fileSource: src,
-        startOffset: block.startOffset,
-        blockKind: block.kind,
-        sfcLanguage: block.sfcLanguage,
-        bindings,
-      }),
-    );
-  }
-  return out;
+  return rustFileFacts(src, filePath).templateComponentRefs;
 }
 
 export function parseSfcGlobalComponentRegistrations(
@@ -3009,23 +2626,27 @@ export function parseSfcGeneratedComponentManifests(
 }
 
 export function parseSfcScriptSources(src, filePath = "<sfc>") {
-  return extractScriptSrcBlocks(src, filePath);
+  return rustFileFacts(src, filePath).scriptSources;
 }
 
 export function parseSfcStyleAssetReferences(src, filePath = "<sfc>") {
-  const out = [];
-  for (const block of extractStyleBlocks(src, filePath)) {
-    out.push(
-      ...parseStyleAssetReferences(block.content, {
-        filePath,
-        fileSource: src,
-        startOffset: block.startOffset,
-        blockKind: block.kind,
-        sfcLanguage: block.sfcLanguage,
-      }),
-    );
+  return rustFileFacts(src, filePath).styleAssetReferences;
+}
+
+export function parseSfcImportConsumers(src, filePath = "<sfc>") {
+  return rustFileFacts(src, filePath).scriptImportConsumers;
+}
+
+function rustFileFacts(src, filePath) {
+  if (!SFC_FAMILY_LANGS.includes(sfcLanguageForFile(filePath))) {
+    return {
+      scriptImportConsumers: [],
+      scriptSources: [],
+      styleAssetReferences: [],
+      templateComponentRefs: [],
+    };
   }
-  return out;
+  return extractSfcFileFactsForSources([{ filePath, source: src }])[0];
 }
 
 export function collectSfcImportConsumers({

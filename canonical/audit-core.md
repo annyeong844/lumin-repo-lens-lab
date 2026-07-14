@@ -197,13 +197,32 @@ It returns discovery facts and cache observations to `build-symbol-graph.mjs`.
 It must not resolve import specifiers, mutate graph fan-in, classify dead
 exports, construct source-use graph evidence, or project `symbols.json`.
 
-`_lib/symbol-graph-sfc-discovery.mjs` owns SFC framework-signal detection and
-the orchestration of the checked SFC collectors. It returns raw script-import,
-script-src, style-asset, template-ref, global-registration,
-generated-manifest, and framework-convention facts plus collection telemetry.
-It must not resolve those facts, assign graph status/reason fields, construct
-source-use records, or project SFC artifact rows. Those deterministic
-resolution-linked projections remain Rust-owned by `symbol_graph/sfc.rs`.
+`experiments/rust-main/lumin-audit-core/src/sfc_file_facts/` owns
+deterministic per-file SFC fact extraction from caller-supplied source text:
+Vue/Svelte script blocks and Astro frontmatter, static script imports,
+relative `<script src>`, relative style `url()`/`@import` references, and
+template component bindings grounded in those script imports. The strict
+`lumin-sfc-file-facts-request.v1` request carries the complete scoped SFC file
+set and exact source text; Rust must not walk the repository, resolve a
+specifier, or infer repository-level framework conventions. A malformed
+request, parser failure, duplicate/missing per-file result, or malformed result
+is a producer failure. JS must not retry the file with an alternate SFC
+classifier or convert the failure into empty facts.
+
+`_lib/symbol-graph-sfc-discovery.mjs` owns SFC framework-signal detection,
+source loading for the already-scoped SFC file list, one batched invocation of
+the Rust SFC file-fact owner, and orchestration of the remaining checked
+repository-level SFC collectors. It returns raw script-import, script-src,
+style-asset, template-ref, global-registration, generated-manifest, and
+framework-convention facts plus collection telemetry. It must not parse SFC
+file contents, resolve those facts, assign graph status/reason fields,
+construct source-use records, or project SFC artifact rows. Repository-level
+Nuxt/Vue/Svelte/Astro convention discovery remains in the checked JS collector
+until a later owner migration removes that lane in full. Deterministic
+resolution-linked projections remain Rust-owned by `symbol_graph/sfc.rs`. The
+JS convention owner excludes Nuxt `#components` imports from the ordinary
+script-consumer lane because it materializes them as framework-convention
+evidence instead.
 
 `_lib/symbol-graph-sfc-inputs.mjs` is the raw-fact transport boundary between
 SFC discovery and the strict Rust symbol-graph request. It may copy checked

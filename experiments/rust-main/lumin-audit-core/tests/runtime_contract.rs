@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v52"
+        "audit-core-js-runtime-bridge.v53"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -40,6 +40,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         true
     );
     assert_eq!(contract["features"]["jsTsExtractLocalOperations"], true);
+    assert_eq!(contract["features"]["sfcFileFacts"], true);
     assert_eq!(contract["features"]["jsTsPreWriteEvidence"], true);
     assert_eq!(contract["features"]["jsTsPreWriteDiscovery"], true);
     assert_eq!(contract["features"]["jsTsPreWriteIncrementalCache"], true);
@@ -131,6 +132,9 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         .any(|item| item == "js-ts-pre-write-evidence"));
     assert!(supported
         .iter()
+        .any(|item| item == "sfc-file-facts-artifact"));
+    assert!(supported
+        .iter()
         .any(|item| item == "execute-audit-lifecycle"));
 
     let result_output = contract["resultOutputSubcommands"]
@@ -142,6 +146,9 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     assert!(result_output
         .iter()
         .any(|item| item == "js-ts-pre-write-evidence"));
+    assert!(result_output
+        .iter()
+        .any(|item| item == "sfc-file-facts-artifact"));
     assert!(result_output
         .iter()
         .any(|item| item == "execute-audit-lifecycle"));

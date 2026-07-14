@@ -146,6 +146,10 @@ const AUDIT_CORE_CONTRACT_PROBES = [
     'js-ts-extract-artifact: missing --input <path|->',
   ],
   [
+    ['sfc-file-facts-artifact'],
+    'sfc-file-facts-artifact: missing --input <path|->',
+  ],
+  [
     ['js-ts-pre-write-evidence'],
     'js-ts-pre-write-evidence: missing --input <path|->',
   ],
@@ -225,6 +229,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
   'resolver-diagnostics-artifacts',
   'runtime-evidence-artifact',
   'sarif-artifact',
+  'sfc-file-facts-artifact',
   'shape-index-artifact',
   'source-use-assembly-artifact',
   'staleness-artifact',
@@ -235,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v52';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v53';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -247,6 +252,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsExtractDynamicImportOpacity',
   'jsTsExtractPathBackedInput',
   'jsTsExtractLocalOperations',
+  'sfcFileFacts',
   'jsTsPreWriteEvidence',
   'jsTsPreWriteDiscovery',
   'jsTsPreWriteIncrementalCache',
@@ -558,6 +564,7 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
   const exportActionSafetyInputPath = path.join(tempDir, 'export-action-safety-artifact.json');
   const functionClonesInputPath = path.join(tempDir, 'function-clones-artifact.json');
   const jsTsExtractInputPath = path.join(tempDir, 'js-ts-extract-artifact.json');
+  const sfcFileFactsInputPath = path.join(tempDir, 'sfc-file-facts-artifact.json');
   const jsTsPreWriteInputPath = path.join(tempDir, 'js-ts-pre-write-evidence.json');
   const moduleReachabilityInputPath = path.join(tempDir, 'module-reachability-artifact.json');
   const rankFixesInputPath = path.join(tempDir, 'rank-fixes-artifact.json');
@@ -947,6 +954,23 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
         {
           filePath: path.join(rootDir, 'src', 'consumer.mjs'),
           artifactFilePath: 'src/consumer.mjs',
+        },
+      ],
+    }));
+    writeFileSync(sfcFileFactsInputPath, JSON.stringify({
+      schemaVersion: 'lumin-sfc-file-facts-request.v1',
+      files: [
+        {
+          filePath: 'src/App.vue',
+          source: [
+            '<template><ProbeCard /><UI.Panel /></template>',
+            '<script setup lang="ts">',
+            'import ProbeCard from "./ProbeCard.vue";',
+            'import * as UI from "./ui";',
+            '</script>',
+            '<script src="./setup.ts"></script>',
+            '<style>@import "./theme.css";</style>',
+          ].join('\n'),
         },
       ],
     }));
@@ -1620,6 +1644,11 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
         requiresArtifactReads: false,
       },
       {
+        subcommand: 'sfc-file-facts-artifact',
+        args: ['sfc-file-facts-artifact', '--input', sfcFileFactsInputPath],
+        requiresArtifactReads: false,
+      },
+      {
         subcommand: 'js-ts-pre-write-evidence',
         args: ['js-ts-pre-write-evidence', '--input', jsTsPreWriteInputPath],
         requiresArtifactReads: false,
@@ -2047,6 +2076,30 @@ function resultPayloadMatchesProbe(json, probe) {
         operation?.operationFamily === 'read-query' &&
         Array.isArray(operation?.domainTokens) &&
         operation.domainTokens.includes('probe')
+      );
+  }
+  if (probe.subcommand === 'sfc-file-facts-artifact') {
+    const file = json.files?.[0];
+    return json.schemaVersion === 'lumin-sfc-file-facts-response.v1' &&
+      file?.filePath === 'src/App.vue' &&
+      file.scriptImportConsumers?.some((row) =>
+        row?.fromSpec === './ProbeCard.vue' &&
+        row?.name === 'default' &&
+        row?.localName === 'ProbeCard'
+      ) &&
+      file.scriptSources?.some((row) =>
+        row?.fromSpec === './setup.ts' && row?.kind === 'sfc-script-src'
+      ) &&
+      file.styleAssetReferences?.some((row) =>
+        row?.fromSpec === './theme.css' && row?.kind === 'sfc-style-import'
+      ) &&
+      file.templateComponentRefs?.some((row) =>
+        row?.tagName === 'ProbeCard' && row?.bindingSource === './ProbeCard.vue'
+      ) &&
+      file.templateComponentRefs?.some((row) =>
+        row?.tagName === 'UI.Panel' &&
+        row?.memberName === 'Panel' &&
+        row?.reason === 'sfc-template-namespace-component'
       );
   }
   if (probe.subcommand === 'checklist-facts-artifact') {
