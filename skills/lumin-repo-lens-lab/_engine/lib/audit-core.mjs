@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v54';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v55';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -252,6 +252,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsExtractDynamicImportOpacity',
   'jsTsExtractPathBackedInput',
   'jsTsExtractLocalOperations',
+  'jsTsExtractVueGlobalComponentEvidence',
   'sfcFileFacts',
   'sfcFileConventionFacts',
   'jsTsPreWriteEvidence',
@@ -946,7 +947,7 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       filesWithParseErrors: [],
       filesWithReadErrors: [],
     }));
-    const jsTsExtractProbeSource = 'import { api, bare } from "./dep";\napi.foo();\nconst cjsApi = require("./cjs-api");\ncjsApi.run();\nconst { cjsExact } = require("./cjs-exact");\nrequire("./cjs-side-effect");\nrequire(target);\nexport const view = bare;\nexport const routes = import.meta.glob("./pages/*.ts");\nexport async function load(target) {\n  const mod = await import("web-tree-sitter");\n  Parser = mod.Parser;\n  const lazy = await import("./lazy");\n  lazy.boot();\n  await import(`./pages/${target}.ts`);\n  return import(target);\n}\nexport function buildProbeRepository() {\n  function getProbe() { return null; }\n}\nexports.probe = 1;\nmodule.exports.namedProbe = 2;\nexports[dynamicName] = 3;\nmodule.exports = { objectProbe: 4 };\nmodule.exports = makeExports();\n';
+    const jsTsExtractProbeSource = 'import { api, bare } from "./dep";\napi.foo();\nconst cjsApi = require("./cjs-api");\ncjsApi.run();\nconst { cjsExact } = require("./cjs-exact");\nrequire("./cjs-side-effect");\nrequire(target);\nexport const view = bare;\nexport const routes = import.meta.glob("./pages/*.ts");\nexport async function load(target) {\n  const mod = await import("web-tree-sitter");\n  Parser = mod.Parser;\n  const lazy = await import("./lazy");\n  lazy.boot();\n  await import(`./pages/${target}.ts`);\n  return import(target);\n}\nexport function buildProbeRepository() {\n  function getProbe() { return null; }\n}\nexports.probe = 1;\nmodule.exports.namedProbe = 2;\nexports[dynamicName] = 3;\nmodule.exports = { objectProbe: 4 };\nmodule.exports = makeExports();\nimport ProbeCard from "./ProbeCard.vue";\nconst app = createApp({});\napp.component("ProbeCard", ProbeCard);\n';
     writeFileSync(path.join(rootDir, 'src', 'consumer.mjs'), jsTsExtractProbeSource);
     writeFileSync(path.join(rootDir, 'src', 'dep.ts'), 'export const api = { foo() {} };\nexport const bare = 1;\nexport const escaped = bare as any;\nexport interface ProbeShape { id: string }\n');
     writeFileSync(jsTsExtractInputPath, JSON.stringify({
@@ -2013,6 +2014,9 @@ function resultPayloadMatchesProbe(json, probe) {
     const file = json.files?.[0];
     const uses = Array.isArray(file?.uses) ? file.uses : [];
     const localOperations = Array.isArray(file?.localOperations) ? file.localOperations : [];
+    const globalRegistrations = Array.isArray(file?.globalComponentRegistrations)
+      ? file.globalComponentRegistrations
+      : [];
     return json.schemaVersion === 'lumin-js-ts-extract-response.v1' &&
       isObject(file) &&
       file.filePath.endsWith(path.join('src', 'consumer.mjs')) &&
@@ -2107,6 +2111,19 @@ function resultPayloadMatchesProbe(json, probe) {
         operation?.operationFamily === 'read-query' &&
         Array.isArray(operation?.domainTokens) &&
         operation.domainTokens.includes('probe')
+      ) &&
+      globalRegistrations.some((registration) =>
+        registration?.registrationFile.endsWith(path.join('src', 'consumer.mjs')) &&
+        registration?.framework === 'vue' &&
+        registration?.api === 'app.component' &&
+        registration?.componentName === 'ProbeCard' &&
+        registration?.bindingName === 'ProbeCard' &&
+        registration?.bindingSource === './ProbeCard.vue' &&
+        registration?.fromSpec === './ProbeCard.vue' &&
+        registration?.status === 'registration-syntax' &&
+        registration?.source === 'sfc-global-component-registration' &&
+        registration?.eligibleForFanIn === false &&
+        registration?.eligibleForSafeFix === false
       );
   }
   if (probe.subcommand === 'sfc-file-facts-artifact') {

@@ -26,9 +26,9 @@ const MDX_FAMILY_LANGS = ["mdx"];
 
 export const SYMBOL_GRAPH_PRODUCER_ID = "symbols";
 export const SYMBOL_GRAPH_PRODUCER_VERSION = 1;
-export const SYMBOL_GRAPH_FACT_SCHEMA_VERSION = 5;
+export const SYMBOL_GRAPH_FACT_SCHEMA_VERSION = 6;
 export const SYMBOL_GRAPH_PARSER_IDENTITY =
-  "symbol-graph-extractors:v6-rust-js-dynamic-opacity";
+  "symbol-graph-extractors:v7-rust-vue-global-components";
 
 function isJsFamilyFile(filePath) {
   return JS_FAMILY_LANGS.includes(
@@ -165,6 +165,7 @@ function assembleFileData(nextCache) {
     cjsRequireOpacityCount: 0,
     classMethodCount: 0,
     localOperationCount: 0,
+    globalComponentRegistrationCount: 0,
   };
   for (const [filePath, entry] of Object.entries(nextCache.entries)) {
     if (entry.parseError || entry.defs === undefined) continue;
@@ -177,6 +178,8 @@ function assembleFileData(nextCache) {
     counts.cjsRequireOpacityCount += (entry.cjsRequireOpacity ?? []).length;
     counts.classMethodCount += (entry.classMethods ?? []).length;
     counts.localOperationCount += (entry.localOperations ?? []).length;
+    counts.globalComponentRegistrationCount +=
+      (entry.globalComponentRegistrations ?? []).length;
     fileData.set(filePath, {
       filePath,
       defs: entry.defs ?? [],
@@ -184,6 +187,8 @@ function assembleFileData(nextCache) {
       reExports: entry.reExports ?? [],
       classMethods: entry.classMethods ?? [],
       localOperations: entry.localOperations ?? [],
+      globalComponentRegistrations:
+        entry.globalComponentRegistrations ?? [],
       typeEscapes: entry.typeEscapes ?? [],
       loc: entry.loc ?? 0,
       dynamicImportOpacity: entry.dynamicImportOpacity ?? [],

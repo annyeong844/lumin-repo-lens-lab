@@ -37,6 +37,8 @@ pub struct JsTsExtractFileResult {
     pub class_methods: Vec<ClassMethodRecord>,
     pub local_operations: Vec<serde_json::Value>,
     pub type_escapes: Vec<TypeEscapeRecord>,
+    #[serde(default)]
+    pub global_component_registrations: Vec<VueGlobalComponentRegistration>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub function_signature_facts: Vec<FunctionSignatureFact>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -165,6 +167,40 @@ pub struct TypeEscapeRecord {
     pub normalized_code_shape: String,
     pub inside_exported_identity: Option<String>,
     pub occurrence_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VueGlobalComponentRegistration {
+    pub registration_file: String,
+    pub framework: String,
+    pub api: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub normalized_tag_names: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_spec: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub imported_name: Option<String>,
+    pub source: String,
+    pub status: String,
+    pub confidence: String,
+    pub eligible_for_fan_in: bool,
+    pub eligible_for_safe_fix: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub factory_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ambiguity_key: Option<String>,
+    pub line: usize,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]

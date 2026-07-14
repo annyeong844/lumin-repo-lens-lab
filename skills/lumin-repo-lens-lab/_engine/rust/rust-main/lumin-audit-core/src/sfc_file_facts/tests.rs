@@ -188,7 +188,7 @@ fn extracts_checked_per_file_framework_conventions() -> Result<()> {
         "</script>",
         "<script lang=\"ts\">",
         "import { writable } from 'svelte/store';",
-        "import { importedCount } from './stores';",
+        "import { importedCount, commentStore } from './stores';",
         "function localAction(node) { return { destroy() {} }; }",
         "const localConstAction = (node) => ({ destroy() {} });",
         "const localCount = writable(0);",

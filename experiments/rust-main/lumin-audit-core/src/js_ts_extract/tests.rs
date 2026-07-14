@@ -49,6 +49,116 @@ fn extract_shape_source(source: &str, artifact_file_path: &str) -> Result<JsTsEx
 }
 
 #[test]
+fn vue_global_component_registrations_preserve_checked_review_evidence() -> Result<()> {
+    let source = [
+        "import UserCard from './components/UserCard.vue';",
+        "import { AdminPanel } from './components/AdminPanel';",
+        "import SSRCard from './components/SSRCard.vue';",
+        "import ChainedCard from './components/ChainedCard.vue';",
+        "import MountedCard from './components/MountedCard.vue';",
+        "import PluginCard from './components/PluginCard.vue';",
+        "import DuplicateOne from './components/DuplicateOne.vue';",
+        "import DuplicateTwo from './components/DuplicateTwo.vue';",
+        "const dynamicName = 'DynamicCard';",
+        "const asyncLoader = () => import('./components/AsyncByLoader.vue');",
+        "const app = createApp({});",
+        "const ssrApp = createSSRApp({});",
+        "const chainedApp = createApp({}).use(router);",
+        "const mounted = createApp({}).mount('#app');",
+        "export default {",
+        "  install(pluginApp) {",
+        "    pluginApp.component('PluginCard', PluginCard);",
+        "  },",
+        "};",
+        "app.component('UserCard', UserCard);",
+        "app.component('admin-panel', AdminPanel);",
+        "ssrApp.component('SSRCard', SSRCard);",
+        "app.component('SharedGlobal', UserCard);",
+        "ssrApp.component('SharedGlobal', SSRCard);",
+        "chainedApp.component('ChainedCard', ChainedCard);",
+        "mounted.component('MountedCard', MountedCard);",
+        "app.component(dynamicName, UserCard);",
+        "app.component('FactoryCard', resolveComponent());",
+        "app.component('AsyncCard', defineAsyncComponent(() => import('./components/AsyncCard.vue')));",
+        "app.component('AsyncByLoader', defineAsyncComponent(asyncLoader));",
+        "app.component('DuplicateCard', DuplicateOne);",
+        "app.component('DuplicateCard', DuplicateTwo);",
+    ]
+    .join("\n");
+    let response =
+        extract_source_with_file_path("C:/repo/src/main.ts", &source, vec!["C:/repo/src/main.ts"])?;
+    let records = &response.files[0].global_component_registrations;
+
+    assert_eq!(records.len(), 13);
+    assert!(!records
+        .iter()
+        .any(|record| record.component_name.as_deref() == Some("MountedCard")));
+    let user_card = records
+        .iter()
+        .find(|record| record.component_name.as_deref() == Some("UserCard"))
+        .ok_or_else(|| anyhow::anyhow!("UserCard registration should be emitted"))?;
+    assert_eq!(user_card.binding_name.as_deref(), Some("UserCard"));
+    assert_eq!(
+        user_card.binding_source.as_deref(),
+        Some("./components/UserCard.vue")
+    );
+    assert!(user_card
+        .normalized_tag_names
+        .iter()
+        .any(|name| name == "user-card"));
+    assert_eq!(user_card.status, "registration-syntax");
+    assert!(!user_card.eligible_for_fan_in);
+    assert!(!user_card.eligible_for_safe_fix);
+
+    let dynamic = records
+        .iter()
+        .find(|record| {
+            record.component_name.is_none()
+                && record.reason.as_deref() == Some("sfc-global-component-name-dynamic")
+        })
+        .ok_or_else(|| anyhow::anyhow!("dynamic registration should be muted"))?;
+    assert_eq!(dynamic.binding_name.as_deref(), Some("UserCard"));
+    assert_eq!(dynamic.status, "muted");
+    assert!(records.iter().any(|record| {
+        record.component_name.as_deref() == Some("FactoryCard")
+            && record.reason.as_deref() == Some("sfc-global-component-value-unsupported")
+    }));
+
+    let async_literal = records
+        .iter()
+        .find(|record| record.component_name.as_deref() == Some("AsyncCard"))
+        .ok_or_else(|| anyhow::anyhow!("literal async registration should be emitted"))?;
+    assert_eq!(
+        async_literal.from_spec.as_deref(),
+        Some("./components/AsyncCard.vue")
+    );
+    assert_eq!(
+        async_literal.reason.as_deref(),
+        Some("sfc-global-component-async-factory")
+    );
+    assert!(records.iter().any(|record| {
+        record.component_name.as_deref() == Some("AsyncByLoader")
+            && record.reason.as_deref() == Some("sfc-global-component-async-factory-nonliteral")
+    }));
+
+    let duplicates = records
+        .iter()
+        .filter(|record| record.component_name.as_deref() == Some("DuplicateCard"))
+        .collect::<Vec<_>>();
+    assert_eq!(duplicates.len(), 2);
+    assert!(duplicates.iter().all(|record| {
+        record.status == "muted"
+            && record.reason.as_deref() == Some("sfc-global-component-duplicate-registration")
+            && record.ambiguity_key.as_deref() == Some("DuplicateCard")
+    }));
+    assert!(records.iter().any(|record| {
+        record.component_name.as_deref() == Some("PluginCard")
+            && record.api == "pluginApp.component"
+    }));
+    Ok(())
+}
+
+#[test]
 fn shape_hash_matches_checked_object_normalization() -> Result<()> {
     let file = extract_shape_source(
         "export interface User { id: string }\nexport type Same = { id: string };\n",

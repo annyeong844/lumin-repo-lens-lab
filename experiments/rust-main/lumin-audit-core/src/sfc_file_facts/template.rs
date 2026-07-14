@@ -327,15 +327,19 @@ fn collect_svelte_template_store_subscriptions(
             cursor = range.end.saturating_sub(block.start_offset);
             continue;
         }
-        if source[cursor..].starts_with("<!--") {
-            cursor = source[cursor + 4..]
-                .find("-->")
-                .map_or(source.len(), |offset| cursor + offset + 7);
-            continue;
-        }
-        let Some(relative_open) = source[cursor..].find('{') else {
+        let remaining = &source[cursor..];
+        let Some(relative_open) = remaining.find('{') else {
             break;
         };
+        if let Some(relative_comment) = remaining.find("<!--") {
+            if relative_comment < relative_open {
+                let comment_open = cursor + relative_comment;
+                cursor = source[comment_open + 4..]
+                    .find("-->")
+                    .map_or(source.len(), |offset| comment_open + offset + 7);
+                continue;
+            }
+        }
         let open = cursor + relative_open;
         let absolute_open = block.start_offset + open;
         if block
