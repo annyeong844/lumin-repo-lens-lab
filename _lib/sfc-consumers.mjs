@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { collectFiles } from "./collect-files.mjs";
-import { JS_FAMILY_LANGS, SFC_FAMILY_LANGS } from "./lang.mjs";
+import { extractRustJsFactsForSources } from "./extract-ts-rust-hybrid.mjs";
+import { SFC_FAMILY_LANGS } from "./lang.mjs";
 import { extractSfcFileFactsForSources } from "./sfc-file-facts.mjs";
 
 const require = createRequire(import.meta.url);
@@ -63,30 +64,6 @@ function filesForLanguages({
   });
 }
 
-function jsFamilyFiles({
-  root,
-  includeTests = true,
-  exclude = [],
-  files = null,
-}) {
-  if (Array.isArray(files)) {
-    const allowed = new Set(JS_FAMILY_LANGS);
-    return files.filter((filePath) => allowed.has(sfcLanguageForFile(filePath)));
-  }
-  return collectFiles(root, {
-    includeTests,
-    exclude,
-    languages: JS_FAMILY_LANGS,
-  });
-}
-
-const GLOBAL_COMPONENT_REGISTRATION_SOURCE_RE =
-  /(?:\.|\?\.)\s*component\s*\(|\[\s*["']component["']\s*\]\s*\(/;
-
-function mayContainGlobalComponentRegistration(src) {
-  return GLOBAL_COMPONENT_REGISTRATION_SOURCE_RE.test(`${src ?? ""}`);
-}
-
 function parseScriptAst(script, filePath, parserLang) {
   const parse = loadParseSync();
   const candidates = [parserLang || "ts"];
@@ -110,10 +87,6 @@ function parseScriptAst(script, filePath, parserLang) {
   }
 
   return null;
-}
-
-function importedName(specifier) {
-  return specifier?.imported?.name ?? specifier?.imported?.value ?? null;
 }
 
 function astPropertyName(node) {
@@ -170,108 +143,6 @@ function traverseAst(node, visit) {
   }
 }
 
-const VUE_APP_FACTORY_NAMES = new Set(["createApp", "createSSRApp"]);
-const VUE_APP_RETURNING_METHODS = new Set([
-  "component",
-  "directive",
-  "mixin",
-  "provide",
-  "use",
-]);
-
-function isVueAppFactoryCall(node) {
-  if (node?.type !== "CallExpression") return false;
-  const callee = node.callee;
-  const directName = identifierName(callee);
-  if (directName && VUE_APP_FACTORY_NAMES.has(directName)) return true;
-  const memberName = memberPropertyName(callee);
-  return !!memberName && VUE_APP_FACTORY_NAMES.has(memberName);
-}
-
-function isVueAppReturningExpression(node) {
-  if (isVueAppFactoryCall(node)) return true;
-  if (node?.type !== "CallExpression") return false;
-  const callee = node.callee;
-  if (callee?.type !== "MemberExpression") return false;
-  const methodName = memberPropertyName(callee);
-  if (!methodName || !VUE_APP_RETURNING_METHODS.has(methodName)) return false;
-  return isVueAppReturningExpression(callee.object);
-}
-
-function functionLikeFirstParamName(node) {
-  const params = node?.params;
-  if (!Array.isArray(params) || params.length === 0) return null;
-  return identifierName(params[0]);
-}
-
-function collectVueComponentReceivers(program) {
-  const out = new Set();
-  traverseAst(program, (node) => {
-    if (
-      node?.type === "VariableDeclarator" &&
-      isVueAppReturningExpression(node.init)
-    ) {
-      const name = identifierName(node.id);
-      if (name) out.add(name);
-      return;
-    }
-
-    if (
-      node?.type === "FunctionDeclaration" &&
-      identifierName(node.id) === "install"
-    ) {
-      const name = functionLikeFirstParamName(node);
-      if (name) out.add(name);
-      return;
-    }
-
-    if (node?.type === "Property" && astPropertyName(node) === "install") {
-      const value = node.value;
-      if (
-        value?.type === "FunctionExpression" ||
-        value?.type === "ArrowFunctionExpression"
-      ) {
-        const name = functionLikeFirstParamName(value);
-        if (name) out.add(name);
-      }
-    }
-  });
-  return out;
-}
-
-function collectImportBindings(program, src) {
-  const out = new Map();
-  for (const node of program.body ?? []) {
-    if (node?.type !== "ImportDeclaration") continue;
-    const fromSpec = node.source?.value;
-    if (typeof fromSpec !== "string" || fromSpec.length === 0) continue;
-    if (node.importKind === "type") continue;
-    for (const specifier of node.specifiers ?? []) {
-      if (specifier.importKind === "type") continue;
-      const bindingName = importLocalName(specifier);
-      if (!bindingName) continue;
-      if (
-        specifier.type !== "ImportDefaultSpecifier" &&
-        specifier.type !== "ImportSpecifier"
-      ) {
-        continue;
-      }
-      out.set(bindingName, {
-        bindingName,
-        bindingSource: fromSpec,
-        bindingKind:
-          specifier.type === "ImportDefaultSpecifier" ? "default" : "named",
-        importedName:
-          specifier.type === "ImportDefaultSpecifier"
-            ? "default"
-            : importedName(specifier),
-        line: lineOf(src, node.start),
-      });
-    }
-  }
-  return out;
-}
-
 function kebabFromPascal(value) {
   if (!/^[A-Z][A-Za-z0-9]*$/.test(value)) return null;
   return value
@@ -288,115 +159,6 @@ function normalizedGlobalComponentNames(componentName) {
   const kebab = kebabFromPascal(componentName);
   if (kebab) names.push(kebab);
   return [...new Set(names)];
-}
-
-function globalRegistrationRecord({
-  filePath,
-  api,
-  componentName = null,
-  binding = null,
-  fromSpec = null,
-  factoryKind = null,
-  ambiguityKey = null,
-  line,
-  status = "registration-syntax",
-  reason = null,
-}) {
-  const explicitFromSpec = binding?.bindingSource ?? fromSpec;
-  return {
-    registrationFile: filePath,
-    framework: "vue",
-    api,
-    ...(componentName
-      ? {
-          componentName,
-          normalizedTagNames: normalizedGlobalComponentNames(componentName),
-        }
-      : {}),
-    ...(binding
-      ? {
-          bindingName: binding.bindingName,
-          bindingSource: binding.bindingSource,
-          fromSpec: explicitFromSpec,
-          bindingKind: binding.bindingKind,
-          ...(binding.importedName
-            ? { importedName: binding.importedName }
-            : {}),
-        }
-      : explicitFromSpec
-        ? { fromSpec: explicitFromSpec }
-        : {}),
-    source: "sfc-global-component-registration",
-    status,
-    confidence: status === "muted" ? "muted-review" : "registration-review",
-    eligibleForFanIn: false,
-    eligibleForSafeFix: false,
-    ...(reason ? { reason } : {}),
-    ...(factoryKind ? { factoryKind } : {}),
-    ...(ambiguityKey ? { ambiguityKey } : {}),
-    line,
-  };
-}
-
-function importExpressionLiteralSource(node) {
-  if (node?.type !== "ImportExpression") return null;
-  return literalStringValue(node.source);
-}
-
-function asyncLoaderImportSource(node) {
-  if (
-    node?.type !== "ArrowFunctionExpression" &&
-    node?.type !== "FunctionExpression"
-  ) {
-    return null;
-  }
-  const direct = importExpressionLiteralSource(node.body);
-  if (direct) return direct;
-  if (node.body?.type !== "BlockStatement") return null;
-  for (const statement of node.body.body ?? []) {
-    if (statement?.type !== "ReturnStatement") continue;
-    const returned = importExpressionLiteralSource(statement.argument);
-    if (returned) return returned;
-  }
-  return null;
-}
-
-function defineAsyncComponentFactory(node) {
-  if (node?.type !== "CallExpression") return null;
-  if (identifierName(node.callee) !== "defineAsyncComponent") return null;
-  return {
-    factoryKind: "defineAsyncComponent",
-    fromSpec: asyncLoaderImportSource(node.arguments?.[0]),
-  };
-}
-
-function markDuplicateGlobalRegistrations(records) {
-  const byName = new Map();
-  for (const record of records) {
-    if (!record.componentName) continue;
-    if (!record.bindingName && !record.fromSpec) continue;
-    const key = `${record.api}:${record.componentName}`;
-    const group = byName.get(key) ?? [];
-    group.push(record);
-    byName.set(key, group);
-  }
-  const duplicateRecords = new Set(
-    [...byName.entries()]
-      .filter(([, group]) => group.length > 1)
-      .flatMap(([, group]) => group.map((record) => record)),
-  );
-  if (duplicateRecords.size === 0) return records;
-  return records.map((record) => {
-    if (!duplicateRecords.has(record)) return record;
-    if (!record.bindingName && !record.fromSpec) return record;
-    return {
-      ...record,
-      status: "muted",
-      confidence: "muted-review",
-      reason: "sfc-global-component-duplicate-registration",
-      ambiguityKey: record.componentName,
-    };
-  });
 }
 
 const GENERATED_COMPONENT_MANIFESTS = Object.freeze([
@@ -1431,89 +1193,6 @@ function parseGeneratedComponentManifestProgram(
   return out;
 }
 
-function parseGlobalComponentRegistrations(program, { filePath, fileSource }) {
-  const out = [];
-  const imports = collectImportBindings(program, fileSource);
-  const receivers = collectVueComponentReceivers(program);
-  if (receivers.size === 0) return out;
-
-  traverseAst(program, (node) => {
-    if (node?.type !== "CallExpression") return;
-    const callee = node.callee;
-    if (callee?.type !== "MemberExpression") return;
-    if (memberPropertyName(callee) !== "component") return;
-    const receiverName = identifierName(callee.object);
-    if (!receiverName || !receivers.has(receiverName)) return;
-
-    const args = node.arguments ?? [];
-    const componentName = literalStringValue(args[0]);
-    const asyncFactory = defineAsyncComponentFactory(args[1]);
-    const bindingName = identifierName(args[1]);
-    const binding = bindingName ? imports.get(bindingName) : null;
-    const line = lineOf(fileSource, node.start);
-    const api = `${receiverName}.component`;
-
-    if (!componentName) {
-      if (!binding) return;
-      out.push(
-        globalRegistrationRecord({
-          filePath,
-          api,
-          binding,
-          line,
-          status: "muted",
-          reason: "sfc-global-component-name-dynamic",
-        }),
-      );
-      return;
-    }
-
-    if (asyncFactory) {
-      out.push(
-        globalRegistrationRecord({
-          filePath,
-          api,
-          componentName,
-          fromSpec: asyncFactory.fromSpec,
-          factoryKind: asyncFactory.factoryKind,
-          line,
-          status: "muted",
-          reason: asyncFactory.fromSpec
-            ? "sfc-global-component-async-factory"
-            : "sfc-global-component-async-factory-nonliteral",
-        }),
-      );
-      return;
-    }
-
-    if (!binding) {
-      out.push(
-        globalRegistrationRecord({
-          filePath,
-          api,
-          componentName,
-          line,
-          status: "muted",
-          reason: "sfc-global-component-value-unsupported",
-        }),
-      );
-      return;
-    }
-
-    out.push(
-      globalRegistrationRecord({
-        filePath,
-        api,
-        componentName,
-        binding,
-        line,
-      }),
-    );
-  });
-
-  return markDuplicateGlobalRegistrations(out);
-}
-
 function pascalFromKebab(value) {
   if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(value)) return null;
   return value
@@ -1531,12 +1210,20 @@ export function parseSfcGlobalComponentRegistrations(
   src,
   filePath = "<source>",
 ) {
-  const program = parseScriptAst(src, filePath, parserLangFromFile(filePath));
-  if (!program) return [];
-  return parseGlobalComponentRegistrations(program, {
-    filePath,
-    fileSource: src,
-  });
+  const result = extractRustJsFactsForSources([
+    {
+      filePath,
+      artifactFilePath: filePath,
+      source: src,
+    },
+  ])[0];
+  if (result.error) return [];
+  if (!Array.isArray(result.globalComponentRegistrations)) {
+    throw new Error(
+      `js-ts-extract-artifact: ${filePath} result.globalComponentRegistrations must be an array`,
+    );
+  }
+  return result.globalComponentRegistrations;
 }
 
 export function parseSfcGeneratedComponentManifests(
@@ -1633,34 +1320,6 @@ export function collectSfcTemplateComponentRefs({
       continue;
     }
     out.push(...parseSfcTemplateComponentRefs(src, filePath));
-  }
-
-  return out;
-}
-
-export function collectSfcGlobalComponentRegistrations({
-  root,
-  includeTests = true,
-  exclude = [],
-  files = null,
-}) {
-  const out = [];
-  const sourceFiles = jsFamilyFiles({
-    root,
-    includeTests,
-    exclude,
-    files,
-  });
-
-  for (const filePath of sourceFiles) {
-    let src;
-    try {
-      src = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    if (!mayContainGlobalComponentRegistration(src)) continue;
-    out.push(...parseSfcGlobalComponentRegistrations(src, filePath));
   }
 
   return out;

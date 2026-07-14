@@ -138,6 +138,7 @@ const RUNTIME_FEATURES: &[&str] = &[
     "jsTsExtractDynamicImportOpacity",
     "jsTsExtractPathBackedInput",
     "jsTsExtractLocalOperations",
+    "jsTsExtractVueGlobalComponentEvidence",
     "sfcFileFacts",
     "sfcFileConventionFacts",
     "jsTsPreWriteEvidence",

@@ -4,7 +4,6 @@ import path from "node:path";
 import {
   collectSfcFrameworkConventionComponents,
   collectSfcGeneratedComponentManifests,
-  collectSfcGlobalComponentRegistrations,
 } from "./sfc-consumers.mjs";
 import { extractSfcFileFacts } from "./sfc-file-facts.mjs";
 
@@ -97,11 +96,26 @@ function collectTimed(phaseTimer, phase, collect) {
   }
 }
 
+function collectGlobalComponentRegistrations(scannedJsSourceFiles, fileData) {
+  const registrations = [];
+  for (const filePath of scannedJsSourceFiles) {
+    const facts = fileData.get(filePath);
+    if (!facts) continue;
+    if (!Array.isArray(facts.globalComponentRegistrations)) {
+      throw new Error(
+        `symbols rust-js extractor returned malformed globalComponentRegistrations for ${filePath}`,
+      );
+    }
+    registrations.push(...facts.globalComponentRegistrations);
+  }
+  return registrations;
+}
+
 export function discoverSymbolGraphSfcFacts({
   root,
   includeTests,
   exclude,
-  files,
+  scannedJsSourceFiles,
   sfcSourceFiles,
   fileData,
   repoMode,
@@ -139,12 +153,7 @@ export function discoverSymbolGraphSfcFacts({
     "collect-sfc-global-component-registrations",
     () =>
       frameworkSignalDetected
-        ? collectSfcGlobalComponentRegistrations({
-            root,
-            includeTests,
-            exclude,
-            files,
-          })
+        ? collectGlobalComponentRegistrations(scannedJsSourceFiles, fileData)
         : [],
   );
   const generatedComponentManifests = collectTimed(

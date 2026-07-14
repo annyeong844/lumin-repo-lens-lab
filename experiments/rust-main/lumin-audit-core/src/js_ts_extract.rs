@@ -12,6 +12,7 @@ mod protocol;
 mod shape_hash;
 mod surfaces;
 mod type_escape;
+mod vue_global_components;
 
 use anyhow::{bail, Result};
 use oxc_allocator::Allocator;
@@ -49,11 +50,12 @@ pub use protocol::{
     CjsExportExactRecord, CjsExportOpaqueRecord, CjsExportSurface, CjsRequireOpacityRecord,
     ClassMethodRecord, DefinitionRecord, DynamicImportOpacityRecord, JsTsExtractFileResult,
     JsTsExtractInputFile, JsTsExtractRequest, JsTsExtractResponse, ReExportRecord,
-    TypeEscapeRecord, UseRecord,
+    TypeEscapeRecord, UseRecord, VueGlobalComponentRegistration,
 };
 use shape_hash::collect_shape_hash_facts;
 use surfaces::{collect_class_method_surface, collect_pre_write_local_operation_surface};
 use type_escape::collect_type_escapes;
+use vue_global_components::collect_vue_global_component_registrations;
 
 pub const JS_TS_EXTRACT_REQUEST_SCHEMA_VERSION: &str = "lumin-js-ts-extract-request.v1";
 pub const JS_TS_EXTRACT_RESPONSE_SCHEMA_VERSION: &str = "lumin-js-ts-extract-response.v1";
@@ -199,6 +201,7 @@ fn empty_file_result(
         class_methods: Vec::new(),
         local_operations: Vec::new(),
         type_escapes: Vec::new(),
+        global_component_registrations: Vec::new(),
         function_signature_facts: Vec::new(),
         inline_pattern_occurrences: Vec::new(),
         inline_pattern_diagnostics: Vec::new(),
@@ -267,6 +270,8 @@ fn extract_file(
         &line_starts,
         &exported_identity_ranges,
     );
+    let global_component_registrations =
+        collect_vue_global_component_registrations(&parsed.program, file_path, &line_starts);
     let (shape_facts, shape_diagnostics) =
         collect_shape_hash_facts(&parsed.program, source, artifact_file_path, &line_starts);
     let function_signature_facts =
@@ -282,6 +287,7 @@ fn extract_file(
         class_methods,
         local_operations,
         type_escapes,
+        global_component_registrations,
         function_signature_facts,
         inline_pattern_occurrences: inline_patterns.occurrences,
         inline_pattern_diagnostics: inline_patterns.diagnostics,

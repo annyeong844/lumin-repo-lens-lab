@@ -209,7 +209,7 @@ const sfcDiscovery = discoverSymbolGraphSfcFacts({
   root: ROOT,
   includeTests: cli.includeTests,
   exclude: cli.exclude,
-  files,
+  scannedJsSourceFiles,
   sfcSourceFiles,
   fileData,
   repoMode,
