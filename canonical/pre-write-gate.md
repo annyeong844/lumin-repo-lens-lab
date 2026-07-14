@@ -268,6 +268,19 @@ Never run the full pipeline for a pre-write. Latency budget: < 5 seconds total i
 
 Pre-write output is consumed by Claude, not by the user. Structured for Claude to cite directly.
 
+The invocation-specific `pre-write-advisory.<invocationId>.json` is the complete
+current-run advisory and the authoritative cue/lookup surface. Production
+result-file lifecycle commands emit only a constant-shape terminal handoff:
+the invocation-specific path plus complete counts for cue cards, suppressed
+cues, lookups, unavailable evidence, drift, and planned type escapes. They must
+not stream one terminal row per candidate or lookup. Repository-sized terminal rendering can
+fill a caller pipe after the advisory files are complete and prevent the
+result-file caller from recovering the finished run. Agents read the
+invocation-specific JSON selectively when the handoff counts are non-zero.
+
+The expanded example below describes advisory content. It is not a requirement
+that the result-file command duplicate every row on stdout.
+
 ```
 ## pre-write advisory (canonical/pre-write-gate §5)
 

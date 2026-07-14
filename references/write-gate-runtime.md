@@ -50,6 +50,13 @@ verify:
 - the evidence artifact reports complete symbols, topology, and any-inventory
   metadata before an absence claim is made.
 
+The terminal output is intentionally a constant-shape handoff. It prints the
+invocation-specific advisory path and complete counts, not every cue or lookup.
+Read the named JSON selectively for details. If advisory files exist but the
+caller is still waiting, inspect the exact wrapper/helper provenance: a current
+runtime must not stream repository-sized advisory Markdown through the
+result-file process boundary.
+
 Missing `preWrite.rustEvidencePath` on the JS/TS route indicates a stale or
 incompatible runtime. Stop validation,
 identify the exact wrapper/package, and rebuild or reinstall it. Do not rerun a

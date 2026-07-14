@@ -166,13 +166,13 @@ pub(super) fn execute(
             ));
         }
     };
-    let markdown = format!("{}\n", render::markdown(&advisory));
     let stdout = match stdio {
-        ChildStdio::Capture => Some(markdown),
+        ChildStdio::Capture => Some(format!("{}\n", render::markdown(&advisory))),
         ChildStdio::Inherit => {
+            let handoff = format!("{}\n", render::handoff_markdown(&advisory));
             io::stdout()
-                .write_all(markdown.as_bytes())
-                .context("execute-js-pre-write: failed to write advisory Markdown")?;
+                .write_all(handoff.as_bytes())
+                .context("execute-js-pre-write: failed to write advisory handoff")?;
             None
         }
     };
