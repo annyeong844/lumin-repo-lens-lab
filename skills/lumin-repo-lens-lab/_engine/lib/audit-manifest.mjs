@@ -6,7 +6,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { runAuditCoreJson, runAuditCoreJsonResultFile } from './audit-core.mjs';
+import {
+  runAuditCoreJson,
+  runAuditCoreJsonResultFile,
+  windowsHostAuditCoreEvidenceTransport,
+} from './audit-core.mjs';
 
 function runManifestEvidenceCommand(command, label, root, outDir, {
   includeTests,
@@ -340,18 +344,19 @@ export function executeBaseRuntime(request) {
 }
 
 export function executeAuditLifecycle(request) {
-  if (lifecycleRequestNeedsInheritedStdin(request)) {
+  const prepared = withWindowsHostLifecycleEvidence(request);
+  if (lifecycleRequestNeedsInheritedStdin(prepared)) {
     return runJsonFileInputResultFileCommand(
       'execute-audit-lifecycle',
       'executeAuditLifecycle',
-      request,
+      prepared,
       { inheritStdin: true },
     );
   }
   return runJsonInputResultFileCommand(
     'execute-audit-lifecycle',
     'executeAuditLifecycle',
-    request,
+    prepared,
   );
 }
 
@@ -379,7 +384,7 @@ export function executeJsPreWriteLifecycle(request) {
   return runJsonInputResultFileCommand(
     'execute-js-pre-write',
     'executeJsPreWriteLifecycle',
-    request,
+    withWindowsHostEvidenceTransport(request),
   );
 }
 
@@ -387,8 +392,36 @@ export function executePostWriteLifecycle(request) {
   return runJsonInputResultFileCommand(
     'execute-post-write',
     'executePostWriteLifecycle',
-    request,
+    withWindowsHostEvidenceTransport(request),
   );
+}
+
+function withWindowsHostEvidenceTransport(request) {
+  if (!request || typeof request !== 'object') return request;
+  const hostEvidenceTransport = windowsHostAuditCoreEvidenceTransport({
+    root: request.root,
+    output: request.output,
+    incremental: request.incremental,
+  });
+  return hostEvidenceTransport ? { ...request, hostEvidenceTransport } : request;
+}
+
+function withWindowsHostLifecycleEvidence(request) {
+  if (!request || typeof request !== 'object') return request;
+  const preWrite = request.preWrite?.js
+    ? {
+        ...request.preWrite,
+        js: withWindowsHostEvidenceTransport(request.preWrite.js),
+      }
+    : request.preWrite;
+  const postWrite = request.postWrite?.request
+    ? {
+        ...request.postWrite,
+        request: withWindowsHostEvidenceTransport(request.postWrite.request),
+      }
+    : request.postWrite;
+  if (preWrite === request.preWrite && postWrite === request.postWrite) return request;
+  return { ...request, preWrite, postWrite };
 }
 
 export function applyLifecycleExitPolicy(request) {

@@ -1,4 +1,5 @@
 mod cache;
+mod host_transport;
 mod input;
 mod projection;
 mod protocol;
@@ -12,9 +13,10 @@ use serde_json::Value;
 
 pub use cache::JsTsPreWriteIncrementalRequest;
 pub use protocol::{
-    JsTsPreWriteEvidenceRequest, JsTsPreWriteSourceFile,
+    JsTsPreWriteEvidenceRequest, JsTsPreWriteHostTransport, JsTsPreWriteSourceFile,
     JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION,
     JS_TS_PRE_WRITE_EVIDENCE_RESPONSE_SCHEMA_VERSION,
+    JS_TS_PRE_WRITE_HOST_TRANSPORT_SCHEMA_VERSION,
 };
 
 pub struct JsTsPreWriteEvidenceRun {
@@ -47,4 +49,18 @@ pub fn start_js_ts_pre_write_evidence(
 
 pub fn build_js_ts_pre_write_evidence(request: JsTsPreWriteEvidenceRequest) -> Result<Value> {
     Ok(start_js_ts_pre_write_evidence(request)?.into_evidence())
+}
+
+pub(crate) fn collect_js_ts_pre_write_evidence(
+    request: JsTsPreWriteEvidenceRequest,
+    host_transport: Option<&JsTsPreWriteHostTransport>,
+    local_result_dir: &std::path::Path,
+    result_identity: &str,
+) -> Result<Value> {
+    match host_transport {
+        Some(transport) => {
+            host_transport::collect(request, transport, local_result_dir, result_identity)
+        }
+        None => Ok(start_js_ts_pre_write_evidence(request)?.into_evidence()),
+    }
 }

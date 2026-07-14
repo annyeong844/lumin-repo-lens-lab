@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use crate::js_ts_pre_write::{
-    start_js_ts_pre_write_evidence, JsTsPreWriteEvidenceRequest,
+    collect_js_ts_pre_write_evidence, JsTsPreWriteEvidenceRequest,
     JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION,
 };
 use crate::pre_write_intent::normalize_js_ts_intent_text;
@@ -53,36 +53,41 @@ pub(super) fn execute(
         .generated
         .as_deref()
         .context("execute-js-pre-write: generated must be provided")?;
-    let evidence = match start_js_ts_pre_write_evidence(JsTsPreWriteEvidenceRequest {
-        schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
-        root: request.root.clone(),
-        evidence_artifact: evidence_artifact.clone(),
-        any_inventory_artifact: inventory_artifact.clone(),
-        generated: generated.to_string(),
-        include_tests: request.include_tests,
-        excludes: request.excludes.clone(),
-        dependency_roots: intent
-            .get("dependencies")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .filter_map(package_root)
-            .map(str::to_string)
-            .collect(),
-        shape_type_literals: intent
-            .get("shapes")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|shape| shape.get("typeLiteral").and_then(Value::as_str))
-            .map(str::to_string)
-            .collect(),
-        discover_files: true,
-        files: Vec::new(),
-        incremental: request.incremental.clone(),
-    }) {
-        Ok(run) => run.into_evidence(),
+    let evidence = match collect_js_ts_pre_write_evidence(
+        JsTsPreWriteEvidenceRequest {
+            schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
+            root: request.root.clone(),
+            evidence_artifact: evidence_artifact.clone(),
+            any_inventory_artifact: inventory_artifact.clone(),
+            generated: generated.to_string(),
+            include_tests: request.include_tests,
+            excludes: request.excludes.clone(),
+            dependency_roots: intent
+                .get("dependencies")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .filter_map(package_root)
+                .map(str::to_string)
+                .collect(),
+            shape_type_literals: intent
+                .get("shapes")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|shape| shape.get("typeLiteral").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect(),
+            discover_files: true,
+            files: Vec::new(),
+            incremental: request.incremental.clone(),
+        },
+        request.host_evidence_transport.as_ref(),
+        &request.output,
+        invocation_id,
+    ) {
+        Ok(evidence) => evidence,
         Err(error) => {
             return Ok(failure_result(
                 &request,

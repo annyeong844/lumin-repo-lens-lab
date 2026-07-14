@@ -322,7 +322,7 @@ fn cli_execute_audit_lifecycle_blocks_mutex_before_routing_input_file_read() -> 
             "postWrite": {
                 "requested": true,
                 "request": {
-                    "schemaVersion": "lumin-post-write-lifecycle-request.v2",
+                    "schemaVersion": "lumin-post-write-lifecycle-request.v3",
                     "root": temp.path(),
                     "output": temp.path().join("out"),
                     "advisoryPath": null,
@@ -480,7 +480,7 @@ fn cli_execute_audit_lifecycle_replays_post_write_missing_advisory_stderr() -> R
             "postWrite": {
                 "requested": true,
                 "request": {
-                    "schemaVersion": "lumin-post-write-lifecycle-request.v2",
+                    "schemaVersion": "lumin-post-write-lifecycle-request.v3",
                     "root": temp.path(),
                     "output": output_dir,
                     "advisoryPath": null,

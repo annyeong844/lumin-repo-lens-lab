@@ -1,11 +1,12 @@
 use anyhow::{bail, Result};
+use lumin_audit_core::runtime_contract::{
+    BOUNDED_PRE_WRITE_RESULT_HANDOFF_FEATURE, JS_RUNTIME_BRIDGE_CONTRACT_VERSION,
+    NATIVE_LIFECYCLE_HOST_EVIDENCE_FEATURE, RUNTIME_CONTRACT_SCHEMA_VERSION,
+};
 use serde_json::{json, Map, Value};
 
 use super::io_support::write_stdout_json;
 use super::usage::USAGE;
-
-const RUNTIME_CONTRACT_SCHEMA_VERSION: &str = "lumin-audit-core-runtime-contract.v1";
-const JS_RUNTIME_BRIDGE_CONTRACT_VERSION: &str = "audit-core-js-runtime-bridge.v51";
 
 const SUPPORTED_SUBCOMMANDS: &[&str] = &[
     "artifact-registry",
@@ -144,6 +145,8 @@ const RUNTIME_FEATURES: &[&str] = &[
     "jsTsPreWritePhaseTiming",
     "jsTsPreWriteShapeEvidence",
     "nativeJsTsPreWriteLifecycle",
+    BOUNDED_PRE_WRITE_RESULT_HANDOFF_FEATURE,
+    NATIVE_LIFECYCLE_HOST_EVIDENCE_FEATURE,
     "jsTsPreWriteFunctionSignatures",
     "jsTsPreWriteInlinePatterns",
     "jsTsPreWriteCurrentEvidenceOnly",

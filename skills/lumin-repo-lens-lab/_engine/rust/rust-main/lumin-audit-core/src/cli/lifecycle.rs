@@ -15,7 +15,9 @@ use lumin_audit_core::canon_draft_lifecycle::{
 use lumin_audit_core::check_canon_lifecycle::{
     execute_check_canon_lifecycle, CheckCanonLifecycleRequest,
 };
-use lumin_audit_core::js_ts_pre_write::JsTsPreWriteIncrementalRequest;
+use lumin_audit_core::js_ts_pre_write::{
+    JsTsPreWriteHostTransport, JsTsPreWriteIncrementalRequest,
+};
 use lumin_audit_core::lifecycle::{
     build_manifest_lifecycle_update, summarize_lifecycle, ManifestLifecycleUpdateInput,
 };
@@ -122,6 +124,8 @@ struct JsPreWriteLifecycleTemplate {
     excludes: Vec<String>,
     #[serde(default)]
     incremental: JsTsPreWriteIncrementalRequest,
+    #[serde(default)]
+    host_evidence_transport: Option<JsTsPreWriteHostTransport>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -529,7 +533,7 @@ fn build_js_pre_write_request(
     route: &PreWriteRoutingResult,
 ) -> Result<JsPreWriteLifecycleRequest> {
     Ok(JsPreWriteLifecycleRequest {
-        schema_version: "lumin-js-pre-write-lifecycle-request.v2".to_string(),
+        schema_version: "lumin-js-pre-write-lifecycle-request.v3".to_string(),
         root: template.root,
         output: template.output,
         advisory_invocation_id: Some(template.advisory_invocation_id),
@@ -540,6 +544,7 @@ fn build_js_pre_write_request(
         production: template.production,
         excludes: template.excludes,
         incremental: template.incremental,
+        host_evidence_transport: template.host_evidence_transport,
     })
 }
 

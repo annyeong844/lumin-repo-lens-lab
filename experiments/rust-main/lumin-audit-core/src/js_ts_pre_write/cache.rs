@@ -20,7 +20,7 @@ const CACHE_PROFILE_VERSION: &str =
     "js-ts-pre-write-oxc-facts.v6+oxc-0.139.0+audit-core-bridge-v50";
 const CACHE_FILE_NAME: &str = "facts.json";
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JsTsPreWriteIncrementalRequest {
     #[serde(default)]
