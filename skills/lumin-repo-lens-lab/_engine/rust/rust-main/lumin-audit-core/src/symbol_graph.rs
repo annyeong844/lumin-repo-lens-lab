@@ -331,6 +331,7 @@ pub fn build_symbol_graph_artifact(request: SymbolGraphRequest) -> Result<Value>
         "reExportsByFile": build_re_exports_by_file(&root, &file_data),
     });
     if let Some(object) = artifact.as_object_mut() {
+        object.insert("deadTestList".to_string(), Value::Array(dead_in_test));
         object.insert("artifactSummary".to_string(), artifact_summary);
     }
     Ok(artifact)
