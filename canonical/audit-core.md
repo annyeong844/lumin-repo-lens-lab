@@ -178,7 +178,7 @@ or orchestration ownership before migration.
 | `experiments/rust-main/lumin-audit-core/src/symbol_graph/reachability.rs`      | Source-use fan-in merge, identity/space fan-in projection, top fan-in ranking, and dead-candidate partitioning                                                                                                                                                                                                                                                      | parsing, resolution, final artifact assembly, or compatibility fallback                                                                                                                                                                                            |
 | `experiments/rust-main/lumin-audit-core/src/symbol_graph/any_contamination.rs` | Type-escape-to-owner association, contamination labels/measurements, owner indexes, and annotated definition projection                                                                                                                                                                                                                                             | type-escape extraction, edit-safety policy, or final artifact assembly                                                                                                                                                                                             |
 | `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write.rs`               | Thin JS/TS pre-write evidence facade: public request/response constants, request type re-exports, and prepare-then-project orchestration | Request validation, source discovery, cache storage, parser traversal, evidence classification, or JSON projection |
-| `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/protocol.rs`      | Project-owned JS/TS pre-write evidence request shapes and schema constants | Source discovery, filesystem access, cache policy, extraction, or evidence projection |
+| `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/protocol.rs`      | Project-owned JS/TS pre-write evidence request shapes, optional cross-host transport descriptor, and schema constants | Source discovery, filesystem access, helper selection/execution, cache policy, extraction, or evidence projection |
 | `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/input.rs`         | Fail-closed request validation and input preparation: artifact/dependency/file ordering contracts, canonical explicit-source containment, checked JS/TS source discovery, source-inventory/path-map construction, cache-backed extraction invocation, and exact extracted-row scope/cardinality checks | OXC parser traversal, cache storage format, fan-in classification, absence claims, or final JSON projection |
 | `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/projection.rs`    | Deterministic compact evidence projection from prepared current-run extraction rows: definitions, class/local-operation indexes, exact/broad/type fan-in, dependency consumers, unresolved relative imports, topology, parse failures, any-contamination annotations, type-escape inventory, and embedded `shapeIndex` construction from the same parse pass | Request validation, source discovery, filesystem access, parser traversal, cache persistence, shape normalization/hash policy, cue language, or JS fallback execution |
 | `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/cache.rs`         | Strict per-file OXC fact cache for the shared JS/TS pre-write/post-write evidence pass: repository and source-set identity, exact current-worktree byte SHA-256 identity, parsing from the same bytes used for identity, cache load/store validation, and incremental observations | source discovery, parser traversal, final evidence reuse, absence claims, cue/ranking policy, Git index/blob identity, artifact-path aliases as source identity, transformed repository bytes in place of worktree bytes, or stat/mtime-only identity                                                         |
@@ -329,6 +329,8 @@ and the packaged source fallback must be regenerated from the same contract.
 | `experiments/rust-main/lumin-audit-core/src/post_write_lifecycle/render.rs` | Deterministic post-write Markdown projection from the typed delta artifact | classification, artifact IO, terminal policy |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_intent.rs` | JS/TS pre-write intent validation and normalization, including checked missing-key warnings, structured declarations, exact shape inputs, refactor-source paths, and planned type-escape vocabulary | repository evidence collection, lookup classification, advisory rendering |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native.rs` | Native JS/TS pre-write lifecycle orchestration: current-run compact evidence collection, artifact writes, lookup/cue composition, advisory writes, and lifecycle result projection without a Node child | OXC extraction policy, lookup classification details, cue policy details, Markdown wording, or fallback execution |
+| `experiments/rust-main/lumin-audit-core/src/js_ts_pre_write/host_transport.rs` | Optional exact-contract Windows-host execution of the shared JS/TS evidence pass for x64 WSL mounted worktrees, result-file transport cleanup, host-response validation, and restoration of caller-local root/cache paths before lifecycle artifact writes | lifecycle routing, intent parsing, lookup/cue policy, advisory/delta construction, JS fallback execution, or selection of an unvalidated helper |
+| `experiments/rust-main/lumin-audit-core/src/runtime_contract.rs` | Shared runtime-contract schema/version and host-transport feature constants consumed by both the CLI contract reporter and cross-host evidence validator | subcommand lists, result-output lists, helper discovery, fixture construction, or process execution |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/lookup/mod.rs` | JS/TS pre-write lookup coordination, stable intent-lane ordering, shared projection helpers, and drift projection | lane-specific lookup policy, source discovery, parser traversal, advisory IO, cue tiering, or renderer wording |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/lookup/name/mod.rs` | Exact/canonical name lookup coordination and stable name-result projection | evidence confidence details, candidate search scoring, sibling-operation policy, file topology, dependency declarations, cue tiering |
 | `experiments/rust-main/lumin-audit-core/src/pre_write_lifecycle/js_native/lookup/name/evidence.rs` | Exact-name fan-in, identity-space, contamination, and resolver-confidence projection | candidate search, operation policy, cue tiering |
@@ -451,10 +453,14 @@ WSL and must not reuse a Windows `node_modules` tree. Missing native bindings
 are an unavailable runtime dependency, not clean parser evidence.
 
 Native JS/TS pre-write executes as one `execute-js-pre-write` lifecycle inside
-the selected current-contract audit-core. The wrapper must not split evidence
-collection into a second helper invocation or fall back to a JS classifier.
-Cross-host execution requires an explicit whole-lifecycle path-translation
-contract; partial command-specific translation is not permitted.
+the selected current-contract audit-core. The wrapper must not restore a JS
+classifier or run an independent evidence/advisory pipeline. On x64 WSL mounted
+worktrees only, it may attach an exact-contract Windows evidence transport; the
+selected Linux audit-core may then invoke `js-ts-pre-write-evidence` on that
+helper while retaining lifecycle, advisory, delta, and artifact-write ownership.
+The host response must be validated and its absolute root/cache paths restored
+to caller-local WSL spelling before projection. Once host execution starts,
+failure is terminal and must not fall back to the Linux evidence pass.
 
 Current-run advisory cleanup treats both `NotFound` and `NotADirectory` as an
 absent stale file. The latter is Linux's result when the configured output
@@ -596,14 +602,16 @@ removes this artifact cache together with per-file facts.
   empty evidence or invoke a JS extractor fallback. `--no-incremental` disables
   reuse, and `--clear-incremental-cache` removes this producer cache before the
   current pass. The default cache root is the existing repository-scoped audit
-  cache root. On an x64 WSL-mounted Windows worktree, the JS bridge may route
-  this command through the exact-contract packaged Windows helper so discovery,
-  worktree reads, and hashing use native NTFS. That transport optimization must
-  not change the current-worktree-byte identity or artifact semantics. Host
-  route unavailability is distinct from an executed helper returning null or
-  malformed evidence: only the former may select the Linux helper. With
-  incremental reuse disabled, host result transport uses a shared Windows temp
-  directory and must not create or require the configured cache root. Explicit
+  cache root. On an x64 WSL-mounted Windows worktree, the JS bridge may attach
+  an exact-contract Windows evidence transport to the native lifecycle request.
+  The selected Linux audit-core may route only its shared evidence pass through
+  that helper so discovery, worktree reads, and hashing use native NTFS while
+  lifecycle artifact writes retain caller-local WSL paths. That transport
+  optimization must not change the current-worktree-byte identity or artifact
+  semantics. Host route unavailability is distinct from an executed helper
+  returning null or malformed evidence: only the former may select the Linux
+  evidence pass. Temporary result transport uses the lifecycle output directory
+  and must be removed on success and failure. Explicit
   source requests are canonicalized at the request boundary and rejected when
   they escape the canonical root. Warm cache hits release their worktree byte
   buffers immediately after hashing and identity comparison.

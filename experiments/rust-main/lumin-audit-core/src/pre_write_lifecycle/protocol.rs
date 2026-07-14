@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
-use crate::js_ts_pre_write::JsTsPreWriteIncrementalRequest;
+use crate::js_ts_pre_write::{JsTsPreWriteHostTransport, JsTsPreWriteIncrementalRequest};
 
 pub const PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
     "lumin-rust-pre-write-lifecycle-request.v1";
 pub const JS_PRE_WRITE_LIFECYCLE_REQUEST_SCHEMA_VERSION: &str =
-    "lumin-js-pre-write-lifecycle-request.v2";
+    "lumin-js-pre-write-lifecycle-request.v3";
 pub const PRE_WRITE_LIFECYCLE_RESULT_SCHEMA_VERSION: &str = "lumin-pre-write-lifecycle-result.v1";
 
 pub(super) const RUST_PRE_WRITE_ARTIFACT_SCHEMA_VERSION: &str = "rust-pre-write.v1";
@@ -63,6 +63,8 @@ pub struct JsPreWriteLifecycleRequest {
     pub excludes: Vec<String>,
     #[serde(default)]
     pub incremental: JsTsPreWriteIncrementalRequest,
+    #[serde(default)]
+    pub host_evidence_transport: Option<JsTsPreWriteHostTransport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

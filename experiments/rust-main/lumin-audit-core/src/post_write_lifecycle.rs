@@ -18,7 +18,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::js_ts_pre_write::{
-    start_js_ts_pre_write_evidence, JsTsPreWriteEvidenceRequest,
+    collect_js_ts_pre_write_evidence, JsTsPreWriteEvidenceRequest,
     JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION,
 };
 use crate::scan_scope::{collect_source_files, ScanScopeOptions};
@@ -161,7 +161,7 @@ fn build_after_snapshot(
     request: &PostWriteLifecycleRequest,
     skip_type_escapes: bool,
 ) -> Result<AfterSnapshot> {
-    if skip_type_escapes {
+    if skip_type_escapes && request.host_evidence_transport.is_none() {
         let files = collect_source_files(
             &request.root,
             &ScanScopeOptions {
@@ -178,21 +178,25 @@ fn build_after_snapshot(
 
     let inventory_path = request.output.join("any-inventory.json");
     remove_file_if_present(&inventory_path)?;
-    let mut evidence = start_js_ts_pre_write_evidence(JsTsPreWriteEvidenceRequest {
-        schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
-        root: request.root.clone(),
-        evidence_artifact: format!("post-write-evidence.{}.json", request.delta_invocation_id),
-        any_inventory_artifact: "any-inventory.json".to_string(),
-        generated: request.generated.clone(),
-        include_tests: request.include_tests,
-        excludes: request.excludes.clone(),
-        dependency_roots: Vec::new(),
-        shape_type_literals: Vec::new(),
-        discover_files: true,
-        files: Vec::new(),
-        incremental: request.incremental.clone(),
-    })?
-    .into_evidence();
+    let mut evidence = collect_js_ts_pre_write_evidence(
+        JsTsPreWriteEvidenceRequest {
+            schema_version: JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION.to_string(),
+            root: request.root.clone(),
+            evidence_artifact: format!("post-write-evidence.{}.json", request.delta_invocation_id),
+            any_inventory_artifact: "any-inventory.json".to_string(),
+            generated: request.generated.clone(),
+            include_tests: request.include_tests,
+            excludes: request.excludes.clone(),
+            dependency_roots: Vec::new(),
+            shape_type_literals: Vec::new(),
+            discover_files: true,
+            files: Vec::new(),
+            incremental: request.incremental.clone(),
+        },
+        request.host_evidence_transport.as_ref(),
+        &request.output,
+        &request.delta_invocation_id,
+    )?;
     let object = evidence
         .as_object_mut()
         .context("native post-write evidence response must be an object")?;
@@ -202,18 +206,21 @@ fn build_after_snapshot(
     let files_value = object
         .remove("files")
         .context("native post-write evidence response missing files")?;
-    let inventory = serde_json::from_value::<AnyInventory>(inventory_value)
-        .context("native post-write anyInventory shape is invalid")?;
+    let inventory = (!skip_type_escapes)
+        .then(|| {
+            serde_json::from_value::<AnyInventory>(inventory_value)
+                .context("native post-write anyInventory shape is invalid")
+        })
+        .transpose()?;
     let files = serde_json::from_value::<Vec<String>>(files_value)
         .context("native post-write files shape is invalid")?;
-    if let Err(error) = atomic_write_json_pretty(&inventory_path, &inventory) {
-        let _ = remove_file_if_present(&inventory_path);
-        return Err(error).context("failed to write native post-write any-inventory.json");
+    if let Some(inventory) = inventory.as_ref() {
+        if let Err(error) = atomic_write_json_pretty(&inventory_path, inventory) {
+            let _ = remove_file_if_present(&inventory_path);
+            return Err(error).context("failed to write native post-write any-inventory.json");
+        }
     }
-    Ok(AfterSnapshot {
-        inventory: Some(inventory),
-        files,
-    })
+    Ok(AfterSnapshot { inventory, files })
 }
 
 fn load_before_inventory(

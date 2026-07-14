@@ -235,7 +235,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v51';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v52';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -256,6 +256,8 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsPreWritePhaseTiming',
   'jsTsPreWriteShapeEvidence',
   'nativeJsTsPreWriteLifecycle',
+  'boundedPreWriteResultHandoff',
+  'nativeLifecycleHostEvidenceTransport',
   'jsTsPreWriteFunctionSignatures',
   'jsTsPreWriteInlinePatterns',
   'jsTsPreWriteCurrentEvidenceOnly',
@@ -676,7 +678,7 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       plannedTypeEscapes: [],
     });
     writeFileSync(jsPreWriteInputPath, JSON.stringify({
-      schemaVersion: 'lumin-js-pre-write-lifecycle-request.v2',
+      schemaVersion: 'lumin-js-pre-write-lifecycle-request.v3',
       root: rootDir,
       output: outputDir,
       invocationId: 'PROBE',
@@ -742,7 +744,7 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       }),
     );
     writeFileSync(postWriteInputPath, JSON.stringify({
-      schemaVersion: 'lumin-post-write-lifecycle-request.v2',
+      schemaVersion: 'lumin-post-write-lifecycle-request.v3',
       root: rootDir,
       output: postWriteOutputDir,
       advisoryPath: postWriteAdvisoryPath,
@@ -1544,7 +1546,12 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
         args: ['execute-js-pre-write', '--input', jsPreWriteInputPath],
         requiresArtifactReads: false,
         outputDir,
-        expectedStdoutIncludes: '## pre-write advisory',
+        expectedStdoutIncludes: [
+          '## pre-write advisory',
+          'Summary: cueCards=',
+          'stdout does not duplicate its per-candidate rows',
+        ],
+        expectedStdoutExcludes: ['### Agent review cues', '### Lookup results'],
       },
       {
         subcommand: 'execute-post-write',
@@ -1558,7 +1565,12 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
         args: ['execute-audit-lifecycle', '--input', auditLifecycleInputPath],
         requiresArtifactReads: false,
         outputDir: lifecycleOutputDir,
-        expectedStdoutIncludes: '## pre-write advisory',
+        expectedStdoutIncludes: [
+          '## pre-write advisory',
+          'Summary: cueCards=',
+          'stdout does not duplicate its per-candidate rows',
+        ],
+        expectedStdoutExcludes: ['### Agent review cues', '### Lookup results'],
       },
       {
         subcommand: 'manifest-evidence-summary-with-reads',
@@ -1729,7 +1741,10 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       );
       const stdout = result.stdout ?? '';
       if (probe.expectedStdoutIncludes) {
-        if (!stdout.includes(probe.expectedStdoutIncludes)) {
+        const expected = Array.isArray(probe.expectedStdoutIncludes)
+          ? probe.expectedStdoutIncludes
+          : [probe.expectedStdoutIncludes];
+        if (expected.some((snippet) => !stdout.includes(snippet))) {
           return auditCoreContractProbeFailure(
             `${probe.subcommand} omitted its expected stdout rendering`
           );
@@ -1737,6 +1752,11 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       } else if (stdout.trim().length > 0) {
         return auditCoreContractProbeFailure(
           `${probe.subcommand} wrote JSON to stdout while using --result-output`
+        );
+      }
+      if (probe.expectedStdoutExcludes?.some((snippet) => stdout.includes(snippet))) {
+        return auditCoreContractProbeFailure(
+          `${probe.subcommand} emitted forbidden repository-sized stdout rows`
         );
       }
       if (!existsSync(resultPath)) return auditCoreContractProbeFailure(
@@ -2549,6 +2569,31 @@ function windowsHostAuditCoreBinary() {
     }
   }
   return null;
+}
+
+export function windowsHostAuditCoreEvidenceTransport({
+  root,
+  output,
+  incremental = {},
+} = {}) {
+  const command = windowsHostAuditCoreBinary();
+  if (!command) return null;
+  const windowsRoot = wslPathToWindowsHost(root);
+  const windowsOutput = wslPathToWindowsHost(output);
+  if (!windowsRoot || !windowsOutput) return null;
+
+  const transport = {
+    schemaVersion: 'lumin-js-ts-pre-write-host-transport.v1',
+    command,
+    root: windowsRoot,
+    output: windowsOutput,
+  };
+  if (incremental?.enabled === true) {
+    const windowsCacheRoot = wslPathToWindowsHost(incremental.cacheRoot);
+    if (!windowsCacheRoot) return null;
+    transport.cacheRoot = windowsCacheRoot;
+  }
+  return transport;
 }
 
 function windowsHostTempRoot() {

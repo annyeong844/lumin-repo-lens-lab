@@ -503,7 +503,7 @@ function buildCheckCanonLifecycleRequest() {
 function buildPostWriteLifecycleRequest() {
   const incrementalEnabled = values['no-incremental'] !== true;
   return {
-    schemaVersion: 'lumin-post-write-lifecycle-request.v2',
+    schemaVersion: 'lumin-post-write-lifecycle-request.v3',
     root: ROOT,
     output: OUT,
     advisoryPath: values['pre-write-advisory'] ? path.resolve(values['pre-write-advisory']) : null,
@@ -548,7 +548,7 @@ function buildRustPreWriteLifecycleRequest({
 
 function buildJsPreWriteLifecycleRequest({ advisoryInvocationId }) {
   return {
-    schemaVersion: 'lumin-js-pre-write-lifecycle-request.v2',
+    schemaVersion: 'lumin-js-pre-write-lifecycle-request.v3',
     root: ROOT,
     output: OUT,
     invocationId: advisoryInvocationId,

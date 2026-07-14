@@ -45,6 +45,7 @@ pub mod rank_fixes;
 mod relative_source_resolver;
 pub mod resolver_diagnostics;
 pub mod resolver_diagnostics_artifacts;
+pub mod runtime_contract;
 pub mod runtime_evidence;
 pub mod rust_analysis;
 pub mod sarif;

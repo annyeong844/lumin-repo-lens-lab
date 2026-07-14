@@ -10,7 +10,7 @@ use lumin_audit_core::post_write_lifecycle::{
 
 fn request(root: &Path, out: &Path, advisory: Option<&Path>) -> Value {
     json!({
-        "schemaVersion": "lumin-post-write-lifecycle-request.v2",
+        "schemaVersion": "lumin-post-write-lifecycle-request.v3",
         "root": path_string(root),
         "output": path_string(out),
         "advisoryPath": advisory.map(path_string),

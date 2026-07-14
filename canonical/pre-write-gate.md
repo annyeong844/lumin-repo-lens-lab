@@ -207,22 +207,25 @@ identified by SHA-256 of those exact bytes. Cache misses parse that same byte
 buffer. Git index/blob bytes are never used as source identity or parser input
 because clean/smudge filters, Git LFS, and working-tree encodings can make them
 different from the file being reviewed.
-For the same mounted-checkout case, the JS audit-core bridge may execute the
-packaged `win32-x64/lumin-audit-core.exe` for `js-ts-pre-write-evidence` so
-repository discovery and source reads use native NTFS instead of DrvFS. This
-route is limited to x64 WSL, a root and cache directory that both translate
-losslessly from `/mnt/<drive>/...` when incremental reuse is enabled, and a
-Windows helper that reports the exact current runtime contract. With
-incremental reuse disabled, the cache root is not a host-route prerequisite;
-result transport uses a shared Windows temp directory. Explicit Linux/generic
-audit-core overrides keep their documented precedence and disable host routing.
+For the same mounted-checkout case, the JS audit-core bridge may attach an
+exact-contract Windows evidence transport to the native Rust lifecycle request.
+The selected Linux audit-core remains the pre-write/post-write lifecycle owner;
+it delegates only `js-ts-pre-write-evidence` to the packaged
+`win32-x64/lumin-audit-core.exe` so repository discovery and source reads use
+native NTFS instead of DrvFS. This route is limited to x64 WSL, a root and
+output directory that translate losslessly from `/mnt/<drive>/...`, and a cache
+directory with the same property when incremental reuse is enabled. Explicit
+Linux/generic audit-core overrides keep their documented precedence and disable
+host routing.
 
-The bridge translates only absolute transport paths (`root`, `cacheRoot`, and
-the temporary result path). Repository-relative file/evidence identities and
-artifact semantics remain Rust-owned and unchanged. Returned root/cache paths
-are translated back to the caller's WSL spelling before validation. Candidate
-absence or contract mismatch selects the normal Linux helper before execution;
-after the Windows command starts, non-zero exit, missing result output, or
+The transport translates only absolute execution paths (`root`, `output`,
+`cacheRoot`, and the temporary result path). Repository-relative file/evidence
+identities, advisory/delta construction, artifact writes, and lifecycle result
+semantics remain owned by the selected Linux audit-core. The lifecycle validates
+the host response and restores returned root/cache paths to the caller's WSL
+spelling before any artifact is written. Candidate absence or contract mismatch
+selects the normal Linux evidence pass before execution; after the Windows
+command starts, non-zero exit, unexpected stdout, missing result output, or
 null/malformed evidence is a hard failure and must not retry another analyzer.
 Packaged Windows helpers retain executable mode for WSL installs on Linux
 filesystems. Explicit path-backed source files are canonicalized and must stay

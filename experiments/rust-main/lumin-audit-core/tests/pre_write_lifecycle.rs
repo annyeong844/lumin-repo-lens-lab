@@ -53,7 +53,7 @@ fn parse_request(value: Value) -> Result<RustPreWriteLifecycleRequest> {
 
 fn js_request(root: &Path, out: &Path) -> Value {
     json!({
-        "schemaVersion": "lumin-js-pre-write-lifecycle-request.v2",
+        "schemaVersion": "lumin-js-pre-write-lifecycle-request.v3",
         "root": path_string(root),
         "output": path_string(out),
         "invocationId": "JS-1",
