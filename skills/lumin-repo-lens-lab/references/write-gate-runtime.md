@@ -103,6 +103,13 @@ every worker, not only the five required arrays. This includes `language`,
 Run one pre-write for that merged intent and give every worker in the wave the
 same invocation-specific advisory.
 
+In a workspace, represent a dependency as
+`{"specifier":"pkg","ownerFile":"apps/daemon/src/consumer.ts"}` whenever
+the wave can touch more than one package owner. The owner file selects the
+nearest `package.json`. Omitting it is valid only when all planned files resolve
+to one manifest; mixed owners otherwise produce
+`DEPENDENCY_OWNER_AMBIGUOUS` and must be split or annotated.
+
 After all workers finish, run the matching post-write before starting broad
 tests, builds, generators, installs, or another audit. A generator that creates
 source-like files inside the scan range would otherwise appear as

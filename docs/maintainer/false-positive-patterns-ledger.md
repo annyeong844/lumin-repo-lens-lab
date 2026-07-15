@@ -497,19 +497,17 @@ leaf files of deep barrel trees. Typical zod/unjs layout:
 `packages/<pkg>/src/<module>/<sub>/<file>.ts` where the "consumer" column
 lists only sibling `index.ts` barrels.
 
-**Mitigation:** (v0.6.4+) `build-symbol-graph.mjs` emits
-`reExportsByFile` metadata: `{ fromFile: [relPath, relPath, ...] }` giving
-all re-export target files per barrel. `classify-dead-exports.mjs` walks
-this map transitively: if symbol `X` is re-exported by a barrel that is
-imported by file `Y`, attribute `Y` as a transitive consumer of `X`.
-Breadth-first walk, cycle-guarded, bounded by re-export-only chains (direct
-imports break the chain).
+**Mitigation:** `build-symbol-graph.mjs` and audit-core resolve re-export chains
+per export identity. Named re-exports add exact identity fan-in; star and broad
+namespace consumers remain broad graph evidence. `classify-dead-exports.mjs`
+protects direct package entry files but does not promote transitive target
+files wholesale. This keeps the public identity protected while allowing dead
+sibling exports in the same source module to remain candidates.
 
-**Example (2026-04-18, colinhacks/zod v3):** pre-fix, 88 symbols in
-`packages/zod/src/v4/**` were flagged Class A because their only listed
-consumers were intra-package barrels. Post-fix, those 88 symbols now have
-attributed external-package consumers (`packages/zod-mini`, `packages/docs`)
-and the Class A count for `packages/zod` drops from 6 to 2.
+**Regression contract:** a package entry that names one export from each of 20
+modules protects those 20 identities while all 60 unrelated sibling exports
+remain review-visible. File-level transitive protection would incorrectly mute
+all 60 as `publicApi_FP23`.
 
 ---
 

@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v59';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v62';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -288,6 +288,9 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'sourceUseAssemblyTypeOnlyState',
   'sourceUseAssemblyDerivedReExportMaps',
   'sourceUseAssemblyTerminalRecordOutcomes',
+  'sourceUseAssemblyResolvedDottedAliases',
+  'lintEnforcementFailClosed',
+  'workspaceDependencyOwnerManifests',
   'symbolGraphStrictRequestV2',
   'symbolGraphDeadTestCandidates',
   'stalenessBatchPickaxe',
@@ -615,6 +618,7 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+    mkdirSync(path.join(rootDir, 'apps', 'daemon', 'src'), { recursive: true });
     mkdirSync(outputDir, { recursive: true });
     mkdirSync(lifecycleOutputDir, { recursive: true });
     mkdirSync(postWriteOutputDir, { recursive: true });
@@ -692,6 +696,14 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
     writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify({
       name: 'native-pre-write-contract-probe',
     }));
+    writeFileSync(path.join(rootDir, 'apps', 'daemon', 'package.json'), JSON.stringify({
+      name: '@probe/daemon',
+      dependencies: { '@vscode/ripgrep': '^1.17.1' },
+    }));
+    writeFileSync(
+      path.join(rootDir, 'apps', 'daemon', 'src', 'tool-output.ts'),
+      "export const toolOutput = 'ready';\n",
+    );
     writeFileSync(path.join(rootDir, 'src', 'thing.ts'), [
       'export function Thing(value: string): number {',
       '  try { return value.length; } catch { cleanup(); }',
@@ -709,7 +721,10 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       names: ['Thing'],
       files: ['src/thing.ts'],
       shapes: [{ typeLiteral: '(value: string) => number' }],
-      dependencies: [],
+      dependencies: [{
+        specifier: '@vscode/ripgrep',
+        ownerFile: 'apps/daemon/src/tool-output.ts',
+      }],
       refactorSources: [{ file: 'src/thing.ts' }],
       plannedTypeEscapes: [],
     });
@@ -1094,7 +1109,17 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       generated: '2026-07-02T00:00:00.000Z',
       root: rootDir,
       filesScanned: 1,
-      inputs: {},
+      inputs: {
+        triage: {
+          boundaries: [],
+          lintEnforcement: {
+            status: 'degraded',
+            unsupportedCommands: [
+              { scriptName: 'lint', command: 'newlint .' },
+            ],
+          },
+        },
+      },
       incremental: {
         enabled: true,
         changedFiles: 0,
@@ -1429,6 +1454,15 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
           fromSpec: './style.css',
           kind: 'import-side-effect',
           resolverStage: 'non-source-asset',
+        },
+        {
+          recordId: 'src/consumer.ts#7',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          resolvedFile: path.join(rootDir, 'src', 'layout.config.ts'),
+          fromSpec: '@/layout.config',
+          name: 'layoutConfig',
+          kind: 'import',
+          resolverStage: 'resolved-internal',
         },
       ],
     }));
@@ -1953,6 +1987,12 @@ function nativeJsPreWriteArtifactsMatch(outputDir, invocationId) {
     advisory.evidenceAvailability?.freshAudit === true &&
     advisory.lookups?.some((lookup) => lookup?.result === 'SIGNATURE_MATCH') &&
     advisory.lookups?.some((lookup) => lookup?.result === 'INLINE_PATTERN_MATCH') &&
+    advisory.lookups?.some((lookup) =>
+      lookup?.depName === '@vscode/ripgrep' &&
+      lookup?.result === 'DEPENDENCY_AVAILABLE_NO_OBSERVED_IMPORTS' &&
+      lookup?.manifestFile === 'apps/daemon/package.json' &&
+      lookup?.declaredIn === 'dependencies'
+    ) &&
     readFileSync(latestPath, 'utf8') === advisoryText;
 }
 
@@ -2274,6 +2314,10 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.schemaVersion === 9 &&
       json.meta.incremental?.reusedFiles === 1 &&
       json.A2_function_size?.gate === 'ok' &&
+      json.C5_lint_enforcement?.gate === 'unknown' &&
+      json.C5_lint_enforcement?.available === false &&
+      json.C5_lint_enforcement?.lintEvidenceStatus === 'degraded' &&
+      json.C5_lint_enforcement?.unsupportedCommands?.[0]?.scriptName === 'lint' &&
       json.E2_silent_catch?.analysis === 'oxc-ast-catch-clause' &&
       Array.isArray(json._not_computed) &&
       json._not_computed.length >= 20;
@@ -2386,10 +2430,10 @@ function resultPayloadMatchesProbe(json, probe) {
   }
   if (probe.subcommand === 'source-use-assembly-artifact') {
     return json.schemaVersion === 'lumin-source-use-assembly-response.v1' &&
-      json.summary?.recordCount === 7 &&
-      json.summary?.handledCount === 7 &&
-      json.counters?.totalUses === 5 &&
-      json.counters?.resolvedInternalUses === 5 &&
+      json.summary?.recordCount === 8 &&
+      json.summary?.handledCount === 8 &&
+      json.counters?.totalUses === 6 &&
+      json.counters?.resolvedInternalUses === 6 &&
       json.counters?.rustResolvedRelativeUses === 3 &&
       json.counters?.nonSourceAssetUses === 1 &&
       json.counters?.mdxConsumerUses === 1 &&
@@ -2398,12 +2442,12 @@ function resultPayloadMatchesProbe(json, probe) {
       json.counters?.resolvedGeneratedVirtualUses === 1 &&
       json.counters?.unresolvedUses === 1 &&
       json.counters?.unresolvedInternalUses === 1 &&
-      json.branchCounts?.resolvedInternal === 4 &&
+      json.branchCounts?.resolvedInternal === 5 &&
       json.branchCounts?.unresolved === 1 &&
       json.branchCounts?.generatedVirtual === 1 &&
       json.branchCounts?.asset === 1 &&
       json.branchCounts?.sfcScriptSrcReachability === 1 &&
-      json.branchCounts?.directConsumer === 1 &&
+      json.branchCounts?.directConsumer === 2 &&
       json.branchCounts?.broadNamespace === 2 &&
       json.nonSourceAssetRecordIds?.includes('src/consumer.ts#6') &&
       json.nonSourceAssetRecordTargets?.some((entry) =>
@@ -2434,6 +2478,12 @@ function resultPayloadMatchesProbe(json, probe) {
         edge?.to === 'src/setup.ts' &&
         edge?.kind === 'sfc-script-src' &&
         edge?.sfcLanguage === 'vue'
+      ) &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/consumer.ts' &&
+        edge?.to === 'src/layout.config.ts' &&
+        edge?.source === '@/layout.config' &&
+        edge?.kind === 'import-named'
       ) &&
       json.unresolvedInternalSpecifierRecords?.[0]?.reason === 'tsconfig-path-target-missing' &&
       json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&

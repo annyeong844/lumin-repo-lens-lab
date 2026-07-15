@@ -15,6 +15,11 @@ import { readJsonFile, producerMetaBase } from '../lib/artifacts.mjs';
 import { JS_FAMILY_LANGS, SFC_FAMILY_LANGS } from '../lib/lang.mjs';
 import { atomicWrite } from '../lib/atomic-write.mjs';
 import { buildSourceInventoryArtifact } from '../lib/source-inventory.mjs';
+import {
+  collectLintEnforcement,
+  ESLINT_CONFIG_PATTERN,
+  OXLINT_CONFIG_PATTERN,
+} from '../lib/lint-enforcement.mjs';
 
 const cli = parseCliArgs();
 const { root, output, verbose, includeTests } = cli;
@@ -138,7 +143,8 @@ if (existsSync(path.join(root, 'Cargo.toml'))) {
 // ─── Config files ─────────────────────────────────────────
 const configs = {
   tsconfig: findAll(root, /^tsconfig.*\.json$/, 3),
-  eslintConfig: findAll(root, /^\.eslintrc.*$|^eslint\.config\.[mc]?[jt]s$/, 3),
+  eslintConfig: findAll(root, ESLINT_CONFIG_PATTERN, 3),
+  oxlintConfig: findAll(root, OXLINT_CONFIG_PATTERN, 3),
   prettier: findAll(root, /^\.prettierrc.*$|^prettier\.config\.[mc]?[jt]s$/, 3),
   pyproject: existsSync(path.join(root, 'pyproject.toml')),
   mypyIni: existsSync(path.join(root, 'mypy.ini')) || existsSync(path.join(root, '.mypy.ini')),
@@ -188,29 +194,19 @@ try {
 }
 
 // ─── Declared boundaries ──────────────────────────────────
-const boundaries = [];
-for (const eslintConf of configs.eslintConfig) {
-  try {
-    const content = readFileSync(path.join(root, eslintConf), 'utf8');
-    if (content.includes('no-restricted-syntax')) boundaries.push({ rule: 'no-restricted-syntax', file: eslintConf });
-    if (content.includes('no-restricted-imports')) boundaries.push({ rule: 'no-restricted-imports', file: eslintConf });
-    if (content.includes('no-restricted-paths')) boundaries.push({ rule: 'no-restricted-paths', file: eslintConf });
-    if (content.includes('no-explicit-any')) boundaries.push({ rule: 'no-explicit-any', file: eslintConf });
-    if (content.includes('boundaries/')) boundaries.push({ rule: 'eslint-plugin-boundaries', file: eslintConf });
-  } catch {
-    // ESLint config file was listed but unreadable (race, permissions,
-    // or the user deleted it since the configs scan). Skip; not having
-    // this file's boundaries is isomorphic to the user not having that
-    // rule.
-  }
-}
+const { boundaries, evidence: lintEnforcement } = collectLintEnforcement({
+  root,
+  eslintConfigs: configs.eslintConfig,
+  oxlintConfigs: configs.oxlintConfig,
+  packageScripts: pkg?.scripts,
+});
 
 // ─── Initial hypotheses (blind, for M3 drill selection) ──
 const hypotheses = [];
-if (configs.eslintConfig.length === 0 && buildSystem.type === 'node') {
+if (configs.eslintConfig.length === 0 && configs.oxlintConfig.length === 0 && buildSystem.type === 'node') {
   hypotheses.push({
-    claim: 'ESLint config absent — typing discipline likely uneven',
-    basis: 'no .eslintrc / eslint.config.* found',
+    claim: 'Lint config absent — typing discipline likely uneven',
+    basis: 'no .eslintrc / eslint.config.* / .oxlintrc*.json found',
     grounding: 'blind',
   });
 }
@@ -250,6 +246,7 @@ const artifact = {
   byLanguage,
   buildSystem,
   configs,
+  lintEnforcement,
   boundaries,
   topDirs,
   mode: repoMode.mode,
@@ -273,7 +270,11 @@ atomicWrite(inventoryPath, `${JSON.stringify(sourceInventory, null, 2)}\n`);
 atomicWrite(outPath, `${JSON.stringify(artifact, null, 2)}\n`);
 
 console.log(`[triage] ${totalFiles} files, ${totalLoc.toLocaleString()} LOC`);
-console.log(`[triage] mode: ${repoMode.mode}, build: ${buildSystem.type}, eslint: ${configs.eslintConfig.length > 0 ? 'yes' : 'NO'}`);
+const lintTools = [
+  configs.eslintConfig.length > 0 ? 'eslint' : null,
+  configs.oxlintConfig.length > 0 ? 'oxlint' : null,
+].filter(Boolean);
+console.log(`[triage] mode: ${repoMode.mode}, build: ${buildSystem.type}, lint: ${lintTools.join('+') || 'NONE'}`);
 console.log(`[triage] hypotheses: ${hypotheses.length}`);
 for (const h of hypotheses) console.log(`  - ${h.claim}`);
 console.log(`[triage] saved → ${outPath}`);

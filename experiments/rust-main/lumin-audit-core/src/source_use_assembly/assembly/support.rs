@@ -99,12 +99,10 @@ pub(super) fn mark_handled(state: &mut AssemblyState, record_id: String) {
 
 pub(super) fn skip(state: &mut AssemblyState, record_id: String, reason: &'static str) {
     state.response.summary.skipped_count += 1;
-    if state.options.emit_standalone_transport {
-        state
-            .response
-            .skipped_records
-            .push(SkippedSourceUseRecord { record_id, reason });
-    }
+    state
+        .response
+        .skipped_records
+        .push(SkippedSourceUseRecord { record_id, reason });
 }
 
 pub(super) fn push_resolved_record_target(

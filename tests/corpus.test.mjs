@@ -283,6 +283,67 @@ function findCleanup(fixPlan, predicate) {
 }
 
 // ═════════════════════════════════════════════════════════════
+// CASE-ROUTE-GROUP-ALIAS — dotted aliases are modules until resolved
+// ═════════════════════════════════════════════════════════════
+// Next.js route groups commonly import extensionless source files whose
+// basename contains a dot. `layout.config` is not a `.config` asset and must
+// reach the tsconfig alias resolver before asset classification.
+{
+  const fx = mkdtempSync(path.join(tmpdir(), "corpus-route-group-alias-"));
+  const out = mkdtempSync(
+    path.join(tmpdir(), "corpus-route-group-alias-out-"),
+  );
+  try {
+    write(
+      fx,
+      "package.json",
+      JSON.stringify({ name: "route-group-alias", type: "module" }),
+    );
+    write(
+      fx,
+      "tsconfig.json",
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@/*": ["./*"] } },
+      }),
+    );
+    write(
+      fx,
+      "app/layout.config.ts",
+      "export const baseOptions = { title: 'Docs' };\n",
+    );
+    write(
+      fx,
+      "app/(doc)/layout.tsx",
+      "import { baseOptions } from '@/app/layout.config';\n" +
+        "export const layoutProps = { ...baseOptions };\n",
+    );
+
+    runPipeline(fx, out);
+    const symbols = readSymbols(out);
+    const edge = symbols.resolvedInternalEdges?.find(
+      (candidate) =>
+        candidate.from === "app/(doc)/layout.tsx" &&
+        candidate.source === "@/app/layout.config" &&
+        candidate.to === "app/layout.config.ts",
+    );
+
+    assert(
+      "CASE-ROUTE-GROUP-ALIAS.1. dotted alias resolves through the source graph",
+      Boolean(edge),
+      `resolved edges: ${JSON.stringify(symbols.resolvedInternalEdges)}`,
+    );
+    assert(
+      "CASE-ROUTE-GROUP-ALIAS.2. resolved dotted alias is not resolver blindness",
+      symbols.uses?.unresolvedInternal === 0,
+      `uses: ${JSON.stringify(symbols.uses)}`,
+    );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+}
+
+// ═════════════════════════════════════════════════════════════
 // CASE-P1 — v1.10.0 P1 regression guard
 // ═════════════════════════════════════════════════════════════
 // Two dead symbols: one outside a known alias target scope, one in a file
@@ -769,6 +830,90 @@ for (const [label, exportsField] of [
       "CASE-P6-1.3. unrelated private export remains review-visible",
       cleanupDead && cleanupDead.finding.file === "src/private.ts",
       `cleanup candidates: ${JSON.stringify(cleanupEntries(fixPlan).map((s) => s.finding))}`,
+    );
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+}
+
+// ═════════════════════════════════════════════════════════════
+// CASE-P6-1g — public re-exports protect identities, not whole modules
+// ═════════════════════════════════════════════════════════════
+// A named re-export exposes only that identity. The source module's unrelated
+// exports must remain dead candidates even though the module itself is
+// reachable from the package entry.
+{
+  const fx = mkdtempSync(path.join(tmpdir(), "corpus-p6-identity-surface-"));
+  const out = mkdtempSync(
+    path.join(tmpdir(), "corpus-p6-identity-surface-out-"),
+  );
+  try {
+    write(
+      fx,
+      "package.json",
+      JSON.stringify({
+        name: "corpus-p6-identity-surface",
+        type: "module",
+        exports: { ".": "./src/index.ts" },
+      }),
+    );
+
+    const publicReExports = [];
+    const expectedDeadIdentities = new Set();
+    for (let moduleIndex = 0; moduleIndex < 20; moduleIndex++) {
+      const publicName = `public${moduleIndex}`;
+      const lines = [`export const ${publicName} = ${moduleIndex};`];
+      for (let deadIndex = 0; deadIndex < 3; deadIndex++) {
+        const deadName = `dead${moduleIndex}_${deadIndex}`;
+        lines.push(`export const ${deadName} = ${deadIndex};`);
+        expectedDeadIdentities.add(
+          `src/module-${moduleIndex}.ts::${deadName}`,
+        );
+      }
+      write(fx, `src/module-${moduleIndex}.ts`, `${lines.join("\n")}\n`);
+      publicReExports.push(
+        `export { ${publicName} } from "./module-${moduleIndex}.js";`,
+      );
+    }
+    write(
+      fx,
+      "src/index.ts",
+      ["export const directEntry = 1;", ...publicReExports, ""].join("\n"),
+    );
+
+    runPipeline(fx, out);
+    const fixPlan = readFixPlan(out);
+    const cleanup = cleanupIdentities(fixPlan);
+    const missingDead = [...expectedDeadIdentities].filter(
+      (identity) => !cleanup.has(identity),
+    );
+    const mutedDead = fixPlan.muted.filter((entry) =>
+      expectedDeadIdentities.has(
+        `${entry.finding.file}::${entry.finding.symbol}`,
+      ),
+    );
+    assert(
+      "CASE-P6-1g.1. all 60 unused sibling exports remain review-visible",
+      missingDead.length === 0 && expectedDeadIdentities.size === 60,
+      `missing dead identities: ${JSON.stringify(missingDead)}`,
+    );
+    assert(
+      "CASE-P6-1g.2. no unused sibling is muted by file-level public API policy",
+      mutedDead.length === 0,
+      `muted dead siblings: ${JSON.stringify(mutedDead)}`,
+    );
+    assert(
+      "CASE-P6-1g.3. direct package entry exports remain protected",
+      !cleanup.has("src/index.ts::directEntry"),
+      `cleanup candidates: ${JSON.stringify([...cleanup])}`,
+    );
+    assert(
+      "CASE-P6-1g.4. named public re-exports do not become cleanup candidates",
+      publicReExports.every(
+        (_, index) => !cleanup.has(`src/module-${index}.ts::public${index}`),
+      ),
+      `cleanup candidates: ${JSON.stringify([...cleanup])}`,
     );
   } finally {
     rmSync(fx, { recursive: true, force: true });

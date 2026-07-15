@@ -152,14 +152,17 @@ If you're running this for a TS/JS monorepo with this skill's artifacts availabl
 - Formatting, debugger/console policy, dependency vulnerabilities, and update
   policy remain ESLint/formatter/npm-audit/Renovate concerns.
 
-### Layer 3: human judgment
+### Layer 3: source-grounded AI adjudication
 
 - Semantic equivalence, correct dependency direction, state-writer intent,
   fallback meaning, test quality, mock depth, security boundaries, and ceremony
-  are not grounded by current lumin artifacts.
+  are not grounded by current lumin artifacts alone. The reviewing model owns
+  these judgments after reading the cited source and relevant artifact values.
 - `call-graph.json` does not enumerate module-level `let`/`Map`/`Set` writers.
   `runtime-evidence.json` does not emit repository branch-coverage percentages.
-  Those questions require source or dedicated tool evidence.
+  Those questions require source or dedicated tool evidence. If the model
+  cannot inspect that evidence, it must report `[unknown]` instead of asking a
+  non-expert user to adjudicate the implementation.
 
 This checklist is repo-neutral. It intentionally does not include
 dogfood-only checks for `lumin-repo-lens-lab` itself.
@@ -291,9 +294,13 @@ Use the profiles by cadence:
 
 ### C5. 모듈 경계가 lint, import rule, build rule 등으로 실제 강제되고 있는가?
 
-- **Primary source**: `checklist-facts.json.C5_lint_enforcement` (fields: `gate`, `boundaryRulePresent`, `rulesDetected`, `rules[]`).
+- **Primary source**: `checklist-facts.json.C5_lint_enforcement` (fields: `gate`, `boundaryRulePresent`, `rulesDetected`, `rules[]`, `lintEvidenceStatus`, `unsupportedCommands[]`).
 - **Supplementary**: `triage.json.boundaries[]` for full rule inventory.
 - **Cite the value**: `[grounded, checklist-facts.json.C5_lint_enforcement.boundaryRulePresent = false, rulesDetected = 0]`.
+- **Fail-closed rule**: if `lintEvidenceStatus = "degraded"` and no normalized
+  boundary rule was recovered, C5 is `[unknown]`, not grounded `false`. Read
+  `triage.json.lintEnforcement.diagnostics[]`; add or repair the tool adapter
+  before claiming the repository has no boundary enforcement.
 - **Context check (Rule 6)**: absence of a boundary rule is ⚠ watch by default. Upgrade to ❌ fix only if A5/C7 gates are also tripping — lint absence becomes structural risk only when violations are happening.
 
 ### C6. 파일이 위계, 의존도에 따라 분류, 정리되어 있는가?

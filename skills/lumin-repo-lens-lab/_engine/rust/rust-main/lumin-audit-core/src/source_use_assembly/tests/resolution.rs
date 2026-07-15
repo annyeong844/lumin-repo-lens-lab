@@ -85,6 +85,37 @@ fn resolves_absolute_consumers_from_root_relative_source_files() {
 }
 
 #[test]
+fn accepts_pre_resolved_non_relative_dotted_aliases_as_source_modules() {
+    let request = must_request(json!({
+        "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,
+        "root": "C:/repo",
+        "records": [
+            {
+                "recordId": "app/(doc)/layout.tsx#0",
+                "consumerFile": "C:/repo/app/(doc)/layout.tsx",
+                "resolvedFile": "C:/repo/app/layout.config.ts",
+                "fromSpec": "@/app/layout.config",
+                "name": "baseOptions",
+                "kind": "import",
+                "resolverStage": "resolved-internal"
+            }
+        ]
+    }));
+    let response = response(request);
+
+    assert_eq!(response.summary.handled_count, 1);
+    assert!(response.skipped_records.is_empty());
+    assert_eq!(
+        response.resolved_internal_edges[0].from,
+        "app/(doc)/layout.tsx"
+    );
+    assert_eq!(
+        response.resolved_internal_edges[0].to,
+        "app/layout.config.ts"
+    );
+}
+
+#[test]
 fn jsx_output_import_preserves_jsx_to_tsx_swap_order() {
     let request = must_request(json!({
         "schemaVersion": SOURCE_USE_ASSEMBLY_REQUEST_SCHEMA_VERSION,

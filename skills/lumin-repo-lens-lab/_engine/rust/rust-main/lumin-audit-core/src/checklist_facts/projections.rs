@@ -70,10 +70,10 @@ pub(super) fn duplicate_implementation(function_clones: Option<&Value>) -> Value
 }
 
 pub(super) fn lint_enforcement(triage: Option<&Value>) -> Value {
-    let Some(rules) = triage
-        .and_then(|artifact| artifact.get("boundaries"))
-        .and_then(Value::as_array)
-    else {
+    let Some(triage) = triage else {
+        return unavailable("triage.json missing — run triage-repo.mjs first");
+    };
+    let Some(rules) = triage.get("boundaries").and_then(Value::as_array) else {
         return unavailable("triage.json missing — run triage-repo.mjs first");
     };
     let has_boundary_rule = rules.iter().any(|rule| {
@@ -84,11 +84,34 @@ pub(super) fn lint_enforcement(triage: Option<&Value>) -> Value {
                 | Some("eslint-plugin-boundaries")
         )
     });
+    let lint_evidence = triage.get("lintEnforcement");
+    let evidence_status = lint_evidence
+        .and_then(|evidence| evidence.get("status"))
+        .and_then(Value::as_str)
+        .unwrap_or("legacy");
+    let unsupported_commands = lint_evidence
+        .and_then(|evidence| evidence.get("unsupportedCommands"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    if !has_boundary_rule && evidence_status == "degraded" {
+        return json!({
+            "gate": "unknown",
+            "available": false,
+            "reason": "lint enforcement evidence is degraded; unsupported commands or invalid configs may contain boundary rules",
+            "lintEvidenceStatus": evidence_status,
+            "rulesDetected": rules.len(),
+            "boundaryRulePresent": false,
+            "rules": rules,
+            "unsupportedCommands": unsupported_commands,
+        });
+    }
     json!({
         "gate": if has_boundary_rule { "ok" } else { "watch" },
+        "lintEvidenceStatus": evidence_status,
         "rulesDetected": rules.len(),
         "boundaryRulePresent": has_boundary_rule,
         "rules": rules,
+        "unsupportedCommands": unsupported_commands,
     })
 }
 
@@ -164,4 +187,30 @@ pub(super) fn silent_catch(facts: &SilentCatchFacts) -> Value {
         "unusedParamCount": facts.unused_param_sites.len(),
         "unusedParamSites": facts.unused_param_sites,
     })
+}
+
+#[cfg(test)]
+mod lint_enforcement_tests {
+    use super::lint_enforcement;
+    use serde_json::json;
+
+    #[test]
+    fn fails_closed_when_lint_evidence_is_degraded_without_a_boundary_rule() {
+        let triage = json!({
+            "boundaries": [],
+            "lintEnforcement": {
+                "status": "degraded",
+                "unsupportedCommands": [
+                    { "scriptName": "lint", "command": "newlint ." }
+                ]
+            }
+        });
+
+        let result = lint_enforcement(Some(&triage));
+
+        assert_eq!(result["gate"], "unknown");
+        assert_eq!(result["available"], false);
+        assert_eq!(result["boundaryRulePresent"], false);
+        assert_eq!(result["unsupportedCommands"][0]["scriptName"], "lint");
+    }
 }

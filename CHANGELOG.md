@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Workspace dependency ownership
+
+- Make native JS/TS pre-write dependency lookup resolve the nearest workspace
+  `package.json` from dependency owner hints or a unique planned-file owner.
+  Mixed workspace scopes now report `DEPENDENCY_OWNER_AMBIGUOUS` instead of a
+  false `NEW_PACKAGE`; lockfiles remain insufficient as direct-declaration
+  evidence.
+
+### Tool-neutral lint enforcement evidence
+
+- Discover `.oxlintrc.json` and named `.oxlintrc.*.json` files alongside
+  ESLint configs, parsing active root and override rules into normalized C5
+  boundary evidence.
+- Record lint adapter/config/command status in
+  `triage.json.lintEnforcement` instead of treating a missing ESLint config as
+  proof that no lint enforcement exists.
+- Fail C5 closed as `unknown` when a declared lint command is unsupported or a
+  lint config is invalid and no independent boundary rule was recovered.
+- Keep Rust formatting (`rustfmt`), Rust linting (`clippy`), and repository
+  evidence (`--rust-analyzer`) as separate contracts.
+
+### Export-identity public surface protection
+
+- Stop expanding a named public re-export into file-wide `publicApi_FP23`
+  protection for its source module.
+- Keep direct package entry files protected while relying on symbol identity
+  fan-in and namespace evidence for re-exported symbols, so unused sibling
+  exports remain visible to dead-export classification.
+- Route non-relative dotted aliases such as `@/app/layout.config` through the
+  configured module resolver before applying non-source-asset classification,
+  preventing Next.js route-group symbol scans from hard-stopping.
+- Include every rejected source-use record ID and reason in symbol-graph
+  hard-stop diagnostics instead of reporting only an opaque skipped count.
+
 ## 0.0.0-lab.0 - 2026-06-15
 
 ### Lab plugin fork
