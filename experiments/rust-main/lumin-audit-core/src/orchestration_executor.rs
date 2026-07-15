@@ -28,6 +28,7 @@ const INCREMENTAL_PRODUCER_STEPS: &[&str] = &[
     "build-symbol-graph.mjs",
     "build-shape-index.mjs",
     "build-function-clone-index.mjs",
+    "checklist-facts.mjs",
 ];
 
 const RUST_ANALYZER_STEP: &str = "lumin-rust-analyzer";

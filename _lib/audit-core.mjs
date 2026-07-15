@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v57';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v58';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -261,6 +261,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'jsTsPreWriteExactWorktreeByteCache',
   'jsTsPreWriteCanonicalSourceContainment',
   'jsTsPreWriteSingleFlight',
+  'checklistFactsIncrementalCache',
   'jsTsPreWritePhaseTiming',
   'jsTsPreWriteShapeEvidence',
   'nativeJsTsPreWriteLifecycle',
@@ -1054,6 +1055,11 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       root: rootDir,
       filesScanned: 1,
       inputs: {},
+      incremental: {
+        enabled: true,
+        changedFiles: 0,
+        reusedFiles: 1,
+      },
       astFacts: {
         functionSize: {
           parseErrors: 0,
@@ -2211,6 +2217,7 @@ function resultPayloadMatchesProbe(json, probe) {
     return isObject(json.meta) &&
       json.meta.tool === 'checklist-facts.mjs' &&
       json.meta.schemaVersion === 9 &&
+      json.meta.incremental?.reusedFiles === 1 &&
       json.A2_function_size?.gate === 'ok' &&
       json.E2_silent_catch?.analysis === 'oxc-ast-catch-clause' &&
       Array.isArray(json._not_computed) &&

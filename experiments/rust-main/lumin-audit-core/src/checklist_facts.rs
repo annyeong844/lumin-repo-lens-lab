@@ -40,25 +40,28 @@ pub fn build_checklist_facts_artifact(request: ChecklistFactsRequest) -> Result<
     }
 
     let mut artifact = Map::new();
-    artifact.insert(
-        "meta".to_string(),
-        json!({
-            "generated": request.generated,
-            "root": request.root,
-            "tool": TOOL_NAME,
-            "schemaVersion": ARTIFACT_SCHEMA_VERSION,
-            "filesScanned": request.files_scanned,
-            "inputsPresent": {
-                "topology.json": request.inputs.topology.is_some(),
-                "dead-classify.json": request.inputs.dead_classify.is_some(),
-                "fix-plan.json": request.inputs.fix_plan.is_some(),
-                "barrels.json": request.inputs.barrels.is_some(),
-                "triage.json": request.inputs.triage.is_some(),
-                "shape-index.json": request.inputs.shape_index.is_some(),
-                "function-clones.json": request.inputs.function_clones.is_some(),
-            }
-        }),
-    );
+    let mut meta = json!({
+        "generated": request.generated,
+        "root": request.root,
+        "tool": TOOL_NAME,
+        "schemaVersion": ARTIFACT_SCHEMA_VERSION,
+        "filesScanned": request.files_scanned,
+        "inputsPresent": {
+            "topology.json": request.inputs.topology.is_some(),
+            "dead-classify.json": request.inputs.dead_classify.is_some(),
+            "fix-plan.json": request.inputs.fix_plan.is_some(),
+            "barrels.json": request.inputs.barrels.is_some(),
+            "triage.json": request.inputs.triage.is_some(),
+            "shape-index.json": request.inputs.shape_index.is_some(),
+            "function-clones.json": request.inputs.function_clones.is_some(),
+        }
+    });
+    if let Some(incremental) = request.incremental {
+        if let Value::Object(meta) = &mut meta {
+            meta.insert("incremental".to_string(), incremental);
+        }
+    }
+    artifact.insert("meta".to_string(), meta);
 
     artifact.insert(
         "A2_function_size".to_string(),
@@ -177,9 +180,15 @@ mod tests {
                 },
                 silent_catch: SilentCatchFacts::default(),
             },
+            incremental: Some(json!({
+                "enabled": true,
+                "changedFiles": 0,
+                "reusedFiles": 2
+            })),
         })?;
 
         assert_eq!(artifact["meta"]["tool"], TOOL_NAME);
+        assert_eq!(artifact["meta"]["incremental"]["reusedFiles"], 2);
         assert_eq!(artifact["A2_function_size"]["gate"], "watch");
         assert_eq!(artifact["A5_decoupling_ratio"]["rawGate"], "fix");
         assert_eq!(artifact["A5_decoupling_ratio"]["gate"], "ok");
