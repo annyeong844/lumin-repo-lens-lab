@@ -1,4 +1,6 @@
-use super::groups::signature_interval_starts;
+use super::groups::{signature_interval_starts, BlockCloneGroup, Instance};
+use super::noise::apply_noise_policy;
+use super::policy::normalize_thresholds;
 use super::suffix_array::build_lcp_array;
 use super::suffix_array::build_suffix_array;
 use super::suffix_array::reference::build_suffix_array_doubling;
@@ -43,6 +45,35 @@ fn request(files: Vec<TokenizedFile>, thresholds: Value) -> BlockClonesRequest {
             "enabled": false,
             "reason": "disabled-by-flag",
         })),
+    }
+}
+
+fn clone_group(id: &str, token_count: usize, files: &[&str]) -> BlockCloneGroup {
+    BlockCloneGroup {
+        id: id.to_string(),
+        claim: "repeated-normalized-token-region".to_string(),
+        confidence: "review-only".to_string(),
+        token_count,
+        line_count: 1,
+        occurrence_count: files.len(),
+        normalization_mode: "alpha-identifier".to_string(),
+        reasons: vec![],
+        instances: files
+            .iter()
+            .enumerate()
+            .map(|(index, file)| Instance {
+                file: (*file).to_string(),
+                start_line: 1,
+                end_line: 1,
+                start_token: index * 10,
+                end_token: index * 10 + 1,
+                container: None,
+            })
+            .collect(),
+        review_only: true,
+        eligible_for_safe_fix: false,
+        visibility: None,
+        mute_reason: None,
     }
 }
 
@@ -127,6 +158,122 @@ fn mutes_same_file_repeats_without_deleting_group() -> Result<()> {
     assert_eq!(artifact["summary"]["mutedGroupCount"], 1);
     assert_eq!(artifact["groups"][0]["visibility"], "muted");
     assert_eq!(artifact["groups"][0]["muteReason"], "same-file-repeat");
+    Ok(())
+}
+
+#[test]
+fn classifies_noise_without_deleting_candidate_groups() {
+    let thresholds = normalize_thresholds(Some(&json!({
+        "maxCandidateGroups": 10,
+        "maxReviewGroups": 10,
+        "maxMutedGroups": 10,
+        "maxGroups": 5,
+    })));
+    let result = apply_noise_policy(
+        vec![
+            clone_group(
+                "mirror",
+                100,
+                &[
+                    "tests/hook-event-store.test.mjs",
+                    "tests/test-hook-event-store.mjs",
+                ],
+            ),
+            clone_group("scaffold", 90, &["tests/test-a.mjs", "tests/test-b.mjs"]),
+            clone_group("same-file", 80, &["_lib/a.mjs", "_lib/a.mjs"]),
+            clone_group(
+                "directory-collision",
+                70,
+                &["tests/auth/test-index.mjs", "tests/payments/index.test.mjs"],
+            ),
+            clone_group("engine", 60, &["_lib/a.mjs", "_lib/b.mjs"]),
+        ],
+        &thresholds,
+    );
+
+    assert_eq!(result.groups.len(), 5);
+    assert_eq!(result.review_group_count, 1);
+    assert_eq!(result.muted_group_count, 4);
+    assert_eq!(
+        result.muted_by_reason.get("node-vitest-mirror-pair"),
+        Some(&1)
+    );
+    assert_eq!(result.muted_by_reason.get("same-file-repeat"), Some(&1));
+    assert_eq!(result.muted_by_reason.get("test-scaffold-repeat"), Some(&2));
+    assert!(!result.candidate_cap_saturated);
+    assert!(!result.review_cap_saturated);
+    assert!(!result.muted_cap_saturated);
+
+    let by_id = result
+        .groups
+        .iter()
+        .map(|group| (group.id.as_str(), group))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        by_id["mirror"].mute_reason.as_deref(),
+        Some("node-vitest-mirror-pair")
+    );
+    assert_eq!(
+        by_id["directory-collision"].mute_reason.as_deref(),
+        Some("test-scaffold-repeat")
+    );
+    assert_eq!(by_id["engine"].visibility.as_deref(), Some("review"));
+}
+
+#[test]
+fn preserves_review_groups_under_muted_cap_pressure_and_legacy_total_cap() {
+    let groups = vec![
+        clone_group(
+            "same-file-large",
+            300,
+            &["src/noisy-fixture.ts", "src/noisy-fixture.ts"],
+        ),
+        clone_group(
+            "test-scaffold-large",
+            250,
+            &["tests/test-a.mjs", "tests/test-b.mjs"],
+        ),
+        clone_group("review-small", 50, &["src/a.ts", "src/b.ts"]),
+    ];
+    let thresholds = normalize_thresholds(Some(&json!({
+        "maxCandidateGroups": 10,
+        "maxReviewGroups": 1,
+        "maxMutedGroups": 1,
+    })));
+    let result = apply_noise_policy(groups.clone(), &thresholds);
+
+    assert_eq!(result.groups.len(), 2);
+    assert_eq!(result.groups[0].id, "review-small");
+    assert_eq!(result.groups[0].visibility.as_deref(), Some("review"));
+    assert_eq!(result.groups[1].visibility.as_deref(), Some("muted"));
+    assert_eq!(result.review_group_count, 1);
+    assert_eq!(result.muted_group_count, 1);
+    assert!(!result.candidate_cap_saturated);
+    assert!(!result.review_cap_saturated);
+    assert!(result.muted_cap_saturated);
+
+    let legacy_thresholds = normalize_thresholds(Some(&json!({
+        "maxCandidateGroups": 10,
+        "maxReviewGroups": 100,
+        "maxMutedGroups": 100,
+        "maxGroups": 2,
+    })));
+    let legacy = apply_noise_policy(groups, &legacy_thresholds);
+    assert_eq!(legacy.groups.len(), 2);
+    assert_eq!(legacy.groups[0].id, "review-small");
+    assert_eq!(legacy.review_group_count, 1);
+    assert_eq!(legacy.muted_group_count, 1);
+}
+
+#[test]
+fn preserves_legacy_max_groups_in_artifact_thresholds() -> Result<()> {
+    let artifact = build_block_clones_artifact(request(vec![], json!({ "maxGroups": 2 })))?;
+
+    assert_eq!(artifact["thresholds"]["maxGroups"], 2);
+    assert_eq!(
+        artifact["noisePolicy"]["policyId"],
+        "block-clone-noise-policy-v1"
+    );
     Ok(())
 }
 

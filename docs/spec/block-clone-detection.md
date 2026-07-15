@@ -212,6 +212,9 @@ Required properties:
 
 ### Performance Contract
 
+- `_lib/block-clone-artifact.mjs` is the JS/TS parsing and normalized-token
+  boundary only. It must not retain a second suffix-array, group, noise-policy,
+  cap-policy, or final-artifact implementation, and it is not a fallback owner.
 - Production suffix-array construction uses Lumin's SA-IS implementation over
   the dense normalized token alphabet. Prefix-doubling remains test-only as an
   independent differential oracle.
@@ -379,8 +382,11 @@ Hard rules:
 
 P1 started with edge-case tests, not "helper missing" tests.
 [`PR #504`](https://github.com/annyeong844/lumin_lab/pull/504) covers the BC
-matrix below in `tests/test-build-block-clone-index.mjs` and
-`tests/build-block-clone-index.test.mjs`.
+matrix below through product CLI/tokenizer coverage in
+`tests/test-build-block-clone-index.mjs` and
+`tests/build-block-clone-index.test.mjs`, plus direct owner coverage in
+`experiments/rust-main/lumin-audit-core/src/block_clones/tests.rs` for
+suffix-array, containment, noise, and cap policy.
 
 Required fixtures:
 
@@ -428,6 +434,11 @@ Status: implemented by
 remains `MVP`, not `DONE`; beta.59 verified the installed artifact and manifest
 mirror, but broader corpus calibration still needs to confirm noise and cap
 behavior before stronger surfaces.
+
+Current owner split: `_lib/block-clone-artifact.mjs` owns OXC tokenization and
+request constants; `lumin-audit-core/src/block_clones/` owns suffix-array/LCP
+construction, repeated-region grouping, noise/cap policy, and final artifact
+projection. There is no JS artifact-construction fallback.
 
 ### P2: Manifest Mirror
 
