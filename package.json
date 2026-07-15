@@ -104,7 +104,6 @@
     "test:vitest:framework-policy-matrix": "vitest run tests/framework-policy-matrix.test.mjs",
     "test:vitest:framework-resource-surfaces": "vitest run tests/framework-resource-surfaces.test.mjs",
     "test:vitest:function-clone-audit-forwarding": "vitest run tests/function-clone-audit-forwarding.test.mjs",
-    "test:vitest:function-clone-export-surface": "vitest run tests/function-clone-export-surface.test.mjs",
     "test:vitest:function-clone-incremental": "vitest run tests/function-clone-incremental.test.mjs",
     "test:vitest:generate-canon-draft-cli": "vitest run tests/generate-canon-draft-cli.test.mjs",
     "test:vitest:generate-canon-draft-cli-helpers": "vitest run tests/generate-canon-draft-cli-helpers.test.mjs",

@@ -294,8 +294,6 @@ const SUITE_DESCRIPTIONS = {
     "build-framework-resource-surfaces.mjs producer and audit-repo artifact visibility",
   "test-inline-pattern-index.mjs":
     "build-inline-pattern-index.mjs producer: repeated inline catch-block review cue artifact",
-  "test-function-clone-export-surface.mjs":
-    "function-clone artifact export surface hides version internals",
   "test-function-clone-incremental.mjs":
     "strict incremental build-function-clone-index cold/warm equivalence + changed/deleted file behavior",
   "test-function-clone-audit-forwarding.mjs":

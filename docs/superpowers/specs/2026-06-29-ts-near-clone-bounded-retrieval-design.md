@@ -1,5 +1,10 @@
 # TS Near Clone Bounded Retrieval Design
 
+> **Status:** Superseded. Since the audit-core function-clone migration,
+> `_lib/function-clone-artifact.mjs` owns JS/TS fact extraction only and Rust
+> `lumin-audit-core/src/function_clones/near.rs` owns production near retrieval.
+> Do not implement this design or restore a JS artifact-construction owner.
+
 ## Objective
 
 Port the Rust v9 near-function clone retrieval contract back to the TS/JS

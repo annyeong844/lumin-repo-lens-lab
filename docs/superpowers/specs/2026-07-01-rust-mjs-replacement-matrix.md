@@ -48,6 +48,7 @@ Generated skill-package copies inherit the source decision.
 | Status | Meaning |
 |---|---|
 | Rust-owned for Rust lane | Rust is or should become the product owner for Rust input. JS/TS code may remain the owner for JS/TS input. |
+| Rust artifact owner | Rust owns product grouping, policy, and artifact projection; JS may retain language-specific parsing and fact extraction. |
 | Partial Rust owner | Rust owns part of the lane, but deletion would hide behavior or evidence. |
 | JS/TS owner retained | Behavior is JS/TS-specific or orchestration-level. Do not port yet. |
 | Utility candidate | Port only when a Rust caller needs the helper. No standalone migration. |
@@ -58,7 +59,7 @@ Generated skill-package copies inherit the source decision.
 | Behavior | Current JS/TS owner | Rust destination | Status | Rule |
 |---|---|---|---|---|
 | Rust syntax health, signal summaries, generated/test path policy | `_lib/extract-*`, syntax fact consumers, audit wrappers | `experiments/rust-sidecar/rust-source-health` | Rust-owned for Rust lane | Rust source-health owns Rust syntax facts. JS/TS extractors still own JS/TS syntax facts. |
-| Rust function clone groups, signature groups, near candidates | `build-function-clone-index.mjs`, `_lib/function-clone-artifact.mjs`, `_lib/function-signature-hash.mjs` | `rust-source-health/src/function_clones*`, `src/analyzer/syntax/items/function_bodies*`, `src/analyzer/syntax/items/functions/signature.rs` | Rust-owned for Rust lane | Rust artifact may replace JS clone output for Rust files only. JS/TS clone artifact remains the TS/JS language owner. |
+| JS/TS function clone facts, groups, signature groups, near candidates | `build-function-clone-index.mjs`, `_lib/function-clone-artifact.mjs`, `_lib/function-signature-hash.mjs` | `lumin-audit-core/src/function_clones*` | Rust artifact owner | JS owns OXC parsing and normalized function facts. Rust owns grouping, near scoring, policy metadata, and final artifact projection for JS/TS input. |
 | Rust shape/signature lookup for pre-write | `build-shape-index.mjs`, `_lib/shape-hash.mjs`, `_lib/shape-index-*` | `rust-source-health` AST facts plus `lumin-rust-analyzer/src/prewrite/lookup/shape.rs` | Rust-owned for Rust lane | Rust shapes/signatures replace JS shape lanes only for Rust pre-write intents. |
 | Rust unused definition / dead export evidence | `classify-dead-exports.mjs`, `_lib/classify-facts*.mjs`, `_lib/export-action-safety.mjs`, parts of `rank-fixes.mjs` | `rust-source-health/src/dead_exports.rs`, `src/protocol/unused_definitions.rs` | Partial Rust owner | Rust may own raw evidence and RUST-FP gates. Positive remove candidates require dogfood-proven reachability before any JS owner is retired. |
 | Cargo/rustc semantic oracle and safe/review tiers | TS/JS uses `tsc`/OXC-derived evidence; no Cargo equivalent | `experiments/rust-main/rust-cargo-oracle`, `lumin-rust-analyzer` policy bridge | Rust-owned for Rust lane | Cargo artifacts are Rust-only necessity. They must remain artifact-visible and must not introduce timeouts or repo-size caps. |
@@ -82,11 +83,12 @@ The next Rust migration work should follow this order.
    syntax facts, clone groups, signature groups, compact cache, and unused
    definition raw evidence all have Rust owners.
 
-2. **Rust function clone and signature deprecation for Rust files**
+2. **Function clone owner convergence**
 
-   Mark JS function-clone artifacts as JS/TS-language owners, not Rust owners.
-   Rust files should use Rust clone groups. The JS clone engine stays because it
-   still owns JS/TS function clone behavior.
+   Rust files use Rust source-health clone groups. JS/TS files retain their OXC
+   extraction bridge, while `lumin-audit-core` owns clone grouping, near
+   scoring, policy metadata, and final artifact projection. Do not restore a
+   second JS artifact builder.
 
 3. **Rust dead-export evidence, not unsafe removal**
 

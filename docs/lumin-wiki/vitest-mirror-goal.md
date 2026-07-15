@@ -190,11 +190,9 @@ by:
 ```text
 node tests/test-definition-id-export.mjs
 node tests/test-file-delta-export.mjs
-node tests/test-function-clone-export-surface.mjs
 node tests/test-classify-policies-export-surface.mjs
 npm run test:vitest:definition-id-export
 npm run test:vitest:file-delta-export
-npm run test:vitest:function-clone-export-surface
 npm run test:vitest:classify-policies-export-surface
 ```
 

@@ -2742,24 +2742,22 @@ evidence, and literal union hashing.
 
 ## [2026-05-15] review | Export surface guards Vitest mirror batch
 
-Added `pilot-reviews/vitest-export-surface-guards.md` and marked four tiny
+Added `pilot-reviews/vitest-export-surface-guards.md` and marked three retained
 export-surface guard suites as reviewed Lane A candidates:
 `tests/test-definition-id-export.mjs`, `tests/test-file-delta-export.mjs`,
-`tests/test-function-clone-export-surface.mjs`, and
 `tests/test-classify-policies-export-surface.mjs`. The review keeps the future
 mirror batch focused on direct module export contracts while preserving every
 Node entrypoint and keeping algorithm behavior, resolver, ranking,
-pre/post-write workflow, function-clone grouping, and classification behavior
+pre/post-write workflow and classification behavior
 suites out of scope.
 
 ## [2026-05-15] implementation | Export surface guards Vitest mirror batch
 
-Added focused Vitest mirrors for the four reviewed export-surface guard suites:
+Added focused Vitest mirrors for the three retained export-surface guard suites:
 `tests/definition-id-export.test.mjs`, `tests/file-delta-export.test.mjs`,
-`tests/function-clone-export-surface.test.mjs`, and
 `tests/classify-policies-export-surface.test.mjs`. The mirrors preserve the
 Node entrypoints and keep direct module export contracts local: public helpers
-remain exported, raw builders/path normalizers/version constants/legacy
+remain exported, raw builders/path normalizers/legacy
 sentinels/non-public policy actions stay unexported, and no algorithm behavior
 or analyzer evidence suite is absorbed into this batch.
 
