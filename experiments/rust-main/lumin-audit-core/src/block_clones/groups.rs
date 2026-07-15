@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -10,6 +10,10 @@ use super::policy::{
 };
 use super::protocol::BlockCloneToken;
 use super::suffix_array::{build_lcp_array, build_suffix_array};
+
+mod containment;
+
+use containment::{ContainmentIndex, ContainmentScratch};
 
 #[derive(Debug, Clone)]
 pub(super) struct Instance {
@@ -38,27 +42,32 @@ pub(super) struct BlockCloneGroup {
     pub(super) mute_reason: Option<String>,
 }
 
+struct BlockCloneCandidate {
+    representative_start: usize,
+    token_count: usize,
+    line_count: usize,
+    instances: Vec<Instance>,
+}
+
 fn span_for(
     meta: &[Option<BlockCloneToken>],
     start: usize,
     token_count: usize,
 ) -> Option<Instance> {
-    let entries = meta.get(start..start + token_count)?;
-    if entries.len() != token_count || entries.iter().any(Option::is_none) {
+    if token_count == 0 {
         return None;
     }
-    let tokens = entries
-        .iter()
-        .filter_map(Option::as_ref)
-        .collect::<Vec<_>>();
-    let file = tokens.first()?.file.clone();
-    if !tokens.iter().all(|token| token.file == file) {
+    let start_entry = meta.get(start)?.as_ref()?;
+    let end_entry = meta
+        .get(start.checked_add(token_count.checked_sub(1)?)?)?
+        .as_ref()?;
+    // LCP construction stops at the non-positive sentinel between files, so a
+    // matched span with token-backed endpoints cannot cross a file boundary.
+    if start_entry.file != end_entry.file {
         return None;
     }
-    let start_entry = tokens.first()?;
-    let end_entry = tokens.last()?;
     Some(Instance {
-        file,
+        file: start_entry.file.clone(),
         start_line: start_entry.line,
         end_line: end_entry.end_line,
         start_token: start,
@@ -71,12 +80,6 @@ fn overlaps(left: &Instance, right: &Instance) -> bool {
     left.file == right.file
         && left.start_token < right.end_token
         && right.start_token < left.end_token
-}
-
-fn contains_span(outer: &Instance, inner: &Instance) -> bool {
-    outer.file == inner.file
-        && outer.start_token <= inner.start_token
-        && outer.end_token >= inner.end_token
 }
 
 fn filter_non_overlapping(instances: Vec<Instance>, limit: usize) -> Vec<Instance> {
@@ -112,7 +115,8 @@ pub(super) fn extract_groups(
     }
     let suffix_array = build_suffix_array(values);
     let lcp = build_lcp_array(values, &suffix_array);
-    let mut by_signature = BTreeMap::<String, (usize, BTreeSet<usize>)>::new();
+    let interval_starts = signature_interval_starts(&lcp);
+    let mut by_signature = HashMap::<(usize, usize), (usize, BTreeSet<usize>)>::new();
 
     for i in 1..suffix_array.len() {
         let token_count = lcp[i];
@@ -120,25 +124,16 @@ pub(super) fn extract_groups(
             continue;
         }
         let starts = [suffix_array[i - 1], suffix_array[i]];
-        let Some(signature_values) = values.get(starts[0]..starts[0] + token_count) else {
-            continue;
-        };
-        let signature = signature_values
-            .iter()
-            .map(i64::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
         let entry = by_signature
-            .entry(signature)
-            .or_insert_with(|| (token_count, BTreeSet::new()));
-        entry.0 = entry.0.max(token_count);
+            .entry((token_count, interval_starts[i]))
+            .or_insert_with(|| (starts[0], BTreeSet::new()));
         for start in starts {
             entry.1.insert(start);
         }
     }
 
-    let mut groups = Vec::<BlockCloneGroup>::new();
-    for (signature, (token_count, starts)) in by_signature {
+    let mut candidates = Vec::<BlockCloneCandidate>::new();
+    for ((token_count, _), (representative_start, starts)) in by_signature {
         let instances = starts
             .into_iter()
             .filter_map(|start| span_for(meta, start, token_count))
@@ -152,27 +147,35 @@ pub(super) fn extract_groups(
         if kept.len() < thresholds.min_occurrences || line_count < thresholds.min_lines {
             continue;
         }
-        groups.push(BlockCloneGroup {
-            id: format!("block-clone:{}", group_hash(thresholds, &signature)),
-            claim: "repeated normalized token region".to_string(),
-            confidence: "heuristic-review".to_string(),
+        candidates.push(BlockCloneCandidate {
+            representative_start,
             token_count,
             line_count,
-            occurrence_count: kept.len(),
-            normalization_mode: "alpha-identifier".to_string(),
-            reasons: vec![
-                "suffix-array-lcp-repeat".to_string(),
-                "line-threshold-met".to_string(),
-            ],
             instances: kept,
-            review_only: true,
-            eligible_for_safe_fix: false,
-            visibility: None,
-            mute_reason: None,
         });
     }
+    rank_and_prune_candidates(
+        values,
+        candidates,
+        thresholds,
+        thresholds.max_candidate_groups.saturating_add(1),
+    )
+}
 
-    prune_contained_block_clone_groups(groups, thresholds.max_candidate_groups + 1)
+pub(super) fn signature_interval_starts(lcp: &[usize]) -> Vec<usize> {
+    let mut interval_starts = vec![0usize; lcp.len()];
+    let mut increasing = Vec::<usize>::new();
+    for (index, &length) in lcp.iter().enumerate() {
+        while increasing
+            .last()
+            .is_some_and(|&previous| lcp[previous] >= length)
+        {
+            increasing.pop();
+        }
+        interval_starts[index] = increasing.last().copied().unwrap_or(0);
+        increasing.push(index);
+    }
+    interval_starts
 }
 
 fn group_hash(thresholds: &Thresholds, signature: &str) -> String {
@@ -214,66 +217,98 @@ pub(super) fn compare_groups(left: &BlockCloneGroup, right: &BlockCloneGroup) ->
         .then_with(|| left.id.cmp(&right.id))
 }
 
-fn prune_contained_block_clone_groups(
-    mut groups: Vec<BlockCloneGroup>,
+fn rank_and_prune_candidates(
+    values: &[i64],
+    mut candidates: Vec<BlockCloneCandidate>,
+    thresholds: &Thresholds,
     max_groups: usize,
 ) -> Vec<BlockCloneGroup> {
+    let max_groups = max_groups.min(candidates.len());
     if max_groups == 0 {
         return Vec::new();
     }
-    groups.sort_by(compare_groups);
+    candidates.sort_by(|left, right| {
+        right
+            .token_count
+            .cmp(&left.token_count)
+            .then_with(|| right.instances.len().cmp(&left.instances.len()))
+    });
     let mut kept = Vec::<BlockCloneGroup>::new();
-    let mut containment_index = HashMap::<String, Vec<(usize, Instance)>>::new();
+    let mut containment_index = ContainmentIndex::new(values.len());
+    let mut containment_scratch = ContainmentScratch::new(max_groups);
+    let mut candidates = candidates.into_iter().peekable();
 
-    for group in groups {
-        let instances = &group.instances;
-        let probe = instances
-            .iter()
-            .min_by_key(|instance| {
-                containment_index
-                    .get(&instance.file)
-                    .map(Vec::len)
-                    .unwrap_or(0)
-            })
-            .cloned();
-        let contained = probe
-            .as_ref()
-            .and_then(|probe| {
-                containment_index
-                    .get(&probe.file)
-                    .map(|entries| (probe, entries))
-            })
-            .is_some_and(|(probe, entries)| {
-                entries.iter().any(|(kept_index, kept_instance)| {
-                    contains_span(kept_instance, probe)
-                        && group_contains_instances(&kept[*kept_index], instances)
-                })
-            });
-        if contained {
-            continue;
+    while let Some(first) = candidates.next() {
+        let rank = (first.token_count, first.instances.len());
+        let mut rank_bucket = vec![first];
+        while candidates
+            .peek()
+            .is_some_and(|candidate| (candidate.token_count, candidate.instances.len()) == rank)
+        {
+            if let Some(candidate) = candidates.next() {
+                rank_bucket.push(candidate);
+            }
         }
 
-        let kept_index = kept.len();
-        for instance in &group.instances {
-            containment_index
-                .entry(instance.file.clone())
-                .or_default()
-                .push((kept_index, instance.clone()));
-        }
-        kept.push(group);
-        if kept.len() >= max_groups {
-            break;
+        // Equal-rank candidates cannot strictly contain one another: equal
+        // token lengths require equal intervals, and equal occurrence counts
+        // then require equal instance sets. Check only higher-rank groups
+        // before paying to materialize signatures and stable ids.
+        let survivors = rank_bucket
+            .into_iter()
+            .filter(|candidate| {
+                !containment_index.contains_group(&candidate.instances, &mut containment_scratch)
+            })
+            .collect::<Vec<_>>();
+        let mut groups = survivors
+            .into_iter()
+            .filter_map(|candidate| materialize_candidate(values, candidate, thresholds))
+            .collect::<Vec<_>>();
+        groups.sort_by(compare_groups);
+        for group in groups {
+            let kept_index = kept.len();
+            for instance in &group.instances {
+                containment_index.insert(kept_index, instance);
+            }
+            kept.push(group);
+            if kept.len() >= max_groups {
+                return kept;
+            }
         }
     }
 
     kept
 }
 
-fn group_contains_instances(group: &BlockCloneGroup, instances: &[Instance]) -> bool {
-    instances.iter().all(|instance| {
-        group
-            .instances
-            .iter()
-            .any(|other| contains_span(other, instance))
+fn materialize_candidate(
+    values: &[i64],
+    candidate: BlockCloneCandidate,
+    thresholds: &Thresholds,
+) -> Option<BlockCloneGroup> {
+    let signature = values
+        .get(
+            candidate.representative_start..candidate.representative_start + candidate.token_count,
+        )?
+        .iter()
+        .map(i64::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    Some(BlockCloneGroup {
+        id: format!("block-clone:{}", group_hash(thresholds, &signature)),
+        claim: "repeated normalized token region".to_string(),
+        confidence: "heuristic-review".to_string(),
+        token_count: candidate.token_count,
+        line_count: candidate.line_count,
+        occurrence_count: candidate.instances.len(),
+        normalization_mode: "alpha-identifier".to_string(),
+        reasons: vec![
+            "suffix-array-lcp-repeat".to_string(),
+            "line-threshold-met".to_string(),
+        ],
+        instances: candidate.instances,
+        review_only: true,
+        eligible_for_safe_fix: false,
+        visibility: None,
+        mute_reason: None,
     })
 }
