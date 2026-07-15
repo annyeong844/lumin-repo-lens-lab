@@ -250,12 +250,11 @@ analyzed repository's significant call tokens using
 candidates must meet `minSingleTokenIdf`, and call-token scoring uses
 `min(1.0, sharedCallTokenIdfSum / callIdfSaturation)`. Raw
 `callTokenJaccard` remains serialized as diagnostics only; it is not the call
-score. This is a Rust-only calibration layer because Rust constructor and macro
-call tokens produce low-discrimination single-token buckets that TS/JS does not
-have, and because Jaccard-style ratio scoring still lets a lone shared token
-score as a perfect call-token match. If this shared-IDF-sum scorer proves stable,
-the same deterministic IDF gate should be ported back to the TS/JS function
-clone scorer. Near candidates also require matching Rust callable qualifiers
+score. Rust keeps a language-specific generic-token suppression vocabulary
+because constructor and macro calls differ from JS/TS, while both language
+lanes now share the repository-local IDF gate, saturated shared-IDF score,
+compatibility partitions, ordered retained-token pair generation, and bounded
+projection contract. Near candidates also require matching Rust callable qualifiers
 (`async`, `unsafe`, and `const`) before scoring; mixed qualifier pairs are not
 review candidates.
 Rust also treats repeated manual `impl Debug for ... { fn fmt(...) }`

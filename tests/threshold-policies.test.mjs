@@ -14,8 +14,13 @@ describe("threshold policy metadata", () => {
     expect(functionPolicy.policyId).toBe("function-clone-near-policy");
     expect(functionPolicy.policyVersion).toBe("function-clone-near-policy-v1");
     expect(functionPolicy.policyClass).toBe("review");
+    expect(functionPolicy.thresholds.minSingleTokenIdf).toBe(3);
+    expect(functionPolicy.thresholds.minCallTokenIdfScore).toBe(0.5);
+    expect(functionPolicy.thresholds.weights.callTokenIdfScore).toBe(0.45);
     expect(functionPolicy.thresholds.minNearScore).toBe(0.62);
     expect(functionPolicy.thresholds.maxNearCandidates).toBe(50);
+    expect(functionPolicy.candidateGenerationMode).toBe("bounded-retrieval");
+    expect(functionPolicy.projection).toBe("streaming-top-n");
     expect(functionPolicy.policyHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(functionPolicy.thresholdHash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
@@ -48,6 +53,7 @@ describe("threshold policy metadata", () => {
       "inline-pattern-policy",
     ]);
     expect(summary[0].thresholds.minNearScore).toBe(0.62);
+    expect(summary[0].candidateGenerationMode).toBe("bounded-retrieval");
     expect(summary[0].thresholdHash).toBe(functionPolicy.thresholdHash);
     expect(summary[0].calibrationCorpus?.corpusId).toBe(
       "calibration-2026-05-prewrite-v1",

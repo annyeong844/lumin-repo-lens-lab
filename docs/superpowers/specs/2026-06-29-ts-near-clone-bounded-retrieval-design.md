@@ -1,9 +1,11 @@
 # TS Near Clone Bounded Retrieval Design
 
-> **Status:** Superseded. Since the audit-core function-clone migration,
-> `_lib/function-clone-artifact.mjs` owns JS/TS fact extraction only and Rust
+> **Status:** Active for the Rust-owned JS/TS artifact lane. Since the
+> audit-core function-clone migration, `_lib/function-clone-artifact.mjs` owns
+> JS/TS fact extraction only and
 > `lumin-audit-core/src/function_clones/near.rs` owns production near retrieval.
-> Do not implement this design or restore a JS artifact-construction owner.
+> Implement this contract in Rust; do not restore a JS artifact-construction
+> owner.
 
 ## Objective
 
@@ -19,11 +21,12 @@ evidence with artifact-visible omissions.
 
 Primary owner:
 
+- `experiments/rust-main/lumin-audit-core/src/function_clones/near.rs`
+- `experiments/rust-main/lumin-audit-core/src/function_clones/near/*.rs`
+
+Fact-extraction boundary:
+
 - `_lib/function-clone-artifact.mjs`
-
-Supporting owner:
-
-- `skills/lumin-repo-lens-lab/_engine/lib/threshold-policies.mjs`
 
 The CLI wrapper `build-function-clone-index.mjs` should remain a thin producer
 entry point. Exact body groups, structure groups, and signature groups are out
@@ -31,7 +34,7 @@ of scope for this slice.
 
 ## Current Problem
 
-The TS/JS near lane currently mirrors the old Rust shape:
+The Rust-owned TS/JS artifact lane currently mirrors the old exhaustive shape:
 
 1. collect significant call tokens
 2. build `token -> [function facts]` buckets
@@ -48,8 +51,8 @@ grounded absence claims when skipped.
 
 ## Chosen Approach
 
-Implement the Rust v9 bounded retrieval contract in TS/JS near candidate
-generation.
+Implement the Rust v9 bounded retrieval contract in audit-core's JS/TS near
+candidate generation.
 
 Keep the language-specific token extractor and existing exact/structure
 normalizers. Change only the near retrieval path.
@@ -389,7 +392,8 @@ Do not fake product coverage with tests that only prove helper exports exist.
 - Do not cap repositories by file count, LOC, or function count.
 - Do not force exactly 50 near candidates.
 - Do not rewrite TS exact, structure, or signature clone grouping.
-- Do not alter Rust near retrieval in this slice.
+- Do not alter the separate Rust source-health near retrieval policy in this
+  slice.
 - Do not add approximate ANN, LSH, or WAND-style retrieval in this first TS
   backport. Those are separate lanes.
 

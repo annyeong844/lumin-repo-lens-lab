@@ -59,25 +59,41 @@ export const THRESHOLD_POLICIES = Object.freeze({
       maxParamCountDelta: 1,
       minBodyLocSimilarity: 0.34,
       minStatementCountSimilarity: 0.34,
-      minCallTokenJaccard: 0.5,
+      minSingleTokenIdf: 3,
+      callIdfSaturation: 6,
+      minCallTokenIdfScore: 0.5,
       minNameTokenJaccardFallback: 0.34,
       minNearScore: 0.62,
       maxNearCandidates: 50,
       weights: {
-        callTokenJaccard: 0.45,
+        callTokenIdfScore: 0.45,
         nameTokenJaccard: 0.25,
         bodyLocSimilarity: 0.15,
         statementCountSimilarity: 0.15,
       },
     },
+    retrievalContractVersion: 'function-clone-near-retrieval.v1',
+    candidateGenerationMode: 'bounded-retrieval',
+    candidateCountScope: 'scored-candidates-from-retained-retrieval-evidence',
+    idfFormula: 'ln((functionCount + 1) / (documentFrequency + 1))',
+    idfScope: 'repository-local-function-call-token-document-frequency',
+    pairDedupe: 'ordered-shared-retained-token',
+    projection: 'streaming-top-n',
+    skippedLowDiscriminationBucketSampleLimit: 50,
+    scoreFormulaVersion: 'function-clone-near-score-idf-sum-v1',
+    scoreCalibration: {
+      callTokenComponent: 'shared-idf-sum-saturated',
+      previousCallTokenComponent: 'jaccard',
+      callIdfSaturation: 6,
+      thresholdCompatibility: 'threshold-number-retained-but-call-component-changed',
+    },
     calibration: {
       corpus: 'calibration-2026-05-prewrite-v1',
-      note: 'agent-entry resolver calibration threshold contract',
+      note: 'bounded JS/TS near-function retrieval calibration',
     },
-    notes: [
-      'Near-function candidates are review-only cues.',
-      'Scores do not prove semantic equivalence or automatic merge safety.',
-    ],
+    calibrationCorpus: calibrationCorpusSummary([
+      'calibration-2026-05-prewrite-v1',
+    ])[0],
   }),
 
   'inline-pattern-policy': withHash({
@@ -145,6 +161,31 @@ export function thresholdPolicySummary(policyIds) {
       policyHash: policy.policyHash,
       thresholdHash: policy.thresholdHash,
       thresholds: policy.thresholds,
+      ...(policy.retrievalContractVersion
+        ? { retrievalContractVersion: policy.retrievalContractVersion }
+        : {}),
+      ...(policy.candidateGenerationMode
+        ? { candidateGenerationMode: policy.candidateGenerationMode }
+        : {}),
+      ...(policy.candidateCountScope
+        ? { candidateCountScope: policy.candidateCountScope }
+        : {}),
+      ...(policy.idfFormula ? { idfFormula: policy.idfFormula } : {}),
+      ...(policy.idfScope ? { idfScope: policy.idfScope } : {}),
+      ...(policy.pairDedupe ? { pairDedupe: policy.pairDedupe } : {}),
+      ...(policy.projection ? { projection: policy.projection } : {}),
+      ...(policy.skippedLowDiscriminationBucketSampleLimit !== undefined
+        ? {
+            skippedLowDiscriminationBucketSampleLimit:
+              policy.skippedLowDiscriminationBucketSampleLimit,
+          }
+        : {}),
+      ...(policy.scoreFormulaVersion
+        ? { scoreFormulaVersion: policy.scoreFormulaVersion }
+        : {}),
+      ...(policy.scoreCalibration
+        ? { scoreCalibration: policy.scoreCalibration }
+        : {}),
       calibration: policy.calibration,
       ...(calibrationCorpus ? { calibrationCorpus } : {}),
     };

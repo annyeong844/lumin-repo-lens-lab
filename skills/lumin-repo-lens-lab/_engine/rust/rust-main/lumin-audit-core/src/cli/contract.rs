@@ -187,6 +187,7 @@ const RUNTIME_FEATURES: &[&str] = &[
     "postWriteScopedBaseEvidence",
     "nativePostWriteLifecycle",
     "lifecycleScopedArtifacts",
+    "functionCloneBoundedRetrieval",
 ];
 
 pub(super) fn run_runtime_contract(args: Vec<String>) -> Result<()> {

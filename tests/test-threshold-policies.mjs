@@ -13,8 +13,13 @@ assert.equal(functionPolicy.schemaVersion, THRESHOLD_POLICY_SCHEMA_VERSION);
 assert.equal(functionPolicy.policyId, 'function-clone-near-policy');
 assert.equal(functionPolicy.policyVersion, 'function-clone-near-policy-v1');
 assert.equal(functionPolicy.policyClass, 'review');
+assert.equal(functionPolicy.thresholds.minSingleTokenIdf, 3);
+assert.equal(functionPolicy.thresholds.minCallTokenIdfScore, 0.5);
+assert.equal(functionPolicy.thresholds.weights.callTokenIdfScore, 0.45);
 assert.equal(functionPolicy.thresholds.minNearScore, 0.62);
 assert.equal(functionPolicy.thresholds.maxNearCandidates, 50);
+assert.equal(functionPolicy.candidateGenerationMode, 'bounded-retrieval');
+assert.equal(functionPolicy.projection, 'streaming-top-n');
 assert.ok(/^sha256:[a-f0-9]{64}$/.test(functionPolicy.policyHash));
 assert.ok(/^sha256:[a-f0-9]{64}$/.test(functionPolicy.thresholdHash));
 
@@ -39,6 +44,7 @@ assert.deepEqual(summary.map((p) => p.policyId), [
   'inline-pattern-policy',
 ]);
 assert.equal(summary[0].thresholds.minNearScore, 0.62);
+assert.equal(summary[0].candidateGenerationMode, 'bounded-retrieval');
 assert.equal(summary[0].thresholdHash, functionPolicy.thresholdHash);
 assert.equal(summary[0].calibrationCorpus?.corpusId, 'calibration-2026-05-prewrite-v1');
 assert.equal(summary[0].calibrationCorpus?.entryCount, 3);

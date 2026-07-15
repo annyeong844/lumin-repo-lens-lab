@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v58';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v59';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -301,6 +301,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'postWriteScopedBaseEvidence',
   'nativePostWriteLifecycle',
   'lifecycleScopedArtifacts',
+  'functionCloneBoundedRetrieval',
 ];
 const AUDIT_CORE_REQUIRED_SUBCOMMANDS = new Set(
   AUDIT_CORE_CONTRACT_PROBES.map(([args]) => args[0])
@@ -928,7 +929,12 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       semiDeadReactFiltered: 0,
       prototypeCalls: [],
     }));
-    const functionCloneProbeFact = (file, name, line) => ({
+    const functionCloneProbeFact = (
+      file,
+      name,
+      line,
+      { exactHash, structureHash, signatureHash, callTokens },
+    ) => ({
       kind: 'function-body-fingerprint',
       identity: `${file}::${name}`,
       exportedName: name,
@@ -947,16 +953,53 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       generator: false,
       paramCount: 1,
       statementCount: 2,
-      exactBodyHash: 'raw-a',
-      normalizedExactHash: 'exact-a',
-      normalizedStructureHash: 'structure-a',
-      normalizedSignatureHash: 'sig-a',
+      exactBodyHash: `raw-${exactHash}`,
+      normalizedExactHash: exactHash,
+      normalizedStructureHash: structureHash,
+      normalizedSignatureHash: signatureHash,
       signature: 'fn(value)',
-      callTokens: ['fetchUser'],
+      callTokens,
       source: 'fresh-ast-pass',
       scope: 'scope',
       confidence: 'high',
     });
+    const functionCloneFacts = [
+      functionCloneProbeFact('src/a.ts', 'alpha', 1, {
+        exactHash: 'exact-grouped',
+        structureHash: 'structure-grouped',
+        signatureHash: 'signature-grouped',
+        callTokens: ['groupedProbeCall'],
+      }),
+      functionCloneProbeFact('src/b.ts', 'beta', 4, {
+        exactHash: 'exact-grouped',
+        structureHash: 'structure-grouped',
+        signatureHash: 'signature-grouped',
+        callTokens: ['groupedProbeCall'],
+      }),
+      functionCloneProbeFact('src/c.ts', 'loadProbeAlpha', 7, {
+        exactHash: 'exact-near-a',
+        structureHash: 'structure-near-a',
+        signatureHash: 'signature-near-a',
+        callTokens: ['rareProbeCall'],
+      }),
+      functionCloneProbeFact('src/d.ts', 'loadProbeBeta', 10, {
+        exactHash: 'exact-near-b',
+        structureHash: 'structure-near-b',
+        signatureHash: 'signature-near-b',
+        callTokens: ['rareProbeCall'],
+      }),
+      ...Array.from({ length: 60 }, (_, index) => functionCloneProbeFact(
+        `src/noise-${index}.ts`,
+        `noiseFunction${index}`,
+        index + 20,
+        {
+          exactHash: `exact-noise-${index}`,
+          structureHash: `structure-noise-${index}`,
+          signatureHash: `signature-noise-${index}`,
+          callTokens: [`noiseProbeCall${index}`],
+        },
+      )),
+    ];
     writeFileSync(functionClonesInputPath, JSON.stringify({
       schemaVersion: 'lumin-function-clones-producer-request.v1',
       generated: '2026-07-02T00:00:00.000Z',
@@ -964,11 +1007,8 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       includeTests: true,
       exclude: [],
       scope: 'TS/JS including tests, top-level exported and file-local functions',
-      fileCount: 2,
-      facts: [
-        functionCloneProbeFact('src/a.ts', 'alpha', 1),
-        functionCloneProbeFact('src/b.ts', 'beta', 4),
-      ],
+      fileCount: functionCloneFacts.length,
+      facts: functionCloneFacts,
       diagnostics: [],
       filesWithParseErrors: [],
       filesWithReadErrors: [],
@@ -1956,12 +1996,27 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.tool === 'build-function-clone-index.mjs' &&
       json.meta.complete === true &&
       json.meta.supports?.nearFunctionCandidates === true &&
+      json.meta.supports?.nearFunctionBoundedRetrieval === true &&
+      json.meta.nearFunctionCandidateCount === 1 &&
+      json.meta.nearFunctionCandidateProjectionLimit === 50 &&
       json.meta.thresholdPolicies?.[0]?.policyId === 'function-clone-near-policy' &&
       Array.isArray(json.facts) &&
-      json.facts.length === 2 &&
+      json.facts.length === 64 &&
       Array.isArray(json.exactBodyGroups) &&
       json.exactBodyGroups[0]?.identities?.[0] === 'src/a.ts::alpha' &&
-      json.meta.exactBodyGroupCount === 1;
+      json.meta.exactBodyGroupCount === 1 &&
+      json.candidateGenerationPolicy?.mode === 'bounded-retrieval' &&
+      json.candidateGenerationPolicy?.retrievalContractVersion ===
+        'function-clone-near-retrieval.v1' &&
+      json.candidateGenerationSummary?.generatedUniquePairCount === 1 &&
+      json.candidateGenerationSummary?.scoredPairCount === 1 &&
+      json.nearFunctionCandidates?.some((candidate) =>
+        candidate?.generationToken === 'rareProbeCall' &&
+        candidate?.sharedCallTokenIdfSum >= 3 &&
+        candidate?.sharedSignificantCallTokens?.some((token) =>
+          token?.token === 'rareProbeCall' && token?.retained === true
+        )
+      );
   }
   if (probe.subcommand === 'symbol-graph-artifact') {
     return isObject(json.meta) &&
