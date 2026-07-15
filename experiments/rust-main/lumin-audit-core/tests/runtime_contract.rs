@@ -22,7 +22,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
     );
     assert_eq!(
         contract["contractVersion"],
-        "audit-core-js-runtime-bridge.v60"
+        "audit-core-js-runtime-bridge.v61"
     );
     assert_eq!(contract["features"]["resultOutput"], true);
     assert_eq!(contract["features"]["resultOutputSilencesStdout"], true);
@@ -123,6 +123,7 @@ fn cli_runtime_contract_reports_js_bridge_capabilities() -> Result<()> {
         contract["features"]["sourceUseAssemblyResolvedDottedAliases"],
         true
     );
+    assert_eq!(contract["features"]["lintEnforcementFailClosed"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyRecordRows"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyNameTable"], true);
     assert_eq!(contract["features"]["sourceUseAssemblyTypeOnlyState"], true);

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Tool-neutral lint enforcement evidence
+
+- Discover `.oxlintrc.json` and named `.oxlintrc.*.json` files alongside
+  ESLint configs, parsing active root and override rules into normalized C5
+  boundary evidence.
+- Record lint adapter/config/command status in
+  `triage.json.lintEnforcement` instead of treating a missing ESLint config as
+  proof that no lint enforcement exists.
+- Fail C5 closed as `unknown` when a declared lint command is unsupported or a
+  lint config is invalid and no independent boundary rule was recovered.
+- Keep Rust formatting (`rustfmt`), Rust linting (`clippy`), and repository
+  evidence (`--rust-analyzer`) as separate contracts.
+
 ### Export-identity public surface protection
 
 - Stop expanding a named public re-export into file-wide `publicApi_FP23`

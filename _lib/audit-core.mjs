@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v60';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v61';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -289,6 +289,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'sourceUseAssemblyDerivedReExportMaps',
   'sourceUseAssemblyTerminalRecordOutcomes',
   'sourceUseAssemblyResolvedDottedAliases',
+  'lintEnforcementFailClosed',
   'symbolGraphStrictRequestV2',
   'symbolGraphDeadTestCandidates',
   'stalenessBatchPickaxe',
@@ -1095,7 +1096,17 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       generated: '2026-07-02T00:00:00.000Z',
       root: rootDir,
       filesScanned: 1,
-      inputs: {},
+      inputs: {
+        triage: {
+          boundaries: [],
+          lintEnforcement: {
+            status: 'degraded',
+            unsupportedCommands: [
+              { scriptName: 'lint', command: 'newlint .' },
+            ],
+          },
+        },
+      },
       incremental: {
         enabled: true,
         changedFiles: 0,
@@ -2284,6 +2295,10 @@ function resultPayloadMatchesProbe(json, probe) {
       json.meta.schemaVersion === 9 &&
       json.meta.incremental?.reusedFiles === 1 &&
       json.A2_function_size?.gate === 'ok' &&
+      json.C5_lint_enforcement?.gate === 'unknown' &&
+      json.C5_lint_enforcement?.available === false &&
+      json.C5_lint_enforcement?.lintEvidenceStatus === 'degraded' &&
+      json.C5_lint_enforcement?.unsupportedCommands?.[0]?.scriptName === 'lint' &&
       json.E2_silent_catch?.analysis === 'oxc-ast-catch-clause' &&
       Array.isArray(json._not_computed) &&
       json._not_computed.length >= 20;

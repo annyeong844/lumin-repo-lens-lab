@@ -742,6 +742,104 @@ describe("checklist-facts producer artifact", () => {
     }
   });
 
+  it("grounds C5 from active Oxlint override rules", () => {
+    const fixture = createFixture("vitest-checklist-c5-oxlint-");
+    try {
+      write(
+        fixture.root,
+        "package.json",
+        JSON.stringify({ name: "cf-c5-oxlint", type: "module" }),
+      );
+      write(
+        fixture.root,
+        ".oxlintrc.json",
+        JSON.stringify({
+          rules: { "import/no-restricted-paths": "off" },
+          overrides: [
+            {
+              files: ["src/core/**/*.ts"],
+              rules: {
+                "no-restricted-imports": [
+                  "error",
+                  { patterns: ["../cli/**"] },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+      write(
+        fixture.root,
+        ".oxlintrc.typed.json",
+        JSON.stringify({ rules: { "typescript/no-floating-promises": "error" } }),
+      );
+      write(fixture.root, "src/core/ok.ts", "export const ok = 1;\n");
+
+      runProducer("triage-repo.mjs", fixture.root, fixture.output);
+      runProducer("checklist-facts.mjs", fixture.root, fixture.output);
+      const triage = JSON.parse(
+        readFileSync(path.join(fixture.output, "triage.json"), "utf8"),
+      );
+      const cf = readChecklist(fixture.output);
+
+      expect(triage.configs.oxlintConfig).toEqual(
+        expect.arrayContaining([".oxlintrc.json", ".oxlintrc.typed.json"]),
+      );
+      expect(triage.boundaries).toEqual([
+        {
+          rule: "no-restricted-imports",
+          file: ".oxlintrc.json",
+          tool: "oxlint",
+        },
+      ]);
+      expect(cf.C5_lint_enforcement).toMatchObject({
+        gate: "ok",
+        boundaryRulePresent: true,
+        rulesDetected: 1,
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("keeps C5 unknown for unsupported lint commands", () => {
+    const fixture = createFixture("vitest-checklist-c5-unknown-lint-");
+    try {
+      write(
+        fixture.root,
+        "package.json",
+        JSON.stringify({
+          name: "cf-c5-unknown-lint",
+          type: "module",
+          scripts: { lint: "newlint ." },
+        }),
+      );
+      write(fixture.root, "src/ok.ts", "export const ok = 1;\n");
+
+      runProducer("triage-repo.mjs", fixture.root, fixture.output);
+      runProducer("checklist-facts.mjs", fixture.root, fixture.output);
+      const triage = JSON.parse(
+        readFileSync(path.join(fixture.output, "triage.json"), "utf8"),
+      );
+      const cf = readChecklist(fixture.output);
+
+      expect(triage.lintEnforcement).toMatchObject({
+        status: "degraded",
+        unsupportedCommands: [
+          { scriptName: "lint", command: "newlint ." },
+        ],
+      });
+      expect(cf.C5_lint_enforcement).toMatchObject({
+        gate: "unknown",
+        available: false,
+        boundaryRulePresent: false,
+        lintEvidenceStatus: "degraded",
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it("populates artifact-backed checklist facts and input bits from the producer pipeline", () => {
     const fixture = createFixture("vitest-checklist-pipeline-");
     try {

@@ -594,6 +594,93 @@ function run(script, args) {
 }
 
 // ═════════════════════════════════════════════════════════════
+// CASE-C5-OXLINT — active Oxlint override rules ground C5
+// Disabled boundary-shaped rules must not become evidence.
+// ═════════════════════════════════════════════════════════════
+{
+  const fx = mkdtempSync(path.join(tmpdir(), 'cf-c5-oxlint-'));
+  const out = mkdtempSync(path.join(tmpdir(), 'cf-c5-oxlint-out-'));
+  try {
+    write(fx, 'package.json', JSON.stringify({ name: 'cf-c5-oxlint', type: 'module' }));
+    write(fx, '.oxlintrc.json', JSON.stringify({
+      rules: { 'import/no-restricted-paths': 'off' },
+      overrides: [{
+        files: ['src/core/**/*.ts'],
+        rules: {
+          'no-restricted-imports': ['error', { patterns: ['../cli/**'] }],
+        },
+      }],
+    }));
+    write(fx, '.oxlintrc.typed.json', JSON.stringify({
+      rules: { 'typescript/no-floating-promises': 'error' },
+    }));
+    write(fx, 'src/core/ok.ts', 'export const ok = 1;\n');
+
+    run('triage-repo.mjs', ['--root', fx, '--output', out]);
+    run('checklist-facts.mjs', ['--root', fx, '--output', out]);
+
+    const triage = JSON.parse(readFileSync(path.join(out, 'triage.json'), 'utf8'));
+    const cf = JSON.parse(readFileSync(path.join(out, 'checklist-facts.json'), 'utf8'));
+    const oxlintConfigs = new Set(triage.configs.oxlintConfig);
+
+    assert('CASE-C5-OXLINT.1. triage discovers default and named Oxlint configs',
+      oxlintConfigs.has('.oxlintrc.json') && oxlintConfigs.has('.oxlintrc.typed.json'),
+      JSON.stringify(triage.configs));
+    assert('CASE-C5-OXLINT.2. only the active Oxlint boundary rule is evidence',
+      triage.boundaries.length === 1 &&
+      triage.boundaries[0]?.rule === 'no-restricted-imports' &&
+      triage.boundaries[0]?.file === '.oxlintrc.json' &&
+      triage.boundaries[0]?.tool === 'oxlint',
+      JSON.stringify(triage.boundaries));
+    assert('CASE-C5-OXLINT.3. Oxlint boundary evidence grounds C5',
+      cf.C5_lint_enforcement.gate === 'ok' &&
+      cf.C5_lint_enforcement.boundaryRulePresent === true &&
+      cf.C5_lint_enforcement.rulesDetected === 1,
+      JSON.stringify(cf.C5_lint_enforcement));
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+}
+
+// ═════════════════════════════════════════════════════════════
+// CASE-C5-UNKNOWN-LINT — unsupported lint tools are unknown
+// They must not be projected as grounded absence of boundary rules.
+// ═════════════════════════════════════════════════════════════
+{
+  const fx = mkdtempSync(path.join(tmpdir(), 'cf-c5-unknown-lint-'));
+  const out = mkdtempSync(path.join(tmpdir(), 'cf-c5-unknown-lint-out-'));
+  try {
+    write(fx, 'package.json', JSON.stringify({
+      name: 'cf-c5-unknown-lint',
+      type: 'module',
+      scripts: { lint: 'newlint .' },
+    }));
+    write(fx, 'src/ok.ts', 'export const ok = 1;\n');
+
+    run('triage-repo.mjs', ['--root', fx, '--output', out]);
+    run('checklist-facts.mjs', ['--root', fx, '--output', out]);
+
+    const triage = JSON.parse(readFileSync(path.join(out, 'triage.json'), 'utf8'));
+    const cf = JSON.parse(readFileSync(path.join(out, 'checklist-facts.json'), 'utf8'));
+
+    assert('CASE-C5-UNKNOWN-LINT.1. triage exposes unsupported lint commands',
+      triage.lintEnforcement.status === 'degraded' &&
+      triage.lintEnforcement.unsupportedCommands[0]?.scriptName === 'lint',
+      JSON.stringify(triage.lintEnforcement));
+    assert('CASE-C5-UNKNOWN-LINT.2. C5 fails closed as unknown',
+      cf.C5_lint_enforcement.gate === 'unknown' &&
+      cf.C5_lint_enforcement.available === false &&
+      cf.C5_lint_enforcement.boundaryRulePresent === false &&
+      cf.C5_lint_enforcement.lintEvidenceStatus === 'degraded',
+      JSON.stringify(cf.C5_lint_enforcement));
+  } finally {
+    rmSync(fx, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  }
+}
+
+// ═════════════════════════════════════════════════════════════
 // CASE-PIPELINE — run the whole pipeline, verify artifact-backed
 // items (A5, A6, B3, C5, C7) populate from their sources.
 // ═════════════════════════════════════════════════════════════

@@ -67,6 +67,14 @@ the Rust-owned `execute-audit-lifecycle` sequencing wrapper that applies the
 checked lifecycle request guard, pre/post/canon/check execution order, and
 strict post-write exit policy before manifest refresh.
 
+`triage-repo.mjs` owns lint-tool adapters and lowers supported configuration
+surfaces into normalized `triage.json.boundaries[]` plus
+`triage.json.lintEnforcement`. Checklist C5 consumes only that normalized
+evidence. If a declared lint command is unsupported or a config cannot be
+parsed, `lintEnforcement.status` is `degraded`; without an independently
+grounded boundary rule, Rust must project C5 as `unknown`, never as grounded
+absence. `rustfmt` is formatting evidence, not lint-enforcement evidence.
+
 It does not own JS/TS producer behavior, Rust source-health syntax analysis,
 Cargo semantic oracle behavior outside the explicitly migrated canon-draft
 lifecycle child-process wrapper, check-canon lifecycle child-process wrapper,
@@ -374,7 +382,7 @@ and the packaged source fallback must be regenerated from the same contract.
 | `experiments/rust-main/lumin-audit-core/src/checklist_facts/function_size.rs` | `A2_function_size` role buckets, thresholds, stable ranking, capped examples, and role-local projections from already-collected AST facts | function discovery, OXC parsing, citation wording, or Markdown rendering |
 | `experiments/rust-main/lumin-audit-core/src/checklist_facts/topology.rs` | `A5_decoupling_ratio` and `A6_circular_deps` projection, checked layered-edge treatment, full/top-list normalization, cycle summaries, and deterministic topology examples | topology production, path discovery, citation wording, or verdicts beyond checklist gates |
 | `experiments/rust-main/lumin-audit-core/src/checklist_facts/shape_drift.rs` | `B1B2_shape_drift` exact-group and near-shape review-cue projection, field/name overlap scoring, generated-only separation, and deterministic candidate ordering | shape-fact production, semantic-equivalence claims, automatic refactors, citation wording, or Markdown rendering |
-| `experiments/rust-main/lumin-audit-core/src/checklist_facts/projections.rs` | Artifact-backed duplicate-implementation, dead-code, lint-enforcement, barrel-amplification, and silent-catch checklist projections | source extraction, topology/shape policy, citation wording, or Markdown rendering |
+| `experiments/rust-main/lumin-audit-core/src/checklist_facts/projections.rs` | Artifact-backed duplicate-implementation, dead-code, normalized lint-enforcement projection with fail-closed unknown handling for degraded adapter evidence, barrel-amplification, and silent-catch checklist projections | lint-tool/config discovery, source extraction, topology/shape policy, citation wording, or Markdown rendering |
 | `experiments/rust-main/lumin-audit-core/src/checklist_facts/presentation.rs` | Checklist result annotation, citation hints, unavailable projection, deferred-item vocabulary, and compact citation value formatting | section gate computation, artifact production, source extraction, or Markdown rendering |
 | `experiments/rust-main/lumin-audit-core/src/checklist_facts/value_support.rs` | Shared checked JSON traversal, numeric coercion, generated-group filtering, deterministic string collection, and rounding helpers used by checklist projections | checklist policy, citation prose, artifact IO, or rendering |
 | `experiments/rust-main/lumin-audit-core/src/compare_repos.rs` | `compare.json` artifact construction from two already-produced audit output directories: tolerant optional artifact reads, side summary projection, numeric delta projection, missing-artifact accounting, and deterministic artifact shape while preserving the checked `compare-repos.mjs` vocabulary | audit pipeline execution, source walking, artifact production, human console rendering |

@@ -73,6 +73,11 @@ fn citation_for(section_key: &str, result: &Value) -> String {
             display_value(result.get("signatureGroupCandidates")),
             display_value(result.get("nearFunctionCandidates"))
         ),
+        "C5_lint_enforcement" if result.get("gate").and_then(Value::as_str) == Some("unknown") => format!(
+            "[unknown, checklist-facts.json.C5_lint_enforcement.lintEvidenceStatus = {}, reason = {}]",
+            display_value(result.get("lintEvidenceStatus")),
+            display_value(result.get("reason"))
+        ),
         "C5_lint_enforcement" => format!(
             "[grounded, checklist-facts.json.C5_lint_enforcement.boundaryRulePresent = {}, rulesDetected = {}]",
             display_value(result.get("boundaryRulePresent")),
