@@ -100,6 +100,7 @@ pub fn render_audit_summary(request: &AuditSummaryRenderRequest) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Context;
 
     fn request(manifest: Value) -> AuditSummaryRenderRequest {
         AuditSummaryRenderRequest {
@@ -118,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn required_symbol_graph_failure_is_prominent_and_not_reported_as_clean() {
+    fn required_symbol_graph_failure_is_prominent_and_not_reported_as_clean() -> Result<()> {
         let markdown = render_audit_summary(&request(serde_json::json!({
             "commandsRun": [{
                 "step": "build-symbol-graph.mjs",
@@ -128,14 +129,17 @@ mod tests {
 
         let failure = markdown
             .find("## Required Analysis Failures")
-            .expect("required failure section");
-        let read_first = markdown.find("## Read First").expect("read first section");
+            .context("required failure section")?;
+        let read_first = markdown
+            .find("## Read First")
+            .context("read first section")?;
         assert!(failure < read_first);
         assert!(markdown.contains("Dead-export and reachability analysis is unavailable"));
         assert!(markdown.contains("do not read missing `symbols.json`"));
-        let preview = render_summary_console_preview(&markdown).expect("console preview");
+        let preview = render_summary_console_preview(&markdown).context("console preview")?;
         assert!(preview.contains("Required Analysis Failures"));
         assert!(preview.contains("Symbol graph failed"));
+        Ok(())
     }
 
     #[test]
