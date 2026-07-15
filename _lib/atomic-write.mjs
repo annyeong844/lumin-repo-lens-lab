@@ -36,9 +36,13 @@ function renameWithRetry(tmpPath, targetPath, { attempts = 8, delayMs = 25 } = {
 }
 
 export function atomicWrite(targetPath, content) {
+  atomicWriteFile(targetPath, (tmpPath) => writeFileSync(tmpPath, content));
+}
+
+export function atomicWriteFile(targetPath, writeTempFile) {
   const tmpPath = `${targetPath}.tmp.${randomBytes(3).toString('hex')}`;
-  writeFileSync(tmpPath, content);
   try {
+    writeTempFile(tmpPath);
     renameWithRetry(tmpPath, targetPath);
   } catch (e) {
     rmSync(tmpPath, { force: true });
@@ -47,12 +51,5 @@ export function atomicWrite(targetPath, content) {
 }
 
 export function atomicCopy(sourcePath, targetPath) {
-  const tmpPath = `${targetPath}.tmp.${randomBytes(3).toString('hex')}`;
-  copyFileSync(sourcePath, tmpPath);
-  try {
-    renameWithRetry(tmpPath, targetPath);
-  } catch (e) {
-    rmSync(tmpPath, { force: true });
-    throw e;
-  }
+  atomicWriteFile(targetPath, (tmpPath) => copyFileSync(sourcePath, tmpPath));
 }
