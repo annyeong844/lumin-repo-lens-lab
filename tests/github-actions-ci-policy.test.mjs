@@ -67,7 +67,7 @@ describe("GitHub Actions CI policy", () => {
     );
     expect(changesJobSection).toContain("experiments/rust-main/*");
     expect(changesJobSection).toContain("experiments/rust-sidecar/*");
-    expect(changesJobSection).toContain("_lib/audit-core.mjs");
+    expect(changesJobSection).toContain("_lib/audit-core*.mjs");
     expect(changesJobSection).toContain("_lib/audit-manifest.mjs");
     expect(changesJobSection).toContain("package.json");
     expect(changesJobSection).toContain("scripts/build-skill.mjs");

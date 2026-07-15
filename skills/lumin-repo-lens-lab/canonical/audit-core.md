@@ -550,10 +550,13 @@ required feature is a contract change even when the CLI schema remains
 backward-compatible. That change must bump the bridge contract version in the
 JS resolver, Rust runtime contract, package builder, and contract tests.
 
-`_engine/lib/audit-core.mjs` is the single JS owner of runtime-contract validation and
-the executable result-output fixture probe. `scripts/build-skill.mjs` must call
-that owner before copying the current-platform helper; it must not maintain a
-second subcommand list, feature list, fixture builder, or payload matcher.
+`_engine/lib/audit-core-contract.mjs` owns the declarative bridge version, required
+features, required subcommands, and missing-input probe table.
+`_engine/lib/audit-core.mjs` remains the public JS facade and the single owner of
+runtime-contract validation and the executable result-output fixture probe.
+`scripts/build-skill.mjs` must call that facade before copying the
+current-platform helper; it must not maintain a second subcommand list, feature
+list, fixture builder, or payload matcher.
 
 Every checked-in platform binary advertised by
 `_engine/bin/audit-core-platforms.json` must be rebuilt from that same contract
