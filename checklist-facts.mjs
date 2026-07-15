@@ -78,40 +78,6 @@ function walkAst(node, visit, parent = null, parentKey = null) {
   }
 }
 
-function collectFunctionSizeFacts() {
-  const entries = [];
-  let parseErrors = 0;
-
-  for (const file of files) {
-    let src, result;
-    try {
-      src = readFileSync(file, 'utf8');
-      result = parseOxcOrThrow(file, src);
-    } catch {
-      parseErrors++;
-      continue;
-    }
-    const lineStarts = computeLineStarts(src);
-    const relativeFile = relPath(ROOT, file);
-    const fileRole = classifyFileRole(relativeFile);
-
-    walkAst(result.program, (node, parent, parentKey) => {
-      if (!isFunctionNode(node)) return;
-      const startLine = lineOf(lineStarts, node.start ?? 0);
-      const endLine = lineOf(lineStarts, node.end ?? 0);
-      entries.push({
-        file: relativeFile,
-        line: startLine,
-        name: getFnName(node, parent, parentKey),
-        loc: Math.max(1, endLine - startLine + 1),
-        fileRole,
-      });
-    });
-  }
-
-  return { entries, parseErrors };
-}
-
 function catchBodyHasComment(node, comments) {
   const bodyStart = node.body?.start;
   const bodyEnd = node.body?.end;
@@ -170,7 +136,8 @@ function catchBodyReferencesParam(body, name) {
   return found;
 }
 
-function collectSilentCatchFacts() {
+function collectAstFacts() {
+  const functionEntries = [];
   const sites = [];
   const documentedSites = [];
   const anonymousSites = [];
@@ -192,8 +159,22 @@ function collectSilentCatchFacts() {
     const relativeFile = relPath(ROOT, file);
     const fileRole = classifyFileRole(relativeFile);
 
-    walkAst(result.program, (node) => {
-      if (node.type !== 'CatchClause' || !node.body || !Array.isArray(node.body.body)) return;
+    walkAst(result.program, (node, parent, parentKey) => {
+      if (isFunctionNode(node)) {
+        const startLine = lineOf(lineStarts, node.start ?? 0);
+        const endLine = lineOf(lineStarts, node.end ?? 0);
+        functionEntries.push({
+          file: relativeFile,
+          line: startLine,
+          name: getFnName(node, parent, parentKey),
+          loc: Math.max(1, endLine - startLine + 1),
+          fileRole,
+        });
+      }
+
+      if (node.type !== 'CatchClause' || !node.body || !Array.isArray(node.body.body)) {
+        return;
+      }
       const site = {
         file: relativeFile,
         line: lineOf(lineStarts, node.start ?? 0),
@@ -215,15 +196,23 @@ function collectSilentCatchFacts() {
   }
 
   return {
-    analysis: 'oxc-ast-catch-clause',
-    parseErrors,
-    sites,
-    documentedSites,
-    anonymousSites,
-    nonEmptyAnonymousSites,
-    unusedParamSites,
+    functionSize: {
+      entries: functionEntries,
+      parseErrors,
+    },
+    silentCatch: {
+      analysis: 'oxc-ast-catch-clause',
+      parseErrors,
+      sites,
+      documentedSites,
+      anonymousSites,
+      nonEmptyAnonymousSites,
+      unusedParamSites,
+    },
   };
 }
+
+const astFacts = collectAstFacts();
 
 const request = {
   schemaVersion: 'lumin-checklist-facts-producer-request.v1',
@@ -239,10 +228,7 @@ const request = {
     shapeIndex,
     functionClones,
   },
-  astFacts: {
-    functionSize: collectFunctionSizeFacts(),
-    silentCatch: collectSilentCatchFacts(),
-  },
+  astFacts,
 };
 
 const artifact = runAuditCoreJsonResultFile(
