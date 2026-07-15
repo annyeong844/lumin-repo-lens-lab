@@ -1,5 +1,9 @@
 # TS Near Clone Bounded Retrieval Implementation Plan
 
+> **Status:** Superseded and must not be executed. Production JS/TS
+> function-clone grouping and near retrieval moved to Rust audit-core;
+> `_lib/function-clone-artifact.mjs` is now a fact-extraction boundary only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Port the Rust v9 bounded near-function clone retrieval contract into the TS/JS function-clone producer without adding timeouts, repository caps, or forced candidate quotas.

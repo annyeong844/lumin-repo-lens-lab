@@ -109,7 +109,6 @@ node tests/test-framework-policy-facts.mjs               # framework policy fact
 node tests/test-framework-policy-matrix.mjs              # framework policy matrix contract for config and framework sentinel muting
 node tests/test-framework-resource-surfaces.mjs          # framework/resource surface classifier lanes for stories, Strapi paths, generated declarations, bundles, templates, and codemod resources
 node tests/test-function-clone-audit-forwarding.mjs      # audit-repo incremental flag forwarding for function clone producer
-node tests/test-function-clone-export-surface.mjs        # function-clone artifact export surface hides version internals
 node tests/test-function-clone-incremental.mjs           # strict incremental build-function-clone-index cold/warm equivalence + changed/deleted file behavior
 node tests/test-generate-canon-draft-cli-helpers.mjs     # CLI --source helper-registry + versioning + stale call-graph (P3-2)
 node tests/test-generate-canon-draft-cli-naming.mjs      # CLI --source naming + versioning + scope + regression (P3-4)
