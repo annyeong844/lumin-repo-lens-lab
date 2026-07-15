@@ -169,7 +169,10 @@ triage C/D(+H)/E/A/B/F/G using `checklist-facts.json`, raw artifacts, and
 the dedicated tools named by the checklist; mark unavailable lanes as
 `unknown` internally instead of silently omitting them. If the user
 asked for full, deep, exhaustive, due-diligence, CI, or formal review,
-open `templates/REVIEW_CHECKLIST.md` and walk it before drafting.
+open `templates/REVIEW_CHECKLIST.md` and walk it before drafting. When Rust is
+in scope, also walk `templates/REVIEW_CHECKLIST_RUST.md`; the review model owns
+source-level judgment after checking Rust artifacts, cargo/clippy output, and
+the cited source.
 
 Formal report closeout: if you save a formal report or due-diligence
 handoff to Markdown, the final author must re-read it before the final

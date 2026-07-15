@@ -59,6 +59,7 @@ const STRUCTURAL_REVIEW_WORKFLOW = existsSync(STRUCTURAL_REVIEW_WORKFLOW_PATH)
 const REPORT_TEMPLATE = readFileSync(path.join(DIR, 'templates/report-template.md'), 'utf8');
 const REFACTOR_PLAN_TEMPLATE = readFileSync(path.join(DIR, 'templates/refactor-plan-template.md'), 'utf8');
 const REVIEW_CHECKLIST = readFileSync(path.join(DIR, 'templates/REVIEW_CHECKLIST.md'), 'utf8');
+const REVIEW_CHECKLIST_RUST = readFileSync(path.join(DIR, 'templates/REVIEW_CHECKLIST_RUST.md'), 'utf8');
 const REVIEW_CHECKLIST_SHORT = readFileSync(path.join(DIR, 'templates/REVIEW_CHECKLIST_SHORT.md'), 'utf8');
 const REFACTOR_PLAN_POLICY = readFileSync(path.join(DIR, 'references/refactor-plan-policy.md'), 'utf8');
 const TEMPLATES_README = readFileSync(path.join(DIR, 'templates/README.md'), 'utf8');
@@ -84,6 +85,7 @@ const ENGLISH_PUBLIC_DOCS = [
   ['references/structural-review-workflow.md', STRUCTURAL_REVIEW_WORKFLOW],
   ['templates/report-template.md', REPORT_TEMPLATE],
   ['templates/REVIEW_CHECKLIST.md', REVIEW_CHECKLIST],
+  ['templates/REVIEW_CHECKLIST_RUST.md', REVIEW_CHECKLIST_RUST],
   ['templates/REVIEW_CHECKLIST_SHORT.md', REVIEW_CHECKLIST_SHORT],
 ];
 const KOREAN_EPISTEMIC_TOKENS = ['[확인 불가]', '확인 불가 / unknown', '확인 불가', '~인 것 같아요'];
@@ -254,6 +256,14 @@ assert('S6. SKILL.md keeps runtime canon slim and lab dirs outside the public co
       REVIEW_CHECKLIST_SHORT.includes('[unknown, scan range:'),
     offenders.join('\n'));
 }
+
+assert('S6a2. Rust review guidance cites emitted opacity evidence and keeps judgment with the model',
+  REVIEW_CHECKLIST_RUST.includes('rust-analyzer-health.latest.json.summary.syntaxReviewOpaqueSurfaces') &&
+  REVIEW_CHECKLIST_RUST.includes('No checked artifact emits a JSON field named') &&
+  REVIEW_CHECKLIST_RUST.includes('### Layer 3: AI review-model judgment') &&
+  REVIEW_CHECKLIST_RUST.includes('must not defer a source-readable decision') &&
+  !REVIEW_CHECKLIST_RUST.includes('files.<path>.astSummary.compilerOracleOpaqueSurfaces'),
+  REVIEW_CHECKLIST_RUST);
 
 assert('S6b. plugin manifest uses default component discovery and ships marketplace metadata',
   !Object.hasOwn(PLUGIN, 'skills') &&
@@ -575,6 +585,7 @@ assert('S17. phase/research docs are staged while user-facing templates/referenc
   existsSync(path.join(DIR, 'templates/refactor-plan-template.md')) &&
   existsSync(path.join(DIR, 'templates/REVIEW_CHECKLIST_SHORT.md')) &&
   existsSync(path.join(DIR, 'templates/REVIEW_CHECKLIST.md')) &&
+  existsSync(path.join(DIR, 'templates/REVIEW_CHECKLIST_RUST.md')) &&
   existsSync(path.join(DIR, 'docs/maintainer/SELF_AUDIT_HANDBOOK.md')) &&
   existsSync(path.join(DIR, 'docs/maintainer/false-positive-patterns-ledger.md')) &&
   existsSync(path.join(DIR, 'references/false-positive-index.md')) &&

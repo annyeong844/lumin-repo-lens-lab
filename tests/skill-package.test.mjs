@@ -176,6 +176,7 @@ try {
       existsSync(path.join(OUT, "templates/refactor-plan-template.md")) &&
       existsSync(path.join(OUT, "templates/REVIEW_CHECKLIST_SHORT.md")) &&
       existsSync(path.join(OUT, "templates/REVIEW_CHECKLIST.md")) &&
+      existsSync(path.join(OUT, "templates/REVIEW_CHECKLIST_RUST.md")) &&
       !existsSync(path.join(OUT, "templates/SELF_AUDIT_HANDBOOK.md")) &&
       existsSync(path.join(OUT, "references/false-positive-index.md")) &&
       existsSync(path.join(OUT, "references/false-positive-patterns.md")) &&
@@ -267,6 +268,10 @@ try {
     path.join(OUT, "templates/REVIEW_CHECKLIST.md"),
     "utf8",
   );
+  const generatedRustChecklist = readFileSync(
+    path.join(OUT, "templates/REVIEW_CHECKLIST_RUST.md"),
+    "utf8",
+  );
   assert(
     "SP3e. generated long checklist is repo-neutral and excludes maintainer-only self-audit notes",
     !generatedLongChecklist.includes("For THIS repo") &&
@@ -279,6 +284,20 @@ try {
       !existsSync(path.join(OUT, "docs/maintainer/SELF_AUDIT_HANDBOOK.md")) &&
       !existsSync(path.join(OUT, "templates/SELF_AUDIT_HANDBOOK.md")),
     generatedLongChecklist,
+  );
+
+  assert(
+    "SP3e2. generated Rust checklist keeps emitted evidence paths and AI adjudication honest",
+    generatedRustChecklist.includes(
+      "rust-analyzer-health.latest.json.summary.syntaxReviewOpaqueSurfaces",
+    ) &&
+      generatedRustChecklist.includes("No checked artifact emits a JSON field named") &&
+      generatedRustChecklist.includes("### Layer 3: AI review-model judgment") &&
+      generatedRustChecklist.includes("must not defer a source-readable decision") &&
+      !generatedRustChecklist.includes(
+        "files.<path>.astSummary.compilerOracleOpaqueSurfaces",
+      ),
+    generatedRustChecklist,
   );
 
   const skillText = readFileSync(path.join(OUT, "SKILL.md"), "utf8");
@@ -1044,6 +1063,7 @@ try {
       readFileSync(path.join(OUT, "templates/report-template.md"), "utf8"),
     ],
     ["templates/REVIEW_CHECKLIST.md", generatedLongChecklist],
+    ["templates/REVIEW_CHECKLIST_RUST.md", generatedRustChecklist],
     ["templates/REVIEW_CHECKLIST_SHORT.md", generatedShortChecklist],
   ];
   const generatedKoreanEpistemicOffenders = [];

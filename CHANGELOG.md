@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Rust review checklist recovery
+
+- Restore the Rust structural-review companion to the source and packaged skill,
+  and route Rust reviews through it without handing source-level judgment to a
+  non-expert user.
+- Cite macro/cfg opacity only from
+  `rust-analyzer-health.latest.json.summary.syntaxReviewOpaqueSurfaces`; no
+  emitted artifact field is named `compilerOracleOpaqueSurfaces`.
+
 ### Workspace dependency ownership
 
 - Make native JS/TS pre-write dependency lookup resolve the nearest workspace
