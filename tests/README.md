@@ -152,7 +152,7 @@ node tests/test-p6-member-precision.mjs                  # P6-3 namespace and dy
 node tests/test-p6-safe-fix-calibration.mjs              # P6 SAFE_FIX calibration corpus: real mini git repo + runtime/staleness convergence + P6 measurement
 node tests/test-plugin-package.mjs                       # Claude Code plugin-root package builder: plugin metadata, slash commands, generated skill surfaces, Codex wrapper opt-in
 node tests/test-post-write-artifact.mjs                  # post-write-delta dual-write + atomic (P2-1)
-node tests/test-post-write-cli.mjs                       # post-write.mjs CLI smoke + scan-range flag forwarding (P2-1)
+node tests/test-post-write-cli.mjs                       # native post-write CLI smoke + scan-range flag forwarding (P2-1)
 node tests/test-post-write-delta.mjs                     # computeDelta: 6-label classification + purity (P2-1)
 node tests/test-post-write-incremental.mjs               # post-write after-snapshot incremental forwarding + immutable pre-write baseline
 node tests/test-post-write-integration.mjs               # release-blocking end-to-end: multi-label + baseline-missing fixtures (P2-2)

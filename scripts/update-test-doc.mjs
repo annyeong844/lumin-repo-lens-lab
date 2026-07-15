@@ -310,7 +310,7 @@ const SUITE_DESCRIPTIONS = {
   "test-post-write-render.mjs": "post-write Markdown + JSON render (P2-1)",
   "test-post-write-artifact.mjs": "post-write-delta dual-write + atomic (P2-1)",
   "test-post-write-cli.mjs":
-    "post-write.mjs CLI smoke + scan-range flag forwarding (P2-1)",
+    "native post-write CLI smoke + scan-range flag forwarding (P2-1)",
   "test-post-write-incremental.mjs":
     "post-write after-snapshot incremental forwarding + immutable pre-write baseline",
   // ─── P2-2 (audit-repo orchestrator integration + release-blocking integration test) ───

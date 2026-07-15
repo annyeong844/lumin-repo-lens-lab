@@ -11,7 +11,7 @@
 > broader corpus calibration, and threshold/rendering decisions remain open.
 > P4 cap/noise calibration now specifies independent review/muted output caps
 > under `block-clone-threshold-policy-v2`.
-> **Last updated:** 2026-05-25.
+> **Last updated:** 2026-07-15.
 
 ## Problem
 
@@ -35,9 +35,9 @@ function-clones.json = top-level function/helper clone cues
 block-clones.json    = token/block repeated-region review evidence
 ```
 
-## Reference Takeaways
+## Algorithmic Basis
 
-The local `fallow-main` reference has a useful algorithmic spine:
+The detector uses a conventional token-clone pipeline:
 
 - AST tokenization into normalized token streams;
 - optional identifier/literal normalization modes;
@@ -48,13 +48,10 @@ The local `fallow-main` reference has a useful algorithmic spine:
 - token and line subset filtering;
 - min-token and min-line thresholds.
 
-That is the part worth stealing.
-
-The part not worth copying blindly is the product contract. A clone detector
-that emits `extract shared function` suggestions directly is too strong for
-Lumin's evidence style. Lumin should expose repeated regions as review
-evidence first, with explicit policy versions, thresholds, unsupported states,
-and "not semantic equivalence" wording.
+The implementation is Lumin-owned rather than copied from another detector.
+Its product contract remains deliberately narrower than the algorithm: repeated
+regions are review evidence with explicit policy versions, thresholds,
+unsupported states, and "not semantic equivalence" wording.
 
 ## Goals
 
@@ -212,6 +209,19 @@ Required properties:
 - The internal `maxCandidateGroups` guard is noise-agnostic and exists only to
   bound work on pathological repos; its saturation must be reported via
   `candidateCapSaturated`, not hidden.
+
+### Performance Contract
+
+- Production suffix-array construction uses Lumin's SA-IS implementation over
+  the dense normalized token alphabet. Prefix-doubling remains test-only as an
+  independent differential oracle.
+- LCP identity uses interval coordinates, not materialized token-signature
+  strings for every candidate.
+- Containment checks use an indexed interval query and materialize stable group
+  ids only for surviving candidates. Candidate count alone must not reintroduce
+  pairwise group comparison into the hot path.
+- These implementation choices must preserve the artifact contract exactly;
+  performance work does not change thresholds, ranking, ids, or review policy.
 
 ## Normalization Policy
 
