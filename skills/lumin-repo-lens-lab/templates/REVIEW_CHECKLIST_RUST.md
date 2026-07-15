@@ -328,4 +328,3 @@ For every reported Rust finding include:
 The AI review model makes the final judgment. It must not turn absent evidence
 into a clean verdict, and it must not defer a source-readable decision merely
 because no human reviewer is present.
-
