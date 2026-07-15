@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::Context;
 
 #[test]
 fn builds_function_clone_groups_from_js_facts() -> Result<()> {
@@ -44,45 +45,233 @@ fn builds_function_clone_groups_from_js_facts() -> Result<()> {
 
 #[test]
 fn near_candidates_skip_already_grouped_facts_and_score_remaining_pairs() -> Result<()> {
-    let artifact = build_function_clones_artifact(FunctionClonesRequest {
-        schema_version: FUNCTION_CLONES_REQUEST_SCHEMA_VERSION.to_string(),
-        generated: "2026-07-05T00:00:00.000Z".to_string(),
-        root: "C:/repo".to_string(),
-        include_tests: true,
-        exclude: vec![],
-        scope: "scope".to_string(),
-        observed_at: None,
-        file_count: 2,
-        facts: vec![
-            fact_with_calls(
-                "src/a.ts",
-                "loadUserAlpha",
-                1,
-                "exact-a",
-                "structure-a",
-                &["fetchUser", "parseBody"],
-            ),
-            fact_with_calls(
-                "src/b.ts",
-                "loadUserBeta",
-                8,
-                "exact-b",
-                "structure-b",
-                &["fetchUser", "parseBody"],
-            ),
-        ],
-        diagnostics: vec![],
-        files_with_parse_errors: vec![],
-        files_with_read_errors: vec![],
-        incremental: None,
-    })?;
+    let mut facts = vec![
+        fact_with_calls(
+            "src/a.ts",
+            "loadUserAlpha",
+            1,
+            "exact-a",
+            "structure-a",
+            &["fetchUser", "parseBody"],
+        ),
+        fact_with_calls(
+            "src/b.ts",
+            "loadUserBeta",
+            8,
+            "exact-b",
+            "structure-b",
+            &["fetchUser", "parseBody"],
+        ),
+    ];
+    facts.extend(noise_facts(2, 58));
+    let artifact = artifact_for_facts(facts)?;
 
     assert_eq!(artifact["meta"]["nearFunctionCandidateCount"], 1);
+    assert_eq!(artifact["meta"]["nearFunctionCandidateProjectionLimit"], 50);
+    assert_eq!(
+        artifact["meta"]["supports"]["nearFunctionBoundedRetrieval"],
+        true
+    );
+    assert_eq!(
+        artifact["candidateGenerationPolicy"]["mode"],
+        "bounded-retrieval"
+    );
+    assert_eq!(
+        artifact["candidateGenerationSummary"]["generatedUniquePairCount"],
+        1
+    );
+    assert_eq!(artifact["candidateGenerationSummary"]["scoredPairCount"], 1);
     assert_eq!(
         artifact["nearFunctionCandidates"][0]["sharedCallTokens"][0],
         "fetchUser"
     );
+    assert_eq!(
+        artifact["nearFunctionCandidates"][0]["generationToken"],
+        "fetchUser"
+    );
+    assert_eq!(
+        artifact["nearFunctionCandidates"][0]["callTokenIdfScore"],
+        1.0
+    );
     assert_eq!(artifact["nearFunctionCandidates"][0]["score"], 0.875);
+    assert_eq!(
+        artifact["meta"]["thresholdPolicies"][0]["policyHash"],
+        "sha256:6f524aeaefad2aa07badd8db3b841d2fec22d1228368bc5192387a5ea0116c54"
+    );
+    assert_eq!(
+        artifact["meta"]["thresholdPolicies"][0]["thresholdHash"],
+        "sha256:bea5f5cd6ce57db1800039b86f54d0ebc8b168b63aafeb3a9fbdc468a241ba29"
+    );
+    assert_eq!(
+        artifact["meta"]["thresholdPolicies"][0]["scoreFormulaVersion"],
+        "function-clone-near-score-idf-sum-v1"
+    );
+    Ok(())
+}
+
+#[test]
+fn low_discrimination_call_buckets_are_skipped_with_visible_work_estimates() -> Result<()> {
+    let facts = (0..8)
+        .map(|index| unique_fact(index, &["commonLookup"]))
+        .collect::<Vec<_>>();
+    let artifact = artifact_for_facts(facts)?;
+
+    assert_eq!(artifact["meta"]["nearFunctionCandidateCount"], 0);
+    assert_eq!(
+        artifact["candidateGenerationSummary"]["generatedUniquePairCount"],
+        0
+    );
+    assert_eq!(artifact["skippedLowDiscriminationBucketCount"], 1);
+    assert_eq!(artifact["skippedLowDiscriminationRawPairEstimate"], 28);
+    assert_eq!(
+        artifact["skippedLowDiscriminationBuckets"][0]["token"],
+        "commonLookup"
+    );
+    assert_eq!(
+        artifact["skippedLowDiscriminationBuckets"][0]["postingCount"],
+        8
+    );
+    Ok(())
+}
+
+#[test]
+fn retained_tokens_generate_pairs_while_low_idf_overlap_remains_scoring_evidence() -> Result<()> {
+    let mut facts = vec![
+        fact_with_calls(
+            "src/a.ts",
+            "loadRareAlpha",
+            1,
+            "exact-a",
+            "structure-a",
+            &["commonLookup", "rareLookup"],
+        ),
+        fact_with_calls(
+            "src/b.ts",
+            "loadRareBeta",
+            8,
+            "exact-b",
+            "structure-b",
+            &["commonLookup", "rareLookup"],
+        ),
+    ];
+    for index in 2..60 {
+        let token = format!("noiseToken{index}");
+        facts.push(unique_fact(index, &["commonLookup", token.as_str()]));
+    }
+    let artifact = artifact_for_facts(facts)?;
+    let candidate = &artifact["nearFunctionCandidates"][0];
+    let shared = candidate["sharedSignificantCallTokens"]
+        .as_array()
+        .context("shared token evidence must be an array")?;
+
+    assert_eq!(candidate["generationToken"], "rareLookup");
+    assert!(shared
+        .iter()
+        .any(|token| { token["token"] == "commonLookup" && token["retained"] == false }));
+    assert!(shared
+        .iter()
+        .any(|token| { token["token"] == "rareLookup" && token["retained"] == true }));
+    Ok(())
+}
+
+#[test]
+fn pairs_shared_by_multiple_retained_tokens_are_generated_once() -> Result<()> {
+    let mut facts = vec![
+        fact_with_calls(
+            "src/a.ts",
+            "loadRareAlpha",
+            1,
+            "exact-a",
+            "structure-a",
+            &["rareAlpha", "rareBeta"],
+        ),
+        fact_with_calls(
+            "src/b.ts",
+            "loadRareBeta",
+            8,
+            "exact-b",
+            "structure-b",
+            &["rareAlpha", "rareBeta"],
+        ),
+    ];
+    facts.extend(noise_facts(2, 58));
+    let artifact = artifact_for_facts(facts)?;
+
+    assert_eq!(
+        artifact["candidateGenerationSummary"]["retainedCallTokenBucketCount"],
+        2
+    );
+    assert_eq!(
+        artifact["candidateGenerationSummary"]["retainedRawPairEstimate"],
+        2
+    );
+    assert_eq!(
+        artifact["candidateGenerationSummary"]["generatedUniquePairCount"],
+        1
+    );
+    assert_eq!(
+        artifact["nearFunctionCandidates"]
+            .as_array()
+            .context("nearFunctionCandidates must be an array")?
+            .len(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn compatibility_partitions_avoid_scoring_incompatible_pairs() -> Result<()> {
+    let mut facts = (0..4)
+        .map(|index| unique_fact(index, &["rareLookup"]))
+        .collect::<Vec<_>>();
+    facts[2]["async"] = json!(true);
+    facts[3]["paramCount"] = json!(4);
+    facts.extend(noise_facts(4, 97));
+    let artifact = artifact_for_facts(facts)?;
+    let summary = &artifact["candidateGenerationSummary"];
+
+    assert_eq!(summary["retainedRawPairEstimate"], 6);
+    assert_eq!(summary["generatedUniquePairCount"], 1);
+    assert_eq!(summary["scoredPairCount"], 1);
+    assert_eq!(
+        summary["compatibilitySkippedRawPairEstimateByReason"]["asyncMismatch"],
+        3
+    );
+    assert_eq!(
+        summary["compatibilitySkippedRawPairEstimateByReason"]["parameterCountDelta"],
+        2
+    );
+    Ok(())
+}
+
+#[test]
+fn near_candidate_count_is_uncapped_while_projection_stays_bounded() -> Result<()> {
+    let mut facts = Vec::new();
+    for pair_index in 0..60 {
+        let token = format!("rareCloneToken{pair_index}");
+        let alpha = format!("clone{pair_index}Alpha");
+        let beta = format!("clone{pair_index}Beta");
+        facts.push(unique_named_fact(pair_index * 2, &alpha, &[token.as_str()]));
+        facts.push(unique_named_fact(
+            pair_index * 2 + 1,
+            &beta,
+            &[token.as_str()],
+        ));
+    }
+    let artifact = artifact_for_facts(facts)?;
+
+    assert_eq!(artifact["meta"]["nearFunctionCandidateCount"], 60);
+    assert_eq!(
+        artifact["candidateGenerationSummary"]["generatedUniquePairCount"],
+        60
+    );
+    assert_eq!(
+        artifact["nearFunctionCandidates"]
+            .as_array()
+            .context("nearFunctionCandidates must be an array")?
+            .len(),
+        50
+    );
     Ok(())
 }
 
@@ -140,6 +329,52 @@ fn rejects_unknown_schema() {
     };
 
     assert!(error.to_string().contains("unsupported schemaVersion"));
+}
+
+fn artifact_for_facts(facts: Vec<Value>) -> Result<Value> {
+    build_function_clones_artifact(FunctionClonesRequest {
+        schema_version: FUNCTION_CLONES_REQUEST_SCHEMA_VERSION.to_string(),
+        generated: "2026-07-05T00:00:00.000Z".to_string(),
+        root: "C:/repo".to_string(),
+        include_tests: true,
+        exclude: vec![],
+        scope: "scope".to_string(),
+        observed_at: None,
+        file_count: facts.len(),
+        facts,
+        diagnostics: vec![],
+        files_with_parse_errors: vec![],
+        files_with_read_errors: vec![],
+        incremental: None,
+    })
+}
+
+fn noise_facts(start: usize, count: usize) -> Vec<Value> {
+    (start..start + count)
+        .map(|index| {
+            let token = format!("noiseToken{index}");
+            unique_fact(index, &[token.as_str()])
+        })
+        .collect()
+}
+
+fn unique_fact(index: usize, calls: &[&str]) -> Value {
+    let name = format!("uniqueFunction{index}");
+    unique_named_fact(index, &name, calls)
+}
+
+fn unique_named_fact(index: usize, name: &str, calls: &[&str]) -> Value {
+    let file = format!("src/fixture-{index}.ts");
+    let exact_hash = format!("exact-{index}");
+    let structure_hash = format!("structure-{index}");
+    fact_with_calls(
+        &file,
+        name,
+        (index * 10 + 1) as i64,
+        &exact_hash,
+        &structure_hash,
+        calls,
+    )
 }
 
 fn fact(

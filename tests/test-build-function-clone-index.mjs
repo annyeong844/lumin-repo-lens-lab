@@ -41,6 +41,14 @@ function readIndex(output) {
   return JSON.parse(readFileSync(path.join(output, 'function-clones.json'), 'utf8'));
 }
 
+function nearIdfNoiseSource(count = 58) {
+  return Array.from(
+    { length: count },
+    (_, index) =>
+      `export function noiseFunction${index}() { return noiseProbeCall${index}(); }`,
+  ).join('\n');
+}
+
 // T1. Same structure with distant helper names is surfaced as a review cue.
 {
   const fx = mkdtempSync(path.join(tmpdir(), 'fn-clone-'));
@@ -164,13 +172,14 @@ function readIndex(output) {
     write(fx, 'package.json', JSON.stringify({ name: 'fn-clone-near-fixture', type: 'module' }));
     write(fx, 'src/date-a.ts',
       `export function formatDate(value: Date) {\n` +
-      `  const formatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' });\n` +
+      `  const formatter = new Intl.DateTimeFormat(resolveDateLocale(), { dateStyle: 'medium' });\n` +
       `  return formatter.format(value);\n` +
       `}\n`);
     write(fx, 'src/date-b.ts',
       `export function dateFormat(input: Date) {\n` +
-      `  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(input);\n` +
+      `  return new Intl.DateTimeFormat(resolveDateLocale(), { dateStyle: 'medium' }).format(input);\n` +
       `}\n`);
+    write(fx, 'src/noise.ts', nearIdfNoiseSource());
 
     run(fx, out);
     const index = readIndex(out);
@@ -181,6 +190,7 @@ function readIndex(output) {
 
     assert('FC4a. near function support is declared without claiming semantic equivalence',
       index.meta.supports?.nearFunctionCandidates === true &&
+      index.meta.supports?.nearFunctionBoundedRetrieval === true &&
       index.meta.supports?.semanticEquivalence === false,
       JSON.stringify(index.meta.supports));
     assert('FC4a2. near function thresholds are exposed as policy metadata',
@@ -189,7 +199,9 @@ function readIndex(output) {
         policy.policyVersion === 'function-clone-near-policy-v1' &&
         policy.policyClass === 'review' &&
         policy.thresholds?.minNearScore === 0.62 &&
-        policy.thresholds?.maxNearCandidates === 50),
+        policy.thresholds?.maxNearCandidates === 50 &&
+        policy.thresholds?.minSingleTokenIdf === 3 &&
+        policy.scoreFormulaVersion === 'function-clone-near-score-idf-sum-v1'),
       JSON.stringify(index.meta.thresholdPolicies, null, 2));
     assert('FC4b. structurally different date helpers are not promoted to exact/structure groups',
       !exact && !structure,
@@ -197,9 +209,14 @@ function readIndex(output) {
     assert('FC4c. structurally different date helpers are surfaced as near review candidates',
       !!near &&
       index.meta.nearFunctionCandidateCount === 1 &&
+      index.candidateGenerationPolicy?.mode === 'bounded-retrieval' &&
+      index.candidateGenerationPolicy?.retrievalContractVersion ===
+        'function-clone-near-retrieval.v1' &&
       near.kind === 'near-function-candidate' &&
       near.risk === 'review-only' &&
       near.sharedCallTokens.includes('DateTimeFormat') &&
+      near.sharedCallTokens.includes('resolveDateLocale') &&
+      near.sharedSignificantCallTokens?.every((token) => token.retained === true) &&
       near.nameTokenJaccard >= 0.5,
       JSON.stringify(index.nearFunctionCandidates));
     assert('FC4d. near candidate text refuses automatic semantic merge claims',

@@ -11,7 +11,11 @@ mod tests;
 
 use facts::{compare_facts, stamp_observed_at, FunctionFact};
 use groups::{exact_body_groups, signature_groups, structure_groups};
-use near::{build_near_function_candidates, function_clone_near_policy_summary};
+use near::{
+    build_near_function_candidates, candidate_generation_policy, candidate_generation_summary,
+    function_clone_near_policy_summary, skipped_low_discrimination_buckets,
+    skipped_pair_estimate_kind, MAX_NEAR_CANDIDATES,
+};
 use projection::{non_generated_count, sort_diagnostics};
 pub use protocol::{FunctionClonesRequest, FUNCTION_CLONES_REQUEST_SCHEMA_VERSION};
 
@@ -43,8 +47,18 @@ pub fn build_function_clones_artifact(request: FunctionClonesRequest) -> Result<
     let exact_body_groups = exact_body_groups(&stamped_facts);
     let structure_groups = structure_groups(&stamped_facts);
     let signature_groups = signature_groups(&stamped_facts);
-    let near_function_candidates =
+    let near_projection =
         build_near_function_candidates(&stamped_facts, &exact_body_groups, &structure_groups);
+    let candidate_generation_policy = candidate_generation_policy();
+    let candidate_generation_summary = candidate_generation_summary(&near_projection.diagnostics);
+    let skipped_low_discrimination_buckets =
+        skipped_low_discrimination_buckets(&near_projection.diagnostics);
+    let skipped_low_discrimination_bucket_count = near_projection
+        .diagnostics
+        .skipped_low_discrimination_bucket_count;
+    let skipped_low_discrimination_raw_pair_estimate = near_projection
+        .diagnostics
+        .skipped_low_discrimination_raw_pair_estimate;
     let generated_file_fact_count = stamped_facts
         .iter()
         .filter(|fact| fact.generated_file)
@@ -85,7 +99,11 @@ pub fn build_function_clones_artifact(request: FunctionClonesRequest) -> Result<
     );
     meta.insert(
         "nearFunctionCandidateCount".to_string(),
-        json!(non_generated_count(&near_function_candidates)),
+        json!(near_projection.review_visible_count),
+    );
+    meta.insert(
+        "nearFunctionCandidateProjectionLimit".to_string(),
+        json!(MAX_NEAR_CANDIDATES),
     );
     meta.insert(
         "diagnosticCount".to_string(),
@@ -122,6 +140,7 @@ pub fn build_function_clones_artifact(request: FunctionClonesRequest) -> Result<
             "functionSignatureGroups": true,
             "functionSignatureNormalizedVersion": FUNCTION_SIGNATURE_NORMALIZED_VERSION,
             "nearFunctionCandidates": true,
+            "nearFunctionBoundedRetrieval": true,
             "generatedFileEvidence": true,
             "semanticEquivalence": false,
         }),
@@ -138,7 +157,13 @@ pub fn build_function_clones_artifact(request: FunctionClonesRequest) -> Result<
         "exactBodyGroups": exact_body_groups,
         "structureGroups": structure_groups,
         "signatureGroups": signature_groups,
-        "nearFunctionCandidates": near_function_candidates,
+        "candidateGenerationPolicy": candidate_generation_policy,
+        "candidateGenerationSummary": candidate_generation_summary,
+        "skippedLowDiscriminationBuckets": skipped_low_discrimination_buckets,
+        "skippedLowDiscriminationBucketCount": skipped_low_discrimination_bucket_count,
+        "skippedLowDiscriminationRawPairEstimate": skipped_low_discrimination_raw_pair_estimate,
+        "skippedLowDiscriminationPairEstimateKind": skipped_pair_estimate_kind(),
+        "nearFunctionCandidates": near_projection.candidates,
         "diagnostics": sorted_diagnostics,
     }))
 }

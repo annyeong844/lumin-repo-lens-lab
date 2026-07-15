@@ -21,9 +21,9 @@ assert.deepEqual(snapshot, [
     policyId: 'function-clone-near-policy',
     policyVersion: 'function-clone-near-policy-v1',
     policyClass: 'review',
-    thresholdHash: 'sha256:ba963d4a06d50a37633a99576aeda79230ad8870878802ac66942d82cf9459da',
+    thresholdHash: 'sha256:bea5f5cd6ce57db1800039b86f54d0ebc8b168b63aafeb3a9fbdc468a241ba29',
     calibrationCorpus: 'calibration-2026-05-prewrite-v1',
-    calibrationNote: 'agent-entry resolver calibration threshold contract',
+    calibrationNote: 'bounded JS/TS near-function retrieval calibration',
   },
   {
     policyId: 'inline-pattern-policy',

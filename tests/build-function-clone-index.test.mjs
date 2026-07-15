@@ -59,6 +59,14 @@ function groupContaining(groups, identities) {
   );
 }
 
+function nearIdfNoiseSource(count = 58) {
+  return Array.from(
+    { length: count },
+    (_, index) =>
+      `export function noiseFunction${index}() { return noiseProbeCall${index}(); }`,
+  ).join("\n");
+}
+
 describe("build-function-clone-index producer artifact", () => {
   it("writes function-clones.json and surfaces same-structure distant helpers as review cues only", () => {
     const fixture = createFixture();
@@ -227,7 +235,7 @@ describe("build-function-clone-index producer artifact", () => {
         "src/date-a.ts",
         [
           "export function formatDate(value: Date) {",
-          "  const formatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' });",
+          "  const formatter = new Intl.DateTimeFormat(resolveDateLocale(), { dateStyle: 'medium' });",
           "  return formatter.format(value);",
           "}",
           "",
@@ -238,11 +246,12 @@ describe("build-function-clone-index producer artifact", () => {
         "src/date-b.ts",
         [
           "export function dateFormat(input: Date) {",
-          "  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(input);",
+          "  return new Intl.DateTimeFormat(resolveDateLocale(), { dateStyle: 'medium' }).format(input);",
           "}",
           "",
         ].join("\n"),
       );
+      write(fixture.root, "src/noise.ts", nearIdfNoiseSource());
 
       runFunctionCloneIndex(fixture.root, fixture.output);
       const index = readIndex(fixture.output);
@@ -252,6 +261,7 @@ describe("build-function-clone-index producer artifact", () => {
       const near = groupContaining(index.nearFunctionCandidates, pair);
 
       expect(index.meta.supports?.nearFunctionCandidates).toBe(true);
+      expect(index.meta.supports?.nearFunctionBoundedRetrieval).toBe(true);
       expect(index.meta.supports?.semanticEquivalence).toBe(false);
       expect(
         index.meta.thresholdPolicies?.some(
@@ -260,18 +270,32 @@ describe("build-function-clone-index producer artifact", () => {
             policy.policyVersion === "function-clone-near-policy-v1" &&
             policy.policyClass === "review" &&
             policy.thresholds?.minNearScore === 0.62 &&
-            policy.thresholds?.maxNearCandidates === 50,
+            policy.thresholds?.maxNearCandidates === 50 &&
+            policy.thresholds?.minSingleTokenIdf === 3 &&
+            policy.scoreFormulaVersion ===
+              "function-clone-near-score-idf-sum-v1",
         ),
       ).toBe(true);
       expect(exact).toBeUndefined();
       expect(structure).toBeUndefined();
       expect(near).toBeTruthy();
       expect(index.meta.nearFunctionCandidateCount).toBe(1);
+      expect(index.candidateGenerationPolicy).toMatchObject({
+        mode: "bounded-retrieval",
+        retrievalContractVersion: "function-clone-near-retrieval.v1",
+      });
       expect(near).toMatchObject({
         kind: "near-function-candidate",
         risk: "review-only",
       });
       expect(near.sharedCallTokens).toContain("DateTimeFormat");
+      expect(near.sharedCallTokens).toContain("resolveDateLocale");
+      expect(near.sharedSignificantCallTokens).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ token: "DateTimeFormat", retained: true }),
+          expect.objectContaining({ token: "resolveDateLocale", retained: true }),
+        ]),
+      );
       expect(near.nameTokenJaccard).toBeGreaterThanOrEqual(0.5);
       expect(near.reason).toMatch(/not proof of semantic equivalence/);
       expect(near.reason).toMatch(/source review required/);
