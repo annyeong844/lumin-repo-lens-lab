@@ -96,6 +96,14 @@ const COMMAND_ROUTING = readFileSync(
   path.join(DIR, "references/command-routing.md"),
   "utf8",
 );
+const LIFECYCLE_MODES = readFileSync(
+  path.join(DIR, "references/lifecycle-modes.md"),
+  "utf8",
+);
+const WRITE_GATE_RUNTIME = readFileSync(
+  path.join(DIR, "references/write-gate-runtime.md"),
+  "utf8",
+);
 const STRUCTURAL_REVIEW_WORKFLOW_PATH = path.join(
   DIR,
   "references/structural-review-workflow.md",
@@ -363,6 +371,24 @@ assert(
 );
 
 assert(
+  "S5b2. generated write-gate intents stay ephemeral while lifecycle evidence stays durable",
+  WRITE_GATE_SKILL.includes(
+    "Generated intent JSON is ephemeral request transport",
+  ) &&
+    WRITE_GATE_SKILL.includes("stream it through stdin with `--intent -`") &&
+    !WRITE_GATE_SKILL.includes("write a temporary intent file") &&
+    COMMAND_ROUTING.includes("Controller-inferred intents must use") &&
+    COMMAND_ROUTING_FLAT.includes(
+      "do not clean those up with temporary transport",
+    ) &&
+    LIFECYCLE_MODES.includes("An explicit intent path is caller-owned") &&
+    WRITE_GATE_RUNTIME.includes("## Intent Transport Lifetime") &&
+    WRITE_GATE_RUNTIME.includes("Preserve invocation-specific advisories") &&
+    WRITE_GATE_RUNTIME.includes("--pre-write --pre-write-engine auto --intent -"),
+  `${WRITE_GATE_SKILL}\n${COMMAND_ROUTING}\n${LIFECYCLE_MODES}\n${WRITE_GATE_RUNTIME}`,
+);
+
+assert(
   "S5c. shared path tokens are duplicated only where independently loaded SKILL surfaces need them",
   countOccurrences(ALL_SKILL_SURFACES, "Below, `<audit-repo>` means") === 3 &&
     countOccurrences(ALL_SKILL_SURFACES, "Below, `<SKILL_ROOT>` means") === 2 &&
@@ -418,6 +444,30 @@ assert(
       "files.<path>.astSummary.compilerOracleOpaqueSurfaces",
     ),
   REVIEW_CHECKLIST_RUST,
+);
+
+assert(
+  "S6a3. structural checklist names only checked evidence and enforcement contracts",
+  REVIEW_CHECKLIST.includes("topology.json.crossSubmoduleEdges[]") &&
+    !REVIEW_CHECKLIST.includes("topology.json.subEdges[]") &&
+    REVIEW_CHECKLIST.includes(
+      "does not enumerate `Map.prototype.set`, `Set.prototype.add`",
+    ) &&
+    REVIEW_CHECKLIST.includes(
+      "only classifies coverage for ranked dead-symbol candidates",
+    ) &&
+    REVIEW_CHECKLIST.includes(
+      "Side-effect-only imports are not members of `call-graph.json.semiDeadList[]`",
+    ) &&
+    REVIEW_CHECKLIST.includes("SARIF generation alone is not a failing gate") &&
+    REVIEW_CHECKLIST.includes("Boundary enforcement can use ESLint") &&
+    REVIEW_CHECKLIST.includes(
+      "The number of resulting compile errors is not evidence of ceremony",
+    ) &&
+    REVIEW_CHECKLIST.includes(
+      "The current canon lifecycle supports exactly `type-ownership`",
+    ),
+  REVIEW_CHECKLIST,
 );
 
 assert(

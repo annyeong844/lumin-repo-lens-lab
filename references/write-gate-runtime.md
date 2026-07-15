@@ -66,11 +66,26 @@ Rust-source intent is separate. It writes
 `rust-pre-write-artifact.<invocationId>.json`; that native artifact is neither
 the JS/TS `rustEvidencePath` nor the post-write handoff.
 
+## Intent Transport Lifetime
+
+Generated intent JSON is ephemeral request transport, not audit evidence. The
+controller must send it on stdin with `--intent -`; it must not create an
+intent file under the repository root, the output directory, or `.audit`.
+Post-write consumes the invocation-specific advisory, so retaining generated
+intent transport adds clutter without preserving any required handoff.
+
+Caller-supplied intent files are caller-owned. Pass them through without
+rewriting or deleting them. If a host adapter cannot stream stdin, it may create
+an adapter-owned file under the OS temporary directory and must delete it in
+`finally`. A recycle directory or shutdown-time cleanup is not a substitute for
+ownership. Preserve invocation-specific advisories and post-write deltas; those
+are durable evidence, not temporary transport.
+
 ## Normal Pair
 
 ```bash
 <audit-repo> --root <repo> --output <output> \
-  --pre-write --pre-write-engine auto --intent <file|->
+  --pre-write --pre-write-engine auto --intent -
 
 <audit-repo> --root <repo> --output <output> \
   --post-write \

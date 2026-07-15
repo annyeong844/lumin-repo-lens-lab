@@ -12,9 +12,10 @@ dependency signals, and exact JS/TS shape matches when `shape-index.json` is
 available.
 
 ```bash
-node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-engine auto --intent intent.json
-# Or read the same intent JSON from stdin:
-# node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-engine auto --intent -
+# Default for generated intent JSON: send it on stdin.
+node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-engine auto --intent -
+# Explicit caller-owned intent files are also accepted:
+# node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-engine auto --intent intent.json
 ```
 
 `--pre-write-engine auto` keeps JS/TS as the default owner when the intent omits
@@ -23,10 +24,12 @@ node scripts/audit-repo.mjs --root . --output ./output --pre-write --pre-write-e
 when the caller explicitly passes `--pre-write-engine js`; use Rust or auto for
 Rust source intents.
 
-The intent file is a structured declaration of planned names, files,
+The intent JSON is a structured declaration of planned names, files,
 dependencies, shapes, and type escapes. In normal chat use, the assistant
-infers this JSON from the user's request; do not make the user hand-author
-it unless they explicitly want to. The advisory is written as:
+infers this JSON from the user's request and streams it through stdin; do not
+make the user hand-author it or leave a generated intent file in the repository.
+An explicit intent path is caller-owned and must not be deleted by the CLI or
+controller. The advisory is written as:
 
 - `<output>/pre-write-advisory.latest.json`
 - `<output>/pre-write-advisory.<invocationId>.json`
@@ -36,6 +39,11 @@ When run through `audit-repo.mjs`, `manifest.preWrite.advisoryPath`
 points at that invocation-specific file and `latestAdvisoryPath` keeps
 the convenience pointer separately. Use the invocation-specific path for
 post-write; `latest` can be overwritten by a later pre-write run.
+The invocation-specific advisory, not the original intent transport, is the
+durable handoff to post-write. Preserve advisories and deltas. A host adapter
+that cannot stream stdin may use its OS temporary directory and delete its own
+temporary file in `finally`; repository-local trash or shutdown cleanup is not
+the normal lifecycle.
 For Rust source intents, the orchestrator also records the native Rust lookup
 artifact as `rust-pre-write-artifact.<invocationId>.json`. That native artifact
 is proof for Rust lookup lanes, but it is not a post-write input; post-write

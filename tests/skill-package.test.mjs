@@ -282,7 +282,16 @@ try {
         "docs/maintainer/SELF_AUDIT_HANDBOOK.md",
       ) &&
       !existsSync(path.join(OUT, "docs/maintainer/SELF_AUDIT_HANDBOOK.md")) &&
-      !existsSync(path.join(OUT, "templates/SELF_AUDIT_HANDBOOK.md")),
+      !existsSync(path.join(OUT, "templates/SELF_AUDIT_HANDBOOK.md")) &&
+      generatedLongChecklist.includes("topology.json.crossSubmoduleEdges[]") &&
+      !generatedLongChecklist.includes("topology.json.subEdges[]") &&
+      generatedLongChecklist.includes(
+        "only classifies coverage for ranked dead-symbol candidates",
+      ) &&
+      generatedLongChecklist.includes("Boundary enforcement can use ESLint") &&
+      generatedLongChecklist.includes(
+        "The number of resulting compile errors is not evidence of ceremony",
+      ),
     generatedLongChecklist,
   );
 
@@ -311,6 +320,18 @@ try {
   const generatedSkill = skillText;
   const generatedCommandRouting = readFileSync(
     path.join(OUT, "references/command-routing.md"),
+    "utf8",
+  );
+  const generatedCommandRoutingFlat = generatedCommandRouting.replace(
+    /\s+/g,
+    " ",
+  );
+  const generatedLifecycleModes = readFileSync(
+    path.join(OUT, "references/lifecycle-modes.md"),
+    "utf8",
+  );
+  const generatedWriteGateRuntime = readFileSync(
+    path.join(OUT, "references/write-gate-runtime.md"),
     "utf8",
   );
   const generatedReviewWorkflow = readFileSync(
@@ -363,6 +384,21 @@ try {
         "open `templates/REVIEW_CHECKLIST.md` and walk it before drafting",
       ),
     `${generatedSkill}\n${generatedCommandRouting}`,
+  );
+
+  assert(
+    "SP3f1. generated package streams inferred intents and preserves lifecycle evidence",
+    generatedCommandRouting.includes("Controller-inferred intents must use") &&
+      generatedCommandRoutingFlat.includes(
+        "do not clean those up with temporary transport",
+      ) &&
+      generatedLifecycleModes.includes("An explicit intent path is caller-owned") &&
+      generatedWriteGateRuntime.includes("## Intent Transport Lifetime") &&
+      generatedWriteGateRuntime.includes(
+        "--pre-write --pre-write-engine auto --intent -",
+      ) &&
+      !generatedWriteGateRuntime.includes("--intent <file|->"),
+    `${generatedCommandRouting}\n${generatedLifecycleModes}\n${generatedWriteGateRuntime}`,
   );
 
   assert(

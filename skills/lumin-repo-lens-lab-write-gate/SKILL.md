@@ -74,12 +74,19 @@ Run before adding, implementing, refactoring, moving, renaming, or
 extending code when a compact intent can be inferred.
 
 Do not ask normal chat users to hand-write JSON. Infer the smallest
-intent you can from the request, stream it via `--intent -` or write a
-temporary intent file, then run:
+intent you can from the request and stream it through stdin with `--intent -`.
+Generated intent JSON is ephemeral request transport: do not write it under the
+repository root, the audit output directory, or `.audit`. Then run:
 
 ```bash
-<audit-repo> --pre-write --root <repo> --output <dir> --intent <file|->
+<audit-repo> --pre-write --root <repo> --output <dir> --intent -
 ```
+
+An intent path explicitly supplied by the caller is caller-owned input. Pass it
+through and never delete or rewrite it. If a host adapter genuinely cannot
+stream stdin, place only the adapter-owned copy under the OS temporary
+directory and remove it in `finally`; do not turn it into repository evidence.
+Post-write consumes the invocation-specific advisory, not the original intent.
 
 Read the invocation-specific advisory path printed by pre-write before
 coding during the same uninterrupted change transaction. It is also

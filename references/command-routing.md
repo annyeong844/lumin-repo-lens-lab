@@ -285,7 +285,8 @@ profile entrypoint.
 
 ### pre-write
 
-If `--intent` is provided, pass the arguments through. Run:
+If the caller explicitly provides `--intent <path>`, pass the arguments
+through. That file is caller-owned input: never rewrite or delete it. Run:
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/skills/lumin-repo-lens-lab/scripts/audit-repo.mjs --pre-write --pre-write-engine auto $ARGUMENTS
@@ -332,8 +333,13 @@ The orchestrator forwards JS audit scan-scope flags such as `--production`,
 source-health applies those filters during Rust file enumeration and preserves
 the effective scope in the native artifact's source-health input metadata.
 
-Intent files must follow `references/pre-write-intent-shape.md`. `--intent -`
-streams that same JSON through stdin. Before
+Explicit caller-owned intent files must follow
+`references/pre-write-intent-shape.md`. Controller-inferred intents must use
+`--intent -` and stream the JSON through stdin. Do not materialize generated
+intent JSON under the repository root, the audit output directory, or `.audit`.
+If a host adapter cannot stream stdin, it may use an adapter-owned file under
+the OS temporary directory, but it must remove that file in `finally`. Do not
+use a recycle directory or shutdown cleanup as the normal lifecycle. Before
 coding, read the invocation-specific advisory path printed in the
 pre-write handoff or recorded at `manifest.preWrite.advisoryPath`.
 `pre-write-advisory.latest.json` is only a convenience pointer and can
@@ -348,6 +354,11 @@ intent you can from the request, default omitted lanes to empty arrays,
 and run the same command with `--intent -` by streaming that JSON on
 stdin. Ask one short clarification only when the planned code change
 cannot be inferred safely.
+
+The generated intent is transport, not retained evidence. Post-write reads the
+matching invocation-specific advisory, so no generated intent file is needed
+after pre-write. Preserve the advisory and post-write delta; do not clean those
+up with temporary transport.
 
 If the user is asking for help but does not yet know what they want,
 asking them to clarify just bounces them — they came because they
