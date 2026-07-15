@@ -26,7 +26,7 @@ import path from 'node:path';
 import { parseCliArgs } from '../lib/cli.mjs';
 import { detectRepoMode } from '../lib/repo-mode.mjs';
 import { buildAliasMap } from '../lib/alias-map.mjs';
-import { makeResolver, isResolvedFile } from '../lib/resolver-core.mjs';
+import { makeResolver } from '../lib/resolver-core.mjs';
 import { buildSubmoduleResolver } from '../lib/paths.mjs';
 import { collectTestPinnedExports, findTestPinnedExport } from '../lib/contract-pinned-exports.mjs';
 import {
@@ -127,11 +127,11 @@ if (candidateLimitApplied) {
   );
 }
 
-// ─── FP-23 / FP-25: public API file set ──────────────────────
-// A file reached from any `exports` entry — or transitively from a
-// re-export barrel rooted at one — is public API surface. External npm
-// dependents may import from it, so the internal-use count is misleading.
-// This block owns the graph walk; policies.mjs stays pure.
+// ─── FP-23: direct public API file set ────────────────────────
+// Files named by package exports are public surfaces because external
+// consumers can import any identity they expose. Transitive re-export targets
+// stay identity-scoped in the symbol graph; promoting those files wholesale
+// would hide unrelated dead siblings.
 const repoMode = detectRepoMode(ROOT);
 const aliasMap = buildAliasMap(ROOT, repoMode, { exclude });
 const resolve = makeResolver(ROOT, aliasMap);
@@ -226,40 +226,12 @@ for (const [spec, entry] of aliasMap) {
   }
 }
 
-// FP-25 transitive: barrels (`export * from './y'`, `export { X } from './y'`)
-// extend the public API set — files reachable from a public entry via
-// re-export chains are also public.
-let transitiveAdded = 0;
-const reExportsByFile = symbolsData.reExportsByFile ?? {};
-if (publicApiFiles.size > 0 && Object.keys(reExportsByFile).length > 0) {
-  const visited = new Set();
-  const queue = [...publicApiFiles].filter((p) => reExportsByFile[p] !== undefined
-                                              || publicApiFiles.has(p));
-  while (queue.length) {
-    const current = queue.shift();
-    if (visited.has(current)) continue;
-    visited.add(current);
-    const reExports = reExportsByFile[current];
-    if (!reExports) continue;
-    for (const r of reExports) {
-      if (!r.source) continue;
-      const fromAbs = path.join(ROOT, current);
-      const resolved = resolve(fromAbs, r.source);
-      if (!isResolvedFile(resolved)) continue;
-      const rel = path.relative(ROOT, resolved).replace(/\\/g, '/');
-      if (!publicApiFiles.has(rel)) {
-        addPublicApiVariants(rel, {
-          source: 'public-reexport',
-          fromFile: current,
-          specifier: r.source,
-          resolvedFile: rel,
-        });
-        transitiveAdded++;
-      }
-      if (!visited.has(rel)) queue.push(rel);
-    }
-  }
-}
+// Direct package entry files remain file-level public surfaces: external
+// consumers can import any export they expose. Re-export targets must not be
+// promoted wholesale. Exact re-exports are protected by identity fan-in and
+// broad/star consumers by namespace evidence in the symbol graph, leaving
+// unrelated sibling exports eligible for dead-export classification.
+const transitiveAdded = 0;
 
 function isPublicApiFile(relPath) {
   return publicApiFiles.has(relPath.replace(/\\/g, '/'));

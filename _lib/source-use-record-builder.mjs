@@ -98,9 +98,6 @@ export function sourceUseRecordFailureReason(use) {
   if (typeof use.fromSpec !== "string" || use.fromSpec.length === 0) {
     return "missing-specifier";
   }
-  if (looksLikeNonSourceAssetSpecifier(use.fromSpec)) {
-    return "non-source-asset-specifier";
-  }
   const kind = use.kind ?? "import";
   if (
     sourceUseRequiresSymbolName(kind) &&
@@ -110,6 +107,9 @@ export function sourceUseRecordFailureReason(use) {
   }
   if (!isRelativeSourceUse(use) && typeof use.resolvedFile !== "string") {
     return "non-relative-requires-js-resolver";
+  }
+  if (looksLikeNonSourceAssetSpecifier(use.fromSpec)) {
+    return "non-source-asset-specifier";
   }
   if (
     !isRustResolvedRelativeUse(use) &&

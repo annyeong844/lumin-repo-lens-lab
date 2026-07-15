@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Export-identity public surface protection
+
+- Stop expanding a named public re-export into file-wide `publicApi_FP23`
+  protection for its source module.
+- Keep direct package entry files protected while relying on symbol identity
+  fan-in and namespace evidence for re-exported symbols, so unused sibling
+  exports remain visible to dead-export classification.
+- Route non-relative dotted aliases such as `@/app/layout.config` through the
+  configured module resolver before applying non-source-asset classification,
+  preventing Next.js route-group symbol scans from hard-stopping.
+- Include every rejected source-use record ID and reason in symbol-graph
+  hard-stop diagnostics instead of reporting only an opaque skipped count.
+
 ## 0.0.0-lab.0 - 2026-06-15
 
 ### Lab plugin fork

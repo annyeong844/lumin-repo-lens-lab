@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v59';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v60';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -288,6 +288,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'sourceUseAssemblyTypeOnlyState',
   'sourceUseAssemblyDerivedReExportMaps',
   'sourceUseAssemblyTerminalRecordOutcomes',
+  'sourceUseAssemblyResolvedDottedAliases',
   'symbolGraphStrictRequestV2',
   'symbolGraphDeadTestCandidates',
   'stalenessBatchPickaxe',
@@ -1430,6 +1431,15 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
           kind: 'import-side-effect',
           resolverStage: 'non-source-asset',
         },
+        {
+          recordId: 'src/consumer.ts#7',
+          consumerFile: path.join(rootDir, 'src', 'consumer.ts'),
+          resolvedFile: path.join(rootDir, 'src', 'layout.config.ts'),
+          fromSpec: '@/layout.config',
+          name: 'layoutConfig',
+          kind: 'import',
+          resolverStage: 'resolved-internal',
+        },
       ],
     }));
     writeFileSync(stalenessInputPath, JSON.stringify({
@@ -2386,10 +2396,10 @@ function resultPayloadMatchesProbe(json, probe) {
   }
   if (probe.subcommand === 'source-use-assembly-artifact') {
     return json.schemaVersion === 'lumin-source-use-assembly-response.v1' &&
-      json.summary?.recordCount === 7 &&
-      json.summary?.handledCount === 7 &&
-      json.counters?.totalUses === 5 &&
-      json.counters?.resolvedInternalUses === 5 &&
+      json.summary?.recordCount === 8 &&
+      json.summary?.handledCount === 8 &&
+      json.counters?.totalUses === 6 &&
+      json.counters?.resolvedInternalUses === 6 &&
       json.counters?.rustResolvedRelativeUses === 3 &&
       json.counters?.nonSourceAssetUses === 1 &&
       json.counters?.mdxConsumerUses === 1 &&
@@ -2398,12 +2408,12 @@ function resultPayloadMatchesProbe(json, probe) {
       json.counters?.resolvedGeneratedVirtualUses === 1 &&
       json.counters?.unresolvedUses === 1 &&
       json.counters?.unresolvedInternalUses === 1 &&
-      json.branchCounts?.resolvedInternal === 4 &&
+      json.branchCounts?.resolvedInternal === 5 &&
       json.branchCounts?.unresolved === 1 &&
       json.branchCounts?.generatedVirtual === 1 &&
       json.branchCounts?.asset === 1 &&
       json.branchCounts?.sfcScriptSrcReachability === 1 &&
-      json.branchCounts?.directConsumer === 1 &&
+      json.branchCounts?.directConsumer === 2 &&
       json.branchCounts?.broadNamespace === 2 &&
       json.nonSourceAssetRecordIds?.includes('src/consumer.ts#6') &&
       json.nonSourceAssetRecordTargets?.some((entry) =>
@@ -2434,6 +2444,12 @@ function resultPayloadMatchesProbe(json, probe) {
         edge?.to === 'src/setup.ts' &&
         edge?.kind === 'sfc-script-src' &&
         edge?.sfcLanguage === 'vue'
+      ) &&
+      json.resolvedInternalEdges?.some((edge) =>
+        edge?.from === 'src/consumer.ts' &&
+        edge?.to === 'src/layout.config.ts' &&
+        edge?.source === '@/layout.config' &&
+        edge?.kind === 'import-named'
       ) &&
       json.unresolvedInternalSpecifierRecords?.[0]?.reason === 'tsconfig-path-target-missing' &&
       json.generatedVirtualSurfaces?.[0]?.id === 'generated-virtual:prisma-enums:@pkg/db:enums' &&

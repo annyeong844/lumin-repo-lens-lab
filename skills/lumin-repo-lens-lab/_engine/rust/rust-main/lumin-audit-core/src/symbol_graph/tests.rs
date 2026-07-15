@@ -566,9 +566,13 @@ fn hard_stops_when_embedded_assembly_skips_a_record() -> Result<()> {
         .err()
         .map(|error| error.to_string());
 
-    assert!(error
-        .as_deref()
-        .is_some_and(|message| message.contains("sourceUseAssembly skipped 1 record")));
+    assert!(
+        error.as_deref().is_some_and(|message| {
+            message.contains("sourceUseAssembly skipped 1 record")
+                && message.contains("invalid-stage:non-relative-specifier")
+        }),
+        "unexpected error: {error:?}"
+    );
     Ok(())
 }
 

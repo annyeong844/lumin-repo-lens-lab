@@ -74,9 +74,16 @@ pub fn build_symbol_graph_artifact(request: SymbolGraphRequest) -> Result<Value>
         &path_table,
     )?;
     if source_use_assembly.summary.skipped_count != 0 {
+        let skipped = source_use_assembly
+            .skipped_records
+            .iter()
+            .map(|record| format!("{}:{}", record.record_id, record.reason))
+            .collect::<Vec<_>>()
+            .join(", ");
         bail!(
-            "symbol-graph-artifact: sourceUseAssembly skipped {} record(s)",
-            source_use_assembly.summary.skipped_count
+            "symbol-graph-artifact: sourceUseAssembly skipped {} record(s): {}",
+            source_use_assembly.summary.skipped_count,
+            skipped
         );
     }
 

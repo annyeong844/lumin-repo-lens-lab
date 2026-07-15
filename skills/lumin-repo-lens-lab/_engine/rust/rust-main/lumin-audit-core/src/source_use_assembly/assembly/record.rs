@@ -66,7 +66,7 @@ pub(super) fn assemble_record(state: &mut AssemblyState, record: SourceUseAssemb
         skip(state, record.record_id, "non-relative-specifier");
         return;
     }
-    if looks_like_non_source_asset(from_spec) {
+    if !has_pre_resolved_file && looks_like_non_source_asset(from_spec) {
         skip(state, record.record_id, "non-source-asset-specifier");
         return;
     }

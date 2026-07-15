@@ -174,6 +174,7 @@ const RUNTIME_FEATURES: &[&str] = &[
     "sourceUseAssemblyTypeOnlyState",
     "sourceUseAssemblyDerivedReExportMaps",
     "sourceUseAssemblyTerminalRecordOutcomes",
+    "sourceUseAssemblyResolvedDottedAliases",
     "symbolGraphStrictRequestV2",
     "symbolGraphDeadTestCandidates",
     "stalenessBatchPickaxe",
