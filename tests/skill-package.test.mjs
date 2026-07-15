@@ -313,6 +313,14 @@ try {
     path.join(OUT, "references/command-routing.md"),
     "utf8",
   );
+  const generatedLifecycleModes = readFileSync(
+    path.join(OUT, "references/lifecycle-modes.md"),
+    "utf8",
+  );
+  const generatedWriteGateRuntime = readFileSync(
+    path.join(OUT, "references/write-gate-runtime.md"),
+    "utf8",
+  );
   const generatedReviewWorkflow = readFileSync(
     path.join(OUT, "references/structural-review-workflow.md"),
     "utf8",
@@ -363,6 +371,21 @@ try {
         "open `templates/REVIEW_CHECKLIST.md` and walk it before drafting",
       ),
     `${generatedSkill}\n${generatedCommandRouting}`,
+  );
+
+  assert(
+    "SP3f1. generated package streams inferred intents and preserves lifecycle evidence",
+    generatedCommandRouting.includes("Controller-inferred intents must use") &&
+      generatedCommandRouting.includes(
+        "do not clean those up with temporary transport",
+      ) &&
+      generatedLifecycleModes.includes("An explicit intent path is caller-owned") &&
+      generatedWriteGateRuntime.includes("## Intent Transport Lifetime") &&
+      generatedWriteGateRuntime.includes(
+        "--pre-write --pre-write-engine auto --intent -",
+      ) &&
+      !generatedWriteGateRuntime.includes("--intent <file|->"),
+    `${generatedCommandRouting}\n${generatedLifecycleModes}\n${generatedWriteGateRuntime}`,
   );
 
   assert(

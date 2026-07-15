@@ -96,6 +96,14 @@ const COMMAND_ROUTING = readFileSync(
   path.join(DIR, "references/command-routing.md"),
   "utf8",
 );
+const LIFECYCLE_MODES = readFileSync(
+  path.join(DIR, "references/lifecycle-modes.md"),
+  "utf8",
+);
+const WRITE_GATE_RUNTIME = readFileSync(
+  path.join(DIR, "references/write-gate-runtime.md"),
+  "utf8",
+);
 const STRUCTURAL_REVIEW_WORKFLOW_PATH = path.join(
   DIR,
   "references/structural-review-workflow.md",
@@ -360,6 +368,22 @@ assert(
     CANON_SKILL.includes("hand off to `lumin-repo-lens-lab-write-gate`") &&
     CANON_SKILL.includes("Drafts are proposals, not promoted truth"),
   `${SKILL.slice(0, 700)}\n${WRITE_GATE_SKILL}\n${CANON_SKILL}`,
+);
+
+assert(
+  "S5b2. generated write-gate intents stay ephemeral while lifecycle evidence stays durable",
+  WRITE_GATE_SKILL.includes(
+    "Generated intent JSON is ephemeral request transport",
+  ) &&
+    WRITE_GATE_SKILL.includes("stream it through stdin with `--intent -`") &&
+    !WRITE_GATE_SKILL.includes("write a temporary intent file") &&
+    COMMAND_ROUTING.includes("Controller-inferred intents must use") &&
+    COMMAND_ROUTING.includes("do not clean those up with temporary transport") &&
+    LIFECYCLE_MODES.includes("An explicit intent path is caller-owned") &&
+    WRITE_GATE_RUNTIME.includes("## Intent Transport Lifetime") &&
+    WRITE_GATE_RUNTIME.includes("Preserve invocation-specific advisories") &&
+    WRITE_GATE_RUNTIME.includes("--pre-write --pre-write-engine auto --intent -"),
+  `${WRITE_GATE_SKILL}\n${COMMAND_ROUTING}\n${LIFECYCLE_MODES}\n${WRITE_GATE_RUNTIME}`,
 );
 
 assert(
