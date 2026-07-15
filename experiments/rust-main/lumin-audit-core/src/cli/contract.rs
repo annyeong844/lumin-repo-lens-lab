@@ -147,6 +147,7 @@ const RUNTIME_FEATURES: &[&str] = &[
     "jsTsPreWriteExactWorktreeByteCache",
     "jsTsPreWriteCanonicalSourceContainment",
     "jsTsPreWriteSingleFlight",
+    "checklistFactsIncrementalCache",
     "jsTsPreWritePhaseTiming",
     "jsTsPreWriteShapeEvidence",
     "nativeJsTsPreWriteLifecycle",

@@ -32,6 +32,11 @@ fn cli_checklist_facts_artifact_writes_result_file() -> Result<()> {
                 },
                 "barrels": { "mode": "single-package" }
             },
+            "incremental": {
+                "enabled": true,
+                "changedFiles": 0,
+                "reusedFiles": 1
+            },
             "astFacts": {
                 "functionSize": {
                     "parseErrors": 0,
@@ -63,6 +68,7 @@ fn cli_checklist_facts_artifact_writes_result_file() -> Result<()> {
 
     let artifact: Value = serde_json::from_slice(&fs::read(&output_path)?)?;
     assert_eq!(artifact["meta"]["tool"], "checklist-facts.mjs");
+    assert_eq!(artifact["meta"]["incremental"]["reusedFiles"], 1);
     assert_eq!(artifact["A2_function_size"]["gate"], "watch");
     assert_eq!(artifact["A5_decoupling_ratio"]["rawGate"], "fix");
     assert_eq!(artifact["A5_decoupling_ratio"]["gate"], "ok");

@@ -12,6 +12,8 @@ pub struct ChecklistFactsRequest {
     #[serde(default)]
     pub inputs: ChecklistInputArtifacts,
     pub ast_facts: ChecklistAstFacts,
+    #[serde(default)]
+    pub incremental: Option<Value>,
 }
 
 #[derive(Debug, Default, Deserialize)]

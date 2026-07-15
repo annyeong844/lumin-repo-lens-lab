@@ -636,6 +636,67 @@ describe("checklist-facts producer artifact", () => {
     }
   });
 
+  it("reuses unchanged per-file AST facts and invalidates changed or deleted files", () => {
+    const fixture = createFixture("vitest-checklist-incremental-");
+    const cacheRoot = path.join(fixture.output, "cache");
+    try {
+      write(
+        fixture.root,
+        "package.json",
+        JSON.stringify({ name: "cf-incremental", type: "module" }),
+      );
+      write(fixture.root, "src/a.ts", "export function alpha() { return 1; }\n");
+      write(fixture.root, "src/b.ts", "export function beta() { return 2; }\n");
+
+      runProducer("checklist-facts.mjs", fixture.root, fixture.output, [
+        "--cache-root",
+        cacheRoot,
+      ]);
+      const cold = readChecklist(fixture.output);
+      expect(cold.meta.incremental).toMatchObject({
+        enabled: true,
+        changedFiles: 2,
+        reusedFiles: 0,
+        droppedFiles: 0,
+        invalidatedFiles: 0,
+      });
+
+      runProducer("checklist-facts.mjs", fixture.root, fixture.output, [
+        "--cache-root",
+        cacheRoot,
+      ]);
+      const warm = readChecklist(fixture.output);
+      expect(warm.meta.incremental).toMatchObject({
+        changedFiles: 0,
+        reusedFiles: 2,
+        droppedFiles: 0,
+        invalidatedFiles: 0,
+      });
+
+      write(
+        fixture.root,
+        "src/a.ts",
+        "export function changed() { try { return 1; } catch {} }\n",
+      );
+      rmSync(path.join(fixture.root, "src/b.ts"));
+      runProducer("checklist-facts.mjs", fixture.root, fixture.output, [
+        "--cache-root",
+        cacheRoot,
+      ]);
+      const changed = readChecklist(fixture.output);
+      expect(changed.meta.incremental).toMatchObject({
+        changedFiles: 1,
+        reusedFiles: 0,
+        droppedFiles: 1,
+        invalidatedFiles: 1,
+      });
+      expect(changed.A2_function_size.total).toBe(1);
+      expect(changed.E2_silent_catch.count).toBe(1);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it("grounds C5 lint boundary evidence from no-restricted-imports", () => {
     const fixture = createFixture("vitest-checklist-c5-");
     try {

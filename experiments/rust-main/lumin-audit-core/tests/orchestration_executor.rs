@@ -208,7 +208,8 @@ fn js_step_argv_preserves_scan_incremental_and_generated_args() -> Result<()> {
     value["nodeExecutable"] = json!(path_string(&fake_node));
     value["plan"]["steps"] = json!([
         fixture_step("triage-repo.mjs", true),
-        fixture_step("build-symbol-graph.mjs", true)
+        fixture_step("build-symbol-graph.mjs", true),
+        fixture_step("checklist-facts.mjs", true)
     ]);
     value["plan"]["skipped"] = json!([]);
     value["scanRange"]["includeTests"] = json!(false);
@@ -218,7 +219,7 @@ fn js_step_argv_preserves_scan_incremental_and_generated_args() -> Result<()> {
     value["generatedArtifacts"]["mode"] = json!("prepared");
 
     let result = execute_base_plan(request(value)?)?;
-    assert_eq!(result.commands_run.len(), 2);
+    assert_eq!(result.commands_run.len(), 3);
     assert_eq!(result.commands_run[1].status, "ok");
 
     let argv_log = fs::read_to_string(temp.path().join("fake-node-args.txt"))?;
@@ -228,6 +229,12 @@ fn js_step_argv_preserves_scan_incremental_and_generated_args() -> Result<()> {
     assert!(argv_log.contains("--no-incremental"));
     assert!(argv_log.contains("--cache-root C:/repo/.audit/.cache"));
     assert!(argv_log.contains("--generated-artifacts prepared"));
+    let checklist_argv = argv_log
+        .lines()
+        .find(|line| line.contains("checklist-facts.mjs"))
+        .ok_or_else(|| anyhow!("missing checklist-facts argv"))?;
+    assert!(checklist_argv.contains("--no-incremental"));
+    assert!(checklist_argv.contains("--cache-root C:/repo/.audit/.cache"));
     Ok(())
 }
 
