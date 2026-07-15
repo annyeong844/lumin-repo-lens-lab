@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -118,6 +119,16 @@ describe("symbol graph strict incremental cache", () => {
         const firstIncremental = readSymbols(output);
         run(repo, output);
         const warm = readSymbols(output);
+        const warmTiming = JSON.parse(
+          readFileSync(
+            path.join(
+              output,
+              ".producer-phases",
+              "build-symbol-graph.mjs.json",
+            ),
+            "utf8",
+          ),
+        );
 
         expect(stableSymbols(firstIncremental)).toEqual(stableSymbols(cold));
         expect(stableSymbols(warm)).toEqual(stableSymbols(cold));
@@ -126,6 +137,13 @@ describe("symbol graph strict incremental cache", () => {
           identityMode: "strict-content-hash",
         });
         expect(warm.meta.incremental.reusedFiles).toBeGreaterThanOrEqual(2);
+        expect(warmTiming.counters.symbolGraphFinalizerCacheHit).toBe(1);
+        expect(warmTiming.counters.symbolGraphFinalizerCacheMiss).toBe(0);
+        expect(
+          warmTiming.phases.find(
+            (phase) => phase.name === "symbol-graph-artifact-command",
+          )?.wallMs,
+        ).toBe(0);
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
@@ -150,6 +168,59 @@ describe("symbol graph strict incremental cache", () => {
         expect(symbols.fanInByIdentity?.["src/a.ts::used"]).toBe(0);
         expect(symbols.meta.incremental.changedFiles).toBeGreaterThanOrEqual(1);
         expect(symbols.meta.incremental.reusedFiles).toBeGreaterThanOrEqual(1);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    "restores a cached artifact when top-level meta follows a large graph body",
+    () => {
+      const repo = fresh();
+      const output = path.join(repo, ".audit");
+      try {
+        write(
+          repo,
+          "package.json",
+          JSON.stringify({ name: "large-fixture", private: true }),
+        );
+        write(
+          repo,
+          "src/large.ts",
+          [
+            "export const meta = 1;",
+            ...Array.from(
+              { length: 400 },
+              (_, index) => `export const value${index} = ${index};`,
+            ),
+          ].join("\n"),
+        );
+
+        run(repo, output);
+        run(repo, output);
+        const symbols = readSymbols(output);
+        const timing = JSON.parse(
+          readFileSync(
+            path.join(
+              output,
+              ".producer-phases",
+              "build-symbol-graph.mjs.json",
+            ),
+            "utf8",
+          ),
+        );
+
+        expect(statSync(path.join(output, "symbols.json")).size).toBeGreaterThan(
+          64 * 1024,
+        );
+        expect(symbols.meta.incremental).toMatchObject({
+          changedFiles: 0,
+          reusedFiles: 1,
+        });
+        expect(timing.counters.symbolGraphFinalizerCacheHit).toBe(1);
+        expect(timing.counters.symbolGraphFinalizerCacheMiss).toBe(0);
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }

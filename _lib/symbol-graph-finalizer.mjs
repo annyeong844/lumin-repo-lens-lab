@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import {
+  closeSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  writeSync,
+} from "node:fs";
 
 import {
   AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION,
@@ -8,64 +15,220 @@ import {
 } from "./audit-core.mjs";
 import {
   loadProducerArtifactCache,
-  restoreProducerArtifactCache,
   saveProducerArtifactCache,
 } from "./incremental-cache-store.mjs";
+import { atomicWriteFile } from "./atomic-write.mjs";
 
-const ARTIFACT_CACHE_VERSION = 1;
+const ARTIFACT_CACHE_VERSION = 2;
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
+const COPY_BUFFER_BYTES = 1024 * 1024;
 
-function readFilePrefix(filePath, byteLimit) {
+function isJsonWhitespace(byte) {
+  return byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d;
+}
+
+function locateTopLevelObjectValue(filePath, targetKey) {
   const fd = openSync(filePath, "r");
+  const buffer = Buffer.allocUnsafe(SUMMARY_PREFIX_BYTES);
+  let position = 0;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let capturingKey = false;
+  let keyBytes = [];
+  let expectingKey = false;
+  let pendingTarget = false;
+  let targetStart = null;
   try {
-    const buffer = Buffer.alloc(byteLimit);
-    const bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
-    return buffer.toString("utf8", 0, bytesRead);
+    for (;;) {
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, position);
+      if (bytesRead === 0) return null;
+      for (let index = 0; index < bytesRead; index++) {
+        const byte = buffer[index];
+        const absolute = position + index;
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+            if (capturingKey) keyBytes.push(byte);
+          } else if (byte === 0x5c) {
+            escaped = true;
+            if (capturingKey) keyBytes.push(byte);
+          } else if (byte === 0x22) {
+            inString = false;
+            if (capturingKey) {
+              pendingTarget =
+                Buffer.from(keyBytes).toString("utf8") === targetKey;
+              capturingKey = false;
+            }
+          } else if (capturingKey) {
+            keyBytes.push(byte);
+          }
+          continue;
+        }
+
+        if (targetStart !== null) {
+          if (byte === 0x22) {
+            inString = true;
+          } else if (byte === 0x7b || byte === 0x5b) {
+            depth++;
+          } else if (byte === 0x7d || byte === 0x5d) {
+            depth--;
+            if (depth === 1) return { start: targetStart, end: absolute + 1 };
+          }
+          continue;
+        }
+
+        if (depth === 0) {
+          if (isJsonWhitespace(byte)) continue;
+          if (byte !== 0x7b) return null;
+          depth = 1;
+          expectingKey = true;
+          continue;
+        }
+
+        if (depth === 1 && expectingKey) {
+          if (isJsonWhitespace(byte)) continue;
+          if (byte === 0x7d) return null;
+          if (byte !== 0x22) return null;
+          inString = true;
+          capturingKey = true;
+          keyBytes = [];
+          expectingKey = false;
+          continue;
+        }
+
+        if (depth === 1 && pendingTarget) {
+          if (isJsonWhitespace(byte) || byte === 0x3a) continue;
+          if (byte !== 0x7b) return null;
+          targetStart = absolute;
+          depth++;
+          pendingTarget = false;
+          continue;
+        }
+
+        if (byte === 0x22) {
+          inString = true;
+        } else if (byte === 0x7b || byte === 0x5b) {
+          depth++;
+        } else if (byte === 0x7d || byte === 0x5d) {
+          depth--;
+        } else if (depth === 1 && byte === 0x2c) {
+          expectingKey = true;
+          pendingTarget = false;
+        }
+      }
+      position += bytesRead;
+    }
   } finally {
     closeSync(fd);
   }
 }
 
-function extractJsonObjectAfterKey(text, key) {
-  const marker = `"${key}"`;
-  const markerIndex = text.indexOf(marker);
-  if (markerIndex < 0) return null;
-  const colonIndex = text.indexOf(":", markerIndex + marker.length);
-  if (colonIndex < 0) return null;
-  const start = text.indexOf("{", colonIndex + 1);
-  if (start < 0) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = start; index < text.length; index++) {
-    const ch = text[index];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === "\\") {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
+function readFileRange(filePath, start, end) {
+  const buffer = Buffer.allocUnsafe(end - start);
+  const fd = openSync(filePath, "r");
+  let offset = 0;
+  try {
+    while (offset < buffer.length) {
+      const bytesRead = readSync(
+        fd,
+        buffer,
+        offset,
+        buffer.length - offset,
+        start + offset,
+      );
+      if (bytesRead === 0) {
+        throw new Error("unexpected EOF while reading JSON object");
       }
-      continue;
+      offset += bytesRead;
     }
-    if (ch === '"') {
-      inString = true;
-    } else if (ch === "{") {
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0) return text.slice(start, index + 1);
-    }
+    return buffer.toString("utf8");
+  } finally {
+    closeSync(fd);
   }
-  return null;
+}
+
+function writeAll(fd, buffer) {
+  let offset = 0;
+  while (offset < buffer.length) {
+    offset += writeSync(fd, buffer, offset, buffer.length - offset);
+  }
+}
+
+function copyFromOffset(sourceFd, targetFd, sourceOffset) {
+  const buffer = Buffer.allocUnsafe(COPY_BUFFER_BYTES);
+  let position = sourceOffset;
+  for (;;) {
+    const bytesRead = readSync(sourceFd, buffer, 0, buffer.length, position);
+    if (bytesRead === 0) return;
+    writeAll(targetFd, buffer.subarray(0, bytesRead));
+    position += bytesRead;
+  }
+}
+
+function copyByteCount(sourceFd, targetFd, byteCount) {
+  const buffer = Buffer.allocUnsafe(COPY_BUFFER_BYTES);
+  let position = 0;
+  while (position < byteCount) {
+    const bytesRead = readSync(
+      sourceFd,
+      buffer,
+      0,
+      Math.min(buffer.length, byteCount - position),
+      position,
+    );
+    if (bytesRead === 0) {
+      throw new Error("unexpected EOF while restoring artifact");
+    }
+    writeAll(targetFd, buffer.subarray(0, bytesRead));
+    position += bytesRead;
+  }
+}
+
+function restoreCachedArtifact(cacheHit, outPath, context) {
+  if (cacheHit?.status !== "hit" || !cacheHit.artifactPath) {
+    throw new Error(
+      "symbol graph artifact restore requires a verified cache hit",
+    );
+  }
+  const locatedMeta = locateTopLevelObjectValue(cacheHit.artifactPath, "meta");
+  if (!locatedMeta) {
+    throw new Error("cached symbols.json does not contain a top-level meta object");
+  }
+  const meta = JSON.parse(
+    readFileRange(cacheHit.artifactPath, locatedMeta.start, locatedMeta.end),
+  );
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+    throw new Error("cached symbols.json meta must be an object");
+  }
+  meta.generated = context.generated;
+  if (context.incremental == null) {
+    delete meta.incremental;
+  } else {
+    meta.incremental = context.incremental;
+  }
+
+  const currentMeta = Buffer.from(JSON.stringify(meta), "utf8");
+  atomicWriteFile(outPath, (tmpPath) => {
+    const sourceFd = openSync(cacheHit.artifactPath, "r");
+    let targetFd;
+    try {
+      targetFd = openSync(tmpPath, "w");
+      copyByteCount(sourceFd, targetFd, locatedMeta.start);
+      writeAll(targetFd, currentMeta);
+      copyFromOffset(sourceFd, targetFd, locatedMeta.end);
+    } finally {
+      if (targetFd !== undefined) closeSync(targetFd);
+      closeSync(sourceFd);
+    }
+  });
 }
 
 function readArtifactSummary(outPath, phaseTimer) {
-  const prefix = readFilePrefix(outPath, SUMMARY_PREFIX_BYTES);
-  const summaryText = extractJsonObjectAfterKey(prefix, "artifactSummary");
-  if (summaryText) return JSON.parse(summaryText);
+  const summary = locateTopLevelObjectValue(outPath, "artifactSummary");
+  if (summary) {
+    return JSON.parse(readFileRange(outPath, summary.start, summary.end));
+  }
 
   phaseTimer.setCounter("symbolGraphArtifactSummaryFullParseFallback", 1);
   const artifact = JSON.parse(readFileSync(outPath, "utf8"));
@@ -138,6 +301,7 @@ function cacheIdentity(request, producer) {
     context: request.context ? { ...request.context } : request.context,
   };
   if (stableRequest.context) delete stableRequest.context.generated;
+  if (stableRequest.context) delete stableRequest.context.incremental;
   const requestJson = JSON.stringify(stableRequest);
   const contract = JSON.stringify({
     cacheVersion: ARTIFACT_CACHE_VERSION,
@@ -208,7 +372,7 @@ export function finalizeSymbolGraphArtifact({
     );
     if (lookup.status === "hit") {
       try {
-        restoreProducerArtifactCache(lookup, outPath);
+        restoreCachedArtifact(lookup, outPath, request.context);
         restored = true;
       } catch {
         lookup = { status: "miss", reason: "restore-failed" };
@@ -231,7 +395,7 @@ export function finalizeSymbolGraphArtifact({
   if (restored) {
     phaseTimer.setCounter(
       "symbolGraphFinalizerCacheRestoredBytes",
-      lookup.artifactBytes,
+      statSync(outPath).size,
     );
     phaseTimer.setCounter("symbolGraphArtifactRequestBytes", 0);
     phaseTimer.recordPhase("symbol-graph-artifact-request-json", 0);
