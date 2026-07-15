@@ -351,6 +351,7 @@ The current runtime bridge contract version and required feature set are owned
 by `_engine/lib/audit-core.mjs` and the Rust runtime-contract command. The strict
 contract requires `symbolGraphStrictRequestV2`,
 `symbolGraphDeadTestCandidates`,
+`stalenessBatchPickaxe`,
 `sourceUseAssemblyDerivedReExportMaps`, and
 `sourceUseAssemblyTerminalRecordOutcomes`; an
 older helper or a helper missing either feature is rejected before execution.
@@ -421,7 +422,9 @@ and the packaged source fallback must be regenerated from the same contract.
 | `experiments/rust-main/lumin-audit-core/src/sarif/support.rs` | SARIF result state plus deterministic common result, URI, JSON field, and property helpers shared only by SARIF owners | artifact-specific classification, rule descriptions, source analysis, or final run metadata |
 | `experiments/rust-main/lumin-audit-core/src/sarif/projection.rs` | Final SARIF 2.1.0 envelope, level counts, artifact-used evidence, upstream warning propagation, invocation/base URI metadata, and generated-time placement | finding collection, rule classification, source parsing, SARIF upload, or producer execution |
 | `experiments/rust-main/lumin-audit-core/src/sarif/tests.rs` | Focused artifact behavior fixtures for fix-plan tiers, secondary rules, and request rejection | production behavior or alternate SARIF policy implementations |
-| `experiments/rust-main/lumin-audit-core/src/staleness.rs` | `staleness.json` temporal evidence construction from already-produced `symbols.json.deadProdList` plus git log/blame/pickaxe observations: staleness tier classification, grounding/confidence projection, incremental staleness cache hit/miss behavior, deterministic summary projection, and preserved checked artifact vocabulary | JS/TS source parsing, dead-export classification, safe-fix ranking, git repository discovery outside the configured root, manifest summary rendering |
+| `experiments/rust-main/lumin-audit-core/src/staleness.rs` | `staleness.json` temporal evidence orchestration from already-produced `symbols.json.deadProdList` plus Git observations: staleness tier classification, grounding/confidence projection, incremental staleness cache hit/miss behavior, deterministic summary projection, and preserved checked artifact vocabulary | JS/TS source parsing, dead-export classification, safe-fix ranking, Git pickaxe patch parsing, git repository discovery outside the configured root, manifest summary rendering |
+| `experiments/rust-main/lumin-audit-core/src/staleness/pickaxe.rs` | Batched textual Git pickaxe evidence for eligible dead-export symbol names: deterministic command-size chunking, one patch-history scan per chunk, commit-local added/removed occurrence counting, and latest count-changing author-time projection | Dead-export discovery, staleness tiering, binary-payload interpretation, elapsed-time caps, symbol omission, or safe-fix ranking |
+| `experiments/rust-main/lumin-audit-core/src/staleness/file_history.rs` | Batched latest-file-touch collection plus bounded local-pool Git blame collection for every tracked dead-candidate file, with deterministic path chunking and current line-author-time projection | Dead-export discovery, staleness tiering, elapsed-time caps, file omission, shared mutable worker state, or global Rayon pools |
 | `experiments/rust-main/lumin-audit-core/src/topology.rs` | `topology.json` artifact assembly from JS-produced per-file topology entries: `nodes`/`edges` materialization, fan-in/fan-out summaries, runtime/static SCC projection from already-resolved edges, cross-submodule aggregation from JS-supplied submodule labels, largest-file projection, summary counts, and Rust metadata placement | source walking, JS/TS/Python/Go parsing, module resolution, alias-map construction, incremental cache ownership, Rust topology sidecar comparison, repository mode discovery, submodule label discovery, and manifest summary rendering |
 | `experiments/rust-main/lumin-audit-core/src/topology_mermaid.rs` | `topology.mermaid.md` Markdown companion rendering from already-produced `topology.json`: capped cross-submodule Mermaid graph, capped runtime cycle graph, hub-file notes, omitted-detail limits, citation contract text, and result-file metadata through `topology-mermaid-render` | topology analysis, source walking, module resolution, final manifest file writing |
 | `experiments/rust-main/lumin-audit-core/src/generated_artifacts.rs` | `manifest.json.generatedArtifacts` projection from already-produced `symbols.json`, generated-artifact mode validation, generated miss grouping, blind-zone grouping, and present/prepared out-of-scope evidence | package resolution, generator execution, generated-artifact producer evidence construction |
@@ -479,6 +482,41 @@ and the packaged source fallback must be regenerated from the same contract.
 | `experiments/rust-main/lumin-audit-core/src/cli/orchestration.rs` | CLI runners for orchestration plan/result, base-plan execution, producer-performance artifacts, and living-audit summary | product projection logic beyond delegating to owned audit-core modules |
 | `experiments/rust-main/lumin-audit-core/src/cli/usage.rs` | CLI usage text for audit-core commands | command implementation or product projection logic |
 | `experiments/rust-main/lumin-audit-core/src/lib.rs` | public library exports for audit manifest wrappers | ad hoc JSON shape construction outside owned modules |
+
+### Staleness Pickaxe Contract
+
+Staleness name-history evidence is a textual Git-diff claim. For every unique
+safe identifier that passes the checked minimum-length policy,
+`staleness/pickaxe.rs` must preserve `git log -S<symbol>` count-change
+semantics by summing non-overlapping added and removed occurrences per commit.
+The newest commit whose net count changes owns `symbolLastMentionedAt`.
+A changed line that retains the same occurrence count is not a mention.
+The patch stream is matched with `aho-corasick`; overlapping matches are
+retained by the automaton and then reduced to non-overlapping counts separately
+for each symbol so one candidate name cannot hide another.
+
+The owner must query eligible symbols through combined `git log -G` patch
+streams instead of launching one history walk per symbol. Regex chunks are
+only a platform command-transport boundary: every eligible symbol remains in
+exactly one deterministic chunk, and `summary.performance` reports the actual
+Git call and eligible-symbol counts. Binary patch payloads are outside this
+textual evidence claim. A failed batch must hard-stop the producer; it must not
+be projected as `cold` negative evidence. `meta.pickaxeMode` identifies the
+algorithm, and changing its semantics invalidates the staleness cache schema.
+
+Latest file-touch evidence follows the same no-N-history-walk rule. The file
+history owner reads newest-first `git log --name-only -z` output for all
+candidate paths and may stop that child once every path in the chunk has a
+timestamp. Per-line blame remains one Git operation per tracked file because
+Git blame has no multi-file contract; those independent operations run on a
+local Rayon pool with at most four workers and a 1 MiB worker stack. This is a
+process-concurrency boundary, not an analysis cap: every tracked candidate file
+that still exists as a safe in-root file is blamed, and any such blame failure
+hard-stops the producer. Deleted, untracked, or unsafe stale-artifact paths keep
+their available file-history evidence but have no line timestamp; performance
+evidence reports that unavailable-file count instead of treating it as clean
+line evidence. Performance evidence also reports file counts, Git calls, and
+worker count.
 
 ### Packaged Runtime Contract
 

@@ -13,6 +13,7 @@ test = false
 workspace = true
 
 [dependencies]
+aho-corasick = { workspace = true }
 anyhow = { workspace = true }
 lumin-rust-common = { workspace = true, features = ["hash", "json"] }
 oxc_allocator = { workspace = true }

@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v56';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v57';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -289,6 +289,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'sourceUseAssemblyTerminalRecordOutcomes',
   'symbolGraphStrictRequestV2',
   'symbolGraphDeadTestCandidates',
+  'stalenessBatchPickaxe',
   'generatedVirtualSourceUseAssembly',
   'importMetaGlobSourceUseAssembly',
   'sfcScriptSrcSourceUseAssembly',
