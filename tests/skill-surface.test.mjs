@@ -378,7 +378,9 @@ assert(
     WRITE_GATE_SKILL.includes("stream it through stdin with `--intent -`") &&
     !WRITE_GATE_SKILL.includes("write a temporary intent file") &&
     COMMAND_ROUTING.includes("Controller-inferred intents must use") &&
-    COMMAND_ROUTING.includes("do not clean those up with temporary transport") &&
+    COMMAND_ROUTING_FLAT.includes(
+      "do not clean those up with temporary transport",
+    ) &&
     LIFECYCLE_MODES.includes("An explicit intent path is caller-owned") &&
     WRITE_GATE_RUNTIME.includes("## Intent Transport Lifetime") &&
     WRITE_GATE_RUNTIME.includes("Preserve invocation-specific advisories") &&
@@ -442,6 +444,30 @@ assert(
       "files.<path>.astSummary.compilerOracleOpaqueSurfaces",
     ),
   REVIEW_CHECKLIST_RUST,
+);
+
+assert(
+  "S6a3. structural checklist names only checked evidence and enforcement contracts",
+  REVIEW_CHECKLIST.includes("topology.json.crossSubmoduleEdges[]") &&
+    !REVIEW_CHECKLIST.includes("topology.json.subEdges[]") &&
+    REVIEW_CHECKLIST.includes(
+      "does not enumerate `Map.prototype.set`, `Set.prototype.add`",
+    ) &&
+    REVIEW_CHECKLIST.includes(
+      "only classifies coverage for ranked dead-symbol candidates",
+    ) &&
+    REVIEW_CHECKLIST.includes(
+      "Side-effect-only imports are not members of `call-graph.json.semiDeadList[]`",
+    ) &&
+    REVIEW_CHECKLIST.includes("SARIF generation alone is not a failing gate") &&
+    REVIEW_CHECKLIST.includes("Boundary enforcement can use ESLint") &&
+    REVIEW_CHECKLIST.includes(
+      "The number of resulting compile errors is not evidence of ceremony",
+    ) &&
+    REVIEW_CHECKLIST.includes(
+      "The current canon lifecycle supports exactly `type-ownership`",
+    ),
+  REVIEW_CHECKLIST,
 );
 
 assert(

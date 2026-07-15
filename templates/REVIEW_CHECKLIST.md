@@ -139,6 +139,9 @@ If you're running this for a TS/JS monorepo with this skill's artifacts availabl
   `C5_lint_enforcement`, `C7_barrel_amplification`, and `E2_silent_catch`.
 - Canon and write-gate evidence: invocation-specific `pre-write` / `post-write`
   artifacts and `canon-drift.json`. A skipped or stale artifact is not clean.
+  The current canon lifecycle supports exactly `type-ownership`,
+  `helper-registry`, `topology`, and `naming`; broader semantic judgments are
+  not canon-drift evidence.
 - Rust macro/cfg opacity, only when `manifest.rustAnalysis.status` is
   `complete`: `rust-analyzer-health.latest.json.summary.syntaxReviewOpaqueSurfaces`.
   `compilerOracleOpaqueSurfaces` is not an emitted field.
@@ -149,6 +152,10 @@ If you're running this for a TS/JS monorepo with this skill's artifacts availabl
   `no-misused-promises`.
 - Type checking and exhaustiveness: `tsc --strict` and
   `@typescript-eslint/switch-exhaustiveness-check` where configured.
+- Boundary enforcement can use ESLint `no-restricted-imports`, a boundary
+  plugin, Oxlint rules, or a repository-specific checker. Lumin observes
+  recognized enforcement through C5; it does not prove that line-level lint
+  tooling cannot enforce boundaries.
 - Formatting, debugger/console policy, dependency vulnerabilities, and update
   policy remain ESLint/formatter/npm-audit/Renovate concerns.
 
@@ -163,6 +170,9 @@ If you're running this for a TS/JS monorepo with this skill's artifacts availabl
   Those questions require source or dedicated tool evidence. If the model
   cannot inspect that evidence, it must report `[unknown]` instead of asking a
   non-expert user to adjudicate the implementation.
+- Side-effect-only imports are not members of `call-graph.json.semiDeadList[]`;
+  inspect `symbols.json.resolvedInternalEdges[]` entries whose `kind` is
+  `"import-side-effect"` and then read the initialization source.
 
 This checklist is repo-neutral. It intentionally does not include
 dogfood-only checks for `lumin-repo-lens-lab` itself.
@@ -474,16 +484,19 @@ justify a single-use type or adapter.
 
 ### H3. 규범이 canon lifecycle에 연결되어 있는가?
 
-Team-specific owner, naming, and shape rules should move through
+Only the four currently supported source families can move through
 `canon-draft` → explicit AI review-model promotion with a checked diff →
-`check-canon`. A prose-only preference is not a mechanically enforced contract.
+`check-canon`: `type-ownership`, `helper-registry`, `topology`, and `naming`.
+Semantic judgments such as whether a contract is unnecessary ceremony remain
+source-grounded AI review unless a new checked canon source is implemented.
 
 ### H4. 이 계약을 삭제하면 무엇이 실제로 깨지는가?
 
-If deletion only removes a few forwarding declarations and no invariant,
-consumer, compatibility surface, or physical boundary fails, the contract is a
-ceremony candidate. Prove that with source and consumer evidence before
-removing it.
+The number of resulting compile errors is not evidence of ceremony; one error
+may identify a public contract, compatibility promise, process boundary, or
+invariant. A contract is a ceremony candidate only after source and consumer
+evidence proves that deletion removes forwarding declarations without breaking
+an invariant, consumer, compatibility surface, or physical boundary.
 
 **Section H summary**: `[severity] — [one-sentence ceremony/contract characterization]`.
 
