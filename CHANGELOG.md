@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Workspace dependency ownership
+
+- Make native JS/TS pre-write dependency lookup resolve the nearest workspace
+  `package.json` from dependency owner hints or a unique planned-file owner.
+  Mixed workspace scopes now report `DEPENDENCY_OWNER_AMBIGUOUS` instead of a
+  false `NEW_PACKAGE`; lockfiles remain insufficient as direct-declaration
+  evidence.
+
 ### Tool-neutral lint enforcement evidence
 
 - Discover `.oxlintrc.json` and named `.oxlintrc.*.json` files alongside

@@ -240,7 +240,7 @@ const RESULT_FILE_REQUIRED_SUBCOMMANDS = new Set([
 ]);
 
 const AUDIT_CORE_RUNTIME_CONTRACT_SCHEMA_VERSION = 'lumin-audit-core-runtime-contract.v1';
-export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v61';
+export const AUDIT_CORE_RUNTIME_BRIDGE_CONTRACT_VERSION = 'audit-core-js-runtime-bridge.v62';
 export const AUDIT_CORE_REQUIRED_FEATURES = [
   'resultOutput',
   'resultOutputSilencesStdout',
@@ -290,6 +290,7 @@ export const AUDIT_CORE_REQUIRED_FEATURES = [
   'sourceUseAssemblyTerminalRecordOutcomes',
   'sourceUseAssemblyResolvedDottedAliases',
   'lintEnforcementFailClosed',
+  'workspaceDependencyOwnerManifests',
   'symbolGraphStrictRequestV2',
   'symbolGraphDeadTestCandidates',
   'stalenessBatchPickaxe',
@@ -617,6 +618,7 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
   try {
     mkdirSync(rootDir, { recursive: true });
     mkdirSync(path.join(rootDir, 'src'), { recursive: true });
+    mkdirSync(path.join(rootDir, 'apps', 'daemon', 'src'), { recursive: true });
     mkdirSync(outputDir, { recursive: true });
     mkdirSync(lifecycleOutputDir, { recursive: true });
     mkdirSync(postWriteOutputDir, { recursive: true });
@@ -694,6 +696,14 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
     writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify({
       name: 'native-pre-write-contract-probe',
     }));
+    writeFileSync(path.join(rootDir, 'apps', 'daemon', 'package.json'), JSON.stringify({
+      name: '@probe/daemon',
+      dependencies: { '@vscode/ripgrep': '^1.17.1' },
+    }));
+    writeFileSync(
+      path.join(rootDir, 'apps', 'daemon', 'src', 'tool-output.ts'),
+      "export const toolOutput = 'ready';\n",
+    );
     writeFileSync(path.join(rootDir, 'src', 'thing.ts'), [
       'export function Thing(value: string): number {',
       '  try { return value.length; } catch { cleanup(); }',
@@ -711,7 +721,10 @@ function auditCoreBinaryWritesResultFiles(command, { cwd } = {}) {
       names: ['Thing'],
       files: ['src/thing.ts'],
       shapes: [{ typeLiteral: '(value: string) => number' }],
-      dependencies: [],
+      dependencies: [{
+        specifier: '@vscode/ripgrep',
+        ownerFile: 'apps/daemon/src/tool-output.ts',
+      }],
       refactorSources: [{ file: 'src/thing.ts' }],
       plannedTypeEscapes: [],
     });
@@ -1974,6 +1987,12 @@ function nativeJsPreWriteArtifactsMatch(outputDir, invocationId) {
     advisory.evidenceAvailability?.freshAudit === true &&
     advisory.lookups?.some((lookup) => lookup?.result === 'SIGNATURE_MATCH') &&
     advisory.lookups?.some((lookup) => lookup?.result === 'INLINE_PATTERN_MATCH') &&
+    advisory.lookups?.some((lookup) =>
+      lookup?.depName === '@vscode/ripgrep' &&
+      lookup?.result === 'DEPENDENCY_AVAILABLE_NO_OBSERVED_IMPORTS' &&
+      lookup?.manifestFile === 'apps/daemon/package.json' &&
+      lookup?.declaredIn === 'dependencies'
+    ) &&
     readFileSync(latestPath, 'utf8') === advisoryText;
 }
 

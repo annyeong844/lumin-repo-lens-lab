@@ -48,9 +48,9 @@ pub(super) fn project(
         lookups.push(file::lookup(file, topology, symbols, root));
     }
 
-    let package_json = dependency::read_package_json(root, failures)?;
     for dependency in string_array(intent, "dependencies") {
-        lookups.push(dependency::lookup(dependency, &package_json, symbols));
+        let manifest = dependency::select_manifest(root, intent, dependency, failures)?;
+        lookups.push(dependency::lookup(dependency, &manifest, symbols));
     }
     for shape in intent
         .get("shapes")

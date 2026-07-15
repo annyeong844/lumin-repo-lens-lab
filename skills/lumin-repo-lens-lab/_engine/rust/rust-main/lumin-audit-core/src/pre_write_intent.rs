@@ -224,10 +224,29 @@ fn normalize_dependencies(values: &[Value]) -> Result<(Vec<Value>, Vec<Value>)> 
             );
         };
         let specifier = required_nonempty_string(entry, "specifier", &path, false)?;
-        optional_nonempty_string(entry, "why", &path)?;
+        for field in ["why", "ownerFile", "file", "targetFile"] {
+            optional_nonempty_string(entry, field, &path)?;
+        }
+        let owner_file = entry
+            .get("ownerFile")
+            .or_else(|| entry.get("file"))
+            .or_else(|| entry.get("targetFile"));
+        if let Some(owner_file) = owner_file.and_then(Value::as_str) {
+            if unsafe_repo_relative_path(owner_file) {
+                return schema_error(
+                    &format!("{path}.ownerFile"),
+                    format!("{path}.ownerFile must be a safe repo-relative path"),
+                );
+            }
+        }
         let mut declaration = Map::new();
         declaration.insert("specifier".to_string(), json!(specifier));
         copy_present(entry, &mut declaration, "why");
+        if let Some(owner_file) = owner_file {
+            declaration.insert("ownerFile".to_string(), owner_file.clone());
+        }
+        copy_present(entry, &mut declaration, "file");
+        copy_present(entry, &mut declaration, "targetFile");
         dependencies.push(json!(specifier));
         declarations.push(Value::Object(declaration));
     }
@@ -486,7 +505,11 @@ mod tests {
                 "formatDate",
                 {"name": "formatTimestamp", "kind": "function", "file": "src/time.ts"}
             ],
-            "dependencies": [{"specifier": "@scope/pkg", "why": "boundary"}],
+            "dependencies": [{
+                "specifier": "@scope/pkg",
+                "why": "boundary",
+                "ownerFile": "apps/daemon/src/server.ts"
+            }],
             "refactorSources": [{"file": "src/server.ts", "lines": [7, 9]}],
             "taskId": "T-1"
         }))?;
@@ -500,6 +523,10 @@ mod tests {
             "src/time.ts"
         );
         assert_eq!(normalized.value()["dependencies"], json!(["@scope/pkg"]));
+        assert_eq!(
+            normalized.value()["dependencyDeclarations"][0]["ownerFile"],
+            "apps/daemon/src/server.ts"
+        );
         assert_eq!(
             normalized.value()["refactorSources"][0]["lines"],
             json!([7, 9])
