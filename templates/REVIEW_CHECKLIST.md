@@ -475,8 +475,8 @@ justify a single-use type or adapter.
 ### H3. 규범이 canon lifecycle에 연결되어 있는가?
 
 Team-specific owner, naming, and shape rules should move through
-`canon-draft` → human promotion → `check-canon`. A prose-only preference is not
-a mechanically enforced contract.
+`canon-draft` → explicit AI review-model promotion with a checked diff →
+`check-canon`. A prose-only preference is not a mechanically enforced contract.
 
 ### H4. 이 계약을 삭제하면 무엇이 실제로 깨지는가?
 

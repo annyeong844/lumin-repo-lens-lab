@@ -50,6 +50,11 @@ worth smoothing next, confidence, and next pass. Use
 due diligence, or CI-style validation. Any unevaluated prompt still
 needs `unknown` plus scan range.
 
+When Rust is in scope, also walk `templates/REVIEW_CHECKLIST_RUST.md`.
+Do not use JS/TS artifacts as Rust absence evidence. The review model owns
+source-level design judgment after reading grounded Rust artifacts, clippy/cargo
+output, and the cited source; no human-only handoff is required.
+
 Checklist gate and output density are separate. The Core Contract makes
 the checklist a required review step, not merely a template. Before any
 structural answer, triage C/D(+H)/E/A/B/F/G using `checklist-facts.json`,
@@ -57,7 +62,8 @@ relevant raw artifacts, and dedicated non-lumin tools. Short output only
 controls what you show; it
 does not permit skipping the checklist pass. For full, due-diligence,
 exhaustive, or formal review, open `templates/REVIEW_CHECKLIST.md` and
-walk it before drafting.
+walk it before drafting. Add `templates/REVIEW_CHECKLIST_RUST.md` whenever
+Rust findings are in scope.
 
 When synthesizing multiple review passes or sub-agent code walks, verify
 headline counts and high-impact file:line claims yourself; resolve

@@ -121,7 +121,8 @@ rules that keep this SKILL.md small:
 - when to run `quick`, `full`, or `ci`
 - how to treat `manifest.json` and `audit-summary.latest.md`
 - when to use `templates/REVIEW_CHECKLIST_SHORT.md`,
-  `templates/REVIEW_CHECKLIST.md`, or `templates/report-template.md`
+  `templates/REVIEW_CHECKLIST.md`, `templates/REVIEW_CHECKLIST_RUST.md`,
+  or `templates/report-template.md`
 - how to label `grounded`, `degraded`, and `unknown` claims
 - how to screen dead-export tiers, duplicate-helper cues, and language
   precision boundaries before writing prose
@@ -138,6 +139,9 @@ artifact.
 For normal chat-facing structural reviews, follow
 `templates/REVIEW_CHECKLIST_SHORT.md`. For explicit full audit reports,
 due diligence, CI-style review, or formal report asks, follow `templates/report-template.md`.
+For Rust findings, also walk `templates/REVIEW_CHECKLIST_RUST.md`; artifact
+extraction stays mechanical, while source-level judgment belongs to the review
+model.
 For tracked audit documents, use
 `templates/living-audit-template.md`.
 

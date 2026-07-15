@@ -10,11 +10,14 @@ already been read.
 | Formal audit report / due diligence | `report-template.md` | Use only when the user asks for a formal report or full evidence trail. |
 | Gentle refactor plan output | `refactor-plan-template.md` | Read `references/refactor-plan-policy.md` first; this file only owns output shape. |
 | Full structural checklist walk | `REVIEW_CHECKLIST.md` | Repo-neutral long checklist; use explicit full-review requests only. |
+| Rust structural checklist walk | `REVIEW_CHECKLIST_RUST.md` | Rust-specific evidence contract and A-I review lenses; use with `--rust-analyzer`. |
 | Living audit tracking document | `living-audit-template.md` | Agent-authored document for tracking NEW/ACTIVE/RESOLVED/NOT_RECHECKED items across runs. |
 
 Short output does not mean shallow analysis. Normal chat-facing reviews
 still require an internal checklist triage pass over the main C, D, E,
-A, B, and F lenses before the model selects the few items to show.
+A, B, and F lenses before the model selects the few items to show. Rust
+reviews also walk `REVIEW_CHECKLIST_RUST.md`; source-reading decisions belong
+to the review model, not to an unavailable human reviewer.
 
 Saved formal reports require a final-author closeout pass before final
 answer or handoff: re-read headline counts, same-site classifications,
