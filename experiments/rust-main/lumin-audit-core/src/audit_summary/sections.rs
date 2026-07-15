@@ -5,6 +5,30 @@ use serde_json::Value;
 use super::protocol::AuditSummaryRenderRequest;
 use super::support::{arr, get};
 
+pub(super) fn required_analysis_failure_lines(manifest: &Value) -> Vec<String> {
+    let failures = arr(get(manifest, "commandsRun"))
+        .iter()
+        .filter(|command| get(command, "status").and_then(Value::as_str) == Some("failed-required"))
+        .filter_map(|command| get(command, "step").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    if failures.is_empty() {
+        return Vec::new();
+    }
+
+    let mut lines = vec!["## Required Analysis Failures".to_string(), String::new()];
+    for step in failures.into_iter().take(5) {
+        if step == "build-symbol-graph.mjs" {
+            lines.push("- **Symbol graph failed.** Dead-export and reachability analysis is unavailable: do not read missing `symbols.json`, `fix-plan.json`, `dead-classify.json`, `module-reachability.json`, or `entry-surface.json` as zero findings.".to_string());
+        } else {
+            lines.push(format!(
+                "- **Required producer `{step}` failed.** Its missing downstream evidence is unavailable, not clean."
+            ));
+        }
+    }
+    lines.push(String::new());
+    lines
+}
+
 pub(super) fn artifact_map_lines(request: &AuditSummaryRenderRequest) -> Vec<String> {
     let produced = arr(get(&request.manifest, "artifactsProduced"))
         .iter()
