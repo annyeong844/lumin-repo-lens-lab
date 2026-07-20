@@ -15,7 +15,9 @@ pub use protocol::{
     AuditSummaryRenderRequest, AuditSummaryRenderResult,
     AUDIT_SUMMARY_RENDER_REQUEST_SCHEMA_VERSION, AUDIT_SUMMARY_RENDER_RESULT_SCHEMA_VERSION,
 };
-use sections::{artifact_map_lines, expansion_hint_lines, living_audit_lines};
+use sections::{
+    artifact_map_lines, expansion_hint_lines, living_audit_lines, required_analysis_failure_lines,
+};
 use support::{get, pointer_string, summarize_confidence, summarize_scan_range};
 
 pub fn render_audit_summary_request(
@@ -65,6 +67,8 @@ pub fn render_audit_summary(request: &AuditSummaryRenderRequest) -> String {
         lines.push(String::new());
     }
 
+    lines.extend(required_analysis_failure_lines(&request.manifest));
+
     lines.extend([
         "## Read First".to_string(),
         String::new(),
@@ -91,4 +95,62 @@ pub fn render_audit_summary(request: &AuditSummaryRenderRequest) -> String {
         String::new(),
     ]);
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Context;
+
+    fn request(manifest: Value) -> AuditSummaryRenderRequest {
+        AuditSummaryRenderRequest {
+            schema_version: AUDIT_SUMMARY_RENDER_REQUEST_SCHEMA_VERSION.to_string(),
+            manifest,
+            checklist_facts: Value::Null,
+            fix_plan: Value::Null,
+            topology: Value::Null,
+            discipline: Value::Null,
+            call_graph: Value::Null,
+            function_clones: Value::Null,
+            symbols: Value::Null,
+            module_reachability: Value::Null,
+            output_path: "audit-summary.latest.md".to_string(),
+        }
+    }
+
+    #[test]
+    fn required_symbol_graph_failure_is_prominent_and_not_reported_as_clean() -> Result<()> {
+        let markdown = render_audit_summary(&request(serde_json::json!({
+            "commandsRun": [{
+                "step": "build-symbol-graph.mjs",
+                "status": "failed-required"
+            }]
+        })));
+
+        let failure = markdown
+            .find("## Required Analysis Failures")
+            .context("required failure section")?;
+        let read_first = markdown
+            .find("## Read First")
+            .context("read first section")?;
+        assert!(failure < read_first);
+        assert!(markdown.contains("Dead-export and reachability analysis is unavailable"));
+        assert!(markdown.contains("do not read missing `symbols.json`"));
+        let preview = render_summary_console_preview(&markdown).context("console preview")?;
+        assert!(preview.contains("Required Analysis Failures"));
+        assert!(preview.contains("Symbol graph failed"));
+        Ok(())
+    }
+
+    #[test]
+    fn successful_runs_do_not_render_required_failure_section() {
+        let markdown = render_audit_summary(&request(serde_json::json!({
+            "commandsRun": [{
+                "step": "build-symbol-graph.mjs",
+                "status": "ok"
+            }]
+        })));
+
+        assert!(!markdown.contains("## Required Analysis Failures"));
+    }
 }

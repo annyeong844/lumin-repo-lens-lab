@@ -97,7 +97,10 @@ export function planInlineSourceUses({
           }
         }
         const reason = sourceUseRecordFailureReason(use);
-        if (reason !== "non-relative-requires-js-resolver") {
+        if (
+          reason !== "non-relative-requires-js-resolver" &&
+          reason !== "non-source-asset-specifier"
+        ) {
           throw new Error(
             `source-use assembly refused ${reason} record ${recordId}`,
           );

@@ -577,6 +577,7 @@ function write(root, rel, content) {
         "import PluginCard from '../components/PluginCard.vue';",
         "import DuplicateOne from '../components/DuplicateOne.vue';",
         "import DuplicateTwo from '../components/DuplicateTwo.vue';",
+        "import MissingRoot from '../components/MissingRoot.vue';",
         "import { RegisteredSource } from './registered-source';",
         "import { SsrRegisteredSource } from './ssr-registered-source';",
         "import { ChainedRegisteredSource } from './chained-registered-source';",
@@ -1219,6 +1220,21 @@ function write(root, rel, content) {
             edge.source === "external-package" ||
             edge.source === "https://example.test/remote.ts" ||
             edge.source === "dynamicSource",
+        ),
+      JSON.stringify({
+        edges: symbols.resolvedInternalEdges,
+        unresolved: symbols.unresolvedInternalSpecifierRecords,
+      }),
+    );
+    assert(
+      "SFC-2l2. missing SFC imports remain unresolved evidence without aborting the graph",
+      symbols.unresolvedInternalSpecifierRecords?.some(
+        (record) =>
+          record.consumerFile === "src/main.ts" &&
+          record.specifier === "../components/MissingRoot.vue",
+      ) &&
+        !symbols.resolvedInternalEdges?.some(
+          (edge) => edge.source === "../components/MissingRoot.vue",
         ),
       JSON.stringify({
         edges: symbols.resolvedInternalEdges,

@@ -113,6 +113,10 @@ pub fn render_summary_console_preview(markdown: &str) -> Option<String> {
             collect_summary_section_lines(markdown, "## Command Result", 3),
         ),
         (
+            "Required Analysis Failures",
+            collect_summary_section_lines(markdown, "## Required Analysis Failures", 5),
+        ),
+        (
             "Read First",
             collect_summary_section_lines(markdown, "## Read First", 2),
         ),
