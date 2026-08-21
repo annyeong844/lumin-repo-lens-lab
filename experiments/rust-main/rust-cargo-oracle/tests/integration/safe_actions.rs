@@ -66,7 +66,7 @@ fn unused_variable_machine_applicable_rename_promotes_safe_action() -> Result<()
 fn multi_edit_machine_applicable_warning_promotes_single_safe_action() -> Result<()> {
     let env = RealCargoEnv::single_package(
         "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
-        "pub fn app(flag: bool) -> i32 { if (flag) { 1 } else { 2 } }\n",
+        "pub fn app(flag: bool) -> i32 { if (flag){ 1 } else { 2 } }\n",
     )?;
     let artifact = env.run()?;
 

@@ -64,6 +64,15 @@ impl Default for ScanScopeOptions {
     }
 }
 
+pub fn rust_pre_write_file_languages() -> Vec<String> {
+    JS_FAMILY_EXTENSIONS
+        .iter()
+        .copied()
+        .chain(std::iter::once("rs"))
+        .map(str::to_string)
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanScopeStatus {
     pub included: bool,

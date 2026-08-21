@@ -32,7 +32,7 @@ fn unified_cli_promotes_unused_variable_machine_applicable_rename_to_safe_fix() 
 #[test]
 fn unified_cli_promotes_multi_edit_machine_applicable_warning_to_safe_fix() -> Result<()> {
     let artifact = analyze_cargo_check_single_package(
-        "pub fn demo(flag: bool) -> i32 { if (flag) { 1 } else { 2 } }\n",
+        "pub fn demo(flag: bool) -> i32 { if (flag){ 1 } else { 2 } }\n",
     )?;
 
     assert_safe_action_artifact_with_edits(&artifact, "unused_parens", &["", " "])

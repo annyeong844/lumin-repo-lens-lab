@@ -115,16 +115,17 @@ fn invalid_advisory_removes_stale_latest_before_validation() -> Result<()> {
 }
 
 #[test]
-fn rust_post_write_skips_type_escapes_but_computes_file_delta() -> Result<()> {
+fn rust_post_write_skips_type_escapes_and_preserves_mixed_file_scope() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path().join("repo");
     let out = temp.path().join("out");
     let delta_out = temp.path().join("delta");
     fs::create_dir_all(root.join("src"))?;
     fs::create_dir_all(&out)?;
-    fs::write(root.join("src/new.ts"), "export const value = 1;\n")?;
+    fs::write(root.join("src/kept.rs"), "pub const VALUE: usize = 1;\n")?;
+    fs::write(root.join("src/kept.ts"), "export const value = 1;\n")?;
     let advisory = out.join("pre-write-advisory.PRE-1.json");
-    write_rust_advisory(&advisory)?;
+    write_rust_advisory(&advisory, &["src/kept.rs", "src/kept.ts"], &["src/kept.rs"])?;
     let mut request_value = request(&root, &out, Some(&advisory));
     request_value["deltaOut"] = json!(path_string(&delta_out));
 
@@ -140,11 +141,17 @@ fn rust_post_write_skips_type_escapes_but_computes_file_delta() -> Result<()> {
     let delta: Value = serde_json::from_str(&fs::read_to_string(
         delta_out.join("post-write-delta.latest.json"),
     )?)?;
+    assert_eq!(result.block.unexpected_new_file_count, Some(0));
+    assert_eq!(result.block.planned_missing_file_count, Some(0));
+    assert_eq!(delta["fileDelta"]["beforeCount"], 2);
+    assert_eq!(delta["fileDelta"]["afterCount"], 2);
+    assert_eq!(delta["fileDelta"]["removed"], json!([]));
+    assert_eq!(delta["fileDelta"]["unexpectedNew"], json!([]));
     assert_eq!(
-        result.block.unexpected_new_file_count,
-        Some(1),
-        "delta={delta:#}"
+        delta["fileDelta"]["plannedObserved"],
+        json!(["src/kept.rs"])
     );
+    assert_eq!(delta["fileDelta"]["plannedMissing"], json!([]));
     assert!(delta_out.join("post-write-delta.latest.json").is_file());
     Ok(())
 }
@@ -239,7 +246,7 @@ fn write_js_advisory(path: &Path, before_files: &[&str], planned_files: &[&str])
     Ok(())
 }
 
-fn write_rust_advisory(path: &Path) -> Result<()> {
+fn write_rust_advisory(path: &Path, before_files: &[&str], planned_files: &[&str]) -> Result<()> {
     fs::write(
         path,
         serde_json::to_vec_pretty(&json!({
@@ -247,11 +254,11 @@ fn write_rust_advisory(path: &Path) -> Result<()> {
             "intentHash": "intent-hash",
             "intent": {
                 "language": "rust",
-                "files": [],
+                "files": planned_files,
                 "plannedTypeEscapes": []
             },
             "preWrite": {
-                "fileInventory": { "status": "available", "files": [] }
+                "fileInventory": { "status": "available", "files": before_files }
             },
             "capabilities": {
                 "language": "rust",
