@@ -21,7 +21,7 @@ use crate::js_ts_pre_write::{
     collect_js_ts_pre_write_evidence, JsTsPreWriteEvidenceRequest,
     JS_TS_PRE_WRITE_EVIDENCE_REQUEST_SCHEMA_VERSION,
 };
-use crate::scan_scope::{collect_source_files, ScanScopeOptions};
+use crate::scan_scope::{collect_source_files, rust_pre_write_file_languages, ScanScopeOptions};
 
 pub fn execute_post_write_lifecycle(
     request: PostWriteLifecycleRequest,
@@ -167,6 +167,7 @@ fn build_after_snapshot(
             &ScanScopeOptions {
                 include_tests: request.include_tests,
                 exclude: request.excludes.clone(),
+                languages: rust_pre_write_file_languages(),
                 ..ScanScopeOptions::default()
             },
         )?;

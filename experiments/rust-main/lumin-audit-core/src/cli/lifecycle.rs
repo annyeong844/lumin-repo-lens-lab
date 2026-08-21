@@ -38,7 +38,9 @@ use lumin_audit_core::pre_write_lifecycle::{
 use lumin_audit_core::pre_write_routing::{
     resolve_pre_write_route, PreWriteRoutingRequest, PreWriteRoutingResult,
 };
-use lumin_audit_core::scan_scope::{collect_source_files, to_repo_relative, ScanScopeOptions};
+use lumin_audit_core::scan_scope::{
+    collect_source_files, rust_pre_write_file_languages, to_repo_relative, ScanScopeOptions,
+};
 
 const AUDIT_LIFECYCLE_EXECUTION_REQUEST_SCHEMA_VERSION: &str =
     "lumin-audit-lifecycle-execution-request.v1";
@@ -486,10 +488,7 @@ fn build_deferred_pre_write_file_inventory(
     let options = ScanScopeOptions {
         include_tests,
         exclude: excludes.to_vec(),
-        languages: ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "rs"]
-            .into_iter()
-            .map(str::to_string)
-            .collect(),
+        languages: rust_pre_write_file_languages(),
         directory: false,
     };
     let inventory = collect_source_files(root, &options).and_then(|files| {
